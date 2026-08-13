@@ -1,0 +1,23 @@
+{
+  "id": "./",
+  "name": "Orden · Gestión empresarial",
+  "short_name": "Orden",
+  "description": "Gestión financiera y comercial para empresas.",
+  "lang": "es-PY",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#f5f7f3",
+  "theme_color": "#173f31",
+  "orientation": "portrait-primary",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {"src": "app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Registrar venta", "short_name": "Venta", "url": "./?accion=venta", "icons": [{"src": "app-icon.svg", "sizes": "any", "type": "image/svg+xml"}]},
+    {"name": "Ver reportes", "short_name": "Reportes", "url": "./?vista=reportes", "icons": [{"src": "app-icon.svg", "sizes": "any", "type": "image/svg+xml"}]}
+  ]
+}

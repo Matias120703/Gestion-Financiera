@@ -73,13 +73,15 @@ function hydrateState(raw) {
     business: { name: String(business.name || 'Mi negocio').trim() || 'Mi negocio', currency: business.currency === 'USD' ? 'USD' : 'PYG' },
     moves: movements,
     products,
-    ui: { range: { start: normalizeDate(range.start), end: normalizeDate(range.end) } }
+    ui: { range: { start: normalizeDate(range.start), end: normalizeDate(range.end) } },
+    meta: { lastSavedAt: legacy.meta?.lastSavedAt || new Date().toISOString() }
   };
 }
 
 let state = hydrateState(JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY) || 'null'));
 
 function persist() {
+  state.meta = { ...(state.meta || {}), lastSavedAt: new Date().toISOString() };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -329,8 +331,57 @@ function renderProductOptions() {
 
 function renderSettings() {
   $('#sideBusinessName').textContent = state.business.name;
+  $('#mobileBusinessName').textContent = state.business.name;
   $('#businessName').value = state.business.name;
   $('#currency').value = state.business.currency;
+  renderSaveStatus();
+  renderInstallStatus();
+}
+
+function renderSaveStatus() {
+  const online = navigator.onLine;
+  const dot = $('#connectionDot');
+  const status = $('#connectionStatus');
+  const saved = $('#lastSaved');
+  if (!dot || !status || !saved) return;
+  dot.classList.toggle('offline', !online);
+  status.textContent = online ? 'Guardado en este dispositivo' : 'Modo sin conexión';
+  const savedAt = state.meta?.lastSavedAt ? new Date(state.meta.lastSavedAt) : null;
+  saved.textContent = savedAt && !Number.isNaN(savedAt) ? `Actualizado ${savedAt.toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' })}` : 'Actualizado ahora';
+}
+
+let deferredInstallPrompt = null;
+
+function isIosDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function renderInstallStatus() {
+  const description = $('#installDescription');
+  const button = $('#installApp');
+  if (!description || !button) return;
+  const installed = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (installed) {
+    description.textContent = 'Orden ya está instalada en este dispositivo y puede abrirse desde la pantalla de inicio.';
+    button.hidden = true;
+  } else if (deferredInstallPrompt) {
+    description.textContent = 'Instalala para abrirla desde el inicio, trabajar a pantalla completa y mantener acceso sin conexión.';
+    button.hidden = false;
+  } else if (isIosDevice()) {
+    description.textContent = 'En iPhone o iPad: abrí esta página con Safari, tocá Compartir y elegí “Agregar a pantalla de inicio”.';
+    button.hidden = true;
+  } else {
+    description.textContent = 'Desde el menú del navegador elegí “Instalar aplicación”. Al publicarla en Vercel funcionará también sin conexión.';
+    button.hidden = true;
+  }
+}
+
+function registerProgressiveApp() {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
+  window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt = event; renderInstallStatus(); });
+  window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; renderInstallStatus(); toast('Orden se instaló correctamente en este dispositivo.'); });
+  window.addEventListener('online', renderSaveStatus);
+  window.addEventListener('offline', renderSaveStatus);
 }
 
 function renderAll() {
@@ -344,8 +395,11 @@ function renderAll() {
 
 function showPage(page) {
   $$('.page').forEach((section) => section.classList.toggle('active', section.id === `${page}Page`));
-  $$('.nav-link').forEach((button) => button.classList.toggle('active', button.dataset.page === page));
+  $$('.nav-link, .mobile-nav button, .mobile-bottom-nav button[data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === page));
   $('#mobileNav').classList.remove('open');
+  $('#mobileNav').setAttribute('aria-hidden', 'true');
+  $('#mobileNavBackdrop').classList.remove('open');
+  $('#menuButton').setAttribute('aria-expanded', 'false');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -611,7 +665,17 @@ function bindEvents() {
   $('#applyRange').addEventListener('click', () => applyRange());
   $('#newMovement').addEventListener('click', () => openMovementDialog());
   $('#mobileNewMovement').addEventListener('click', () => openMovementDialog());
-  $('#menuButton').addEventListener('click', () => $('#mobileNav').classList.toggle('open'));
+  const setMobileNav = (open) => {
+    $('#mobileNav').classList.toggle('open', open);
+    $('#mobileNav').setAttribute('aria-hidden', String(!open));
+    $('#mobileNavBackdrop').classList.toggle('open', open);
+    $('#menuButton').setAttribute('aria-expanded', String(open));
+    if (open) $('#closeMobileNav').focus();
+  };
+  $('#menuButton').addEventListener('click', () => setMobileNav(!$('#mobileNav').classList.contains('open')));
+  $('#closeMobileNav').addEventListener('click', () => setMobileNav(false));
+  $('#mobileNavBackdrop').addEventListener('click', () => setMobileNav(false));
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && $('#mobileNav').classList.contains('open')) setMobileNav(false); });
   $('#closeMovementDialog').addEventListener('click', () => $('#movementDialog').close());
   $('#closeProductDialog').addEventListener('click', () => $('#productDialog').close());
   $('#newProduct').addEventListener('click', () => openProductDialog());
@@ -653,6 +717,13 @@ function bindEvents() {
     persist(); $('#productDialog').close(); renderAll(); toast(id ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
   });
   $('#businessForm').addEventListener('submit', (event) => { event.preventDefault(); state.business.name = $('#businessName').value.trim() || 'Mi negocio'; state.business.currency = $('#currency').value; persist(); renderAll(); toast('Información de la empresa guardada.'); });
+  $('#installApp').addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    renderInstallStatus();
+  });
   $('#exportExcel').addEventListener('click', exportProfessionalExcel);
   $('#printReport').addEventListener('click', () => window.print());
   $('#exportBackup').addEventListener('click', () => downloadBlob(`Copia de seguridad - ${localDate()}.json`, new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })));
@@ -678,3 +749,7 @@ function setInitialControls() {
 setInitialControls();
 bindEvents();
 renderAll();
+registerProgressiveApp();
+const launchParameters = new URLSearchParams(window.location.search);
+if (launchParameters.get('vista') === 'reportes') showPage('reports');
+if (launchParameters.get('accion') === 'venta') window.setTimeout(() => openMovementDialog('income'), 0);
