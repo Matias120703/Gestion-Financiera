@@ -79,10 +79,162 @@ function hydrateState(raw) {
 }
 
 let state = hydrateState(JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY) || 'null'));
+let supabaseClient = null;
+let currentUser = null;
+let currentCompany = null;
+let currentCompanies = [];
+let remoteSubscription = null;
+let remoteRefreshTimer = null;
+let authIsSignup = false;
+let remoteReady = false;
+let cachedJoinCode = '';
 
 function persist() {
   state.meta = { ...(state.meta || {}), lastSavedAt: new Date().toISOString() };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function remoteErrorMessage(error, fallback = 'No se pudo completar la operación. Intentá nuevamente.') {
+  const message = String(error?.message || '').trim();
+  if (!message) return fallback;
+  if (/invalid login credentials/i.test(message)) return 'El correo o la contraseña no son correctos.';
+  if (/email not confirmed/i.test(message)) return 'Confirmá el correo electrónico antes de ingresar.';
+  if (/already registered/i.test(message)) return 'Ya existe una cuenta con este correo. Probá ingresar.';
+  return message;
+}
+
+function isManager() {
+  return ['owner', 'admin'].includes(currentCompany?.role);
+}
+
+function roleLabel(role) {
+  return ({ owner: 'Propietario', admin: 'Administrador', seller: 'Vendedor' })[role] || 'Miembro del equipo';
+}
+
+function setOverlay(name) {
+  $('#authShell').hidden = name !== 'auth';
+  $('#onboardingShell').hidden = name !== 'onboarding';
+}
+
+function setButtonBusy(button, busy, text = '') {
+  if (!button) return;
+  if (busy) {
+    button.dataset.label = button.textContent;
+    button.textContent = text || 'Guardando…';
+    button.disabled = true;
+  } else {
+    button.textContent = button.dataset.label || button.textContent;
+    button.disabled = false;
+  }
+}
+
+async function loadRemoteWorkspace() {
+  const { data: companies, error: companyError } = await supabaseClient.rpc('list_my_companies');
+  if (companyError) throw companyError;
+  currentCompanies = companies || [];
+  if (!currentCompanies.length) {
+    currentCompany = null;
+    setOverlay('onboarding');
+    return;
+  }
+  const savedCompanyId = localStorage.getItem('orden-active-company');
+  currentCompany = currentCompanies.find((company) => company.id === savedCompanyId) || currentCompanies[0];
+  localStorage.setItem('orden-active-company', currentCompany.id);
+  cachedJoinCode = '';
+
+  const [{ data: products, error: productError }, { data: movements, error: movementError }] = await Promise.all([
+    supabaseClient.from('products').select('id, name, category, sku, unit_cost, sale_price, reorder_level, stock_on_hand, created_at, is_active').eq('company_id', currentCompany.id).eq('is_active', true).order('name'),
+    supabaseClient.from('financial_movements').select('id, kind, description, product_id, quantity, amount, occurred_on, category, note, created_at').eq('company_id', currentCompany.id).order('occurred_on', { ascending: false }).order('created_at', { ascending: false })
+  ]);
+  if (productError) throw productError;
+  if (movementError) throw movementError;
+
+  const remoteProducts = (products || []).map((product) => ({
+    id: product.id,
+    name: product.name,
+    category: product.category || 'General',
+    sku: product.sku || '',
+    unitCost: Number(product.unit_cost) || 0,
+    salePrice: Number(product.sale_price) || 0,
+    reorderLevel: Number(product.reorder_level) || 0,
+    stockOnHand: Number(product.stock_on_hand) || 0,
+    createdAt: product.created_at || new Date().toISOString()
+  }));
+  const productNames = new Map(remoteProducts.map((product) => [product.id, product.name]));
+  state = {
+    ...state,
+    version: 4,
+    business: { name: currentCompany.name, currency: currentCompany.currency === 'USD' ? 'USD' : 'PYG' },
+    products: remoteProducts,
+    moves: (movements || []).map((movement) => ({
+      id: movement.id,
+      kind: movement.kind,
+      description: movement.description,
+      productId: movement.product_id || null,
+      product: movement.product_id ? productNames.get(movement.product_id) || 'Producto eliminado' : '',
+      quantity: Number(movement.quantity) || 0,
+      amount: Number(movement.amount) || 0,
+      date: normalizeDate(movement.occurred_on),
+      category: movement.category || (movement.kind === 'income' ? 'Ventas' : 'Otros gastos'),
+      note: movement.note || '',
+      createdAt: movement.created_at || new Date().toISOString()
+    })),
+    meta: { lastSavedAt: new Date().toISOString() }
+  };
+  remoteReady = true;
+  persist();
+  setInitialControls();
+  renderAll();
+  setupRealtime();
+  setOverlay('app');
+}
+
+function setupRealtime() {
+  if (!supabaseClient || !currentCompany) return;
+  remoteSubscription?.unsubscribe();
+  remoteSubscription = supabaseClient.channel(`orden-${currentCompany.id}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `company_id=eq.${currentCompany.id}` }, queueRemoteRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'financial_movements', filter: `company_id=eq.${currentCompany.id}` }, queueRemoteRefresh)
+    .subscribe();
+}
+
+function queueRemoteRefresh() {
+  window.clearTimeout(remoteRefreshTimer);
+  remoteRefreshTimer = window.setTimeout(() => {
+    if (currentUser && currentCompany) loadRemoteWorkspace().catch((error) => toast(remoteErrorMessage(error)));
+  }, 350);
+}
+
+async function startSupabase() {
+  const config = window.ORDEN_SUPABASE;
+  if (!window.supabase || !config?.url || !config?.publishableKey) {
+    $('#authError').textContent = 'No se pudo iniciar la conexión segura. Revisá supabase-config.js.';
+    setOverlay('auth');
+    return;
+  }
+  supabaseClient = window.supabase.createClient(config.url, config.publishableKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session?.user) {
+    currentUser = session.user;
+    try { await loadRemoteWorkspace(); } catch (error) { $('#authError').textContent = remoteErrorMessage(error); setOverlay('auth'); }
+  } else setOverlay('auth');
+  supabaseClient.auth.onAuthStateChange((_event, sessionUpdate) => {
+    if (!sessionUpdate?.user) {
+      currentUser = null;
+      currentCompany = null;
+      remoteReady = false;
+      remoteSubscription?.unsubscribe();
+      setOverlay('auth');
+    }
+  });
+}
+
+async function signOut() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  toast('Sesión cerrada correctamente.');
 }
 
 function money(value) {
@@ -301,7 +453,13 @@ function renderProducts() {
   $('#lowRotationCount').textContent = new Intl.NumberFormat('es-PY').format(lowRotation.length);
   $('#neverSoldCount').textContent = new Intl.NumberFormat('es-PY').format(statuses.filter(({ status }) => status.label === 'Nunca vendido').length);
   $('#productRangeLabel').textContent = rangeDescription(range);
-  $('#productTable').innerHTML = statuses.map(({ product, status }) => `<tr><td><strong>${escapeHtml(product.name)}</strong></td><td>${escapeHtml(product.category || 'General')}</td><td class="right">${new Intl.NumberFormat('es-PY').format(product.units)}</td><td class="right amount-income">${money(product.revenue)}</td><td class="right">${product.frequency}</td><td>${formatDate(product.lastSale)}</td><td><span class="status-label ${status.tone}">${status.label}</span><span class="cell-secondary">${status.detail}</span></td><td><button class="table-action" data-edit-product="${product.id}" type="button" aria-label="Editar ${escapeHtml(product.name)}">⋮</button></td></tr>`).join('');
+  $('#productTable').innerHTML = statuses.map(({ product, status }) => {
+    const stock = Number(product.stockOnHand) || 0;
+    const minimum = Number(product.reorderLevel) || 0;
+    const stockClass = minimum > 0 && stock <= minimum ? 'stock-low' : 'stock-ok';
+    const stockDetail = minimum > 0 ? `<span class="cell-secondary">Mínimo: ${new Intl.NumberFormat('es-PY').format(minimum)}</span>` : '';
+    return `<tr><td><strong>${escapeHtml(product.name)}</strong>${product.sku ? `<span class="cell-secondary">SKU: ${escapeHtml(product.sku)}</span>` : ''}</td><td>${escapeHtml(product.category || 'General')}</td><td class="right ${stockClass}">${new Intl.NumberFormat('es-PY').format(stock)}${stockDetail}</td><td class="right">${new Intl.NumberFormat('es-PY').format(product.units)}</td><td class="right amount-income">${money(product.revenue)}</td><td class="right">${product.frequency}</td><td>${formatDate(product.lastSale)}</td><td><span class="status-label ${status.tone}">${status.label}</span><span class="cell-secondary">${status.detail}</span></td><td><button class="table-action" data-edit-product="${product.id}" type="button" aria-label="Editar ${escapeHtml(product.name)}">⋮</button></td></tr>`;
+  }).join('');
   $('#productEmpty').style.display = products.length ? 'none' : 'block';
 }
 
@@ -334,8 +492,25 @@ function renderSettings() {
   $('#mobileBusinessName').textContent = state.business.name;
   $('#businessName').value = state.business.name;
   $('#currency').value = state.business.currency;
+  $('#accountEmail').textContent = currentUser?.email || 'Sesión sin conexión';
+  $('#accountRole').textContent = currentCompany ? roleLabel(currentCompany.role) : '—';
+  $('#memberHelp').textContent = currentCompany ? (isManager() ? 'Como administrador podés editar la empresa, el inventario y compartir el código de acceso.' : 'Podés registrar y revisar movimientos. Un administrador gestiona la empresa y el inventario.') : 'Ingresá a una empresa para administrar sus permisos.';
+  $('#businessName').disabled = remoteReady && !isManager();
+  $('#currency').disabled = remoteReady && !isManager();
+  $('#businessForm button[type="submit"]').disabled = remoteReady && !isManager();
+  $('#newProduct').disabled = remoteReady && !isManager();
+  $$('#productTable [data-edit-product]').forEach((button) => { button.disabled = remoteReady && !isManager(); });
+  const joinCodeBox = $('#joinCodeBox');
+  joinCodeBox.hidden = !remoteReady || !isManager();
+  if (remoteReady && isManager()) loadJoinCode();
   renderSaveStatus();
   renderInstallStatus();
+}
+
+async function loadJoinCode() {
+  if (!currentCompany || !isManager() || cachedJoinCode) return;
+  const { data, error } = await supabaseClient.rpc('get_company_join_code', { p_company_id: currentCompany.id });
+  if (!error && data) { cachedJoinCode = data; $('#companyJoinCode').textContent = data; }
 }
 
 function renderSaveStatus() {
@@ -345,7 +520,7 @@ function renderSaveStatus() {
   const saved = $('#lastSaved');
   if (!dot || !status || !saved) return;
   dot.classList.toggle('offline', !online);
-  status.textContent = online ? 'Guardado en este dispositivo' : 'Modo sin conexión';
+  status.textContent = online ? (remoteReady ? 'Sincronizado con la empresa' : 'Guardado en este dispositivo') : 'Modo sin conexión';
   const savedAt = state.meta?.lastSavedAt ? new Date(state.meta.lastSavedAt) : null;
   saved.textContent = savedAt && !Number.isNaN(savedAt) ? `Actualizado ${savedAt.toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' })}` : 'Actualizado ahora';
 }
@@ -437,12 +612,23 @@ function openMovementDialog(kind = 'income', movement = null) {
 }
 
 function openProductDialog(product = null) {
+  if (remoteReady && !isManager()) { toast('Solo un administrador puede modificar el catálogo y el inventario.'); return; }
   $('#productForm').reset();
   $('#productId').value = product?.id || '';
   $('#productKicker').textContent = product ? 'EDITAR CATÁLOGO' : 'CATÁLOGO';
   $('#productDialogTitle').textContent = product ? 'Actualizar producto' : 'Agregar producto';
   $('#productName').value = product?.name || '';
   $('#productCategory').value = product?.category || '';
+  $('#productSku').value = product?.sku || '';
+  $('#productUnitCost').value = product?.unitCost || '';
+  $('#productSalePrice').value = product?.salePrice || '';
+  $('#productReorderLevel').value = product?.reorderLevel || '';
+  $('#productInitialStock').value = product ? '' : 0;
+  $('#initialStockField').hidden = Boolean(product);
+  $('#stockAdjustmentFields').hidden = !product;
+  $('#productCurrentStock').textContent = new Intl.NumberFormat('es-PY').format(Number(product?.stockOnHand) || 0);
+  $('#productStockAdjustment').value = '';
+  $('#productAdjustmentReason').value = '';
   $('#productFormError').textContent = '';
   $('#productDialog').showModal();
   $('#productName').focus();
@@ -643,6 +829,16 @@ async function exportProfessionalExcel() {
   toast('Reporte Excel profesional descargado.');
 }
 
+async function deleteRemoteMovement(movement) {
+  const { error } = await supabaseClient.rpc('delete_financial_movement', {
+    p_company_id: currentCompany.id,
+    p_movement_id: movement.id
+  });
+  if (error) { toast(remoteErrorMessage(error)); return; }
+  await loadRemoteWorkspace();
+  toast('Movimiento eliminado y stock recalculado.');
+}
+
 function bindEvents() {
   document.addEventListener('click', (event) => {
     const pageTrigger = event.target.closest('[data-page]');
@@ -656,7 +852,10 @@ function bindEvents() {
     const deleteMovement = event.target.closest('[data-delete-movement]');
     if (deleteMovement) {
       const movement = state.moves.find((item) => item.id === deleteMovement.dataset.deleteMovement);
-      if (movement && confirm(`¿Eliminar “${movement.description}”? Esta acción no se puede deshacer.`)) { state.moves = state.moves.filter((item) => item.id !== movement.id); persist(); renderAll(); toast('Movimiento eliminado.'); }
+      if (movement && confirm(`¿Eliminar “${movement.description}”? Esta acción no se puede deshacer.`)) {
+        if (remoteReady) deleteRemoteMovement(movement);
+        else { state.moves = state.moves.filter((item) => item.id !== movement.id); persist(); renderAll(); toast('Movimiento eliminado.'); }
+      }
       return;
     }
     const editProduct = event.target.closest('[data-edit-product]');
@@ -682,7 +881,7 @@ function bindEvents() {
   $$('[name="movementKind"]').forEach((input) => input.addEventListener('change', () => setMovementKind(input.value)));
   ['movementFrom', 'movementTo', 'movementType', 'movementSearch'].forEach((id) => $(`#${id}`).addEventListener(id === 'movementSearch' ? 'input' : 'change', renderMovementTable));
   $('#clearMovementFilters').addEventListener('click', () => { $('#movementFrom').value = ''; $('#movementTo').value = ''; $('#movementType').value = 'all'; $('#movementSearch').value = ''; renderMovementTable(); });
-  $('#movementForm').addEventListener('submit', (event) => {
+  $('#movementForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const kind = $('[name="movementKind"]:checked').value;
     const description = $('#movementDescription').value.trim();
@@ -694,11 +893,35 @@ function bindEvents() {
     if (kind === 'income' && !product) { $('#movementFormError').textContent = 'Indicá el producto o servicio que vendiste.'; return; }
     const id = $('#movementId').value;
     const movement = { id: id || makeId('mov'), kind, description, product: kind === 'income' ? product : '', quantity: kind === 'income' ? quantity : 0, amount, date, category: $('#movementCategory').value, note: $('#movementNote').value.trim(), createdAt: id ? state.moves.find((item) => item.id === id)?.createdAt || new Date().toISOString() : new Date().toISOString() };
+    if (remoteReady) {
+      const productRecord = kind === 'income' ? state.products.find((item) => productKey(item.name) === productKey(product)) : null;
+      if (kind === 'income' && !productRecord) { $('#movementFormError').textContent = 'Primero agregá el producto al catálogo y definí su stock para registrarlo como venta.'; return; }
+      const submitButton = $('#movementForm button[type="submit"]');
+      setButtonBusy(submitButton, true, 'Guardando movimiento…');
+      const { error } = await supabaseClient.rpc('upsert_financial_movement', {
+        p_company_id: currentCompany.id,
+        p_movement_id: id || null,
+        p_kind: kind,
+        p_description: description,
+        p_product_id: productRecord?.id || null,
+        p_quantity: kind === 'income' ? quantity : 0,
+        p_amount: amount,
+        p_occurred_on: date,
+        p_category: $('#movementCategory').value,
+        p_note: $('#movementNote').value.trim()
+      });
+      setButtonBusy(submitButton, false);
+      if (error) { $('#movementFormError').textContent = remoteErrorMessage(error); return; }
+      $('#movementDialog').close();
+      await loadRemoteWorkspace();
+      toast(id ? 'Movimiento actualizado y sincronizado.' : 'Movimiento guardado y sincronizado.');
+      return;
+    }
     if (kind === 'income') addProductIfMissing(product);
     state.moves = id ? state.moves.map((item) => item.id === id ? movement : item) : [...state.moves, movement];
     persist(); $('#movementDialog').close(); renderAll(); toast(id ? 'Movimiento actualizado.' : 'Movimiento guardado.');
   });
-  $('#productForm').addEventListener('submit', (event) => {
+  $('#productForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const id = $('#productId').value;
     const name = $('#productName').value.trim();
@@ -706,6 +929,38 @@ function bindEvents() {
     if (!name) { $('#productFormError').textContent = 'Escribí el nombre del producto o servicio.'; return; }
     const duplicate = state.products.find((product) => productKey(product.name) === productKey(name) && product.id !== id);
     if (duplicate) { $('#productFormError').textContent = 'Ya existe un producto con ese nombre.'; return; }
+    if (remoteReady) {
+      const submitButton = $('#productForm button[type="submit"]');
+      setButtonBusy(submitButton, true, 'Guardando producto…');
+      const { error } = await supabaseClient.rpc('upsert_product', {
+        p_company_id: currentCompany.id,
+        p_product_id: id || null,
+        p_name: name,
+        p_category: category,
+        p_sku: $('#productSku').value.trim() || null,
+        p_unit_cost: Math.max(0, Number($('#productUnitCost').value) || 0),
+        p_sale_price: Math.max(0, Number($('#productSalePrice').value) || 0),
+        p_reorder_level: Math.max(0, Number($('#productReorderLevel').value) || 0),
+        p_initial_stock: id ? 0 : Number($('#productInitialStock').value) || 0
+      });
+      if (error) { setButtonBusy(submitButton, false); $('#productFormError').textContent = remoteErrorMessage(error); return; }
+      const adjustment = Number($('#productStockAdjustment').value) || 0;
+      if (id && adjustment) {
+        const { error: adjustmentError } = await supabaseClient.rpc('adjust_product_inventory', {
+          p_company_id: currentCompany.id,
+          p_product_id: id,
+          p_quantity_delta: adjustment,
+          p_reason: $('#productAdjustmentReason').value.trim() || 'Ajuste manual desde Orden',
+          p_occurred_on: localDate()
+        });
+        if (adjustmentError) { setButtonBusy(submitButton, false); $('#productFormError').textContent = remoteErrorMessage(adjustmentError); return; }
+      }
+      setButtonBusy(submitButton, false);
+      $('#productDialog').close();
+      await loadRemoteWorkspace();
+      toast(id ? 'Producto e inventario actualizados.' : 'Producto agregado al catálogo.');
+      return;
+    }
     if (id) {
       const current = state.products.find((product) => product.id === id);
       if (current) {
@@ -716,7 +971,20 @@ function bindEvents() {
     } else state.products.push({ id: makeId('prod'), name, category, createdAt: new Date().toISOString() });
     persist(); $('#productDialog').close(); renderAll(); toast(id ? 'Producto actualizado.' : 'Producto agregado al catálogo.');
   });
-  $('#businessForm').addEventListener('submit', (event) => { event.preventDefault(); state.business.name = $('#businessName').value.trim() || 'Mi negocio'; state.business.currency = $('#currency').value; persist(); renderAll(); toast('Información de la empresa guardada.'); });
+  $('#businessForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (remoteReady) {
+      const submitButton = $('#businessForm button[type="submit"]');
+      setButtonBusy(submitButton, true, 'Guardando…');
+      const { error } = await supabaseClient.rpc('update_company_profile', { p_company_id: currentCompany.id, p_name: $('#businessName').value.trim() || 'Mi negocio', p_currency: $('#currency').value });
+      setButtonBusy(submitButton, false);
+      if (error) { toast(remoteErrorMessage(error)); return; }
+      await loadRemoteWorkspace();
+      toast('Información de la empresa actualizada.');
+      return;
+    }
+    state.business.name = $('#businessName').value.trim() || 'Mi negocio'; state.business.currency = $('#currency').value; persist(); renderAll(); toast('Información de la empresa guardada.');
+  });
   $('#installApp').addEventListener('click', async () => {
     if (!deferredInstallPrompt) return;
     deferredInstallPrompt.prompt();
@@ -737,7 +1005,79 @@ function bindEvents() {
     };
     reader.readAsText(file);
   });
-  $('#deleteAllData').addEventListener('click', () => { if (confirm('¿Eliminar todos los movimientos y productos? Esta acción no se puede deshacer.')) { state.moves = []; state.products = []; persist(); renderAll(); toast('Todos los datos fueron eliminados.'); } });
+  $('#deleteAllData').addEventListener('click', () => {
+    if (remoteReady) {
+      if (confirm('¿Eliminar la copia local de este dispositivo? Los datos centrales de la empresa no se borrarán.')) { localStorage.removeItem(STORAGE_KEY); toast('La copia local fue eliminada. Tus datos centrales siguen protegidos.'); }
+      return;
+    }
+    if (confirm('¿Eliminar todos los movimientos y productos? Esta acción no se puede deshacer.')) { state.moves = []; state.products = []; persist(); renderAll(); toast('Todos los datos fueron eliminados.'); }
+  });
+  $('#authModeToggle').addEventListener('click', () => {
+    authIsSignup = !authIsSignup;
+    $('#authSwitchText').textContent = authIsSignup ? '¿Ya tenés una cuenta?' : '¿Todavía no tenés cuenta?';
+    $('#authModeToggle').textContent = authIsSignup ? 'Ingresar' : 'Crear cuenta';
+    $('#authSubmit').textContent = authIsSignup ? 'Crear cuenta' : 'Ingresar';
+    $('#authPassword').autocomplete = authIsSignup ? 'new-password' : 'current-password';
+    $('#authError').textContent = '';
+  });
+  $('#authForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!supabaseClient) return;
+    const email = $('#authEmail').value.trim();
+    const password = $('#authPassword').value;
+    if (!email || password.length < 6) { $('#authError').textContent = 'Ingresá un correo válido y una contraseña de al menos 6 caracteres.'; return; }
+    const submitButton = $('#authSubmit');
+    setButtonBusy(submitButton, true, authIsSignup ? 'Creando cuenta…' : 'Ingresando…');
+    const result = authIsSignup
+      ? await supabaseClient.auth.signUp({ email, password })
+      : await supabaseClient.auth.signInWithPassword({ email, password });
+    setButtonBusy(submitButton, false);
+    if (result.error) { $('#authError').textContent = remoteErrorMessage(result.error); return; }
+    if (!result.data.session) {
+      $('#authError').textContent = 'Revisá tu correo para confirmar la cuenta y luego ingresá.';
+      authIsSignup = false;
+      $('#authSwitchText').textContent = '¿Ya tenés una cuenta?';
+      $('#authModeToggle').textContent = 'Crear cuenta';
+      $('#authSubmit').textContent = 'Ingresar';
+      return;
+    }
+    currentUser = result.data.user;
+    try { await loadRemoteWorkspace(); } catch (error) { $('#authError').textContent = remoteErrorMessage(error); }
+  });
+  $$('.onboarding-tabs button').forEach((button) => button.addEventListener('click', () => {
+    $$('.onboarding-tabs button').forEach((item) => item.classList.toggle('active', item === button));
+    $('#createCompanyForm').hidden = button.dataset.onboarding !== 'create';
+    $('#joinCompanyForm').hidden = button.dataset.onboarding !== 'join';
+  }));
+  $('#createCompanyForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = $('#newCompanyName').value.trim();
+    if (!name) { $('#companyCreateError').textContent = 'Escribí el nombre de tu empresa.'; return; }
+    const submitButton = $('#createCompanyForm button[type="submit"]');
+    setButtonBusy(submitButton, true, 'Creando empresa…');
+    const { error } = await supabaseClient.rpc('create_company', { p_name: name, p_currency: $('#newCompanyCurrency').value });
+    setButtonBusy(submitButton, false);
+    if (error) { $('#companyCreateError').textContent = remoteErrorMessage(error); return; }
+    try { await loadRemoteWorkspace(); toast('Empresa creada. Ya podés empezar a registrar operaciones.'); } catch (loadError) { $('#companyCreateError').textContent = remoteErrorMessage(loadError); }
+  });
+  $('#joinCompanyForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const code = $('#joinCompanyCode').value.trim();
+    if (!code) { $('#companyJoinError').textContent = 'Ingresá el código que te compartió el administrador.'; return; }
+    const submitButton = $('#joinCompanyForm button[type="submit"]');
+    setButtonBusy(submitButton, true, 'Uniendo cuenta…');
+    const { error } = await supabaseClient.rpc('join_company_by_code', { p_join_code: code });
+    setButtonBusy(submitButton, false);
+    if (error) { $('#companyJoinError').textContent = remoteErrorMessage(error); return; }
+    try { await loadRemoteWorkspace(); toast('Ya formás parte de la empresa.'); } catch (loadError) { $('#companyJoinError').textContent = remoteErrorMessage(loadError); }
+  });
+  $('#onboardingSignOut').addEventListener('click', signOut);
+  $('#signOut').addEventListener('click', signOut);
+  $('#copyJoinCode').addEventListener('click', async () => {
+    const code = $('#companyJoinCode').textContent;
+    try { await navigator.clipboard.writeText(code); toast('Código copiado. Compartilo solo con tu equipo.'); }
+    catch { toast(`Código de acceso: ${code}`); }
+  });
 }
 
 function setInitialControls() {
@@ -748,8 +1088,8 @@ function setInitialControls() {
 
 setInitialControls();
 bindEvents();
-renderAll();
 registerProgressiveApp();
+startSupabase().catch((error) => { $('#authError').textContent = remoteErrorMessage(error); setOverlay('auth'); });
 const launchParameters = new URLSearchParams(window.location.search);
 if (launchParameters.get('vista') === 'reportes') showPage('reports');
 if (launchParameters.get('accion') === 'venta') window.setTimeout(() => openMovementDialog('income'), 0);

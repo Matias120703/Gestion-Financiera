@@ -16,6 +16,45 @@
   <title>Orden · Gestión empresarial</title>
 </head>
 <body>
+  <section id="authShell" class="auth-shell" aria-live="polite">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="brand-mark">o</span><span>orden</span></div>
+      <p class="eyebrow">GESTIÓN EMPRESARIAL</p>
+      <h1>Tu empresa, conectada.</h1>
+      <p class="subtitle">Ingresá para trabajar con información centralizada, segura y disponible para tu equipo.</p>
+      <form id="authForm" class="auth-form" novalidate>
+        <label>Correo electrónico<input id="authEmail" type="email" autocomplete="email" required placeholder="nombre@empresa.com"></label>
+        <label>Contraseña<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required placeholder="Mínimo 6 caracteres"></label>
+        <p id="authError" class="form-error" role="alert"></p>
+        <button id="authSubmit" class="primary-button full-button" type="submit">Ingresar</button>
+      </form>
+      <p class="auth-switch"><span id="authSwitchText">¿Todavía no tenés cuenta?</span> <button id="authModeToggle" class="text-button" type="button">Crear cuenta</button></p>
+      <p class="auth-note">Tus datos se resguardan por empresa y cada persona accede solo a lo autorizado.</p>
+    </div>
+  </section>
+
+  <section id="onboardingShell" class="auth-shell" hidden aria-live="polite">
+    <div class="auth-card onboarding-card">
+      <div class="auth-brand"><span class="brand-mark">o</span><span>orden</span></div>
+      <p class="eyebrow">PRIMER PASO</p>
+      <h1>Conectá tu empresa.</h1>
+      <p class="subtitle">Creá una empresa nueva o sumate a una existente con el código que te compartió su administrador.</p>
+      <div class="onboarding-tabs" role="tablist"><button class="active" data-onboarding="create" type="button">Crear empresa</button><button data-onboarding="join" type="button">Unirme con código</button></div>
+      <form id="createCompanyForm" class="auth-form">
+        <label>Nombre de la empresa<input id="newCompanyName" maxlength="60" required placeholder="Ej. Perfumería Aurora"></label>
+        <label>Moneda principal<select id="newCompanyCurrency"><option value="PYG">Guaraníes (Gs.)</option><option value="USD">Dólares estadounidenses (US$)</option></select></label>
+        <p id="companyCreateError" class="form-error" role="alert"></p>
+        <button class="primary-button full-button" type="submit">Crear empresa y comenzar</button>
+      </form>
+      <form id="joinCompanyForm" class="auth-form" hidden>
+        <label>Código de empresa<input id="joinCompanyCode" maxlength="24" autocapitalize="characters" required placeholder="Ej. A7F2K9P1"></label>
+        <p id="companyJoinError" class="form-error" role="alert"></p>
+        <button class="primary-button full-button" type="submit">Unirme a la empresa</button>
+      </form>
+      <button id="onboardingSignOut" class="text-button onboarding-signout" type="button">Cerrar sesión</button>
+    </div>
+  </section>
+
   <div class="app-shell">
     <aside class="sidebar" aria-label="Menú principal">
       <div class="brand"><span class="brand-mark">o</span><span>orden</span></div>
@@ -90,7 +129,7 @@
         <header class="page-heading"><div><p class="eyebrow">CATÁLOGO Y ROTACIÓN</p><h1>Productos</h1><p class="subtitle">Detectá qué impulsa tu negocio y qué necesita una decisión.</p></div><button id="newProduct" class="primary-button" type="button">＋ Agregar producto</button></header>
         <section class="product-stat-grid"><article><span>Productos en catálogo</span><strong id="catalogProducts">0</strong><small>Activos para análisis</small></article><article><span>Unidades vendidas</span><strong id="catalogUnits">0</strong><small id="catalogPeriod">En el periodo elegido</small></article><article><span>Con baja rotación</span><strong id="lowRotationCount">0</strong><small>Sin ventas o pocas ventas</small></article><article><span>Sin una venta</span><strong id="neverSoldCount">0</strong><small>Revisar precio, promoción o stock</small></article></section>
         <section class="panel product-intro"><div><h2>Rendimiento por producto</h2><p>La frecuencia se calcula por número de operaciones de venta, no solo por monto.</p></div><span id="productRangeLabel">—</span></section>
-        <section class="table-panel"><div class="table-scroll"><table><thead><tr><th>Producto / servicio</th><th>Categoría</th><th class="right">Unidades</th><th class="right">Facturación</th><th class="right">Frecuencia</th><th>Última venta</th><th>Estado</th><th></th></tr></thead><tbody id="productTable"></tbody></table></div><p id="productEmpty" class="empty-state">Todavía no tenés productos. Agregá uno o registrá una venta.</p></section>
+        <section class="table-panel"><div class="table-scroll"><table><thead><tr><th>Producto / servicio</th><th>Categoría</th><th class="right">Stock</th><th class="right">Unidades</th><th class="right">Facturación</th><th class="right">Frecuencia</th><th>Última venta</th><th>Estado</th><th></th></tr></thead><tbody id="productTable"></tbody></table></div><p id="productEmpty" class="empty-state">Todavía no tenés productos. Agregá uno para comenzar a controlar su venta y stock.</p></section>
       </section>
 
       <section class="page" id="reportsPage">
@@ -103,7 +142,7 @@
 
       <section class="page" id="settingsPage">
         <header class="page-heading"><div><p class="eyebrow">CONFIGURACIÓN</p><h1>Tu empresa</h1><p class="subtitle">Definí cómo se presenta y resguardá su información.</p></div></header>
-        <div class="settings-grid"><form id="businessForm" class="panel form-panel"><h2>Información de la empresa</h2><label>Nombre comercial<input id="businessName" maxlength="60" required placeholder="Ej. Perfumería Aurora"></label><label>Moneda<select id="currency"><option value="PYG">Guaraníes (Gs.)</option><option value="USD">Dólares estadounidenses (US$)</option></select></label><button class="primary-button" type="submit">Guardar cambios</button></form><article class="panel backup-panel"><h2>Respaldo y control</h2><p>Los datos permanecen en este navegador hasta que conectes una base de datos. Descargá una copia antes de cambiar de equipo.</p><button id="exportBackup" class="quiet-button" type="button">↓ Descargar copia de seguridad</button><label class="file-button">↑ Restaurar copia<input id="importBackup" type="file" accept="application/json"></label><button id="deleteAllData" class="danger-button" type="button">Eliminar todos los datos</button></article><article class="panel install-panel"><span class="install-badge">ORDEN EN TU TELÉFONO</span><h2>Usala como una aplicación</h2><p id="installDescription">Instalala en tu dispositivo para abrirla desde el inicio y usarla sin conexión.</p><button id="installApp" class="primary-button" type="button" hidden>Instalar aplicación</button></article></div>
+        <div class="settings-grid"><form id="businessForm" class="panel form-panel"><h2>Información de la empresa</h2><label>Nombre comercial<input id="businessName" maxlength="60" required placeholder="Ej. Perfumería Aurora"></label><label>Moneda<select id="currency"><option value="PYG">Guaraníes (Gs.)</option><option value="USD">Dólares estadounidenses (US$)</option></select></label><button class="primary-button" type="submit">Guardar cambios</button></form><article class="panel account-panel"><h2>Equipo y acceso</h2><p><strong id="accountEmail">—</strong><span id="accountRole" class="account-role">—</span></p><div id="joinCodeBox" class="join-code" hidden><span>Código para sumar al equipo</span><strong id="companyJoinCode">—</strong><button id="copyJoinCode" class="text-button" type="button">Copiar código</button></div><p id="memberHelp">Cada usuario ve solo la información de esta empresa según sus permisos.</p><button id="signOut" class="quiet-button" type="button">Cerrar sesión</button></article><article class="panel backup-panel"><h2>Respaldo y control</h2><p>Descargá una copia de seguridad o un reporte profesional. La información operativa se guarda de forma centralizada en la nube.</p><button id="exportBackup" class="quiet-button" type="button">↓ Descargar copia de seguridad</button><label class="file-button">↑ Restaurar copia local<input id="importBackup" type="file" accept="application/json"></label><button id="deleteAllData" class="danger-button" type="button">Eliminar datos locales</button></article><article class="panel install-panel"><span class="install-badge">ORDEN EN TU TELÉFONO</span><h2>Usala como una aplicación</h2><p id="installDescription">Instalala en tu dispositivo para abrirla desde el inicio y acceder a tu panel rápidamente.</p><button id="installApp" class="primary-button" type="button" hidden>Instalar aplicación</button></article></div>
       </section>
     </main>
   </div>
@@ -117,9 +156,11 @@
 
   <dialog id="movementDialog"><form id="movementForm" novalidate><div class="dialog-heading"><div><p id="movementKicker" class="eyebrow">NUEVO MOVIMIENTO</p><h2 id="movementDialogTitle">Registrar venta</h2></div><button id="closeMovementDialog" class="icon-button" type="button" aria-label="Cerrar">×</button></div><input id="movementId" type="hidden"><fieldset class="kind-picker"><legend>¿Qué querés registrar?</legend><label><input name="movementKind" type="radio" value="income" checked> Ganancia / venta</label><label><input name="movementKind" type="radio" value="expense"> Gasto / pago</label></fieldset><div class="dialog-grid"><label class="wide">Concepto<input id="movementDescription" maxlength="80" required placeholder="Ej. Venta mostrador, compra al proveedor"></label><label class="income-field wide">Producto o servicio<input id="movementProduct" list="productOptions" placeholder="Ej. Perfume Dior Sauvage"></label><datalist id="productOptions"></datalist><label class="income-field">Cantidad<input id="movementQuantity" min="1" step="1" type="number" inputmode="numeric" value="1"></label><label>Monto total<input id="movementAmount" min="1" step="1" type="number" inputmode="numeric" required placeholder="250000"></label><label>Fecha<input id="movementDate" type="date" required></label><label class="wide">Categoría<select id="movementCategory"></select></label><label class="wide">Nota opcional<textarea id="movementNote" maxlength="220" placeholder="Referencia, proveedor o detalle útil"></textarea></label></div><p id="movementFormError" class="form-error" role="alert"></p><button class="primary-button full-button" type="submit">Guardar movimiento</button></form></dialog>
 
-  <dialog id="productDialog"><form id="productForm" novalidate><div class="dialog-heading"><div><p id="productKicker" class="eyebrow">CATÁLOGO</p><h2 id="productDialogTitle">Agregar producto</h2></div><button id="closeProductDialog" class="icon-button" type="button" aria-label="Cerrar">×</button></div><input id="productId" type="hidden"><div class="dialog-grid"><label class="wide">Nombre del producto o servicio<input id="productName" maxlength="80" required placeholder="Ej. Perfume Dior Sauvage"></label><label class="wide">Categoría del producto<input id="productCategory" maxlength="50" placeholder="Ej. Perfumes, tecnología, accesorios"></label></div><p id="productFormError" class="form-error" role="alert"></p><button class="primary-button full-button" type="submit">Guardar producto</button></form></dialog>
+  <dialog id="productDialog"><form id="productForm" novalidate><div class="dialog-heading"><div><p id="productKicker" class="eyebrow">CATÁLOGO</p><h2 id="productDialogTitle">Agregar producto</h2></div><button id="closeProductDialog" class="icon-button" type="button" aria-label="Cerrar">×</button></div><input id="productId" type="hidden"><div class="dialog-grid"><label class="wide">Nombre del producto o servicio<input id="productName" maxlength="80" required placeholder="Ej. Perfume Dior Sauvage"></label><label>Categoría<input id="productCategory" maxlength="50" placeholder="Perfumes, tecnología"></label><label>SKU / código interno<input id="productSku" maxlength="50" placeholder="Ej. PS-100"></label><label>Costo unitario<input id="productUnitCost" min="0" step="1" type="number" inputmode="numeric" placeholder="0"></label><label>Precio de venta<input id="productSalePrice" min="0" step="1" type="number" inputmode="numeric" placeholder="0"></label><label>Stock mínimo<input id="productReorderLevel" min="0" step="1" type="number" inputmode="numeric" placeholder="0"></label><label id="initialStockField">Stock inicial<input id="productInitialStock" step="1" type="number" inputmode="numeric" value="0"></label><div id="stockAdjustmentFields" class="stock-adjustment wide" hidden><p>Stock actual: <strong id="productCurrentStock">0</strong></p><label>Ajustar stock (usá + o −)<input id="productStockAdjustment" step="1" type="number" inputmode="numeric" placeholder="Ej. +10 o -2"></label><label>Motivo del ajuste<input id="productAdjustmentReason" maxlength="120" placeholder="Ej. Conteo físico, ingreso de mercadería"></label></div></div><p id="productFormError" class="form-error" role="alert"></p><button class="primary-button full-button" type="submit">Guardar producto</button></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
