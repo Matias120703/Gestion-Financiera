@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173f31">
+  <meta name="description" content="Sistema de gestión financiera y comercial para empresas.">
+  <link rel="stylesheet" href="styles.css">
+  <title>Orden · Gestión empresarial</title>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Menú principal">
+      <div class="brand"><span class="brand-mark">o</span><span>orden</span></div>
+      <p class="workspace-label">OPERACIONES</p>
+      <nav class="main-nav">
+        <button class="nav-link active" data-page="dashboard"><span>▦</span> Resumen</button>
+        <button class="nav-link" data-page="movements"><span>↕</span> Movimientos</button>
+        <button class="nav-link" data-page="products"><span>◇</span> Productos</button>
+        <button class="nav-link" data-page="reports"><span>▤</span> Reportes</button>
+        <button class="nav-link" data-page="settings"><span>⚙</span> Configuración</button>
+      </nav>
+      <button class="business-card" data-page="settings"><i></i><span><strong id="sideBusinessName">Mi negocio</strong><small>Plan empresarial</small></span><b>›</b></button>
+    </aside>
+
+    <main class="main-content">
+      <header class="mobile-header">
+        <button id="menuButton" type="button" aria-label="Abrir menú">☰</button>
+        <span class="brand"><span class="brand-mark">o</span> orden</span>
+        <button id="mobileNewMovement" type="button" aria-label="Registrar movimiento">＋</button>
+      </header>
+      <nav class="mobile-nav" id="mobileNav" aria-label="Menú móvil">
+        <button data-page="dashboard">Resumen</button><button data-page="movements">Movimientos</button><button data-page="products">Productos</button><button data-page="reports">Reportes</button><button data-page="settings">Configuración</button>
+      </nav>
+
+      <section class="page active" id="dashboardPage">
+        <header class="page-heading">
+          <div><p class="eyebrow">CENTRO DE CONTROL</p><h1>Tu empresa, en claro.</h1><p class="subtitle">Ventas, gastos y productos prioritarios en un solo lugar.</p></div>
+          <button class="primary-button" data-open-movement="income" type="button">＋ Registrar venta</button>
+        </header>
+        <section class="period-panel" aria-label="Rango de fechas del análisis">
+          <div class="period-title"><span class="period-icon">◷</span><div><strong>Periodo de análisis</strong><small id="rangeLabel">—</small></div></div>
+          <div class="preset-group" aria-label="Atajos de periodo"><button data-range="today" type="button">Hoy</button><button data-range="week" type="button">Esta semana</button><button class="is-active" data-range="month" type="button">Este mes</button><button data-range="quarter" type="button">Trimestre</button><button data-range="year" type="button">Año</button></div>
+          <div class="range-inputs"><label>Desde<input id="rangeStart" type="date"></label><label>Hasta<input id="rangeEnd" type="date"></label><button id="applyRange" class="quiet-button" type="button">Aplicar</button></div>
+        </section>
+        <section class="balance-card">
+          <div><p>Saldo disponible acumulado</p><strong id="availableBalance">Gs. 0</strong><span id="balanceStatus">Registrá tu primer movimiento para comenzar.</span></div>
+          <div class="balance-summary"><span>Resultado del periodo</span><b id="balancePeriodResult">Gs. 0</b><small id="balancePeriodTrend">—</small></div>
+          <div class="balance-art" aria-hidden="true"><i></i><i></i><i></i></div>
+        </section>
+        <section class="kpi-grid" aria-label="Indicadores del periodo">
+          <article class="kpi-card income"><span>Ganancias del periodo</span><strong id="incomeKpi">Gs. 0</strong><small id="incomeMovementCount">0 operaciones</small></article>
+          <article class="kpi-card expense"><span>Gastos del periodo</span><strong id="expenseKpi">Gs. 0</strong><small id="expenseMovementCount">0 operaciones</small></article>
+          <article class="kpi-card neutral"><span>Resultado neto</span><strong id="resultKpi">Gs. 0</strong><small>Ganancias − gastos</small></article>
+          <article class="kpi-card neutral"><span>Unidades vendidas</span><strong id="unitsKpi">0</strong><small id="productsSoldCount">0 productos con ventas</small></article>
+        </section>
+        <section class="insight-grid" aria-label="Alertas y hallazgos importantes">
+          <article class="insight-card expense"><div class="insight-head"><span class="insight-icon">↘</span><p>Mayor salida de hoy</p></div><strong id="largestExpenseAmount">Sin gastos hoy</strong><b id="largestExpenseName">—</b><small id="largestExpenseMeta">Registrá gastos para ver el principal.</small></article>
+          <article class="insight-card income"><div class="insight-head"><span class="insight-icon">★</span><p>Producto más vendido</p></div><strong id="topProductName">Sin ventas</strong><b id="topProductAmount">—</b><small id="topProductMeta">Registrá una venta con producto.</small></article>
+          <article class="insight-card alert"><div class="insight-head"><span class="insight-icon">!</span><p>Producto a revisar</p></div><strong id="slowProductName">Sin datos</strong><b id="slowProductStatus">—</b><small id="slowProductMeta">Agregá productos para controlar rotación.</small></article>
+        </section>
+        <section class="dashboard-columns">
+          <article class="panel activity-panel"><div class="panel-heading"><div><h2>Actividad financiera</h2><p>Ganancias y gastos dentro del periodo elegido.</p></div><span class="legend"><i class="income-dot"></i> Ganancias <i class="expense-dot"></i> Gastos</span></div><div id="activityChart" class="activity-chart" role="img" aria-label="Gráfico de actividad financiera"></div></article>
+          <article class="panel"><div class="panel-heading"><div><h2>Alertas de rotación</h2><p>Productos que necesitan atención.</p></div><button class="text-button" data-page="products" type="button">Ver productos</button></div><div id="rotationAlerts" class="compact-list"></div></article>
+        </section>
+        <section class="dashboard-columns lower-columns">
+          <article class="panel"><div class="panel-heading"><div><h2>Productos que más vendés</h2><p>Ranking por facturación del periodo.</p></div><button class="text-button" data-page="products" type="button">Ver análisis</button></div><div id="topProductsList" class="rank-list"></div></article>
+          <article class="panel"><div class="panel-heading"><div><h2>Últimos movimientos</h2><p>Actividad reciente de la empresa.</p></div><button class="text-button" data-page="movements" type="button">Ver todos</button></div><div id="recentMovements" class="compact-list"></div></article>
+        </section>
+      </section>
+
+      <section class="page" id="movementsPage">
+        <header class="page-heading"><div><p class="eyebrow">LIBRO DE MOVIMIENTOS</p><h1>Movimientos</h1><p class="subtitle">Un registro claro de cada entrada y salida de dinero.</p></div><button id="newMovement" class="primary-button" type="button">＋ Nuevo movimiento</button></header>
+        <section class="filter-panel" aria-label="Filtros de movimientos"><label>Desde<input id="movementFrom" type="date"></label><label>Hasta<input id="movementTo" type="date"></label><label>Tipo<select id="movementType"><option value="all">Todos</option><option value="income">Ganancias</option><option value="expense">Gastos</option></select></label><label>Buscar<input id="movementSearch" type="search" placeholder="Producto, concepto o categoría"></label><button id="clearMovementFilters" class="quiet-button" type="button">Limpiar</button></section>
+        <section class="table-panel"><div class="table-summary"><span id="movementCount">0 movimientos</span><span id="movementRangeSummary">—</span></div><div class="table-scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Producto / servicio</th><th>Categoría</th><th class="right">Cantidad</th><th class="right">Monto</th><th></th></tr></thead><tbody id="movementTable"></tbody></table></div><p id="movementEmpty" class="empty-state">No hay movimientos para estos filtros.</p></section>
+      </section>
+
+      <section class="page" id="productsPage">
+        <header class="page-heading"><div><p class="eyebrow">CATÁLOGO Y ROTACIÓN</p><h1>Productos</h1><p class="subtitle">Detectá qué impulsa tu negocio y qué necesita una decisión.</p></div><button id="newProduct" class="primary-button" type="button">＋ Agregar producto</button></header>
+        <section class="product-stat-grid"><article><span>Productos en catálogo</span><strong id="catalogProducts">0</strong><small>Activos para análisis</small></article><article><span>Unidades vendidas</span><strong id="catalogUnits">0</strong><small id="catalogPeriod">En el periodo elegido</small></article><article><span>Con baja rotación</span><strong id="lowRotationCount">0</strong><small>Sin ventas o pocas ventas</small></article><article><span>Sin una venta</span><strong id="neverSoldCount">0</strong><small>Revisar precio, promoción o stock</small></article></section>
+        <section class="panel product-intro"><div><h2>Rendimiento por producto</h2><p>La frecuencia se calcula por número de operaciones de venta, no solo por monto.</p></div><span id="productRangeLabel">—</span></section>
+        <section class="table-panel"><div class="table-scroll"><table><thead><tr><th>Producto / servicio</th><th>Categoría</th><th class="right">Unidades</th><th class="right">Facturación</th><th class="right">Frecuencia</th><th>Última venta</th><th>Estado</th><th></th></tr></thead><tbody id="productTable"></tbody></table></div><p id="productEmpty" class="empty-state">Todavía no tenés productos. Agregá uno o registrá una venta.</p></section>
+      </section>
+
+      <section class="page" id="reportsPage">
+        <header class="page-heading"><div><p class="eyebrow">REPORTE EJECUTIVO</p><h1>Reportes para decidir</h1><p class="subtitle">El mismo periodo que ves en el panel, listo para compartir.</p></div><div class="report-actions"><button id="exportExcel" class="primary-button" type="button">↓ Exportar Excel profesional</button><button id="printReport" class="quiet-button" type="button">Imprimir</button></div></header>
+        <section class="report-period"><span>Periodo del reporte</span><strong id="reportRangeLabel">—</strong><button data-page="dashboard" class="text-button" type="button">Cambiar fechas</button></section>
+        <section class="report-kpis"><article><span>Facturación</span><strong id="reportIncome">Gs. 0</strong></article><article><span>Egresos</span><strong id="reportExpense">Gs. 0</strong></article><article><span>Resultado</span><strong id="reportResult">Gs. 0</strong></article><article><span>Margen operativo</span><strong id="reportMargin">—</strong></article></section>
+        <section class="dashboard-columns"><article class="panel"><div class="panel-heading"><div><h2>Composición de gastos</h2><p>Principales categorías dentro del periodo.</p></div></div><div id="expenseCategories" class="category-list"></div></article><article class="panel"><div class="panel-heading"><div><h2>Desempeño comercial</h2><p>Productos con mayor facturación.</p></div></div><div id="reportProductRanking" class="rank-list"></div></article></section>
+        <section class="panel executive-note"><div class="note-mark">i</div><div><h2>Qué incluye el Excel</h2><p>Un resumen ejecutivo, libro completo de movimientos, rendimiento por producto y una hoja de control para revisión administrativa.</p></div></section>
+      </section>
+
+      <section class="page" id="settingsPage">
+        <header class="page-heading"><div><p class="eyebrow">CONFIGURACIÓN</p><h1>Tu empresa</h1><p class="subtitle">Definí cómo se presenta y resguardá su información.</p></div></header>
+        <div class="settings-grid"><form id="businessForm" class="panel form-panel"><h2>Información de la empresa</h2><label>Nombre comercial<input id="businessName" maxlength="60" required placeholder="Ej. Perfumería Aurora"></label><label>Moneda<select id="currency"><option value="PYG">Guaraníes (Gs.)</option><option value="USD">Dólares estadounidenses (US$)</option></select></label><button class="primary-button" type="submit">Guardar cambios</button></form><article class="panel backup-panel"><h2>Respaldo y control</h2><p>Los datos permanecen en este navegador hasta que conectes una base de datos. Descargá una copia antes de cambiar de equipo.</p><button id="exportBackup" class="quiet-button" type="button">↓ Descargar copia de seguridad</button><label class="file-button">↑ Restaurar copia<input id="importBackup" type="file" accept="application/json"></label><button id="deleteAllData" class="danger-button" type="button">Eliminar todos los datos</button></article></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="movementDialog"><form id="movementForm" novalidate><div class="dialog-heading"><div><p id="movementKicker" class="eyebrow">NUEVO MOVIMIENTO</p><h2 id="movementDialogTitle">Registrar venta</h2></div><button id="closeMovementDialog" class="icon-button" type="button" aria-label="Cerrar">×</button></div><input id="movementId" type="hidden"><fieldset class="kind-picker"><legend>¿Qué querés registrar?</legend><label><input name="movementKind" type="radio" value="income" checked> Ganancia / venta</label><label><input name="movementKind" type="radio" value="expense"> Gasto / pago</label></fieldset><div class="dialog-grid"><label class="wide">Concepto<input id="movementDescription" maxlength="80" required placeholder="Ej. Venta mostrador, compra al proveedor"></label><label class="income-field wide">Producto o servicio<input id="movementProduct" list="productOptions" placeholder="Ej. Perfume Dior Sauvage"></label><datalist id="productOptions"></datalist><label class="income-field">Cantidad<input id="movementQuantity" min="1" step="1" type="number" inputmode="numeric" value="1"></label><label>Monto total<input id="movementAmount" min="1" step="1" type="number" inputmode="numeric" required placeholder="250000"></label><label>Fecha<input id="movementDate" type="date" required></label><label class="wide">Categoría<select id="movementCategory"></select></label><label class="wide">Nota opcional<textarea id="movementNote" maxlength="220" placeholder="Referencia, proveedor o detalle útil"></textarea></label></div><p id="movementFormError" class="form-error" role="alert"></p><button class="primary-button full-button" type="submit">Guardar movimiento</button></form></dialog>
+
+  <dialog id="productDialog"><form id="productForm" novalidate><div class="dialog-heading"><div><p id="productKicker" class="eyebrow">CATÁLOGO</p><h2 id="productDialogTitle">Agregar producto</h2></div><button id="closeProductDialog" class="icon-button" type="button" aria-label="Cerrar">×</button></div><input id="productId" type="hidden"><div class="dialog-grid"><label class="wide">Nombre del producto o servicio<input id="productName" maxlength="80" required placeholder="Ej. Perfume Dior Sauvage"></label><label class="wide">Categoría del producto<input id="productCategory" maxlength="50" placeholder="Ej. Perfumes, tecnología, accesorios"></label></div><p id="productFormError" class="form-error" role="alert"></p><button class="primary-button full-button" type="submit">Guardar producto</button></form></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
