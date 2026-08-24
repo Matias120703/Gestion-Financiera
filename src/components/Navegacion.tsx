@@ -167,14 +167,30 @@ export function NavInferior() {
           className="fixed inset-0 z-40 bg-tinta/45 backdrop-blur-[2px] lg:hidden"
           onClick={() => setAbierto(false)}
         >
+          {/*
+            La hoja se desliza. En un celular chico, o en un idioma con
+            palabras largas, las diez secciones no entran de una: sin scroll,
+            la última fila queda escondida detrás de la barra y parece que no
+            existe. `max-h` la limita a tres cuartos de pantalla y el grid se
+            desplaza adentro.
+          */}
           <div
-            className="zona-segura-abajo absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-4 pb-[calc(72px+env(safe-area-inset-bottom))] shadow-tarjeta aparecer"
+            className="absolute inset-x-0 bottom-0 flex max-h-[78vh] flex-col rounded-t-3xl bg-white pt-4 shadow-tarjeta aparecer"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-borde" />
-            <p className="titulo-seccion px-1 pb-2">{t.nav.todasLasSecciones}</p>
+            <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-borde" />
+            <p className="titulo-seccion shrink-0 px-5 pb-2">{t.nav.todasLasSecciones}</p>
 
-            <div className="grid grid-cols-3 gap-1.5">
+            {/*
+              El relleno de abajo tiene que dejar pasar la barra de navegación
+              ENTERA, que en pantallas angostas puede tener la etiqueta en dos
+              líneas, más la franja del gesto del iPhone. Con menos, el último
+              cuadro queda tapado justo cuando alguien lo va a tocar.
+            */}
+            <div
+              className="grid min-h-0 grid-cols-3 gap-1.5 overflow-y-auto overscroll-contain px-4"
+              style={{ paddingBottom: 'calc(84px + env(safe-area-inset-bottom))' }}
+            >
               {todos.map((i) => {
                 const on = activo(ruta, i.href);
                 return (
@@ -219,7 +235,10 @@ export function NavInferior() {
                 }`}
               >
                 {i.icono}
-                {i.texto}
+                {/* Etiqueta corta solo acá abajo: «Cierre del día» se partía
+                    en dos líneas, hacía la barra más alta que el resto y
+                    empujaba la hoja de «Más» fuera de la pantalla. */}
+                {i.href === '/cierre' ? t.nav.cierreCorto : i.texto}
               </Link>
             );
           })}

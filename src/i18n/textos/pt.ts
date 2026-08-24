@@ -41,6 +41,8 @@ export const pt: Parcial<Textos> = {
     reportes: 'Relatórios',
     ajustes: 'Ajustes',
     cierre: 'Fechamento do dia',
+    cierreCorto: 'Fecho',
+
     plan: 'Meu plano',
     miCuenta: 'Minha conta',
     cambiarEmpresa: 'Trocar de negócio',

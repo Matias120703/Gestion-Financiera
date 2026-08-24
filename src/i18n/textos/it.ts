@@ -40,6 +40,8 @@ export const it: Parcial<Textos> = {
     reportes: 'Report',
     ajustes: 'Impostazioni',
     cierre: 'Chiusura del giorno',
+    cierreCorto: 'Chiusura',
+
     plan: 'Il mio piano',
     miCuenta: 'Il mio account',
     cambiarEmpresa: 'Cambia attività',

@@ -55,6 +55,8 @@ export const en: Textos = {
     reportes: 'Reports',
     ajustes: 'Settings',
     cierre: 'Daily close',
+    cierreCorto: 'Close',
+
     plan: 'My plan',
     miCuenta: 'My account',
     cambiarEmpresa: 'Switch business',

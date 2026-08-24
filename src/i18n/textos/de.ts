@@ -40,6 +40,8 @@ export const de: Parcial<Textos> = {
     reportes: 'Berichte',
     ajustes: 'Einstellungen',
     cierre: 'Tagesabschluss',
+    cierreCorto: 'Abschluss',
+
     plan: 'Mein Tarif',
     miCuenta: 'Mein Konto',
     cambiarEmpresa: 'Betrieb wechseln',

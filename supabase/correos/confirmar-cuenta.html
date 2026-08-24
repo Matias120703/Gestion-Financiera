@@ -1,0 +1,90 @@
+<!--
+  ORDEN · Confirmar la cuenta
+  Va en: Supabase → Authentication → Emails → "Confirm signup"
+  Asunto sugerido: Confirmá tu correo para entrar a Orden
+
+  Escrito con tablas y estilos en línea a propósito. No es 2005: es que
+  Gmail borra los <style> del <head> en varias de sus vistas y ningún
+  cliente de correo soporta flexbox ni grid. Un diseño "moderno" llega roto
+  a la mitad de las bandejas.
+
+  Variables de Supabase que se usan acá:
+    {{ .ConfirmationURL }}  enlace que confirma la cuenta
+    {{ .Email }}            a quién se le mandó
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f5;margin:0;padding:28px 12px;">
+<tr><td align="center">
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #e3e7e4;border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+    <!-- Marca -->
+    <tr><td style="padding:26px 28px 0;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:#17795a;border-radius:10px;width:34px;height:34px;text-align:center;vertical-align:middle;">
+          <span style="color:#ffffff;font-size:17px;font-weight:800;line-height:34px;">o</span>
+        </td>
+        <td style="padding-left:10px;">
+          <span style="font-size:16px;font-weight:700;color:#0d1b16;letter-spacing:-.01em;">orden</span>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Mensaje -->
+    <tr><td style="padding:22px 28px 0;">
+      <h1 style="margin:0;font-size:21px;line-height:1.3;color:#0d1b16;letter-spacing:-.01em;">
+        Confirmá tu correo
+      </h1>
+      <p style="margin:10px 0 0;font-size:14.5px;line-height:1.6;color:#4a5a52;">
+        Se creó una cuenta en Orden con esta dirección. Tocá el botón y ya podés
+        empezar a registrar tus ventas y tus gastos.
+      </p>
+    </td></tr>
+
+    <!-- Botón -->
+    <tr><td style="padding:22px 28px 0;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:#17795a;border-radius:10px;">
+          <a href="{{ .ConfirmationURL }}"
+             style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">
+            Confirmar mi correo
+          </a>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Enlace de respaldo. Algunos clientes de correo bloquean los botones
+         o los convierten en texto; sin esta línea, esa persona queda trabada. -->
+    <tr><td style="padding:18px 28px 0;">
+      <p style="margin:0;font-size:12px;line-height:1.6;color:#8a978f;">
+        Si el botón no funciona, copiá y pegá este enlace en tu navegador:
+      </p>
+      <p style="margin:5px 0 0;font-size:12px;line-height:1.5;word-break:break-all;">
+        <a href="{{ .ConfirmationURL }}" style="color:#17795a;text-decoration:underline;">{{ .ConfirmationURL }}</a>
+      </p>
+    </td></tr>
+
+    <!-- Qué hacer si no fue tuyo -->
+    <tr><td style="padding:20px 28px 26px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f5;border-radius:10px;">
+        <tr><td style="padding:12px 14px;">
+          <p style="margin:0;font-size:12.5px;line-height:1.6;color:#4a5a52;">
+            <strong style="color:#0d1b16;">¿No fuiste vos?</strong>
+            Ignorá este mensaje. Sin confirmar, la cuenta no se activa y nadie
+            puede entrar con tu correo.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+
+    <!-- Pie -->
+    <tr><td style="padding:0 28px 24px;border-top:1px solid #e3e7e4;">
+      <p style="margin:16px 0 0;font-size:11.5px;line-height:1.6;color:#8a978f;">
+        Enviado a {{ .Email }} porque se usó esta dirección para crear una cuenta en Orden.
+        El enlace vence en 24 horas.
+      </p>
+    </td></tr>
+
+  </table>
+
+</td></tr>
+</table>

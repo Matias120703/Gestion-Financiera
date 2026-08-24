@@ -61,6 +61,8 @@ export const es = {
     reportes: 'Reportes',
     ajustes: 'Ajustes',
     cierre: 'Cierre del día',
+    cierreCorto: 'Cierre',
+
     plan: 'Mi plan',
     miCuenta: 'Mi cuenta',
     cambiarEmpresa: 'Cambiar de empresa',
