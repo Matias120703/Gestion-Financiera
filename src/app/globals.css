@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+html, body { height: 100%; }
+
+body {
+  @apply bg-arena text-tinta antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Respeta el notch del iPhone cuando está instalada como app */
+.zona-segura-abajo { padding-bottom: env(safe-area-inset-bottom); }
+.zona-segura-arriba { padding-top: env(safe-area-inset-top); }
+
+@layer components {
+  .tarjeta {
+    @apply rounded-2xl border border-borde bg-white shadow-tarjeta;
+  }
+
+  .boton {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+           transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .boton-principal { @apply boton bg-verde text-white hover:bg-verde-fuerte; }
+  .boton-suave     { @apply boton border border-borde bg-white text-tinta hover:bg-arena; }
+  .boton-peligro   { @apply boton bg-rojo text-white hover:opacity-90; }
+  .boton-texto     { @apply text-sm font-semibold text-verde hover:underline; }
+
+  /*
+   * 16px no es capricho: iOS hace zoom automático al enfocar cualquier input
+   * con menos de 16px. Con 15px la pantalla saltaba en cada campo.
+   */
+  .campo {
+    @apply w-full rounded-xl border border-borde bg-white px-3.5 py-2.5 text-[16px] text-tinta
+           outline-none transition placeholder:text-tinta/35
+           focus:border-verde focus:ring-2 focus:ring-verde/15;
+  }
+
+  /* Chip seleccionable: método de cobro, categoría de gasto. Alto de 44px
+     para que se pueda tocar con el pulgar sin errar. */
+  .chip {
+    @apply inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl border px-4
+           text-[14px] font-semibold transition active:scale-[.97];
+  }
+  .chip-apagado { @apply chip border-borde bg-white text-tinta/60; }
+  .chip-encendido { @apply chip border-verde bg-verde text-white; }
+
+  /* Botón de icono con área táctil de verdad (44px), no de 24. */
+  .icono-toque {
+    @apply grid h-11 w-11 place-items-center rounded-xl transition active:scale-95;
+  }
+
+  .etiqueta {
+    @apply mb-1.5 block text-[13px] font-semibold text-tinta/70;
+  }
+
+  .titulo-seccion {
+    @apply text-[11px] font-bold uppercase tracking-[.14em] text-tinta/45;
+  }
+
+  .pastilla {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold;
+  }
+
+  /* Oculta la barra de scroll pero deja el desplazamiento */
+  .scroll-limpio { scrollbar-width: none; -ms-overflow-style: none; }
+  .scroll-limpio::-webkit-scrollbar { display: none; }
+
+  .tabla { @apply w-full border-collapse text-sm; }
+  .tabla thead th {
+    @apply border-b border-borde px-3 py-2.5 text-left text-[12px] font-bold uppercase tracking-wider text-tinta/50;
+  }
+  .tabla tbody td { @apply border-b border-borde/60 px-3 py-2.5 align-middle; }
+  .tabla tbody tr:last-child td { @apply border-b-0; }
+  .num { @apply text-right tabular-nums; }
+}
+
+@keyframes aparecer {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.aparecer { animation: aparecer .22s ease-out both; }
+
+@keyframes subir {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: none; }
+}
+.subir { animation: subir .18s ease-out both; }
+
+@keyframes destello {
+  0%   { opacity: 0; transform: translateY(-8px) scale(.98); }
+  12%  { opacity: 1; transform: none; }
+  85%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+.destello { animation: destello 3.2s ease-out both; }
+
+@keyframes pulso-grabando {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(192,57,43,.45); }
+  50%      { transform: scale(1.04); box-shadow: 0 0 0 14px rgba(192,57,43,0); }
+}
+.grabando { animation: pulso-grabando 1.4s ease-in-out infinite; }

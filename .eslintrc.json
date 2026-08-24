@@ -1,0 +1,4 @@
+{
+  "extends": "next/core-web-vitals",
+  "ignorePatterns": ["v1-legacy/**", ".compilado/**", "pruebas/**", "supabase/**"]
+}

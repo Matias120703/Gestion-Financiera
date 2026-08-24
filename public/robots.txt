@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /panel
+Disallow: /vender
+Disallow: /gastos
+Disallow: /productos
+Disallow: /movimientos
+Disallow: /reto
+Disallow: /reportes
+Disallow: /ajustes
+Disallow: /api

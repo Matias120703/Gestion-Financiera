@@ -1,0 +1,19 @@
+node_modules
+.next
+out
+.env
+.env.local
+.DS_Store
+*.log
+.vercel
+.compilado
+
+# Nunca subir secretos
+.env*.local
+
+.env.local
+.next/
+node_modules/
+*.tsbuildinfo
+.compilado/
+.claude/
