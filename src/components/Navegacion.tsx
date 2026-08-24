@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa } from '@/lib/tipos';
@@ -55,6 +55,17 @@ const Ico = {
       <circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 1.8" />
     </svg>
   ),
+  mas: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" />
+    </svg>
+  ),
+  plan: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="M3.5 8.5h17v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
+      <path d="M3.5 11.5h17M7 15.5h3" /><path d="M6.5 8.5V6.8A1.3 1.3 0 0 1 7.8 5.5h8.4a1.3 1.3 0 0 1 1.3 1.3v1.7" />
+    </svg>
+  ),
   ajustes: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <circle cx="12" cy="12" r="3" />
@@ -83,11 +94,19 @@ export function itemsDe(t: Textos): ItemNav[] {
 }
 
 /**
- * Qué va en la barra de abajo del celular. El cierre entra y los reportes
- * salen: el cierre se toca todos los días desde la calle, los reportes se
- * miran sentado y con tiempo, casi siempre desde una computadora.
+ * Qué va fijo en la barra de abajo del celular.
+ *
+ * Son CUATRO y no las nueve, y no es por ahorrar: en un celular de 375 px,
+ * nueve iconos quedan a 41 px cada uno. El mínimo para tocar sin errar con el
+ * pulgar es 44, y las etiquetas no entrarían. El quinto lugar es «Más», que
+ * abre TODAS las secciones —incluidas estas cuatro— en una hoja con espacio
+ * de sobra. Todo queda a un toque, que es lo que importa.
+ *
+ * Estas cuatro son las de todos los días: mirar cómo va, vender, cargar un
+ * gasto y cerrar el día. Productos, reportes y ajustes se tocan de vez en
+ * cuando y casi siempre sentado.
  */
-const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre', '/movimientos'];
+const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre'];
 
 function activo(ruta: string, href: string) {
   return ruta === href || ruta.startsWith(`${href}/`);
@@ -127,26 +146,99 @@ export function NavLateral({ empresa }: { empresa: Empresa }) {
 export function NavInferior() {
   const ruta = usePathname();
   const t = useTextos();
-  const items = itemsDe(t).filter((i) => EN_BARRA_INFERIOR.includes(i.href));
+  const [abierto, setAbierto] = useState(false);
+
+  const todos = itemsDe(t);
+  const fijos = todos.filter((i) => EN_BARRA_INFERIOR.includes(i.href));
+
+  // «Más» se marca en verde cuando estás parado en una sección que no está
+  // fija abajo. Si no, al entrar a Productos la barra no señalaría nada y
+  // parecería que estás en ningún lado.
+  const enOtraSeccion = !EN_BARRA_INFERIOR.some((href) => activo(ruta, href));
+
+  // El menú se cierra solo al navegar. Sin esto queda tapando la pantalla
+  // a la que acabás de entrar.
+  useEffect(() => { setAbierto(false); }, [ruta]);
+
   return (
-    <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-40 border-t border-borde bg-white/95 backdrop-blur lg:hidden">
-      <div className="mx-auto grid max-w-lg grid-cols-5">
-        {items.map((i) => {
-          const on = activo(ruta, i.href);
-          return (
-            <Link
-              key={i.href} href={i.href}
-              className={`flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-bold transition ${
-                on ? 'text-verde-fuerte' : 'text-tinta/40'
-              }`}
-            >
-              {i.icono}
-              {i.texto}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+    <>
+      {abierto && (
+        <div
+          className="fixed inset-0 z-40 bg-tinta/45 backdrop-blur-[2px] lg:hidden"
+          onClick={() => setAbierto(false)}
+        >
+          <div
+            className="zona-segura-abajo absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-4 pb-[calc(72px+env(safe-area-inset-bottom))] shadow-tarjeta aparecer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-borde" />
+            <p className="titulo-seccion px-1 pb-2">{t.nav.todasLasSecciones}</p>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {todos.map((i) => {
+                const on = activo(ruta, i.href);
+                return (
+                  <Link
+                    key={i.href}
+                    href={i.href}
+                    onClick={() => setAbierto(false)}
+                    className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                      on ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
+                    }`}
+                  >
+                    {i.icono}
+                    <span className="px-0.5">{i.texto}</span>
+                  </Link>
+                );
+              })}
+
+              <Link
+                href="/plan"
+                onClick={() => setAbierto(false)}
+                className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                  activo(ruta, '/plan') ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
+                }`}
+              >
+                {Ico.plan}
+                <span className="px-0.5">{t.nav.plan}</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 border-t border-borde bg-white/95 backdrop-blur lg:hidden">
+        <div className="mx-auto grid max-w-lg grid-cols-5">
+          {fijos.map((i) => {
+            const on = activo(ruta, i.href);
+            return (
+              <Link
+                key={i.href} href={i.href}
+                className={`flex flex-col items-center gap-1 px-1 py-2.5 text-center text-[10.5px] font-bold leading-tight transition ${
+                  on ? 'text-verde-fuerte' : 'text-tinta/40'
+                }`}
+              >
+                {i.icono}
+                {i.texto}
+              </Link>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setAbierto((v) => !v)}
+            aria-expanded={abierto}
+            aria-label={t.nav.todasLasSecciones}
+            className={`flex flex-col items-center gap-1 px-1 py-2.5 text-center text-[10.5px] font-bold leading-tight transition ${
+              abierto || enOtraSeccion ? 'text-verde-fuerte' : 'text-tinta/40'
+            }`}
+          >
+            {Ico.mas}
+            {t.nav.mas}
+          </button>
+        </div>
+      </nav>
+    </>
   );
 }
 

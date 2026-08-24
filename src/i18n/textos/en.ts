@@ -59,6 +59,9 @@ export const en: Textos = {
     miCuenta: 'My account',
     cambiarEmpresa: 'Switch business',
     activa: 'active',
+    mas: 'More',
+    todasLasSecciones: 'All sections',
+
     salir: 'Sign out',
   },
 
@@ -179,6 +182,19 @@ export const en: Textos = {
     pushNoSoportado: "This browser doesn't support notifications.",
     pushIphone: 'On iPhone you need to add Orden to your home screen to get notifications.',
     guardado: 'Saved',
+  },
+
+  equipo: {
+    titulo: 'Team',
+    vos: '(you)',
+    desde: 'Since',
+    quitar: 'Remove from team',
+    quitarConfirmar: (nombre: string) => `Remove ${nombre} from the team? They lose access immediately. Everything they recorded stays as is.`,
+    quitado: (nombre: string) => `${nombre} is no longer on the team.`,
+    rotar: 'Change the code',
+    rotarConfirmar: 'Generate a new code? The current one stops working and you will need to share the new one.',
+    rotarListo: 'New code generated.',
+    soloPropietario: 'Only the owner can change it.',
   },
 
   errores: {

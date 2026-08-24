@@ -571,6 +571,55 @@ async function principal() {
       'iniciar sesión');
   }
 
+  // =====================================================================
+  grupo('12 · `anon` no puede ejecutar nada que escriba');
+  // =====================================================================
+  {
+    // PostgreSQL otorga EXECUTE sobre toda función nueva al pseudo-rol
+    // PUBLIC, y `anon` —el rol de quien NO inició sesión— lo hereda de ahí.
+    // Si una migración futura crea una función y se olvida de revocarle a
+    // PUBLIC, esa función queda expuesta en internet sin que nadie lo note.
+    //
+    // Las funciones igual se defienden solas (`if auth.uid() is null then
+    // raise`), pero esa defensa está a una línea de distancia de que alguien
+    // la borre editando el cuerpo. El permiso es la segunda pared.
+    const permitidasParaAnon = ['lista_precios'];
+
+    const expuestas = (await db.query(`
+      select p.proname
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and p.prosecdef
+        and has_function_privilege('anon', p.oid, 'EXECUTE')
+      order by 1
+    `)).rows.map((r) => r.proname);
+
+    const inesperadas = expuestas.filter((f) => !permitidasParaAnon.includes(f));
+    ok('ninguna función SECURITY DEFINER de más está abierta a anon', inesperadas, []);
+    ok('y la lista de precios sí lo está, a propósito',
+      expuestas.includes('lista_precios'), true);
+
+    // Y aunque la llame, no escribe: la guarda interna sigue estando.
+    rechazado('anon llamando a registrar_venta',
+      await H.intentarComo(db, 'anon', null, () =>
+        db.query("select public.registrar_venta($1, '[]'::jsonb)", [A.empresaId])),
+      'permission denied|iniciar sesión');
+
+    // Ninguna función nueva debería quedar sin search_path fijo: sin él, el
+    // esquema que resuelve cada nombre depende de quién la llame.
+    const sinRuta = (await db.query(`
+      select p.proname
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and p.prosecdef
+        and not exists (
+          select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%'
+        )
+      order by 1
+    `)).rows.map((r) => r.proname);
+    ok('toda función SECURITY DEFINER tiene search_path fijo', sinRuta, []);
+  }
+
   console.log(`\n${'═'.repeat(62)}`);
   console.log(fallos === 0
     ? `>>> ${corridas} COMPROBACIONES DE PERMISOS PASARON`

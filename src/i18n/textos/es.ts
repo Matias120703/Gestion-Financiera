@@ -65,6 +65,9 @@ export const es = {
     miCuenta: 'Mi cuenta',
     cambiarEmpresa: 'Cambiar de empresa',
     activa: 'activa',
+    mas: 'Más',
+    todasLasSecciones: 'Todas las secciones',
+
     salir: 'Cerrar sesión',
   },
 
@@ -186,6 +189,19 @@ export const es = {
     pushNoSoportado: 'Este navegador no admite avisos.',
     pushIphone: 'En iPhone hay que agregar Orden a la pantalla de inicio para recibir avisos.',
     guardado: 'Guardado',
+  },
+
+  equipo: {
+    titulo: 'Equipo',
+    vos: '(vos)',
+    desde: 'Desde',
+    quitar: 'Sacar del equipo',
+    quitarConfirmar: (nombre: string) => `¿Sacar a ${nombre} del equipo? Va a perder el acceso al instante. Todo lo que cargó queda como está.`,
+    quitado: (nombre: string) => `${nombre} ya no está en el equipo.`,
+    rotar: 'Cambiar el código',
+    rotarConfirmar: '¿Generar un código nuevo? El actual deja de funcionar y va a haber que pasarle el nuevo a todo el que falte sumar.',
+    rotarListo: 'Código nuevo generado.',
+    soloPropietario: 'Solo el propietario puede cambiarlo.',
   },
 
   errores: {

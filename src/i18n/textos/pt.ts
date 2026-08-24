@@ -45,6 +45,9 @@ export const pt: Parcial<Textos> = {
     miCuenta: 'Minha conta',
     cambiarEmpresa: 'Trocar de negócio',
     activa: 'ativa',
+    mas: 'Mais',
+    todasLasSecciones: 'Todas as seções',
+
     salir: 'Sair',
   },
 

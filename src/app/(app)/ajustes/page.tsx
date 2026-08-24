@@ -8,6 +8,7 @@ import { textos } from '@/i18n';
 import { FICHA } from '@/i18n/idiomas';
 import { SelectorIdioma, AjustesDeAvisos } from '@/components/Preferencias';
 import { SelectorZona } from '@/components/SelectorZona';
+import { ListaEquipo, RotarCodigo } from '@/components/Equipo';
 import { TarjetaPlan } from '@/components/TarjetaPlan';
 import type { Preferencias } from '@/lib/tipos';
 
@@ -53,7 +54,13 @@ export default async function PaginaAjustes() {
         <Seccion titulo="Sumar gente al equipo">
           <div className="px-4 pb-4 pt-2">
             {ctx.esAdmin && ctx.codigoAcceso ? (
-              <CodigoEquipo codigo={ctx.codigoAcceso} />
+              <>
+                <CodigoEquipo codigo={ctx.codigoAcceso} />
+                <RotarCodigo
+                  empresaId={ctx.empresa.id}
+                  esPropietario={ctx.miembro.rol === 'propietario'}
+                />
+              </>
             ) : (
               <p className="text-[13.5px] leading-relaxed text-tinta/55">
                 Solo los administradores pueden ver el código para sumar colaboradores.
@@ -63,28 +70,13 @@ export default async function PaginaAjustes() {
         </Seccion>
       </div>
 
-      <Seccion titulo={`Equipo · ${equipo.length} persona${equipo.length === 1 ? '' : 's'}`}>
-        <ul className="divide-y divide-borde">
-          {equipo.map((p) => (
-            <li key={p.id} className="flex items-center gap-3 px-4 py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-tinta text-[13px] font-bold text-white">
-                {p.nombre.charAt(0).toUpperCase()}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-semibold">
-                  {p.nombre}
-                  {p.user_id === ctx.userId && <span className="ml-1.5 text-[12px] font-normal text-tinta/40">(vos)</span>}
-                </p>
-                <p className="text-[12px] text-tinta/45">Desde {fechaLegible(p.created_at.slice(0, 10))}</p>
-              </div>
-              <span className={`pastilla shrink-0 ${
-                p.rol === 'propietario' ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/55'
-              }`}>
-                {ROLES[p.rol] ?? p.rol}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <Seccion titulo={`${t.equipo.titulo} · ${equipo.length} persona${equipo.length === 1 ? '' : 's'}`}>
+        <ListaEquipo
+          miembros={equipo}
+          empresaId={ctx.empresa.id}
+          miUserId={ctx.userId}
+          miRol={ctx.miembro.rol}
+        />
       </Seccion>
 
       <Seccion titulo="Estado del sistema">

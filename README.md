@@ -159,10 +159,24 @@ en el primer despliegue; lo único que hay que cargar son las variables.
 | `/api/tareas/recordatorio` | cada hora | Avisa por push a quien tiene racha viva y hoy no cargó nada |
 | `/api/tareas/resumen-semanal` | lunes 11:30 UTC | Manda el resumen de los últimos siete días por email |
 
-El horario del cron está en **UTC**. Las 11:30 UTC del lunes son las 07:30 en Asunción.
-El recordatorio corre cada hora justamente porque cada negocio tiene su zona horaria y su
-hora elegida: la tarea revisa qué hora es en cada uno y le escribe solo a los que
-corresponde en ese momento.
+El horario del cron está en **UTC**. Las 00:00 UTC son las ~20:00 en Asunción, que es
+cuando tiene sentido decirle a alguien que todavía no cargó nada.
+
+### Cada cuánto puede correr (y por qué importa)
+
+Esto lo decide **el plan de Vercel**, no el código:
+
+| Plan de Vercel | `CRON_RECORDATORIO` | Qué hace |
+|---|---|---|
+| Hobby (1 corrida por día) | `diario` (por defecto) | Ignora la hora elegida y manda en la corrida del día |
+| Pro (corridas por hora) | `cada-hora` | Le escribe a cada negocio a SU hora local |
+
+> **Ojo con esto.** En Hobby, comparar la hora local contra la elegida no falla a veces:
+> **no manda nunca**. Con una sola corrida diaria, la hora del servidor no va a coincidir
+> jamás con las 20:00 que eligió la persona. Por eso el modo `diario` afloja esa condición.
+> La tabla `envios` sigue garantizando uno por día, así que no hay riesgo de repetidos.
+
+Cuando pases a Vercel Pro: poné el cron en `0 * * * *` y `CRON_RECORDATORIO=cada-hora`.
 
 **A quién se le escribe y a quién no.** Solo se avisa a quien lleva **dos días o más** de
 racha. A quien todavía no tiene el hábito, una notificación no se lo crea: lo único que
@@ -381,7 +395,8 @@ supabase/
                         005_lecturas_escalables.sql,
                         006_confiabilidad_lecturas.sql,
                         007_adjuntos.sql, 008_habito.sql,
-                        009_planes_precios.sql, 010_preferencias_avisos.sql
+                        009_planes_precios.sql, 010_preferencias_avisos.sql,
+                        011_baja_de_miembros.sql
   schema.sql            generado: las migraciones concatenadas
   generar-schema.js     lo regenera (npm run esquema)
 pruebas/
@@ -394,6 +409,7 @@ pruebas/
   confiabilidad.test.js vacío legítimo vs consulta fallida
   adjuntos.test.js      comprobantes: rutas, topes, quién borra qué
   habito.test.js        racha, cierre del día, cupo de IA y precios
+  equipo.test.js        baja de miembros y rotación del código de invitación
   verificar-data-api.js verificación manual contra tu Supabase real
   ayuda-db.js           levanta Postgres en memoria imitando a Supabase
 v1-legacy/              la versión anterior, por si querés consultarla

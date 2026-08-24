@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       const hora = pref?.hora_cierre ?? 20;
       const idioma = pref?.idioma ?? 'es';
 
-      if (!quiere || horaLocal !== hora) { salteados += 1; continue; }
+      if (!quiere || !esLaHora(horaLocal, hora)) { salteados += 1; continue; }
 
       // Idempotencia: una vez por persona, empresa y día. Si el cron se
       // dispara dos veces en la misma hora, el segundo no manda nada.
@@ -104,4 +104,31 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ candidatas: lista.length, enviados, salteados });
+}
+
+/**
+ * ¿Le toca el aviso a esta persona en esta corrida?
+ *
+ * DEPENDE DE CADA CUÁNTO PUEDE CORRER EL CRON, y eso lo decide el plan de
+ * Vercel, no nosotros:
+ *
+ *   · Plan Pro (cron por hora) → CRON_RECORDATORIO=cada-hora. Se compara la
+ *     hora local exacta contra la que la persona eligió. Cada negocio recibe
+ *     el aviso a SU hora, esté donde esté.
+ *
+ *   · Plan Hobby (un solo disparo por día) → el valor por defecto. Con una
+ *     sola corrida diaria es imposible acertarle a la hora elegida de todos,
+ *     así que se ignora la preferencia y se manda en la corrida del día.
+ *
+ *     Comparar la hora exacta con un cron diario no "falla a veces": no manda
+ *     NUNCA. Si el cron corre a las 11 UTC, en Asunción son las 7 de la
+ *     mañana, y nadie eligió las 7 — la condición no se cumple jamás.
+ *
+ * La tabla `envios` garantiza uno por día en los dos casos, así que aflojar
+ * esta condición no puede provocar avisos repetidos.
+ */
+function esLaHora(horaLocal: number, horaElegida: number): boolean {
+  const modo = (process.env.CRON_RECORDATORIO ?? 'diario').toLowerCase();
+  if (modo === 'cada-hora') return horaLocal === horaElegida;
+  return true;
 }
