@@ -332,9 +332,9 @@ export function BotonCaptura({
       </button>
 
       {abierto && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-tinta/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
           <div
-            className="zona-segura-abajo w-full max-w-md rounded-t-3xl bg-white p-5 shadow-tarjeta aparecer sm:rounded-3xl"
+            className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 shadow-tarjeta aparecer sm:rounded-3xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* ---------------- MENÚ ---------------- */}

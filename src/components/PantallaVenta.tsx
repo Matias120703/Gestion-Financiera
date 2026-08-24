@@ -391,8 +391,8 @@ export function PantallaVenta({
       )}
 
       {detalleAbierto && (
-        <div className="fixed inset-0 z-50 flex items-end bg-tinta/45 backdrop-blur-[2px] lg:hidden" onClick={() => setDetalleAbierto(false)}>
-          <div className="zona-segura-abajo max-h-[88vh] w-full overflow-y-auto scroll-limpio rounded-t-3xl bg-white p-4 aparecer" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-end bg-tinta/45 backdrop-blur-[2px] lg:hidden" onClick={() => setDetalleAbierto(false)}>
+          <div className="zona-segura-abajo max-h-[88vh] w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-4 aparecer" onClick={(e) => e.stopPropagation()}>
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde" />
             <Carrito
               carrito={carrito} moneda={moneda} dec={dec} total={total} subtotal={subtotal}
@@ -618,9 +618,9 @@ function DialogoLibre({
   const [conCosto, setConCosto] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
       <form
-        className="zona-segura-abajo w-full max-w-sm rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[88vh] w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => { e.preventDefault(); if (precio > 0) onAgregar(nombre.trim(), precio, conCosto ? costo : 0); }}
       >

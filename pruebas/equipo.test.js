@@ -209,6 +209,51 @@ const cuantos = (db, empresaId) =>
         [A.empresaId, adminA])).rows[0].n, 1);
   }
 
+  // =====================================================================
+  grupo('6 · Borrar la cuenta de quien fundó el negocio');
+  // =====================================================================
+  {
+    // Esto falló en producción con:
+    //   ERROR: update or delete on table "users" violates foreign key
+    //   constraint "empresas_creada_por_fkey" on table "empresas"
+    // La cuenta que había creado una empresa no se podía borrar nunca.
+    const Z = await H.montarEmpresa(db, { email: 'fundador@zeta.com', nombre: 'Zeta' });
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'negocio')", [Z.empresaId]));
+    const socio = await H.sumarMiembro(db, Z.empresaId, 'socio@zeta.com', 'admin');
+
+    await H.comoUsuario(db, Z.uid, () => db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1,'gasto', current_date, 'Alquiler del local', 'Alquiler', 500000, 500000)`,
+      [Z.empresaId]));
+
+    // Borrar una cuenta es operación de administrador: lo hace el panel de
+    // Supabase o la API de admin, nunca el navegador de un usuario. Por eso
+    // va directo y no con `intentar`, que corre como `authenticated`.
+    let borrado = { ok: true, error: null };
+    try {
+      await db.query('delete from auth.users where id = $1', [Z.uid]);
+    } catch (e) {
+      borrado = { ok: false, error: e.message };
+    }
+    aceptado('se puede borrar la cuenta que fundó la empresa', borrado);
+
+    // Lo esencial: la empresa y su contabilidad sobreviven.
+    ok('la empresa sigue existiendo',
+      (await db.query('select count(*)::int n from public.empresas where id=$1', [Z.empresaId])).rows[0].n, 1);
+    ok('y su movimiento también',
+      (await db.query('select count(*)::int n from public.movimientos where empresa_id=$1', [Z.empresaId])).rows[0].n, 1);
+    ok('lo único que se pierde es quién la creó',
+      (await db.query('select creada_por from public.empresas where id=$1', [Z.empresaId])).rows[0].creada_por, null);
+    ok('el socio sigue adentro',
+      (await db.query('select count(*)::int n from public.miembros where empresa_id=$1', [Z.empresaId])).rows[0].n, 1);
+
+    // Y el agujero que NO se abrió: nadie puede ponerse como fundador.
+    rechazado('nadie se apropia de una empresa sin dueño',
+      await H.intentar(db, socio, () =>
+        db.query('update public.empresas set creada_por=$1 where id=$2', [socio, Z.empresaId])),
+      'quién creó la empresa|denied|policy');
+  }
+
   console.log(`\n${'═'.repeat(62)}`);
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE EQUIPO FALLARON`);

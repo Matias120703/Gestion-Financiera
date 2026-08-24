@@ -677,9 +677,20 @@ async function principal() {
         "insert into public.empresa_accesos (empresa_id, codigo) values ($1, 'MIOMIO01')", [B.empresaId])),
       'policy|denied|permission');
 
+    // La 013 separó el mensaje de identidad en dos, para poder dejar pasar
+    // el único caso legítimo: que la clave foránea ponga `creada_por` en null
+    // cuando se borra esa cuenta. Apropiarse de una empresa sigue prohibido.
     rechazado('cambiar quién creó la empresa',
       await H.intentar(db, A.uid, () => db.query('update public.empresas set creada_por=$2 where id=$1', [A.empresaId, vendedorA])),
-      'identidad');
+      'quién creó la empresa');
+
+    rechazado('ponerse como creador de una empresa que no tiene creador',
+      await H.intentar(db, A.uid, () => db.query('update public.empresas set creada_por=null where id=$1', [A.empresaId])
+        .then(async () => {
+          // Si el paso anterior pasara, el intento real sería reclamarla.
+          await db.query('update public.empresas set creada_por=$2 where id=$1', [A.empresaId, vendedorA]);
+        })),
+      'quién creó la empresa|denied|policy');
 
     aceptado('cambiar el nombre y la moneda SÍ se puede',
       await H.intentar(db, A.uid, () => db.query("update public.empresas set nombre='Aurora Perfumes', moneda='USD' where id=$1", [A.empresaId])));

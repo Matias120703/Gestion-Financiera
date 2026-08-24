@@ -50,7 +50,7 @@ export function RegistrarServiceWorker({ sinConexion }: { sinConexion: string })
   return (
     <div
       role="status"
-      className="zona-segura-abajo fixed inset-x-0 bottom-0 z-[60] bg-ambar px-4 py-2 text-center text-[13px] font-bold text-white"
+      className="zona-segura-abajo fixed inset-x-0 bottom-0 z-[70] bg-ambar px-4 py-2 text-center text-[13px] font-bold text-white"
     >
       {sinConexion}
     </div>

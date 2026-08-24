@@ -15,6 +15,33 @@ body {
 .zona-segura-abajo { padding-bottom: env(safe-area-inset-bottom); }
 .zona-segura-arriba { padding-top: env(safe-area-inset-top); }
 
+/*
+ * ============================================================
+ * QUÉ SE DIBUJA ENCIMA DE QUÉ
+ * ============================================================
+ *
+ * Esto está escrito acá y no repartido por los componentes porque el bug que
+ * lo originó fue exactamente ese: la barra de navegación y las hojas
+ * emergentes tenían las dos z-50, la barra se renderiza después, y terminaba
+ * tapándole el botón de abajo a cada hoja. La hoja se deslizaba igual, pero
+ * al llegar al fondo el botón «Cobrar» seguía escondido.
+ *
+ *   z-30   barra superior (pegajosa, se queda mientras se hace scroll)
+ *   z-40   menú «Más» de la barra inferior. VA DEBAJO de la barra a
+ *          propósito: es el menú de la barra, y que la barra siga visible
+ *          muestra dónde estás parado.
+ *   z-40   botón verde flotante de captura
+ *   z-50   barra de navegación de abajo
+ *   z-60   TODA hoja o diálogo emergente. Va por encima de la barra porque
+ *          mientras hay un diálogo abierto, la barra no se puede tocar.
+ *   z-70   franja de «sin conexión». Siempre visible: si se pierde la señal
+ *          en medio de una venta, hay que enterarse antes de tocar guardar.
+ *
+ * REGLA PARA UNA HOJA NUEVA: overlay `fixed inset-0 z-[60]`, y adentro
+ * `max-h-[88vh] overflow-y-auto overscroll-contain zona-segura-abajo`.
+ * Sin el max-h no se desliza y el contenido largo queda cortado.
+ */
+
 @layer components {
   .tarjeta {
     @apply rounded-2xl border border-borde bg-white shadow-tarjeta;

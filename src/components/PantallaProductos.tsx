@@ -258,10 +258,10 @@ function DialogoProducto({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
       <form
         onSubmit={guardar}
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto scroll-limpio rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[19px] font-bold tracking-tight">{b.id ? 'Editar producto' : 'Nuevo producto'}</h2>

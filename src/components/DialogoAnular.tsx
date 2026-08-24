@@ -43,11 +43,11 @@ export function DialogoAnular({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4"
       onClick={() => !trabajando && onCerrar()}
     >
       <div
-        className="zona-segura-abajo w-full max-w-md rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[19px] font-bold tracking-tight">

@@ -7,16 +7,40 @@ el panel de Supabase.
 
 ## Dónde va cada uno
 
-**Supabase → Authentication → Emails** (pestaña *Templates*):
+En **Supabase → Authentication → Emails**, elegí la plantilla en la lista y
+completá los dos campos:
 
-| Archivo | Plantilla | Asunto sugerido |
+| Plantilla en Supabase | Asunto (campo *Subject*) | Cuerpo (campo *Body*) |
 |---|---|---|
-| `confirmar-cuenta.html` | Confirm signup | `Confirmá tu correo para entrar a Orden` |
-| `recuperar-clave.html` | Reset password | `Cambiá tu contraseña de Orden` |
-| `cambiar-correo.html` | Change email address | `Confirmá tu correo nuevo en Orden` |
+| Confirm sign up | `Confirmá tu correo para entrar a Orden` | `confirmar-cuenta.html` |
+| Reset password | `Cambiá tu contraseña de Orden` | `recuperar-clave.html` |
+| Change email address | `Confirmá tu correo nuevo en Orden` | `cambiar-correo.html` |
 
-Pegá el HTML entero en el cuadro *Message body* y guardá. El asunto se carga
-en el campo de arriba.
+Pasos, para cada una:
+
+1. Poné el asunto en *Subject* (reemplaza al que viene en inglés).
+2. En *Body*, asegurate de estar en la pestaña **Source**, no en *Preview*.
+3. Seleccioná todo lo que hay (`Ctrl+A`) y borralo.
+4. Pegá el archivo entero.
+5. **Save**.
+
+Tocá *Preview* antes de guardar para ver cómo queda.
+
+> Estos archivos son **exactamente** lo que va pegado: no llevan comentarios
+> ni nada de más. Lo que hay que saber está acá, no adentro del HTML, porque
+> lo que se pega en Supabase se manda tal cual en cada correo.
+
+### Las variables entre llaves no se tocan
+
+`{{ .ConfirmationURL }}`, `{{ .Email }}` y `{{ .NewEmail }}` las reemplaza
+Supabase al momento de enviar. Si se borran o se les cambia el nombre, el
+enlace del correo deja de funcionar.
+
+### Cómo probarlo
+
+Creá una cuenta con un correo que no hayas usado y mirá cómo llega. Es la
+única forma de ver el resultado real: el *Preview* de Supabase no muestra
+cómo lo interpreta Gmail.
 
 ---
 
