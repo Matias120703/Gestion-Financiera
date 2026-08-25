@@ -114,7 +114,7 @@ export const es = {
     subtitulo: 'Diez segundos y sabés cómo te fue',
     entro: 'Entró',
     salio: 'Salió',
-    quedo: 'Te quedó',
+    quedo: 'Balance Actual',
     sinActividad: 'Hoy todavía no cargaste nada',
     sinActividadDetalle: 'Tocá el botón verde y contale al sistema tu primera venta del día.',
     vsSemanaPasada: 'contra el mismo día de la semana pasada',
