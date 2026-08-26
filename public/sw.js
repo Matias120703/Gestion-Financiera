@@ -5,23 +5,26 @@
  * Hace tres cosas, y ninguna más:
  *
  *   1. QUE LA APP ABRA SIN SEÑAL. No para que funcione entera —los datos
- *      viven en el servidor y no se pueden inventar— sino para que, cuando
- *      no hay internet, se vea una pantalla que lo explica en vez del dinosaurio
+ *      viven en el servidor y no se pueden inventar— sino para que, cuando no
+ *      hay internet, se vea una pantalla que lo explica en vez del dinosaurio
  *      del navegador. Quien vende en la calle pierde señal todo el tiempo.
  *
- *   2. QUE LOS ARCHIVOS ESTÁTICOS NO SE BAJEN DOS VECES. Los de /_next/static/
- *      llevan un hash en el nombre: si cambia el contenido, cambia la URL. Por
- *      eso se pueden guardar para siempre sin miedo a servir algo viejo.
+ *   2. QUE LOS ARCHIVOS ESTÁTICOS NO SE BAJEN DOS VECES.
  *
  *   3. AVISOS PUSH. Recibirlos y abrir la pantalla correcta al tocarlos.
  *
- * Lo que NO hace, a propósito: cachear respuestas de datos. Un total de ventas
- * viejo mostrado como si fuera el de hoy es peor que no mostrar nada.
+ * Lo que NO hace, a propósito: cachear respuestas de datos. Un total de
+ * ventas viejo mostrado como si fuera el de hoy es peor que no mostrar nada.
  */
 
 // Subir esta versión invalida todo lo guardado. Se hace cuando cambia la
-// estrategia, no en cada despliegue: los estáticos ya se invalidan solos.
-const VERSION = 'orden-v1';
+// estrategia, no en cada despliegue.
+//
+//   v3 · En desarrollo no se cachea NADA. La v2 guardaba los archivos de
+//        `npm run dev`, que no llevan hash en el nombre, y servía código
+//        viejo para siempre. Ver EN_DESARROLLO más abajo.
+//   v2 · La navegación reintenta una vez antes de mostrar «sin conexión».
+const VERSION = 'orden-v3';
 const CACHE_ESTATICOS = `${VERSION}-estaticos`;
 const CACHE_CASCARA = `${VERSION}-cascara`;
 
@@ -35,21 +38,48 @@ const CASCARA = [
   '/iconos/icono-512.png',
 ];
 
+/**
+ * En desarrollo NO se guarda nada en caché.
+ *
+ * El motivo es concreto y costó encontrarlo. La estrategia de estáticos es
+ * «primero lo guardado», y eso solo es seguro cuando el nombre del archivo
+ * cambia al cambiar el contenido. En una compilación de producción, Next les
+ * pone un hash —`layout-a3f9c1.js`— y funciona perfecto.
+ *
+ * En `npm run dev` NO hay hash: el archivo se llama `layout.js` siempre. Así
+ * que el service worker guardaba la primera versión y **seguía sirviéndola
+ * para siempre**. Se cambiaba el código, el servidor compilaba bien, y el
+ * navegador mostraba lo viejo, sin un solo error que lo delatara.
+ *
+ * Pasó exactamente eso al agregar Deudas al menú: el código estaba, el bundle
+ * estaba, y la pantalla seguía mostrando el menú anterior.
+ *
+ * En localhost la caché no aporta nada: el servidor está a un milisegundo.
+ */
+const EN_DESARROLLO = ['localhost', '127.0.0.1', '[::1]'].includes(self.location.hostname);
+
 self.addEventListener('install', (evento) => {
-  evento.waitUntil(
-    caches.open(CACHE_CASCARA)
-      // addAll falla entero si un solo archivo falla. Los pedimos de a uno
+  // `skipWaiting` va siempre, con caché o sin ella: es lo que hace que una
+  // versión nueva reemplace a la vieja sin esperar a que se cierren todas
+  // las pestañas.
+  const preparar = EN_DESARROLLO
+    ? Promise.resolve()
+    : caches.open(CACHE_CASCARA)
+      // `addAll` falla entero si un solo archivo falla. Se piden de a uno
       // para que un icono que todavía no existe no deje al service worker
       // sin instalar y a la app sin nada de esto.
-      .then((cache) => Promise.all(CASCARA.map((url) => cache.add(url).catch(() => null))))
-      .then(() => self.skipWaiting()),
-  );
+      .then((cache) => Promise.all(CASCARA.map((url) => cache.add(url).catch(() => null))));
+
+  evento.waitUntil(preparar.then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (evento) => {
   evento.waitUntil(
     caches.keys()
       .then((claves) => Promise.all(
+        // Se borra todo lo que no sea de esta versión. Al pasar de v2 a v3,
+        // esto es lo que limpia los archivos viejos que estaban tapando los
+        // cambios en desarrollo.
         claves.filter((c) => !c.startsWith(VERSION)).map((c) => caches.delete(c)),
       ))
       .then(() => self.clients.claim()),
@@ -57,6 +87,7 @@ self.addEventListener('activate', (evento) => {
 });
 
 function esEstatico(url) {
+  if (EN_DESARROLLO) return false;
   return url.pathname.startsWith('/_next/static/')
       || url.pathname.startsWith('/iconos/');
 }
@@ -91,16 +122,50 @@ self.addEventListener('fetch', (evento) => {
   // Navegación: siempre se intenta la red primero, porque los números tienen
   // que estar frescos. Si no hay red, la pantalla de sin conexión.
   if (pedido.mode === 'navigate') {
-    evento.respondWith(
-      fetch(pedido).catch(() =>
-        caches.match(SIN_CONEXION).then((r) => r || new Response(
-          '<!doctype html><meta charset="utf-8"><title>Sin conexión</title>'
-          + '<body style="font-family:system-ui;padding:2rem">Sin conexión.</body>',
-          { headers: { 'Content-Type': 'text/html; charset=utf-8' }, status: 503 },
-        ))),
-    );
+    evento.respondWith(navegar(pedido));
   }
 });
+
+/**
+ * Una navegación, con UN reintento antes de rendirse.
+ *
+ * El reintento no es un adorno. Sin él, CUALQUIER fallo puntual mostraba la
+ * pantalla de «sin conexión» aunque la persona estuviera perfectamente
+ * conectada: un servidor que tarda un segundo de más, una celda de datos que
+ * parpadea al caminar, un despliegue justo en ese momento. Y como es una
+ * pantalla de error, lo que se veía era «no hay internet» estando online, que
+ * es de las cosas que más rápido hacen desconfiar de una app.
+ *
+ * La secuencia:
+ *   1. se intenta la red;
+ *   2. si falla y el navegador dice que NO hay conexión → pantalla de sin
+ *      conexión, sin perder tiempo reintentando algo que no puede andar;
+ *   3. si falla pero el navegador dice que SÍ hay conexión → se reintenta una
+ *      vez, porque casi siempre fue un tropiezo;
+ *   4. si el reintento también falla, recién ahí la pantalla.
+ */
+async function navegar(pedido) {
+  try {
+    return await fetch(pedido);
+  } catch {
+    if (self.navigator.onLine) {
+      try {
+        return await fetch(pedido);
+      } catch {
+        // Los dos intentos fallaron: ahora sí es un problema de verdad.
+      }
+    }
+  }
+
+  const guardada = await caches.match(SIN_CONEXION);
+  if (guardada) return guardada;
+
+  return new Response(
+    '<!doctype html><meta charset="utf-8"><title>Sin conexión</title>'
+    + '<body style="font-family:system-ui;padding:2rem">Sin conexión.</body>',
+    { headers: { 'Content-Type': 'text/html; charset=utf-8' }, status: 503 },
+  );
+}
 
 // ---------------------------------------------------------------- avisos
 

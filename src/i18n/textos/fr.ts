@@ -39,6 +39,7 @@ export const fr: Parcial<Textos> = {
     reto: 'Objectif',
     reportes: 'Rapports',
     ajustes: 'Réglages',
+    deudas: 'Dettes',
     cierre: 'Clôture du jour',
     cierreCorto: 'Clôture',
 

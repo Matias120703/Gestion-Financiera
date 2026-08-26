@@ -60,6 +60,7 @@ export const es = {
     reto: 'Reto',
     reportes: 'Reportes',
     ajustes: 'Ajustes',
+    deudas: 'Deudas',
     cierre: 'Cierre del día',
     cierreCorto: 'Cierre',
 
@@ -193,6 +194,60 @@ export const es = {
     guardado: 'Guardado',
   },
 
+  deudas: {
+    titulo: 'Deudas',
+    subtitulo: 'Lo que debés, y cuándo vence',
+    vacio: 'No tenés ninguna deuda cargada',
+    vacioDetalle: 'Cargá tu tarjeta, un préstamo o lo que le debés al proveedor, y Orden te avisa antes de que venza.',
+
+    totalDebido: 'Debés en total',
+    proximoVence: 'Próximo vencimiento',
+    sinVencimiento: 'Sin fecha',
+    vencidas: (n: number) => (n === 1 ? '1 deuda vencida' : `${n} deudas vencidas`),
+    vencePronto: (n: number) => (n === 1 ? '1 vence esta semana' : `${n} vencen esta semana`),
+
+    tipoTarjeta: 'Tarjeta',
+    tipoPrestamo: 'Préstamo',
+    tipoProveedor: 'Proveedor',
+    tipoOtro: 'Otro',
+
+    nueva: 'Cargar una deuda',
+    nombre: 'Qué es',
+    nombreEjemplo: 'Ej: Visa Itaú, préstamo de la moto',
+    acreedor: 'A quién le debés',
+    acreedorEjemplo: 'Banco, financiera o proveedor',
+    montoTotal: 'Cuánto es en total',
+    saldoActual: 'Cuánto te falta pagar',
+    saldoAyuda: 'Si ya venías pagando, poné lo que te queda. Si es nueva, dejalo igual al total.',
+    cuotas: 'En cuántas cuotas',
+    montoCuota: 'Cuánto es cada cuota',
+    vence: 'Cuándo vence la próxima',
+    notas: 'Nota',
+    guardar: 'Guardar la deuda',
+
+    pagar: 'Registrar un pago',
+    cuantoPagaste: 'Cuánto pagaste',
+    comoPagaste: 'Cómo lo pagaste',
+    crearGasto: 'Anotarlo también como gasto',
+    crearGastoDetalle: 'Recomendado: esa plata salió de tu bolsillo y así la vas a ver en tus números.',
+    pagoListo: (saldo: string) => `Listo. Te quedan ${saldo}.`,
+    pagoSaldada: '¡Listo, terminaste de pagarla!',
+    sobrante: (monto: string) => `Pagaste ${monto} de más. Se aplicó solo lo que faltaba.`,
+
+    saldo: 'Te falta',
+    de: 'de',
+    cuotaDe: (pagadas: number, totales: number) => `Cuota ${pagadas} de ${totales}`,
+    venceEn: (dias: number) => (dias === 0 ? 'Vence hoy' : dias === 1 ? 'Vence mañana' : `Vence en ${dias} días`),
+    vencioHace: (dias: number) => (dias === 1 ? 'Venció ayer' : `Venció hace ${dias} días`),
+    saldada: 'Saldada',
+    verPagos: 'Ver los pagos',
+    sinPagos: 'Todavía no registraste ningún pago',
+    archivar: 'Archivar',
+    archivarConfirmar: 'La sacamos de la lista. Los pagos que registraste quedan.',
+    verSaldadas: 'Ver también las saldadas',
+    soloAdmin: 'Las deudas del negocio las ve y las maneja la administración.',
+  },
+
   equipo: {
     titulo: 'Equipo',
     vos: '(vos)',
@@ -204,6 +259,36 @@ export const es = {
     rotarConfirmar: '¿Generar un código nuevo? El actual deja de funcionar y va a haber que pasarle el nuevo a todo el que falte sumar.',
     rotarListo: 'Código nuevo generado.',
     soloPropietario: 'Solo el propietario puede cambiarlo.',
+  },
+
+  soporte: {
+    titulo: 'Ayuda',
+    detalle: 'Si algo no anda o no entendés algo, escribinos. Contestamos nosotros, no un robot.',
+    whatsapp: 'Escribinos por WhatsApp',
+    email: 'Mandanos un correo',
+    mensajeInicial: 'Hola, tengo una consulta sobre Orden.',
+    horario: 'De lunes a sábado. Si escribís de noche, te contestamos a la mañana.',
+  },
+
+  zonaPeligro: {
+    titulo: 'Zona delicada',
+    detalle: 'Lo de acá abajo no se puede deshacer. No hay papelera ni forma de recuperarlo.',
+
+    vaciarTitulo: 'Empezar de cero',
+    vaciarDetalle: 'Borra todas las ventas, gastos, productos y comprobantes de este negocio. El equipo, tu plan y el código de invitación quedan como están.',
+    vaciarBoton: 'Vaciar el negocio',
+    vaciarPide: (nombre: string) => `Escribí ${nombre} para confirmar`,
+    vaciarListo: (movs: number) => `Listo. Se borraron ${movs} movimientos y el negocio quedó en cero.`,
+    soloPropietarioVaciar: 'Solo el propietario puede vaciar el negocio.',
+
+    borrarTitulo: 'Borrar mi cuenta',
+    borrarDetalle: 'Se va tu cuenta y todo lo que tengas cargado. Después de esto no hay vuelta atrás.',
+    borrarBoton: 'Borrar mi cuenta para siempre',
+    borrarPide: 'Escribí BORRAR para confirmar',
+    seBorran: 'Se borran estos negocios, con todo lo que tienen adentro:',
+    meVoyDe: 'Salís de estos negocios, pero siguen funcionando sin vos:',
+    bloqueadas: 'No podés borrar tu cuenta todavía: hay gente trabajando en estos negocios. Sacalos del equipo primero.',
+    movimientosQueSePierden: (n: number) => (n === 1 ? 'Se pierde 1 movimiento' : `Se pierden ${n} movimientos`),
   },
 
   errores: {

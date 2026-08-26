@@ -242,3 +242,50 @@ export interface Precio {
   importe: number;
   referencia_externa: string | null;
 }
+
+export type TipoDeuda = 'tarjeta' | 'prestamo' | 'proveedor' | 'otro';
+
+/** Lo que devuelve listar_deudas(). Ver migración 015. */
+export interface Deuda {
+  id: string;
+  tipo: TipoDeuda;
+  nombre: string;
+  acreedor: string;
+  monto_original: number;
+  /** Lo que FALTA pagar. Solo lo cambia registrar_pago_deuda(). */
+  saldo: number;
+  pagado: number;
+  /** Porcentaje ya pagado, 0 a 100. */
+  avance: number;
+  cuotas_totales: number | null;
+  cuotas_pagadas: number;
+  monto_cuota: number | null;
+  vence_el: string | null;
+  /** Negativo si ya venció. null si la deuda no tiene vencimiento. */
+  dias_para_vencer: number | null;
+  vencida: boolean;
+  saldada: boolean;
+  activa: boolean;
+  notas: string;
+}
+
+export interface ResumenDeudas {
+  total_debido: number;
+  cuantas: number;
+  vencidas: number;
+  monto_vencido: number;
+  /** Cuántas vencen dentro de los próximos siete días. */
+  vence_pronto: number;
+  /** Lo que hay que tener disponible para esas: la cuota, no el saldo entero. */
+  monto_pronto: number;
+  proximo_vencimiento: string | null;
+}
+
+export interface PagoDeuda {
+  id: string;
+  monto: number;
+  fecha: string;
+  movimiento_id: string | null;
+  nota: string;
+  created_at: string;
+}

@@ -6,7 +6,10 @@ type CookieEntrante = { name: string; value: string; options?: CookieOptions };
 // /sin-conexion tiene que ser pública y estática: la sirve el service worker
 // justo cuando no se puede llegar al servidor. Si pasara por acá, sin red no
 // habría a quién preguntarle si hay sesión.
-const PUBLICAS = ['/ingresar', '/auth', '/sin-conexion'];
+// La portada y los legales tienen que verse SIN cuenta: son justamente lo
+// que lee alguien antes de decidir si se registra. Si pasaran por el control
+// de sesión, el link que le mandás a un cliente lo tiraría a un login.
+const PUBLICAS = ['/ingresar', '/auth', '/sin-conexion', '/privacidad', '/terminos'];
 
 export async function middleware(request: NextRequest) {
   let respuesta = NextResponse.next({ request });
@@ -30,7 +33,11 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const ruta = request.nextUrl.pathname;
-  const esPublica = PUBLICAS.some((p) => ruta.startsWith(p));
+
+  // La portada se compara EXACTA y no con startsWith: '/' es prefijo de
+  // absolutamente todo, así que meterla en la lista abriría la aplicación
+  // entera. La propia página manda al panel a quien ya tiene sesión.
+  const esPublica = ruta === '/' || PUBLICAS.some((p) => ruta.startsWith(p));
 
   if (!user && !esPublica) {
     const url = request.nextUrl.clone();

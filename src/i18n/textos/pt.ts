@@ -40,6 +40,7 @@ export const pt: Parcial<Textos> = {
     reto: 'Meta',
     reportes: 'Relatórios',
     ajustes: 'Ajustes',
+    deudas: 'Dívidas',
     cierre: 'Fechamento do dia',
     cierreCorto: 'Fecho',
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useTextos } from '@/i18n/cliente';
@@ -25,7 +25,21 @@ const RESPALDO = [
   'Europe/Madrid', 'Europe/Lisbon', 'Europe/Berlin', 'Europe/Paris', 'Europe/Rome',
 ];
 
-function zonas(): string[] {
+/**
+ * La lista completa de zonas, solo del navegador.
+ *
+ * `Intl.supportedValuesOf` existe también en Node, pero **devuelve una lista
+ * distinta**: Node y Chrome llevan versiones diferentes de ICU, y las zonas
+ * horarias cambian con la política de cada país. Usarla en el render haría
+ * que el servidor escribiera unas opciones y el navegador otras — el mismo
+ * error de hidratación que rompía esta pantalla, pero más difícil de ver
+ * porque solo aparecería en algunas versiones.
+ *
+ * En el servidor se pinta la lista corta, y el navegador la completa al
+ * montarse. Lo único que se ve es que el desplegable pasa de tener 16 zonas
+ * a tenerlas todas, un instante después.
+ */
+function zonasDelNavegador(): string[] {
   try {
     const todas = (Intl as any).supportedValuesOf?.('timeZone') as string[] | undefined;
     if (todas?.length) return todas;
@@ -69,16 +83,43 @@ export function SelectorZona({
     }
   }
 
-  // Qué hora es ahora allá. Es la forma más rápida de darse cuenta de que la
-  // zona está mal puesta.
-  let ahora = '';
-  try {
-    ahora = new Intl.DateTimeFormat(undefined, {
-      timeZone: valor, hour: '2-digit', minute: '2-digit',
-    }).format(new Date());
-  } catch {
-    ahora = '';
-  }
+  /**
+   * Qué hora es ahora allá. Es la forma más rápida de darse cuenta de que la
+   * zona está mal puesta.
+   *
+   * SE CALCULA SOLO EN EL NAVEGADOR, y no durante el render. Al hacerlo en el
+   * render, el servidor escribía «04:24 p. m.» (con el idioma de Node) y el
+   * navegador «16:24» (con el del sistema de la persona), React veía dos
+   * textos distintos para el mismo lugar y tiraba el error de hidratación que
+   * rompía la pantalla entera de Ajustes.
+   *
+   * Cualquier cosa que dependa de la hora actual o del idioma del sistema
+   * tiene el mismo problema: nunca puede salir del render del servidor.
+   */
+  const [ahora, setAhora] = useState('');
+
+  // Arranca con la lista corta —la misma que pinta el servidor— y se completa
+  // al montarse en el navegador. Así los dos renders coinciden.
+  const [listaZonas, setListaZonas] = useState<string[]>(RESPALDO);
+  useEffect(() => { setListaZonas(zonasDelNavegador()); }, []);
+
+  useEffect(() => {
+    function actualizar() {
+      try {
+        setAhora(new Intl.DateTimeFormat(undefined, {
+          timeZone: valor, hour: '2-digit', minute: '2-digit',
+        }).format(new Date()));
+      } catch {
+        setAhora('');
+      }
+    }
+
+    actualizar();
+    // Se refresca cada medio minuto: si alguien deja Ajustes abierto, el
+    // reloj no se queda clavado en la hora de cuando entró.
+    const reloj = setInterval(actualizar, 30_000);
+    return () => clearInterval(reloj);
+  }, [valor]);
 
   return (
     <div>
@@ -90,7 +131,8 @@ export function SelectorZona({
           disabled={!puedeEditar || guardando}
           onChange={(e) => cambiar(e.target.value)}
         >
-          {zonas().map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
+          {(listaZonas.includes(valor) ? listaZonas : [valor, ...listaZonas])
+            .map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
         </select>
       </label>
 

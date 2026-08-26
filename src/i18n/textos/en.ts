@@ -54,6 +54,7 @@ export const en: Textos = {
     reto: 'Goal',
     reportes: 'Reports',
     ajustes: 'Settings',
+    deudas: 'Debts',
     cierre: 'Daily close',
     cierreCorto: 'Close',
 
@@ -186,6 +187,60 @@ export const en: Textos = {
     guardado: 'Saved',
   },
 
+  deudas: {
+    titulo: 'Debts',
+    subtitulo: 'What you owe, and when it is due',
+    vacio: 'You have no debts recorded',
+    vacioDetalle: 'Add your card, a loan or what you owe a supplier, and Orden warns you before it is due.',
+
+    totalDebido: 'You owe in total',
+    proximoVence: 'Next due date',
+    sinVencimiento: 'No date',
+    vencidas: (n: number) => (n === 1 ? '1 overdue debt' : `${n} overdue debts`),
+    vencePronto: (n: number) => (n === 1 ? '1 due this week' : `${n} due this week`),
+
+    tipoTarjeta: 'Card',
+    tipoPrestamo: 'Loan',
+    tipoProveedor: 'Supplier',
+    tipoOtro: 'Other',
+
+    nueva: 'Add a debt',
+    nombre: 'What it is',
+    nombreEjemplo: 'e.g. Visa, motorcycle loan',
+    acreedor: 'Who you owe',
+    acreedorEjemplo: 'Bank, lender or supplier',
+    montoTotal: 'Total amount',
+    saldoActual: 'How much is left to pay',
+    saldoAyuda: 'If you have been paying already, enter what is left. If it is new, leave it equal to the total.',
+    cuotas: 'How many instalments',
+    montoCuota: 'Amount per instalment',
+    vence: 'Next due date',
+    notas: 'Note',
+    guardar: 'Save the debt',
+
+    pagar: 'Record a payment',
+    cuantoPagaste: 'How much you paid',
+    comoPagaste: 'How you paid it',
+    crearGasto: 'Also record it as an expense',
+    crearGastoDetalle: 'Recommended: that money left your pocket, so this is how you will see it in your numbers.',
+    pagoListo: (saldo: string) => `Done. ${saldo} left.`,
+    pagoSaldada: 'Done, you finished paying it off!',
+    sobrante: (monto: string) => `You paid ${monto} extra. Only what was owed was applied.`,
+
+    saldo: 'Left to pay',
+    de: 'of',
+    cuotaDe: (pagadas: number, totales: number) => `Instalment ${pagadas} of ${totales}`,
+    venceEn: (dias: number) => (dias === 0 ? 'Due today' : dias === 1 ? 'Due tomorrow' : `Due in ${dias} days`),
+    vencioHace: (dias: number) => (dias === 1 ? 'Due yesterday' : `Overdue by ${dias} days`),
+    saldada: 'Paid off',
+    verPagos: 'See payments',
+    sinPagos: 'No payments recorded yet',
+    archivar: 'Archive',
+    archivarConfirmar: 'We take it off the list. The payments you recorded stay.',
+    verSaldadas: 'Also show paid off',
+    soloAdmin: 'Business debts are visible and managed by the owner and admins.',
+  },
+
   equipo: {
     titulo: 'Team',
     vos: '(you)',
@@ -197,6 +252,36 @@ export const en: Textos = {
     rotarConfirmar: 'Generate a new code? The current one stops working and you will need to share the new one.',
     rotarListo: 'New code generated.',
     soloPropietario: 'Only the owner can change it.',
+  },
+
+  soporte: {
+    titulo: 'Help',
+    detalle: "If something is broken or unclear, write to us. A person answers, not a bot.",
+    whatsapp: 'Message us on WhatsApp',
+    email: 'Send us an email',
+    mensajeInicial: 'Hi, I have a question about Orden.',
+    horario: 'Monday to Saturday. If you write at night, we answer in the morning.',
+  },
+
+  zonaPeligro: {
+    titulo: 'Danger zone',
+    detalle: 'Nothing below can be undone. There is no trash bin and no way to get it back.',
+
+    vaciarTitulo: 'Start over',
+    vaciarDetalle: 'Deletes every sale, expense, product and receipt in this business. Your team, your plan and the invite code stay as they are.',
+    vaciarBoton: 'Empty this business',
+    vaciarPide: (nombre: string) => `Type ${nombre} to confirm`,
+    vaciarListo: (movs: number) => `Done. ${movs} entries deleted and the business is back to zero.`,
+    soloPropietarioVaciar: 'Only the owner can empty the business.',
+
+    borrarTitulo: 'Delete my account',
+    borrarDetalle: 'Your account and everything you have recorded will be gone. There is no way back after this.',
+    borrarBoton: 'Delete my account forever',
+    borrarPide: 'Type BORRAR to confirm',
+    seBorran: 'These businesses will be deleted, with everything in them:',
+    meVoyDe: 'You leave these businesses, but they keep running without you:',
+    bloqueadas: 'You cannot delete your account yet: people are still working in these businesses. Remove them from the team first.',
+    movimientosQueSePierden: (n: number) => (n === 1 ? '1 entry will be lost' : `${n} entries will be lost`),
   },
 
   errores: {

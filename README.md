@@ -315,6 +315,123 @@ ella, un guardado que no salió parece un guardado que salió.
 ---
 
 
+## Deudas
+
+Tarjetas, préstamos y lo que se le debe al proveedor. Está adentro de Orden y
+no en otro sistema porque **el comerciante debe plata igual o más** que
+cualquiera: la cuota del préstamo con el que compró la mercadería, la tarjeta,
+lo que le fía el proveedor.
+
+La pantalla se ordena **por urgencia, no por monto**: lo vencido primero, lo
+que vence pronto después. Quien entra ahí no viene a mirar el total, viene a
+saber qué tiene que pagar y cuándo.
+
+### El saldo solo baja pagando
+
+`saldo` es lo que falta, y **no se puede editar**. Solo lo cambia
+`registrar_pago_deuda()`, y cada pago queda con su fecha en `pagos_deuda`.
+
+Si el saldo se pudiera escribir a mano, el historial de pagos dejaría de
+explicarlo y no habría forma de saber cuál de los dos dice la verdad. Es la
+misma regla que con las ventas: los números importantes se mueven por una
+puerta y esa puerta deja rastro.
+
+Tampoco se puede pagar de más: lo que sobra se informa y no se aplica. Sin
+eso, un dedo de más dejaría un saldo negativo, que es un estado que no existe
+en la vida real.
+
+### ¿Pagar una cuota es un gasto?
+
+En contabilidad estricta no del todo: devolver capital baja una deuda, no es
+un gasto del período. Pero Orden no le habla a un contador, le habla a alguien
+que quiere saber cuánta plata le queda — y para esa persona, la cuota **salió
+de su bolsillo**.
+
+Por eso al registrar el pago se crea también el gasto (categoría `Deudas`),
+con una casilla marcada por defecto que se puede desmarcar. Quien lleva la
+contabilidad fina la apaga; el resto ve la plata salir, que es lo que espera.
+
+### Quién las ve
+
+**Solo el propietario y los administradores.** Cuánto debe el negocio es del
+mismo orden que los costos: la base no se lo devuelve a un vendedor, y la
+pantalla se lo explica en vez de dejar que salte un error.
+
+---
+
+## Irse, y empezar de nuevo
+
+Dos cosas distintas, las dos en **Ajustes → Zona delicada** (hay que abrirla:
+un botón rojo suelto es un botón que alguien toca por curiosidad).
+
+### Empezar de cero
+
+Borra ventas, gastos, productos y comprobantes. **El negocio se queda**: el
+equipo, el plan y el código de invitación siguen igual. Sirve después de
+probar el sistema, o cuando el primer mes se cargó todo mal.
+
+Es la única puerta por la que un movimiento se borra de verdad — lo normal es
+**anular**, que deja el rastro. Por eso pide escribir el nombre exacto del
+negocio: un «¿estás seguro?» se toca sin leer.
+
+> El consumo de IA del mes **no** se reinicia, a propósito. Si se reiniciara,
+> vaciar el negocio sería una forma de tener capturas gratis infinitas.
+
+### Borrar la cuenta
+
+Se va la cuenta y todo lo cargado. Antes de confirmar, la pantalla dice
+exactamente qué negocios desaparecen, cuántos movimientos se pierden y de
+cuáles solo se sale.
+
+Las reglas las impone la base de datos, no la pantalla:
+
+| Situación | Qué pasa |
+|---|---|
+| Sos el único en tu negocio | Se borra entero |
+| Sos propietario y hay más gente adentro | **No se borra nada.** Hay que sacarlos primero |
+| Sos vendedor o admin en el negocio de otro | Solo se va tu membresía; lo que cargaste se queda |
+
+La segunda fila es la que importa: darle de baja el sistema —y la
+contabilidad— a personas que están trabajando sería mucho peor que no dejar
+irse a alguien.
+
+**Se borra de verdad.** No hay «marcado como borrado»: las filas desaparecen y
+los archivos de Storage se eliminan. Storage no entiende de claves foráneas,
+así que las rutas se averiguan *antes* de borrar los datos — después ya no
+habría forma de saber cuáles eran.
+
+---
+
+## Ayuda y contacto
+
+En Ajustes aparece un WhatsApp y un correo de soporte, si están configurados
+(`NEXT_PUBLIC_WHATSAPP_SOPORTE` y `NEXT_PUBLIC_EMAIL_SOPORTE`). Si no hay
+ninguno, la sección no se muestra: es peor prometer soporte y que el enlace no
+lleve a ningún lado.
+
+Va WhatsApp porque es donde el cliente ya está. Sin un canal visible, cuando
+algo se rompe la persona no escribe: desinstala, y vos te enterás del problema
+cuando ya la perdiste.
+
+---
+
+## Legales
+
+`/privacidad` y `/terminos` son páginas públicas, escritas sobre lo que Orden
+**realmente** hace: los proveedores que nombran son los de `.env.example`, y
+lo que dicen del borrado y de los planes es lo que hacen las migraciones.
+
+> **Si se suma un proveedor nuevo** —otra pasarela, otro servicio de correo—
+> hay que tocar `/privacidad` en el mismo cambio. Una política que no dice la
+> verdad es peor que no tenerla.
+
+> **No están revisadas por un abogado.** Cubren con honestidad lo que hace el
+> sistema, pero antes de cobrarle a alguien conviene que un profesional las
+> mire contra la ley que te aplique, sobre todo la parte de responsabilidad y
+> la de defensa del consumidor.
+
+---
+
 ## Cómo se calculan los números
 
 | Concepto | Fórmula |
@@ -355,8 +472,12 @@ src/
       reto/             metas con fecha límite
       reportes/         análisis y descarga del Excel
       cierre/           el cierre del día: tres números y una comparación
+      deudas/           tarjetas, préstamos y lo que se le debe al proveedor
       plan/             planes, precios y prueba gratis
       ajustes/          empresa, equipo, idioma, avisos y estado del sistema
+    page.tsx            la portada: qué es Orden, precios y registro
+    privacidad/         qué datos guarda, dónde y cómo se borran
+    terminos/           condiciones de uso
     sin-conexion/       la pantalla que sirve el service worker sin red
     api/
       capturar/         voz, foto y texto → movimiento estructurado
@@ -364,6 +485,7 @@ src/
       pagos/checkout/   arranca el pago (el importe sale de la base, no del navegador)
       pagos/webhook/    lo ÚNICO que activa un plan, con firma verificada
       tareas/           recordatorio de la noche y resumen semanal
+      cuenta/borrar/    borra la cuenta, sus datos y sus archivos
   components/           piezas de interfaz
   i18n/
     idiomas.ts          los seis idiomas y su locale de Intl
@@ -396,7 +518,9 @@ supabase/
                         006_confiabilidad_lecturas.sql,
                         007_adjuntos.sql, 008_habito.sql,
                         009_planes_precios.sql, 010_preferencias_avisos.sql,
-                        011_baja_de_miembros.sql
+                        011_baja_de_miembros.sql, 012_cerrar_anon.sql,
+                        013_borrar_usuario.sql, 014_borrar_mi_cuenta.sql,
+                        015_deudas.sql
   schema.sql            generado: las migraciones concatenadas
   generar-schema.js     lo regenera (npm run esquema)
 pruebas/
@@ -410,6 +534,8 @@ pruebas/
   adjuntos.test.js      comprobantes: rutas, topes, quién borra qué
   habito.test.js        racha, cierre del día, cupo de IA y precios
   equipo.test.js        baja de miembros y rotación del código de invitación
+  borrado.test.js       vaciar el negocio y borrar la cuenta sin llevarse nada de más
+  deudas.test.js        saldos, pagos, vencimientos y quién puede verlos
   verificar-data-api.js verificación manual contra tu Supabase real
   ayuda-db.js           levanta Postgres en memoria imitando a Supabase
 v1-legacy/              la versión anterior, por si querés consultarla

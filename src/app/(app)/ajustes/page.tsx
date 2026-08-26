@@ -10,6 +10,8 @@ import { SelectorIdioma, AjustesDeAvisos } from '@/components/Preferencias';
 import { SelectorZona } from '@/components/SelectorZona';
 import { ListaEquipo, RotarCodigo } from '@/components/Equipo';
 import { TarjetaPlan } from '@/components/TarjetaPlan';
+import { ZonaPeligro } from '@/components/ZonaPeligro';
+import { Soporte } from '@/components/Soporte';
 import type { Preferencias } from '@/lib/tipos';
 
 export const dynamic = 'force-dynamic';
@@ -210,6 +212,20 @@ export default async function PaginaAjustes() {
             pesa cada uno. Por eso la suma del ranking de productos da exactamente lo mismo que el panel.
           </p>
         </div>
+      </Seccion>
+
+      <Seccion titulo={t.soporte.titulo}>
+        <Soporte />
+      </Seccion>
+
+      {/* Última de todo a propósito: nadie llega acá haciendo scroll para
+          otra cosa, y adentro tampoco se muestra nada hasta que se abre. */}
+      <Seccion titulo={t.zonaPeligro.titulo}>
+        <ZonaPeligro
+          empresaId={ctx.empresa.id}
+          nombreEmpresa={ctx.empresa.nombre}
+          esPropietario={ctx.miembro.rol === 'propietario'}
+        />
       </Seccion>
     </div>
   );

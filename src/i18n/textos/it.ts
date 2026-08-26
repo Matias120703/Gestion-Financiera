@@ -39,6 +39,7 @@ export const it: Parcial<Textos> = {
     reto: 'Obiettivo',
     reportes: 'Report',
     ajustes: 'Impostazioni',
+    deudas: 'Debiti',
     cierre: 'Chiusura del giorno',
     cierreCorto: 'Chiusura',
 

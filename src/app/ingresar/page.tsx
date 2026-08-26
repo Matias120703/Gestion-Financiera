@@ -29,13 +29,30 @@ function Formulario() {
 
     try {
       if (modo === 'crear') {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password: clave,
           options: { emailRedirectTo: `${window.location.origin}/panel` },
         });
         if (error) throw error;
-        setAviso('Cuenta creada. Si Supabase pide confirmación, revisá tu correo y volvé a entrar.');
+
+        /**
+         * Si la confirmación por correo está apagada, Supabase devuelve la
+         * sesión al instante: hay que entrar, no mandar a la persona a
+         * revisar un correo que nunca va a llegar.
+         *
+         * El aviso anterior decía «si Supabase pide confirmación…», que le
+         * pasaba a la persona una duda nuestra: nadie que se registra sabe
+         * ni tiene por qué saber qué es Supabase. Ahora se mira la respuesta
+         * y se dice lo que de verdad corresponde.
+         */
+        if (data.session) {
+          router.push(params.get('volver') || '/empezar');
+          router.refresh();
+          return;
+        }
+
+        setAviso('Te mandamos un correo para confirmar tu dirección. Abrilo y volvé a entrar acá.');
         setModo('entrar');
       } else {
         const { error } = await supabase.auth.signInWithPassword({

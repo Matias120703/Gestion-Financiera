@@ -55,6 +55,12 @@ const Ico = {
       <circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 1.8" />
     </svg>
   ),
+  deudas: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="M3.5 7.5h17v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
+      <circle cx="12" cy="12" r="2.4" /><path d="M6.5 12h.01M17.5 12h.01" />
+    </svg>
+  ),
   mas: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" />
@@ -84,6 +90,7 @@ export function itemsDe(t: Textos): ItemNav[] {
     { href: '/panel',       texto: t.nav.panel,       icono: Ico.panel },
     { href: '/vender',      texto: t.nav.vender,      icono: Ico.vender },
     { href: '/gastos',      texto: t.nav.gastos,      icono: Ico.gastos },
+    { href: '/deudas',      texto: t.nav.deudas,      icono: Ico.deudas },
     { href: '/cierre',      texto: t.nav.cierre,      icono: Ico.cierre },
     { href: '/productos',   texto: t.nav.productos,   icono: Ico.productos },
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
