@@ -357,6 +357,52 @@ contabilidad fina la apaga; el resto ve la plata salir, que es lo que espera.
 mismo orden que los costos: la base no se lo devuelve a un vendedor, y la
 pantalla se lo explica en vez de dejar que salte un error.
 
+### Dictarlas, igual que una venta
+
+Se cargan hablando, sacando una foto o escribiendo, con el mismo botón que
+todo lo demás. Esto costó un error caro y vale la pena dejarlo escrito.
+
+Al principio la captura conocía **tres** tipos: venta, gasto e ingreso. Alguien
+dijo *«tengo una deuda en el banco Atlas, debo cinco millones de mi tarjeta»* y
+quedó guardado como **otro ingreso**: cinco millones sumados a las ganancias de
+un negocio que no había visto un guaraní.
+
+La lección no es que el modelo se equivocó. Es que **un tipo que falta no
+produce un "no sé": produce una respuesta segura y errada.** El modelo empujó
+la frase al casillero más parecido de los que tenía. Cuando una clasificación
+no puede decir "esto no entra acá", la falta de una opción se paga en datos
+mal cargados, sin un solo error a la vista.
+
+Por eso ahora existen dos tipos más:
+
+- **`deuda`** — se contrae una obligación. **No es un movimiento**: no entró ni
+  salió plata del cajón por firmarla, así que no toca las ventas ni los gastos
+  del día. Va a su propia tabla.
+- **`pago_deuda`** — se paga una cuota de una deuda que ya está cargada.
+
+Al interpretar, el servidor le pasa al modelo **las deudas que ya existen**,
+para que *«pagué la cuota de la tarjeta»* sepa de cuál tarjeta habla. Ese
+`deuda_id` **se valida contra las deudas reales de la empresa** antes de usarse:
+un id inventado se descarta y la pantalla pide elegir a mano. Un pago que no
+sabe a qué deuda va no se guarda — sería plata saliendo sin que baje ningún
+saldo.
+
+Esa lista se le pasa **solo para reconocer pagos**, nunca para completar una
+deuda nueva: sin esa aclaración el modelo le ponía al préstamo recién dictado
+el banco de otra deuda de la lista, inventándole un acreedor que nadie nombró.
+Y si lo que se dicta se parece a algo ya cargado, avisa antes de guardar: una
+deuda duplicada hace parecer que se debe el doble.
+
+El prompt vive en `src/lib/captura.ts` y no dentro de la ruta a propósito. La
+ruta importa `next/server` y no se puede ejecutar suelta, y el prompt es
+justamente la pieza que hay que poder probar: acá el error no estuvo en el
+código sino en una regla mal escrita.
+
+Una salvedad: al cargar una **deuda nueva por foto**, la imagen se lee pero no
+se archiva — los comprobantes cuelgan de un movimiento, y una deuda no lo es.
+Lo que la foto decía queda en los datos de la deuda. En un **pago** sí se
+archiva, porque ahí sí hay gasto del que colgarla.
+
 ---
 
 ## Irse, y empezar de nuevo
@@ -497,6 +543,8 @@ src/
     agregados.ts        lecturas agregadas: los números salen de PostgreSQL
     habito.ts           cierre del día y racha
     adjuntos.ts         subir, ver y borrar comprobantes
+    captura.ts          el prompt y el esquema de la captura por voz, foto y texto
+    deudas.ts           lecturas de deudas y de sus pagos
     imagen.ts           achica la foto en el navegador antes de subirla
     precios.ts          precios por plan, moneda y periodo
     pagos.ts            costura de pasarelas: Stripe hecho, Pagopar pendiente

@@ -6,12 +6,19 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
-import type { CapturaInterpretada, ItemInterpretado, Origen, TipoMovimiento } from '@/lib/tipos';
+import type { CapturaInterpretada, DeudaInterpretada, ItemInterpretado, Origen, TipoCaptura } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
 import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
 import { useTextos } from '@/i18n/cliente';
 
 type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
+
+/** Lo mínimo de una deuda para poder elegirla al imputar un pago. */
+type DeudaBreve = { id: string; nombre: string; acreedor: string; saldo: number };
+
+const DEUDA_VACIA: DeudaInterpretada = {
+  clase: 'otro', acreedor: null, cuotas: null, monto_cuota: null, vence_el: null, deuda_id: null,
+};
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
@@ -52,6 +59,19 @@ export function BotonCaptura({
   const [paso, setPaso] = useState('');
   const [origen, setOrigen] = useState<Origen>('texto');
   const [sinCupo, setSinCupo] = useState(false);
+  /**
+   * Las deudas ya cargadas, para poder elegir a cuál se le imputa un pago.
+   *
+   * Se piden recién al revisar, y solo si lo que se dictó es una deuda. La
+   * enorme mayoría de las capturas son ventas y gastos: pedirlas al abrir el
+   * menú sería una consulta al pedo en cada uso.
+   */
+  const [deudas, setDeudas] = useState<DeudaBreve[]>([]);
+  /**
+   * Pagar una cuota también deja el bolsillo más flaco, así que por defecto
+   * se anota el gasto. Quien lleva la contabilidad fina lo desmarca.
+   */
+  const [crearGasto, setCrearGasto] = useState(true);
 
   const grabadora = useRef<MediaRecorder | null>(null);
   const trozos = useRef<Blob[]>([]);
@@ -69,6 +89,8 @@ export function BotonCaptura({
 
   function cerrar() {
     fotoRef.current = null;
+    setDeudas([]);
+    setCrearGasto(true);
     setModo('cerrado');
     setTexto('');
     setError('');
@@ -122,8 +144,44 @@ export function BotonCaptura({
       monto: Number(c.monto) || sumaItems,
       categoria: c.categoria || (c.tipo === 'venta' ? 'Ventas' : 'General'),
       metodo_pago: c.metodo_pago || 'efectivo',
+      // Siempre con forma: así la pantalla no tiene que preguntar si existe
+      // antes de tocar cada campo, ni el tipo cambia bajo los pies al pasar
+      // de gasto a deuda con el selector.
+      deuda: { ...DEUDA_VACIA, ...(c.deuda ?? {}) },
     };
   }
+
+  /**
+   * Trae las deudas cuando hacen falta.
+   *
+   * Si falla se queda con la lista vacía y no se avisa: puede ser sencillamente
+   * que quien captura sea un vendedor, y la base no le devuelve las deudas del
+   * negocio a propósito. En ese caso la pantalla ya le dice que no puede.
+   */
+  useEffect(() => {
+    const esDeuda = borrador?.tipo === 'deuda' || borrador?.tipo === 'pago_deuda';
+    if (modo !== 'revisar' || !esDeuda || deudas.length > 0) return;
+
+    let vivo = true;
+    (async () => {
+      try {
+        const supabase = clienteNavegador();
+        const { data } = await supabase.rpc('listar_deudas', {
+          p_empresa: empresaId, p_incluir_saldadas: false,
+        });
+        if (!vivo || !Array.isArray(data)) return;
+        setDeudas(data.map((d: any) => ({
+          id: String(d.id),
+          nombre: String(d.nombre ?? ''),
+          acreedor: String(d.acreedor ?? ''),
+          saldo: Number(d.saldo ?? 0),
+        })));
+      } catch {
+        // Sin lista: el pago se tendrá que cargar desde Deudas.
+      }
+    })();
+    return () => { vivo = false; };
+  }, [modo, borrador?.tipo, deudas.length, empresaId]);
 
   // ---------------------------------------------------------- audio
   async function empezarGrabacion() {
@@ -214,7 +272,50 @@ export function BotonCaptura({
     try {
       const supabase = clienteNavegador();
 
-      if (borrador.tipo === 'venta') {
+      if (borrador.tipo === 'deuda') {
+        /**
+         * Contraer una deuda NO es un movimiento: no entró ni salió plata del
+         * cajón por firmarla. Por eso va a su propia tabla y no toca las
+         * ventas ni los gastos del día. Era justamente esto lo que fallaba:
+         * «debo cinco millones de la tarjeta» se anotaba como otro ingreso y
+         * el negocio parecía haber ganado plata que nunca vio.
+         */
+        const d = borrador.deuda ?? DEUDA_VACIA;
+        const { error } = await supabase.rpc('crear_deuda', {
+          p_empresa: empresaId,
+          p_nombre: borrador.descripcion || 'Deuda',
+          p_tipo: d.clase,
+          p_acreedor: d.acreedor ?? '',
+          p_monto: borrador.monto,
+          // null: el saldo arranca igual al monto. Una deuda recién cargada
+          // se debe entera.
+          p_saldo: null,
+          p_cuotas_totales: d.cuotas,
+          p_monto_cuota: d.monto_cuota,
+          p_vence_el: d.vence_el,
+          p_notas: borrador.transcripcion ?? '',
+        });
+        if (error) throw error;
+        // Sin movimiento no hay dónde colgar la foto. Lo dictado queda en las
+        // notas de la deuda, que es su lugar.
+
+      } else if (borrador.tipo === 'pago_deuda') {
+        const deudaId = borrador.deuda?.deuda_id;
+        if (!deudaId) throw new Error('Elegí a cuál de tus deudas corresponde el pago.');
+
+        const { data, error } = await supabase.rpc('registrar_pago_deuda', {
+          p_deuda: deudaId,
+          p_monto: borrador.monto,
+          p_fecha: borrador.fecha,
+          p_crear_gasto: crearGasto,
+          p_metodo: borrador.metodo_pago,
+          p_nota: borrador.transcripcion ?? '',
+        });
+        if (error) throw error;
+        // Si se creó el gasto, el comprobante se cuelga de ahí.
+        idGuardado = (data as any)?.movimiento_id ?? null;
+
+      } else if (borrador.tipo === 'venta') {
         // Una venta SIEMPRE pasa por la función transaccional: es la única que
         // mueve stock, congela el costo y deja los items coherentes con el total.
         // Si la IA no separó productos, mandamos una sola línea suelta.
@@ -433,6 +534,7 @@ export function BotonCaptura({
             {modo === 'revisar' && borrador && (
               <Revision
                 borrador={borrador} moneda={moneda} error={error} guardando={guardando} paso={paso}
+                deudas={deudas} crearGasto={crearGasto} onCrearGasto={setCrearGasto}
                 onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
               />
             )}
@@ -459,13 +561,17 @@ function Opcion({ titulo, detalle, icono, onClick }: { titulo: string; detalle: 
 }
 
 function Revision({
-  borrador, moneda, error, guardando, paso, onCambio, onCancelar, onGuardar,
+  borrador, moneda, error, guardando, paso, deudas, crearGasto, onCrearGasto,
+  onCambio, onCancelar, onGuardar,
 }: {
   borrador: CapturaInterpretada;
   moneda: string;
   error: string;
   guardando: boolean;
   paso: string;
+  deudas: DeudaBreve[];
+  crearGasto: boolean;
+  onCrearGasto: (v: boolean) => void;
   onCambio: (c: CapturaInterpretada) => void;
   onCancelar: () => void;
   onGuardar: () => void;
@@ -473,8 +579,35 @@ function Revision({
   const dec = decimalesDe(moneda);
   const bajaConfianza = (borrador.confianza ?? 1) < 0.65;
 
+  const esDeuda = borrador.tipo === 'deuda';
+  const esPago = borrador.tipo === 'pago_deuda';
+  const infoDeuda = borrador.deuda ?? DEUDA_VACIA;
+  const deudaElegida = deudas.find((d) => d.id === infoDeuda.deuda_id) ?? null;
+
   function set<K extends keyof CapturaInterpretada>(clave: K, valor: CapturaInterpretada[K]) {
     onCambio({ ...borrador, [clave]: valor });
+  }
+
+  function setDeuda(cambio: Partial<DeudaInterpretada>) {
+    onCambio({ ...borrador, deuda: { ...infoDeuda, ...cambio } });
+  }
+
+  /**
+   * Cambiar el tipo a mano.
+   *
+   * Al pasar a venta se limpia lo de la deuda y viceversa: dejar los dos
+   * juegos de datos cargados a la vez es lo que después hace que se guarde
+   * una cosa creyendo que es otra.
+   */
+  function setTipo(tipo: TipoCaptura) {
+    const vaADeuda = tipo === 'deuda' || tipo === 'pago_deuda';
+    onCambio({
+      ...borrador,
+      tipo,
+      items: tipo === 'venta' ? borrador.items : [],
+      deuda: vaADeuda ? infoDeuda : DEUDA_VACIA,
+      categoria: tipo === 'pago_deuda' ? 'Deudas' : borrador.categoria,
+    });
   }
 
   function setItem(indice: number, cambio: Partial<ItemInterpretado>) {
@@ -489,7 +622,20 @@ function Revision({
     onCambio({ ...borrador, items, monto: items.length ? total : borrador.monto });
   }
 
-  const etiquetaTipo: Record<TipoMovimiento, string> = { venta: 'Venta', gasto: 'Gasto', ingreso: 'Otro ingreso' };
+  const etiquetaTipo: Record<TipoCaptura, string> = {
+    venta: 'Venta', gasto: 'Gasto', ingreso: 'Otro ingreso',
+    deuda: 'Deuda', pago_deuda: 'Pago de deuda',
+  };
+
+  // La deuda se pinta en ámbar y no en rojo: no es plata que se fue, es plata
+  // que se debe. Son dos cosas distintas y conviene que se vean distintas.
+  const colorTipo = esDeuda ? 'bg-ambar-claro text-ambar'
+    : borrador.tipo === 'gasto' || esPago ? 'bg-rojo-claro text-rojo'
+    : 'bg-verde-claro text-verde-fuerte';
+
+  // Un pago sin saber a qué deuda no se puede guardar: quedaría plata saliendo
+  // sin que baje ningún saldo.
+  const faltaElegirDeuda = esPago && !infoDeuda.deuda_id;
 
   return (
     <div className="max-h-[78vh] overflow-y-auto scroll-limpio">
@@ -498,7 +644,7 @@ function Revision({
           <h2 className="text-[19px] font-bold tracking-tight">Revisá antes de guardar</h2>
           <p className="mt-0.5 text-[13.5px] text-tinta/55">Podés corregir cualquier campo.</p>
         </div>
-        <span className={`pastilla shrink-0 ${borrador.tipo === 'gasto' ? 'bg-rojo-claro text-rojo' : 'bg-verde-claro text-verde-fuerte'}`}>
+        <span className={`pastilla shrink-0 ${colorTipo}`}>
           {etiquetaTipo[borrador.tipo]}
         </span>
       </div>
@@ -520,40 +666,154 @@ function Revision({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="etiqueta">Descripción</label>
+          <label className="etiqueta">{esDeuda ? 'Nombre de la deuda' : 'Descripción'}</label>
           <input className="campo" value={borrador.descripcion} onChange={(e) => set('descripcion', e.target.value)} />
         </div>
 
-        <div>
+        <div className={esDeuda ? 'col-span-2' : ''}>
           <label className="etiqueta">Tipo</label>
-          <select className="campo" value={borrador.tipo} onChange={(e) => set('tipo', e.target.value as TipoMovimiento)}>
+          <select className="campo" value={borrador.tipo} onChange={(e) => setTipo(e.target.value as TipoCaptura)}>
             <option value="venta">Venta</option>
             <option value="gasto">Gasto</option>
             <option value="ingreso">Otro ingreso</option>
+            <option value="deuda">Deuda</option>
+            <option value="pago_deuda">Pago de deuda</option>
           </select>
         </div>
 
-        <div>
-          <label className="etiqueta">Fecha</label>
-          <input type="date" className="campo" value={borrador.fecha ?? ''} onChange={(e) => set('fecha', e.target.value)} />
-        </div>
+        {/* Una deuda no tiene fecha de carga: tiene vencimiento, y va abajo. */}
+        {!esDeuda && (
+          <div>
+            <label className="etiqueta">Fecha</label>
+            <input type="date" className="campo" value={borrador.fecha ?? ''} onChange={(e) => set('fecha', e.target.value)} />
+          </div>
+        )}
 
-        <div>
-          <label className="etiqueta">Categoría</label>
-          <input className="campo" value={borrador.categoria} onChange={(e) => set('categoria', e.target.value)} />
-        </div>
+        {!esDeuda && !esPago && (
+          <div>
+            <label className="etiqueta">Categoría</label>
+            <input className="campo" value={borrador.categoria} onChange={(e) => set('categoria', e.target.value)} />
+          </div>
+        )}
 
-        <div>
-          <label className="etiqueta">Cobro / pago</label>
-          <select className="campo" value={borrador.metodo_pago} onChange={(e) => set('metodo_pago', e.target.value)}>
-            <option value="efectivo">Efectivo</option>
-            <option value="transferencia">Transferencia</option>
-            <option value="tarjeta">Tarjeta</option>
-            <option value="credito">Fiado / crédito</option>
-            <option value="otro">Otro</option>
-          </select>
-        </div>
+        {!esDeuda && (
+          <div>
+            <label className="etiqueta">Cobro / pago</label>
+            <select className="campo" value={borrador.metodo_pago} onChange={(e) => set('metodo_pago', e.target.value)}>
+              <option value="efectivo">Efectivo</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="tarjeta">Tarjeta</option>
+              <option value="credito">Fiado / crédito</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+        )}
       </div>
+
+      {/* ---------------- DEUDA NUEVA ---------------- */}
+      {esDeuda && (
+        <div className="mt-5 rounded-2xl border border-ambar/25 bg-ambar-claro/40 p-4">
+          <p className="titulo-seccion mb-3">Datos de la deuda</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="etiqueta">Clase</label>
+              <select
+                className="campo" value={infoDeuda.clase}
+                onChange={(e) => setDeuda({ clase: e.target.value as DeudaInterpretada['clase'] })}
+              >
+                <option value="tarjeta">Tarjeta</option>
+                <option value="prestamo">Préstamo</option>
+                <option value="proveedor">Proveedor</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="etiqueta">A quién</label>
+              <input
+                className="campo" placeholder="Banco, financiera…"
+                value={infoDeuda.acreedor ?? ''}
+                onChange={(e) => setDeuda({ acreedor: e.target.value || null })}
+              />
+            </div>
+
+            <div>
+              <label className="etiqueta">Cuotas</label>
+              <input
+                type="number" inputMode="numeric" min={0} step={1}
+                className="campo" placeholder="—"
+                value={infoDeuda.cuotas ?? ''}
+                onChange={(e) => setDeuda({ cuotas: Number(e.target.value) || null })}
+              />
+            </div>
+
+            <div>
+              <label className="etiqueta">Monto por cuota</label>
+              <input
+                type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
+                className="campo" placeholder="—"
+                value={infoDeuda.monto_cuota ?? ''}
+                onChange={(e) => setDeuda({ monto_cuota: Number(e.target.value) || null })}
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="etiqueta">Próximo vencimiento</label>
+              <input
+                type="date" className="campo"
+                value={infoDeuda.vence_el ?? ''}
+                onChange={(e) => setDeuda({ vence_el: e.target.value || null })}
+              />
+              <p className="mt-1.5 text-[12.5px] text-tinta/50">
+                Si lo dejás vacío, la deuda no te va a avisar cuándo pagar.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- PAGO DE UNA DEUDA ---------------- */}
+      {esPago && (
+        <div className="mt-5 rounded-2xl border border-borde bg-arena p-4">
+          <label className="etiqueta">¿Cuál deuda estás pagando?</label>
+          {deudas.length === 0 ? (
+            <p className="mt-1 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
+              No hay deudas cargadas para imputar el pago. Cargá primero la deuda.
+            </p>
+          ) : (
+            <select
+              className="campo" value={infoDeuda.deuda_id ?? ''}
+              onChange={(e) => setDeuda({ deuda_id: e.target.value || null })}
+            >
+              <option value="">Elegí una…</option>
+              {deudas.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.nombre}{d.acreedor ? ' · ' + d.acreedor : ''} — falta {dinero(d.saldo, moneda)}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {deudaElegida && borrador.monto > deudaElegida.saldo && (
+            <p className="mt-2.5 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
+              Es más de lo que falta. Se va a aplicar solo {dinero(deudaElegida.saldo, moneda)} y la deuda queda saldada.
+            </p>
+          )}
+
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox" className="mt-0.5 h-4 w-4 accent-verde"
+              checked={crearGasto} onChange={(e) => onCrearGasto(e.target.checked)}
+            />
+            <span className="text-[13.5px] leading-snug text-tinta/70">
+              Anotar también como gasto del día
+              <span className="block text-[12.5px] text-tinta/45">
+                La plata salió del cajón. Desmarcalo solo si llevás la contabilidad aparte.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
 
       {borrador.items.length > 0 && (
         <div className="mt-5">
@@ -596,7 +856,9 @@ function Revision({
       )}
 
       <div className="mt-5 rounded-2xl bg-arena p-4">
-        <label className="etiqueta">Total</label>
+        <label className="etiqueta">
+          {esDeuda ? 'Cuánto debés en total' : esPago ? 'Cuánto pagaste' : 'Total'}
+        </label>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
           className="campo text-[22px] font-bold tabular-nums"
@@ -610,7 +872,7 @@ function Revision({
 
       <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
         <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>Atrás</button>
-        <button className="boton-principal py-3" onClick={onGuardar} disabled={guardando || borrador.monto <= 0}>
+        <button className="boton-principal py-3" onClick={onGuardar} disabled={guardando || borrador.monto <= 0 || faltaElegirDeuda}>
           {guardando ? paso || 'Guardando…' : 'Guardar'}
         </button>
       </div>

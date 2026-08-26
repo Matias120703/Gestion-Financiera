@@ -1,5 +1,15 @@
 export type Rol = 'propietario' | 'admin' | 'vendedor';
 export type TipoMovimiento = 'venta' | 'gasto' | 'ingreso';
+/**
+ * Lo que la captura por voz, foto o texto puede llegar a entender.
+ *
+ * Es más ancho que TipoMovimiento a propósito: contraer una deuda NO es un
+ * movimiento —no entra ni sale plata al firmarla— pero sí es algo que
+ * alguien le puede dictar a la app. Tenerlos separados es lo que evita que
+ * una deuda termine sumando en los ingresos del día.
+ */
+export type TipoCaptura = TipoMovimiento | 'deuda' | 'pago_deuda';
+export type ClaseDeuda = 'tarjeta' | 'prestamo' | 'proveedor' | 'otro';
 export type Origen = 'manual' | 'texto' | 'audio' | 'foto';
 export type Medida = 'ventas' | 'ganancia';
 export type EstadoMovimiento = 'activo' | 'anulado';
@@ -161,8 +171,30 @@ export interface ItemInterpretado {
   producto_id?: string | null;
 }
 
+/**
+ * Lo que la IA entendió de una deuda dictada, ya limpio por el servidor.
+ *
+ * Va aparte de los campos del movimiento porque casi ninguno sirve para los
+ * dos: una venta no tiene acreedor ni cuotas, y una deuda no tiene método de
+ * pago.
+ */
+export interface DeudaInterpretada {
+  clase: ClaseDeuda;
+  acreedor: string | null;
+  cuotas: number | null;
+  monto_cuota: number | null;
+  /** YYYY-MM-DD. */
+  vence_el: string | null;
+  /**
+   * Solo en pago_deuda: a cuál de las deudas ya cargadas corresponde. El
+   * servidor lo valida contra las deudas reales de la empresa, así que si
+   * llega con valor es un id que existe. Si viene null, hay que preguntar.
+   */
+  deuda_id: string | null;
+}
+
 export interface CapturaInterpretada {
-  tipo: TipoMovimiento;
+  tipo: TipoCaptura;
   fecha?: string | null;
   descripcion: string;
   categoria: string;
@@ -170,6 +202,8 @@ export interface CapturaInterpretada {
   metodo_pago: string;
   contraparte?: string | null;
   items: ItemInterpretado[];
+  /** Solo cuando tipo es 'deuda' o 'pago_deuda'. */
+  deuda?: DeudaInterpretada | null;
   confianza: number;
   aviso?: string | null;
   transcripcion?: string | null;
