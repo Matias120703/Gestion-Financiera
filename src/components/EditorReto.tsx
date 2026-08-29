@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe } from '@/lib/formato';
@@ -34,6 +35,7 @@ function FormularioReto({
   moneda: string;
   reto?: Reto;
 }) {
+  const t = useTextos();
   const router = useRouter();
   const dec = decimalesDe(moneda);
   const [abierto, setAbierto] = useState(!reto);
@@ -104,7 +106,7 @@ function FormularioReto({
   if (!abierto) {
     return (
       <div className="flex flex-wrap gap-2.5">
-        <button className="boton-suave" onClick={() => setAbierto(true)}>Editar reto</button>
+        <button className="boton-suave" onClick={() => setAbierto(true)}>{t.pantallas.editarReto}</button>
         {reto && (
           <button className="boton-suave text-rojo" onClick={cerrarReto} disabled={guardando}>
             Cerrar reto
@@ -117,12 +119,12 @@ function FormularioReto({
   return (
     <form onSubmit={guardar} className="space-y-3 text-left">
       <label className="block">
-        <span className="etiqueta">Nombre del reto</span>
+        <span className="etiqueta">{t.pantallas.nombreDelReto}</span>
         <input className="campo" maxLength={60} value={nombre} onChange={(e) => setNombre(e.target.value)} />
       </label>
 
       <label className="block">
-        <span className="etiqueta">Meta</span>
+        <span className="etiqueta">{t.pantallas.meta}</span>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1000 : 0.01}
           className="campo text-[20px] font-bold tabular-nums"
@@ -132,7 +134,7 @@ function FormularioReto({
       </label>
 
       <div>
-        <span className="etiqueta">Qué contamos</span>
+        <span className="etiqueta">{t.pantallas.queContamos}</span>
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
           {(['ventas', 'ganancia'] as const).map((v) => (
             <button
@@ -154,11 +156,11 @@ function FormularioReto({
 
       <div className="grid grid-cols-2 gap-2.5">
         <label className="block">
-          <span className="etiqueta">Empieza</span>
+          <span className="etiqueta">{t.pantallas.empieza}</span>
           <input type="date" className="campo py-2.5" value={inicio} onChange={(e) => setInicio(e.target.value)} />
         </label>
         <label className="block">
-          <span className="etiqueta">Termina</span>
+          <span className="etiqueta">{t.pantallas.termina}</span>
           <input type="date" className="campo py-2.5" value={fin} onChange={(e) => setFin(e.target.value)} />
         </label>
       </div>
@@ -173,7 +175,7 @@ function FormularioReto({
 
       <div className="flex gap-2.5">
         {reto && (
-          <button type="button" className="boton-suave flex-1 py-3" onClick={() => setAbierto(false)}>Cancelar</button>
+          <button type="button" className="boton-suave flex-1 py-3" onClick={() => setAbierto(false)}>{t.comun.cancelar}</button>
         )}
         <button type="submit" className="boton-principal flex-1 py-3" disabled={guardando}>
           {guardando ? 'Guardando…' : reto ? 'Guardar cambios' : 'Empezar el reto'}

@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import { LISTA_RUBROS } from '@/lib/rubros';
+import { useTextos } from '@/i18n/cliente';
 import type { Rubro } from '@/lib/tipos';
 
 export default function PaginaEmpezar() {
   const router = useRouter();
+  const t = useTextos();
   const [pestania, setPestania] = useState<'crear' | 'unirme'>('crear');
   /**
    * Qué tipo de cuenta se está creando.
@@ -33,6 +35,18 @@ export default function PaginaEmpezar() {
    * Se puede cambiar después en Ajustes sin perder nada.
    */
   const [rubro, setRubro] = useState<Rubro>('comercio');
+  /**
+   * De dónde salió esta persona.
+   *
+   * Se pregunta acá y no se deduce después: en el momento la respuesta es
+   * honesta, reconstruida de memoria un mes más tarde no vale nada. Y es la
+   * única forma de saber qué canal trae clientes de verdad antes de gastar
+   * en publicidad.
+   *
+   * Opcional a propósito. Una pregunta obligatoria en el registro es una
+   * puerta más que cruzar, y este dato no vale una cuenta perdida.
+   */
+  const [comoNosConocio, setComoNosConocio] = useState('');
   const [nombre, setNombre] = useState('');
   const [moneda, setMoneda] = useState('PYG');
   const [codigo, setCodigo] = useState('');
@@ -62,6 +76,7 @@ export default function PaginaEmpezar() {
         p_zona: zonaDelNavegador(),
         p_tipo_cuenta: tipoCuenta,
         p_rubro: tipoCuenta === 'personal' ? 'comercio' : rubro,
+        p_como_nos_conocio: comoNosConocio,
       });
       if (error) throw error;
       activar(data as string);
@@ -105,10 +120,10 @@ export default function PaginaEmpezar() {
         </div>
 
         <div className="tarjeta p-6">
-          <p className="titulo-seccion">Primer paso</p>
-          <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">Empecemos.</h1>
+          <p className="titulo-seccion">{t.pantallas.primerPaso}</p>
+          <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">{t.pantallas.empecemos}</h1>
           <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">
-            Creá tu cuenta o sumate a una con el código que te pasaron.
+            {t.pantallas.creaTuCuenta}
           </p>
 
           <div className="mt-5 grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
@@ -120,7 +135,7 @@ export default function PaginaEmpezar() {
                   pestania === p ? 'bg-white text-tinta shadow-sm' : 'text-tinta/55'
                 }`}
               >
-                {p === 'crear' ? 'Crear empresa' : 'Unirme con código'}
+                {p === 'crear' ? t.pantallas.crearEmpresa : t.pantallas.unirmeConCodigo}
               </button>
             ))}
           </div>
@@ -128,28 +143,28 @@ export default function PaginaEmpezar() {
           {pestania === 'crear' ? (
             <form onSubmit={crear} className="mt-5 space-y-4">
               <div>
-                <label className="etiqueta">¿Para qué lo vas a usar?</label>
+                <label className="etiqueta">{t.pantallas.paraQueLoVasAUsar}</label>
                 <div className="mt-1 grid gap-2">
                   <Eleccion
                     activo={tipoCuenta === 'emprendedor'}
                     onClick={() => setTipoCuenta('emprendedor')}
-                    titulo="Para mi negocio"
-                    detalle="Ventas, productos y stock. Podés sumar vendedores."
-                    prueba="20 días de prueba"
+                    titulo={t.pantallas.paraMiNegocio}
+                    detalle={t.pantallas.paraMiNegocioDetalle}
+                    prueba={t.pantallas.diasPrueba(20)}
                   />
                   <Eleccion
                     activo={tipoCuenta === 'personal'}
                     onClick={() => setTipoCuenta('personal')}
-                    titulo="Para mí"
-                    detalle="Sueldo, gastos y deudas. Sin ventas ni productos."
-                    prueba="14 días de prueba"
+                    titulo={t.pantallas.paraMi}
+                    detalle={t.pantallas.paraMiDetalle}
+                    prueba={t.pantallas.diasPrueba(14)}
                   />
                 </div>
               </div>
 
               {tipoCuenta !== 'personal' && (
                 <div>
-                  <label className="etiqueta" htmlFor="rubro">¿En qué andás?</label>
+                  <label className="etiqueta" htmlFor="rubro">{t.pantallas.enQueAndas}</label>
                   <select
                     id="rubro" className="campo" value={rubro}
                     onChange={(e) => setRubro(e.target.value as Rubro)}
@@ -161,34 +176,51 @@ export default function PaginaEmpezar() {
                   <p className="mt-1.5 text-[12.5px] leading-snug text-tinta/50">
                     {LISTA_RUBROS.find((r) => r.clave === rubro)?.ejemplo}
                     {'. '}
-                    Adapta las categorías y las pantallas a tu trabajo. Se puede cambiar después.
+                    {t.pantallas.rubroDetalle}
                   </p>
                 </div>
               )}
 
               <div>
                 <label className="etiqueta" htmlFor="nombre">
-                  {tipoCuenta === 'personal' ? 'Ponele un nombre' : 'Nombre del negocio'}
+                  {tipoCuenta === 'personal' ? t.pantallas.poneleNombre : t.pantallas.nombreDelNegocio}
                 </label>
                 <input id="nombre" className="campo" required maxLength={60}
-                  placeholder={tipoCuenta === 'personal' ? 'Ej. Mis finanzas' : 'Ej. Perfumería Aurora'}
+                  placeholder={tipoCuenta === 'personal' ? t.pantallas.ejemploPersonal : t.pantallas.ejemploNegocio}
                   value={nombre}
                   onChange={(e) => setNombre(e.target.value)} />
               </div>
               <div>
-                <label className="etiqueta" htmlFor="moneda">Moneda</label>
+                <label className="etiqueta" htmlFor="moneda">{t.pantallas.moneda}</label>
                 <select id="moneda" className="campo" value={moneda} onChange={(e) => setMoneda(e.target.value)}>
-                  <option value="PYG">Guaraníes (Gs.)</option>
-                  <option value="USD">Dólares (US$)</option>
-                  <option value="ARS">Pesos argentinos ($)</option>
-                  <option value="BRL">Reales (R$)</option>
-                  <option value="EUR">Euros (€)</option>
+                  <option value="PYG">{t.pantallas.monedaPYG}</option>
+                  <option value="USD">{t.pantallas.monedaUSD}</option>
+                  <option value="ARS">{t.pantallas.monedaARS}</option>
+                  <option value="BRL">{t.pantallas.monedaBRL}</option>
+                  <option value="EUR">{t.pantallas.monedaEUR}</option>
                 </select>
               </div>
               <div>
-                <label className="etiqueta" htmlFor="mi-nombre">Tu nombre</label>
+                <label className="etiqueta" htmlFor="conocio">{t.pantallas.comoNosConociste}</label>
+                <select
+                  id="conocio" className="campo" value={comoNosConocio}
+                  onChange={(e) => setComoNosConocio(e.target.value)}
+                >
+                  <option value="">{t.pantallas.prefieroNoDecir}</option>
+                  <option value="TikTok">TikTok</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="Facebook">Facebook</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Un conocido">{t.pantallas.unConocido}</option>
+                  <option value="Google">Google</option>
+                  <option value="Otro">{t.captura.metodoOtro}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="etiqueta" htmlFor="mi-nombre">{t.pantallas.tuNombre}</label>
                 <input id="mi-nombre" className="campo" maxLength={40}
-                  placeholder={tipoCuenta === 'personal' ? 'Cómo querés que te llamemos' : 'Cómo te ven tus colaboradores'}
+                  placeholder={tipoCuenta === 'personal' ? t.pantallas.comoTeLlamamos : t.pantallas.comoTeVen}
                   value={miNombre} onChange={(e) => setMiNombre(e.target.value)} />
               </div>
               {error && <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
@@ -199,14 +231,14 @@ export default function PaginaEmpezar() {
           ) : (
             <form onSubmit={unirme} className="mt-5 space-y-4">
               <div>
-                <label className="etiqueta" htmlFor="codigo">Código de la empresa</label>
+                <label className="etiqueta" htmlFor="codigo">{t.pantallas.codigoEmpresa}</label>
                 <input id="codigo" className="campo font-mono uppercase tracking-widest" required maxLength={12}
-                  placeholder="A7F2K9P1" autoCapitalize="characters" value={codigo}
+                  placeholder="A7F2K9P1"  /* un código, no un texto: no se traduce */ autoCapitalize="characters" value={codigo}
                   onChange={(e) => setCodigo(e.target.value.toUpperCase())} />
               </div>
               <div>
-                <label className="etiqueta" htmlFor="mi-nombre-2">Tu nombre</label>
-                <input id="mi-nombre-2" className="campo" maxLength={40} placeholder="Para que sepan quién cargó cada venta"
+                <label className="etiqueta" htmlFor="mi-nombre-2">{t.pantallas.tuNombre}</label>
+                <input id="mi-nombre-2" className="campo" maxLength={40} placeholder={t.pantallas.quienCargo}
                   value={miNombre} onChange={(e) => setMiNombre(e.target.value)} />
               </div>
               {error && <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
@@ -217,7 +249,7 @@ export default function PaginaEmpezar() {
           )}
 
           <button type="button" onClick={salir} className="mt-5 w-full text-center text-[13px] font-semibold text-tinta/45 hover:text-tinta">
-            Cerrar sesión
+            {t.pantallas.cerrarSesion}
           </button>
         </div>
       </div>

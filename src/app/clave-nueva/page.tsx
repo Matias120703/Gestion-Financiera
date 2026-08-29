@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { useTextos } from '@/i18n/cliente';
 
 /**
  * PONER LA CONTRASEÑA NUEVA.
@@ -24,6 +25,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
  */
 export default function PaginaClaveNueva() {
   const router = useRouter();
+  const t = useTextos();
   const [estado, setEstado] = useState<'mirando' | 'listo' | 'sinSesion'>('mirando');
   const [clave, setClave] = useState('');
   const [repetida, setRepetida] = useState('');
@@ -56,13 +58,13 @@ export default function PaginaClaveNueva() {
     setError('');
 
     if (clave.length < 6) {
-      setError('La contraseña necesita al menos 6 caracteres.');
+      setError(t.acceso.claveCorta);
       return;
     }
     // Se piden dos veces porque acá no hay forma de corregir un error de
     // tipeo: si se guarda mal, la persona queda afuera otra vez.
     if (clave !== repetida) {
-      setError('Las dos contraseñas no coinciden.');
+      setError(t.acceso.noCoinciden);
       return;
     }
 
@@ -77,8 +79,8 @@ export default function PaginaClaveNueva() {
       setTimeout(() => { router.push('/panel'); router.refresh(); }, 1400);
     } catch (err: any) {
       const m: string = err?.message ?? 'No se pudo guardar.';
-      if (/should be different/i.test(m)) setError('Esa es la contraseña que ya tenías. Poné una distinta.');
-      else if (/session/i.test(m)) setError('El enlace venció. Pedí uno nuevo.');
+      if (/should be different/i.test(m)) setError(t.acceso.esLaMisma);
+      else if (/session/i.test(m)) setError(t.acceso.sesionVencida);
       else setError(m);
     } finally {
       setCargando(false);
@@ -95,56 +97,55 @@ export default function PaginaClaveNueva() {
 
         <div className="tarjeta p-6">
           {estado === 'mirando' && (
-            <p className="py-6 text-center text-[14px] text-tinta/55">Un momento…</p>
+            <p className="py-6 text-center text-[14px] text-tinta/55">{t.acceso.unMomento}</p>
           )}
 
           {estado === 'sinSesion' && (
             <>
-              <p className="titulo-seccion">Enlace vencido</p>
+              <p className="titulo-seccion">{t.acceso.enlaceVencido}</p>
               <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
-                Este enlace ya no sirve.
+                {t.acceso.enlaceVencidoTitulo}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
-                Los enlaces para cambiar la contraseña duran poco, a propósito. Pedí uno nuevo y
-                usalo apenas te llegue.
+                {t.acceso.enlaceVencidoDetalle}
               </p>
               <Link href="/recuperar" className="boton-principal mt-6 flex w-full justify-center py-3">
-                Pedir otro enlace
+                {t.acceso.pedirOtro}
               </Link>
             </>
           )}
 
           {estado === 'listo' && (hecho ? (
             <>
-              <p className="titulo-seccion">Listo</p>
+              <p className="titulo-seccion">{t.comun.listo}</p>
               <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
-                Contraseña cambiada.
+                {t.acceso.cambiada}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
-                Te estamos haciendo entrar. Todo lo tuyo sigue donde estaba.
+                {t.acceso.entrando}
               </p>
             </>
           ) : (
             <>
-              <p className="titulo-seccion">Casi</p>
+              <p className="titulo-seccion">{t.acceso.casi}</p>
               <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
-                Poné tu contraseña nueva.
+                {t.acceso.ponerNueva}
               </h1>
 
               <form onSubmit={guardar} className="mt-6 space-y-4" noValidate>
                 <div>
-                  <label className="etiqueta" htmlFor="clave">Contraseña nueva</label>
+                  <label className="etiqueta" htmlFor="clave">{t.acceso.claveNueva}</label>
                   <input
                     id="clave" type="password" className="campo" required minLength={6}
-                    autoComplete="new-password" placeholder="Mínimo 6 caracteres"
+                    autoComplete="new-password" placeholder={t.acceso.minimoSeis}
                     value={clave} onChange={(e) => setClave(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="etiqueta" htmlFor="repetida">Repetila</label>
+                  <label className="etiqueta" htmlFor="repetida">{t.acceso.repetila}</label>
                   <input
                     id="repetida" type="password" className="campo" required minLength={6}
-                    autoComplete="new-password" placeholder="La misma de arriba"
+                    autoComplete="new-password" placeholder={t.acceso.laMismaDeArriba}
                     value={repetida} onChange={(e) => setRepetida(e.target.value)}
                   />
                 </div>
@@ -156,7 +157,7 @@ export default function PaginaClaveNueva() {
                 )}
 
                 <button type="submit" className="boton-principal w-full py-3" disabled={cargando}>
-                  {cargando ? 'Guardando…' : 'Guardar y entrar'}
+                  {cargando ? t.comun.guardando : t.acceso.guardarYEntrar}
                 </button>
               </form>
             </>

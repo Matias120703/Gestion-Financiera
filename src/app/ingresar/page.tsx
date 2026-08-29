@@ -4,10 +4,12 @@ import { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { useTextos } from '@/i18n/cliente';
 
 function Formulario() {
   const router = useRouter();
   const params = useSearchParams();
+  const t = useTextos();
   const [modo, setModo] = useState<'entrar' | 'crear'>('entrar');
   const [email, setEmail] = useState('');
   const [clave, setClave] = useState('');
@@ -21,7 +23,7 @@ function Formulario() {
     setAviso('');
 
     if (clave.length < 6) {
-      setError('La contraseña necesita al menos 6 caracteres.');
+      setError(t.acceso.claveCorta);
       return;
     }
 
@@ -53,7 +55,7 @@ function Formulario() {
           return;
         }
 
-        setAviso('Te mandamos un correo para confirmar tu dirección. Abrilo y volvé a entrar acá.');
+        setAviso(t.acceso.confirmaTuCorreo);
         setModo('entrar');
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -66,9 +68,9 @@ function Formulario() {
       }
     } catch (err: any) {
       const mensaje: string = err?.message ?? 'No se pudo completar la operación.';
-      if (/invalid login/i.test(mensaje)) setError('Correo o contraseña incorrectos.');
-      else if (/already registered/i.test(mensaje)) setError('Ese correo ya tiene una cuenta. Probá entrar.');
-      else if (/email not confirmed/i.test(mensaje)) setError('Confirmá tu correo antes de entrar.');
+      if (/invalid login/i.test(mensaje)) setError(t.acceso.credencialesMal);
+      else if (/already registered/i.test(mensaje)) setError(t.acceso.yaRegistrado);
+      else if (/email not confirmed/i.test(mensaje)) setError(t.acceso.sinConfirmar);
       else setError(mensaje);
     } finally {
       setCargando(false);
@@ -84,29 +86,29 @@ function Formulario() {
         </div>
 
         <div className="tarjeta p-6">
-          <p className="titulo-seccion">Gestión financiera</p>
+          <p className="titulo-seccion">{t.acceso.marca}</p>
           <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
-            {modo === 'entrar' ? 'Entrá a tu negocio.' : 'Creá tu cuenta.'}
+            {modo === 'entrar' ? t.acceso.entrarTitulo : t.acceso.crearTitulo}
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">
-            Registrá lo que vendés y lo que gastás. El sistema calcula tu ganancia real.
+            {t.acceso.bajada}
           </p>
 
           <form onSubmit={enviar} className="mt-6 space-y-4" noValidate>
             <div>
-              <label className="etiqueta" htmlFor="email">Correo electrónico</label>
+              <label className="etiqueta" htmlFor="email">{t.acceso.correo}</label>
               <input
                 id="email" type="email" className="campo" required autoComplete="email"
-                placeholder="nombre@correo.com" value={email}
+                placeholder={t.acceso.correoEjemplo} value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
-              <label className="etiqueta" htmlFor="clave">Contraseña</label>
+              <label className="etiqueta" htmlFor="clave">{t.acceso.contrasena}</label>
               <input
                 id="clave" type="password" className="campo" required minLength={6}
                 autoComplete={modo === 'crear' ? 'new-password' : 'current-password'}
-                placeholder="Mínimo 6 caracteres" value={clave}
+                placeholder={t.acceso.minimoSeis} value={clave}
                 onChange={(e) => setClave(e.target.value)}
               />
             </div>
@@ -123,7 +125,7 @@ function Formulario() {
             )}
 
             <button type="submit" className="boton-principal w-full py-3" disabled={cargando}>
-              {cargando ? 'Un momento…' : modo === 'entrar' ? 'Entrar' : 'Crear cuenta'}
+              {cargando ? t.acceso.unMomento : modo === 'entrar' ? t.acceso.entrar : t.acceso.crearCuenta}
             </button>
           </form>
 
@@ -132,24 +134,24 @@ function Formulario() {
           {modo === 'entrar' && (
             <p className="mt-4 text-center">
               <Link href="/recuperar" className="text-[13.5px] font-semibold text-tinta/50 hover:text-tinta">
-                ¿Te olvidaste la contraseña?
+                {t.acceso.olvide}
               </Link>
             </p>
           )}
 
           <p className="mt-5 text-center text-sm text-tinta/60">
-            {modo === 'entrar' ? '¿Todavía no tenés cuenta?' : '¿Ya tenés cuenta?'}{' '}
+            {modo === 'entrar' ? t.acceso.sinCuenta : t.acceso.yaTenesCuenta}{' '}
             <button
               type="button" className="boton-texto"
               onClick={() => { setModo(modo === 'entrar' ? 'crear' : 'entrar'); setError(''); setAviso(''); }}
             >
-              {modo === 'entrar' ? 'Crear una' : 'Entrar'}
+              {modo === 'entrar' ? t.acceso.crearUna : t.acceso.entrar}
             </button>
           </p>
         </div>
 
         <p className="mt-5 text-center text-[13px] leading-relaxed text-white/40">
-          Cada empresa ve solo sus datos. La separación está aplicada en la base de datos, no en el navegador.
+          {t.acceso.separacion}
         </p>
       </div>
     </main>

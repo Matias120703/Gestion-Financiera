@@ -1,4 +1,5 @@
 import { contextoObligatorio } from '@/lib/sesion';
+import { textos } from '@/i18n';
 import { rangoDesdeParams } from '@/lib/datos';
 import { traerResumen, traerPaginaMovimientos, contarMovimientos, TAMANO_PAGINA } from '@/lib/agregados';
 import { cargarPagina } from './acciones';
@@ -17,6 +18,7 @@ export default async function PaginaMovimientos({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+  const t = textos();
   const rango = rangoDesdeParams(searchParams);
   // Los totales salen agregados de la base; la lista es solo la primera página.
   const [r, pagina, total] = await Promise.all([
@@ -32,13 +34,13 @@ export default async function PaginaMovimientos({
       <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo="Movimientos válidos" valor={numero(total - r.movimientosAnulados)} detalle={rango.etiqueta.toLowerCase()} />
-        <Indicador titulo="Entró" valor={dineroCorto(r.ingresosTotales, m)} tono="bueno" />
-        <Indicador titulo="Salió" valor={dineroCorto(r.gastos, m)} tono="malo" />
+        <Indicador titulo={t.pantallas.movimientosValidos} valor={numero(total - r.movimientosAnulados)} detalle={rango.etiqueta.toLowerCase()} />
+        <Indicador titulo={t.pantallas.entro} valor={dineroCorto(r.ingresosTotales, m)} tono="bueno" />
+        <Indicador titulo={t.pantallas.salio} valor={dineroCorto(r.gastos, m)} tono="malo" />
         {verRent ? (
-          <Indicador titulo="Ganancia neta" valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
+          <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
         ) : (
-          <Indicador titulo="Unidades" valor={numero(r.unidadesVendidas)} detalle="entregadas" />
+          <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle="entregadas" />
         )}
       </div>
 

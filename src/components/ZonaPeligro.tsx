@@ -282,7 +282,7 @@ function BorrarCuenta() {
                   className="campo"
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
-                  placeholder="BORRAR"
+                  placeholder="BORRAR"  /* palabra de confirmación: la base la compara literal */
                   autoComplete="off"
                 />
               </label>

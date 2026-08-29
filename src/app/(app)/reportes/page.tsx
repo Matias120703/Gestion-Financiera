@@ -1,4 +1,5 @@
 import { contextoObligatorio } from '@/lib/sesion';
+import { textos } from '@/i18n';
 import { rangoDesdeParams, traerProductos } from '@/lib/datos';
 import {
   traerResumen, traerRanking, traerGastosPorCategoria, traerCobrosPorMetodo,
@@ -17,6 +18,7 @@ export default async function PaginaReportes({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+  const t = textos();
   const rango = rangoDesdeParams(searchParams);
   // Todo agregado en la base: cinco llamadas que devuelven pocas filas cada una.
   const [r, ranking, categorias, metodos, productos] = await Promise.all([
@@ -42,7 +44,7 @@ export default async function PaginaReportes({
       {permisos.descargarExcel ? (
         <div className="tarjeta flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-[16px] font-bold tracking-tight">Descargar el Excel del periodo</h2>
+            <h2 className="text-[16px] font-bold tracking-tight">{t.pantallas.descargarExcel}</h2>
             <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
               {rango.desde === rango.hasta ? fechaLegible(rango.desde) : `${fechaLegible(rango.desde)} — ${fechaLegible(rango.hasta)}`}
               {' · '}5 hojas: resumen, productos, movimientos, gastos y día por día.
@@ -60,36 +62,36 @@ export default async function PaginaReportes({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {verRent ? (
           <>
-            <Indicador titulo="Vendido" valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} />
-            <Indicador titulo="Ganancia bruta" valor={dineroCorto(r.gananciaBruta, m)} detalle={`margen ${porcentaje(r.margenBruto, 0)}`} />
-            <Indicador titulo="Gastos" valor={dineroCorto(r.gastos, m)} tono="malo" />
-            <Indicador titulo="Ganancia neta" valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} destacado />
+            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} />
+            <Indicador titulo={t.panel.gananciaBruta} valor={dineroCorto(r.gananciaBruta, m)} detalle={`margen ${porcentaje(r.margenBruto, 0)}`} />
+            <Indicador titulo={t.panel.gastos} valor={dineroCorto(r.gastos, m)} tono="malo" />
+            <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} destacado />
           </>
         ) : (
           <>
-            <Indicador titulo="Vendido" valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} destacado />
-            <Indicador titulo="Unidades" valor={numero(r.unidadesVendidas)} detalle="entregadas" />
-            <Indicador titulo="Ticket promedio" valor={dineroCorto(r.ticketPromedio, m)} detalle="por venta" />
-            <Indicador titulo="Descuentos" valor={dineroCorto(r.descuentos, m)} detalle="que diste" />
+            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} destacado />
+            <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle="entregadas" />
+            <Indicador titulo={t.panel.ticketPromedio} valor={dineroCorto(r.ticketPromedio, m)} detalle="por venta" />
+            <Indicador titulo={t.pantallas.descuentos} valor={dineroCorto(r.descuentos, m)} detalle="que diste" />
           </>
         )}
       </div>
 
-      <Seccion titulo="Ranking completo de productos">
+      <Seccion titulo={t.pantallas.rankingCompleto}>
         {ranking.length === 0 ? (
-          <Vacio titulo="Sin ventas en este periodo" detalle="Cambiá el rango o registrá tu primera venta." />
+          <Vacio titulo={t.pantallas.sinVentasPeriodo} detalle={t.pantallas.sinVentasPeriodoDetalle} />
         ) : (
           <div className="overflow-x-auto">
             <table className="tabla min-w-[680px]">
               <thead>
                 <tr>
                   <th className="w-10">#</th>
-                  <th>Producto</th>
-                  <th className="num">Unidades</th>
-                  <th className="num">Vendido</th>
-                  {verRent && <th className="num">Costo</th>}
-                  {verRent && <th className="num">Ganancia</th>}
-                  {verRent && <th className="num">Margen</th>}
+                  <th>{t.productos.colProducto}</th>
+                  <th className="num">{t.pantallas.colUnidadesLargo}</th>
+                  <th className="num">{t.panel.colVendido}</th>
+                  {verRent && <th className="num">{t.productos.colCosto}</th>}
+                  {verRent && <th className="num">{t.panel.colGanancia}</th>}
+                  {verRent && <th className="num">{t.productos.colMargen}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -120,9 +122,9 @@ export default async function PaginaReportes({
       </Seccion>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Seccion titulo="Cómo te pagaron">
+        <Seccion titulo={t.pantallas.comoTePagaron}>
           {metodos.length === 0 ? (
-            <Vacio titulo="Sin cobros" detalle="Cuando registres ventas vas a ver acá cómo te pagan." />
+            <Vacio titulo={t.pantallas.sinCobros} detalle={t.pantallas.sinCobrosDetalle} />
           ) : (
             <div className="space-y-3.5 px-4 pb-4 pt-3">
               {metodos.map(({ metodo, monto, participacion: p }) => {
@@ -142,14 +144,14 @@ export default async function PaginaReportes({
         </Seccion>
 
         {verRent && (
-        <Seccion titulo="Gastos por categoría">
+        <Seccion titulo={t.pantallas.gastosPorCategoria}>
           {categorias.length === 0 ? (
-            <Vacio titulo="Sin gastos" detalle="Registrar gastos es lo que vuelve real a la ganancia neta." />
+            <Vacio titulo={t.pantallas.sinGastos} detalle={t.pantallas.sinGastosDetalle} />
           ) : (
             <div className="overflow-x-auto">
               <table className="tabla">
                 <thead>
-                  <tr><th>Categoría</th><th className="num">Total</th><th className="num">Mov.</th><th className="num">%</th></tr>
+                  <tr><th>{t.productos.categoria}</th><th className="num">{t.venta.total}</th><th className="num">{t.pantallas.colMov}</th><th className="num">%</th></tr>
                 </thead>
                 <tbody>
                   {categorias.map((c) => (

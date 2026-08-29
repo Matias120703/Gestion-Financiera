@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, numero, porcentaje } from '@/lib/formato';
@@ -36,6 +37,7 @@ export function PantallaProductos({
   /** Solo propietario y admin. La base lo vuelve a verificar con RLS. */
   puedeGestionar: boolean;
 }) {
+  const t = useTextos();
   const router = useRouter();
   const dec = decimalesDe(moneda);
   const [busqueda, setBusqueda] = useState('');
@@ -76,19 +78,19 @@ export function PantallaProductos({
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo="Productos activos" valor={numero(activos.length)} detalle={`${productos.length - activos.length} pausados`} />
+        <Indicador titulo={t.productos.activos} valor={numero(activos.length)} detalle={`${productos.length - activos.length} pausados`} />
         {verCostos ? (
           <>
-            <Indicador titulo="Invertido en stock" valor={dinero(valorInventario, moneda)} detalle="a precio de costo" />
-            <Indicador titulo="Si vendés todo" valor={dinero(valorVenta, moneda)} detalle={`ganarías ${dinero(valorVenta - valorInventario, moneda)}`} tono="bueno" />
+            <Indicador titulo={t.productos.invertido} valor={dinero(valorInventario, moneda)} detalle="a precio de costo" />
+            <Indicador titulo={t.productos.siVendesTodo} valor={dinero(valorVenta, moneda)} detalle={`ganarías ${dinero(valorVenta - valorInventario, moneda)}`} tono="bueno" />
           </>
         ) : (
           <>
-            <Indicador titulo="Unidades en stock" valor={numero(unidadesEnStock)} detalle="disponibles" />
-            <Indicador titulo="Valor a la venta" valor={dinero(valorVenta, moneda)} detalle="si se vende todo" />
+            <Indicador titulo={t.productos.unidades} valor={numero(unidadesEnStock)} detalle="disponibles" />
+            <Indicador titulo={t.productos.valorVenta} valor={dinero(valorVenta, moneda)} detalle="si se vende todo" />
           </>
         )}
-        <Indicador titulo="Por reponer" valor={numero(criticos.length)} detalle="llegaron al mínimo" tono={criticos.length ? 'malo' : 'neutro'} />
+        <Indicador titulo={t.productos.porReponer} valor={numero(criticos.length)} detalle="llegaron al mínimo" tono={criticos.length ? 'malo' : 'neutro'} />
       </div>
 
       <div className="flex gap-2">
@@ -96,7 +98,7 @@ export function PantallaProductos({
           <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-tinta/30" {...trazo}>
             <circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" />
           </svg>
-          <input className="campo pl-10" placeholder="Buscar…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+          <input className="campo pl-10" placeholder={t.productos.buscar} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         </div>
         {puedeGestionar && (
           <button className="boton-principal shrink-0" onClick={() => setEditando({ ...VACIO })}>+ Producto</button>
@@ -125,11 +127,11 @@ export function PantallaProductos({
             <table className="tabla min-w-[640px]">
               <thead>
                 <tr>
-                  <th>Producto</th>
-                  {verCostos && <th className="num">Costo</th>}
-                  <th className="num">Precio</th>
-                  {verCostos && <th className="num">Margen</th>}
-                  <th className="num">Stock</th>
+                  <th>{t.productos.colProducto}</th>
+                  {verCostos && <th className="num">{t.productos.colCosto}</th>}
+                  <th className="num">{t.productos.colPrecio}</th>
+                  {verCostos && <th className="num">{t.productos.colMargen}</th>}
+                  <th className="num">{t.productos.colStock}</th>
                   <th />
                 </tr>
               </thead>
@@ -171,7 +173,7 @@ export function PantallaProductos({
                               stock: Number(p.stock), stock_minimo: Number(p.stock_minimo),
                               controla_stock: p.controla_stock, activo: p.activo,
                             })}
-                            aria-label="Editar"
+                            aria-label={t.productos.editar}
                             className="icono-toque text-tinta/35 hover:bg-arena hover:text-tinta"
                           >
                             <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M4 20h16M6 16.5 16.5 6a2.1 2.1 0 0 1 3 3L9 19.5l-4 1z" /></svg>
@@ -216,6 +218,7 @@ function DialogoProducto({
   empresaId: string; moneda: string; dec: number; borrador: Borrador;
   onCerrar: () => void; onGuardado: () => void;
 }) {
+  const t = useTextos();
   const [b, setB] = useState<Borrador>(borrador);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
@@ -229,7 +232,7 @@ function DialogoProducto({
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!b.nombre.trim()) { setError('Poné un nombre.'); return; }
+    if (!b.nombre.trim()) { setError(t.productos.poneNombre); return; }
     setGuardando(true);
     try {
       const supabase = clienteNavegador();
@@ -268,12 +271,12 @@ function DialogoProducto({
 
         <div className="mt-4 space-y-3">
           <label className="block">
-            <span className="etiqueta">Nombre</span>
+            <span className="etiqueta">{t.productos.nombre}</span>
             <input className="campo" autoFocus maxLength={120} value={b.nombre} onChange={(e) => set('nombre', e.target.value)} />
           </label>
 
           <label className="block">
-            <span className="etiqueta">Categoría</span>
+            <span className="etiqueta">{t.productos.categoria}</span>
             <input className="campo" list="cat-prod" maxLength={40} value={b.categoria} onChange={(e) => set('categoria', e.target.value)} />
             <datalist id="cat-prod">
               {['Perfumes', 'Tecnología', 'Hogar', 'Ropa', 'Accesorios', 'General'].map((c) => <option key={c} value={c} />)}
@@ -282,12 +285,12 @@ function DialogoProducto({
 
           <div className="grid grid-cols-2 gap-2.5">
             <label className="block">
-              <span className="etiqueta">Te cuesta</span>
+              <span className="etiqueta">{t.productos.teCuesta}</span>
               <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
                 value={b.costo || ''} placeholder="0" onChange={(e) => set('costo', Math.max(0, Number(e.target.value) || 0))} />
             </label>
             <label className="block">
-              <span className="etiqueta">Lo vendés a</span>
+              <span className="etiqueta">{t.productos.loVendesA}</span>
               <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
                 value={b.precio || ''} placeholder="0" onChange={(e) => set('precio', Math.max(0, Number(e.target.value) || 0))} />
             </label>
@@ -295,7 +298,7 @@ function DialogoProducto({
 
           <div className="rounded-xl bg-arena p-3">
             <div className="flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold text-tinta/60">Ganás por unidad</span>
+              <span className="text-[13px] font-semibold text-tinta/60">{t.productos.ganasPorUnidad}</span>
               <span className={`text-[16px] font-bold tabular-nums ${b.precio - b.costo >= 0 ? 'text-verde-fuerte' : 'text-rojo'}`}>
                 {dinero(b.precio - b.costo, moneda)}
               </span>
@@ -307,20 +310,20 @@ function DialogoProducto({
             <input type="checkbox" className="h-4 w-4 accent-[#17795a]" checked={b.controla_stock}
               onChange={(e) => set('controla_stock', e.target.checked)} />
             <span>
-              <span className="block text-[14px] font-semibold">Controlar stock</span>
-              <span className="block text-[12.5px] text-tinta/50">Cada venta descuenta unidades automáticamente</span>
+              <span className="block text-[14px] font-semibold">{t.productos.controlarStock}</span>
+              <span className="block text-[12.5px] text-tinta/50">{t.productos.controlarStockDetalle}</span>
             </span>
           </label>
 
           {b.controla_stock && (
             <div className="grid grid-cols-2 gap-2.5">
               <label className="block">
-                <span className="etiqueta">Stock actual</span>
+                <span className="etiqueta">{t.productos.stockActual}</span>
                 <input type="number" inputMode="decimal" step="any" className="campo tabular-nums" value={b.stock}
                   onChange={(e) => set('stock', Number(e.target.value) || 0)} />
               </label>
               <label className="block">
-                <span className="etiqueta">Avisar cuando quede</span>
+                <span className="etiqueta">{t.productos.avisarCuandoQuede}</span>
                 <input type="number" inputMode="decimal" min={0} step="any" className="campo tabular-nums" value={b.stock_minimo}
                   onChange={(e) => set('stock_minimo', Math.max(0, Number(e.target.value) || 0))} />
               </label>
@@ -331,7 +334,7 @@ function DialogoProducto({
         {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
         <div className="mt-5 grid grid-cols-2 gap-2.5">
-          <button type="button" className="boton-suave py-3" onClick={onCerrar}>Cancelar</button>
+          <button type="button" className="boton-suave py-3" onClick={onCerrar}>{t.comun.cancelar}</button>
           <button type="submit" className="boton-principal py-3" disabled={guardando}>
             {guardando ? 'Guardando…' : 'Guardar'}
           </button>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, fechaLegible } from '@/lib/formato';
@@ -34,6 +35,7 @@ export function PantallaGastos({
   hoy: string;
   hayMas?: boolean;
 }) {
+  const t = useTextos();
   const router = useRouter();
   const dec = decimalesDe(moneda);
 
@@ -137,7 +139,7 @@ export function PantallaGastos({
             valor por defecto razonable y está plegado. */}
         <form onSubmit={guardar} className="mt-4 space-y-3">
           <label className="block">
-            <span className="etiqueta">¿Cuánto?</span>
+            <span className="etiqueta">{t.pantallas.cuanto}</span>
             <input
               type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
               className="campo text-[26px] font-bold tabular-nums" autoFocus
@@ -148,7 +150,7 @@ export function PantallaGastos({
           </label>
 
           <div>
-            <span className="etiqueta">¿En qué?</span>
+            <span className="etiqueta">{t.pantallas.enQue}</span>
             <div className="flex flex-wrap gap-2">
               {rapidas.map((c) => (
                 <button
@@ -162,7 +164,7 @@ export function PantallaGastos({
             {!rapidas.includes(categoria) && (
               <input
                 className="campo mt-2" list="categorias-gasto" maxLength={40}
-                placeholder="Otra categoría"
+                placeholder={t.pantallas.otraCategoria}
                 value={categoria} onChange={(e) => setCategoria(e.target.value)}
               />
             )}
@@ -184,7 +186,7 @@ export function PantallaGastos({
           {masOpciones && (
             <div className="space-y-3 aparecer">
               <label className="block">
-                <span className="etiqueta">Detalle <span className="font-normal text-tinta/35">(si no ponés nada, queda &laquo;{categoria || 'General'}&raquo;)</span></span>
+                <span className="etiqueta">{t.pantallas.detalle}<span className="font-normal text-tinta/35">(si no ponés nada, queda &laquo;{categoria || 'General'}&raquo;)</span></span>
                 <input
                   className="campo" maxLength={120}
                   placeholder={tipo === 'gasto' ? 'Ej. Combustible para el reparto' : 'Ej. Aporte de socio'}
@@ -193,7 +195,7 @@ export function PantallaGastos({
               </label>
 
               <div>
-                <span className="etiqueta">Forma de pago</span>
+                <span className="etiqueta">{t.pantallas.formaDePago}</span>
                 <div className="scroll-limpio flex gap-2 overflow-x-auto">
                   {[['efectivo', 'Efectivo'], ['transferencia', 'Transferencia'], ['tarjeta', 'Tarjeta'], ['credito', 'Crédito'], ['otro', 'Otro']].map(([v, etiqueta]) => (
                     <button
@@ -208,12 +210,12 @@ export function PantallaGastos({
 
               <div className="grid grid-cols-2 gap-2.5">
                 <label className="block">
-                  <span className="etiqueta">Fecha</span>
+                  <span className="etiqueta">{t.venta.fecha}</span>
                   <input type="date" className="campo py-2.5" value={fecha} onChange={(e) => setFecha(e.target.value)} />
                 </label>
                 <label className="block">
-                  <span className="etiqueta">Nota</span>
-                  <input className="campo py-2.5" maxLength={200} placeholder="Opcional" value={notas} onChange={(e) => setNotas(e.target.value)} />
+                  <span className="etiqueta">{t.pantallas.nota}</span>
+                  <input className="campo py-2.5" maxLength={200} placeholder={t.venta.opcional} value={notas} onChange={(e) => setNotas(e.target.value)} />
                 </label>
               </div>
             </div>
@@ -230,7 +232,7 @@ export function PantallaGastos({
       {/* ------------------------------ listado ------------------------------ */}
       <Seccion titulo={hayMas ? 'Últimos movimientos del periodo' : 'Movimientos del periodo'}>
         {movimientos.length === 0 ? (
-          <Vacio titulo="Nada por acá" detalle="Los gastos que cargues en este periodo van a aparecer en esta lista." />
+          <Vacio titulo={t.pantallas.nadaPorAca} detalle={t.pantallas.nadaPorAcaDetalle} />
         ) : (
           <ul className="divide-y divide-borde">
             {movimientos.map((mv) => {
@@ -251,7 +253,7 @@ export function PantallaGastos({
                       {mv.descripcion || 'Sin descripción'}
                     </p>
                     <p className="truncate text-[12px] text-tinta/45">
-                      {anulado && <span className="font-bold text-rojo">ANULADO · </span>}
+                      {anulado && <span className="font-bold text-rojo">{t.pantallas.anulado} · </span>}
                       {fechaLegible(mv.fecha, false)} · {mv.categoria} · {mv.metodo_pago}
                       {mv.origen !== 'manual' && ' · por voz'}
                     </p>
@@ -266,7 +268,7 @@ export function PantallaGastos({
                   {puedeAnular({ rol, userId }, mv, hoy) && (
                     <button
                       type="button" onClick={() => setAAnular(mv)}
-                      aria-label="Anular movimiento" title="Anular"
+                      aria-label={t.pantallas.anularMovimiento} title="Anular"
                       className="icono-toque shrink-0 text-tinta/25 transition hover:bg-rojo-claro hover:text-rojo"
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>

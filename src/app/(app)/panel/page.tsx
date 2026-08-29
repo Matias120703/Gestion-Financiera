@@ -135,52 +135,52 @@ export default async function PaginaPanel({
         {verRent ? (
           <>
             <Indicador
-              titulo="Ganancia neta" destacado
+              titulo={t.panel.gananciaNeta} destacado
               valor={dineroCorto(r.gananciaNeta, m)}
               detalle={dinero(r.gananciaNeta, m)}
               tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'}
               variacion={variacion(r.gananciaNeta, rPrevio.gananciaNeta)}
             />
             <Indicador
-              titulo="Vendido"
+              titulo={t.panel.vendido}
               valor={dineroCorto(r.ventas, m)}
-              detalle={`${numero(r.cantidadVentas)} ventas`}
+              detalle={t.panel.vendidoDetalle(r.cantidadVentas)}
               variacion={variacion(r.ventas, rPrevio.ventas)}
             />
             <Indicador
-              titulo="Gastos"
+              titulo={t.panel.gastos}
               valor={dineroCorto(r.gastos, m)}
-              detalle={mayorGasto ? `mayor: ${mayorGasto.nombre.slice(0, 22)}` : 'sin gastos'}
+              detalle={mayorGasto ? t.panel.mayorGasto(mayorGasto.nombre.slice(0, 22)) : t.panel.sinGastos}
               tono={r.gastos > 0 ? 'malo' : 'neutro'}
               variacion={cicloLargo ? undefined : variacion(r.gastos, rPrevio.gastos)}
             />
             {cicloLargo ? (
               <Indicador
-                titulo="En lo que va del año"
+                titulo={t.panel.delAnio}
                 valor={dineroCorto(delAnio?.gananciaNeta ?? 0, m)}
-                detalle={`${dineroCorto(delAnio?.ventas ?? 0, m)} vendido`}
+                detalle={t.panel.vendidoEnAnio(dineroCorto(delAnio?.ventas ?? 0, m))}
                 tono={(delAnio?.gananciaNeta ?? 0) >= 0 ? 'bueno' : 'malo'}
               />
             ) : (
               <Indicador
-                titulo="Ganancia bruta"
+                titulo={t.panel.gananciaBruta}
                 valor={dineroCorto(r.gananciaBruta, m)}
-                detalle={`margen ${porcentaje(r.margenBruto, 0)}`}
+                detalle={t.panel.margenDe(porcentaje(r.margenBruto, 0))}
               />
             )}
           </>
         ) : (
           <>
             <Indicador
-              titulo="Vendido" destacado
+              titulo={t.panel.vendido} destacado
               valor={dineroCorto(r.ventas, m)}
               detalle={dinero(r.ventas, m)}
               tono="bueno"
               variacion={variacion(r.ventas, rPrevio.ventas)}
             />
-            <Indicador titulo="Operaciones" valor={numero(r.cantidadVentas)} detalle="ventas cargadas" />
-            <Indicador titulo="Ticket promedio" valor={dineroCorto(r.ticketPromedio, m)} detalle="por venta" />
-            <Indicador titulo="Unidades" valor={numero(r.unidadesVendidas)} detalle="productos entregados" />
+            <Indicador titulo={t.panel.operaciones} valor={numero(r.cantidadVentas)} detalle={t.panel.ventasCargadas} />
+            <Indicador titulo={t.panel.ticketPromedio} valor={dineroCorto(r.ticketPromedio, m)} detalle={t.panel.porVenta} />
+            <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle={t.panel.productosEntregados} />
           </>
         )}
       </div>
@@ -190,7 +190,7 @@ export default async function PaginaPanel({
         <Link href="/reto" className="tarjeta block p-4 transition hover:border-verde/50">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="titulo-seccion">Reto activo</p>
+              <p className="titulo-seccion">{t.panel.retoActivo}</p>
               <p className="mt-1 truncate text-[16px] font-bold tracking-tight">{reto.nombre}</p>
             </div>
             <span className="shrink-0 text-[22px] font-bold tabular-nums text-verde-fuerte">
@@ -203,7 +203,7 @@ export default async function PaginaPanel({
             {retoInfo.diasRestantes > 0 && retoInfo.falta > 0 && (
               <span>Faltan {retoInfo.diasRestantes} día{retoInfo.diasRestantes === 1 ? '' : 's'} · {dineroCorto(retoInfo.ritmo, m)} por día</span>
             )}
-            {retoInfo.falta === 0 && <span className="text-verde-fuerte">Meta alcanzada</span>}
+            {retoInfo.falta === 0 && <span className="text-verde-fuerte">{t.panel.metaAlcanzada}</span>}
           </div>
         </Link>
       )}
@@ -215,16 +215,16 @@ export default async function PaginaPanel({
         <Link href="/deudas" className="tarjeta block p-4 transition hover:border-verde/50">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[13px] font-semibold text-tinta/55">Lo que debés</p>
+              <p className="text-[13px] font-semibold text-tinta/55">{t.panel.loQueDebes}</p>
               <p className="mt-0.5 text-[22px] font-bold tabular-nums">{dinero(deudas.total_debido, m)}</p>
             </div>
             {deudas.vencidas > 0 ? (
               <span className="pastilla bg-rojo-claro text-rojo">
-                {deudas.vencidas} vencida{deudas.vencidas === 1 ? '' : 's'}
+                {t.panel.vencidas(deudas.vencidas)}
               </span>
             ) : deudas.vence_pronto > 0 ? (
               <span className="pastilla bg-ambar-claro text-ambar">
-                {deudas.vence_pronto} vence{deudas.vence_pronto === 1 ? '' : 'n'} esta semana
+                {t.panel.vencenSemana(deudas.vence_pronto)}
               </span>
             ) : null}
           </div>
@@ -237,7 +237,7 @@ export default async function PaginaPanel({
           hace parecer que el sistema no tiene datos. */}
       {!cicloLargo && dias.length > 1 && (r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
-          <h2 className="mb-4 text-[15px] font-bold tracking-tight">Día por día</h2>
+          <h2 className="mb-4 text-[15px] font-bold tracking-tight">{t.panel.diaPorDia}</h2>
           <GraficoDiario datos={serie} moneda={m} />
         </div>
       )}
@@ -245,23 +245,23 @@ export default async function PaginaPanel({
       <div className="grid gap-5 lg:grid-cols-2">
         {/* ---------------- Productos que más dejaron ---------------- */}
         <Seccion
-          titulo="Lo que más se vendió"
-          accion={<Link href="/reportes" className="boton-texto">Ver todo</Link>}
+          titulo={t.panel.masVendido}
+          accion={<Link href="/reportes" className="boton-texto">{t.comun.verTodo}</Link>}
         >
           {top.length === 0 ? (
             <Vacio
-              titulo="Todavía no hay ventas"
-              detalle="Tocá el botón verde y contale al sistema tu primera venta."
+              titulo={t.panel.sinVentas}
+              detalle={t.panel.sinVentasDetalle}
             />
           ) : (
             <div className="overflow-x-auto">
               <table className="tabla">
                 <thead>
                   <tr>
-                    <th>Producto</th>
-                    <th className="num">Unid.</th>
-                    <th className="num">Vendido</th>
-                    {verRent && <th className="num">Ganancia</th>}
+                    <th>{t.panel.colProducto}</th>
+                    <th className="num">{t.panel.colUnidades}</th>
+                    <th className="num">{t.panel.colVendido}</th>
+                    {verRent && <th className="num">{t.panel.colGanancia}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -290,9 +290,9 @@ export default async function PaginaPanel({
 
         {/* ---------------- En qué se fue la plata ---------------- */}
         {verRent ? (
-        <Seccion titulo="En qué se fue la plata" accion={<Link href="/gastos" className="boton-texto">Cargar gasto</Link>}>
+        <Seccion titulo={t.panel.enQueSeFue} accion={<Link href="/gastos" className="boton-texto">{t.panel.cargarGasto}</Link>}>
           {categoriasTop.length === 0 ? (
-            <Vacio titulo="Ningún gasto cargado" detalle="Registrar los gastos es lo que hace que la ganancia neta sea real." />
+            <Vacio titulo={t.panel.sinGastosCargados} detalle={t.panel.sinGastosDetalle} />
           ) : (
             <div className="space-y-3.5 px-4 pb-4 pt-3">
               {categoriasTop.map((c) => (
@@ -311,7 +311,7 @@ export default async function PaginaPanel({
           )}
         </Seccion>
         ) : (
-          <Seccion titulo="Tu actividad" accion={<Link href="/movimientos" className="boton-texto">Ver historial</Link>}>
+          <Seccion titulo={t.panel.tuActividad} accion={<Link href="/movimientos" className="boton-texto">{t.panel.verHistorial}</Link>}>
             <div className="px-4 pb-4 pt-3 text-[13.5px] leading-relaxed text-tinta/60">
               Podés cargar ventas y gastos, ver el stock y consultar el historial del negocio.
               El detalle de costos y rentabilidad queda para el propietario y los administradores.
@@ -322,7 +322,7 @@ export default async function PaginaPanel({
 
       {/* ---------------- Alertas de stock ---------------- */}
       {bajoStock.length > 0 && (
-        <Seccion titulo="Se te está por acabar" accion={<Link href="/productos" className="boton-texto">Ir a productos</Link>}>
+        <Seccion titulo={t.panel.porAcabarse} accion={<Link href="/productos" className="boton-texto">{t.panel.irAProductos}</Link>}>
           <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
             {bajoStock.slice(0, 12).map((p) => (
               <span key={p.id} className="pastilla bg-ambar-claro text-ambar">
@@ -336,24 +336,24 @@ export default async function PaginaPanel({
       {/* ---------------- Resumen fino ---------------- */}
       {verRent ? (
       <div className="tarjeta p-4">
-        <h2 className="mb-3 text-[15px] font-bold tracking-tight">Cómo se arma tu ganancia</h2>
+        <h2 className="mb-3 text-[15px] font-bold tracking-tight">{t.panel.comoSeArma}</h2>
         <dl className="space-y-2.5 text-[14px]">
           {r.descuentos > 0 ? (
             <>
-              <Linea etiqueta="Vendido a precio de lista" valor={dinero(r.ventasBrutas, m)} />
-              <Linea etiqueta="Descuentos que diste" valor={`− ${dinero(r.descuentos, m)}`} tono="malo" />
-              <Linea etiqueta="Vendido (lo cobrado)" valor={dinero(r.ventas, m)} fuerte />
+              <Linea etiqueta={t.panel.aPrecioDeLista} valor={dinero(r.ventasBrutas, m)} />
+              <Linea etiqueta={t.panel.descuentosQueDiste} valor={`− ${dinero(r.descuentos, m)}`} tono="malo" />
+              <Linea etiqueta={t.panel.vendidoCobrado} valor={dinero(r.ventas, m)} fuerte />
             </>
           ) : (
-            <Linea etiqueta="Vendido" valor={dinero(r.ventas, m)} />
+            <Linea etiqueta={t.panel.vendido} valor={dinero(r.ventas, m)} />
           )}
-          {r.otrosIngresos > 0 && <Linea etiqueta="Otros ingresos" valor={dinero(r.otrosIngresos, m)} />}
-          <Linea etiqueta="Costo de lo vendido" valor={`− ${dinero(r.costoMercaderia, m)}`} tono="malo" />
-          <Linea etiqueta="Ganancia bruta" valor={dinero(r.gananciaBruta, m)} fuerte />
-          <Linea etiqueta="Gastos del periodo" valor={`− ${dinero(r.gastos, m)}`} tono="malo" />
+          {r.otrosIngresos > 0 && <Linea etiqueta={t.panel.otrosIngresos} valor={dinero(r.otrosIngresos, m)} />}
+          <Linea etiqueta={t.panel.costoDeLoVendido} valor={`− ${dinero(r.costoMercaderia, m)}`} tono="malo" />
+          <Linea etiqueta={t.panel.gananciaBruta} valor={dinero(r.gananciaBruta, m)} fuerte />
+          <Linea etiqueta={t.panel.gastosDelPeriodo} valor={`− ${dinero(r.gastos, m)}`} tono="malo" />
           <div className="!mt-3 border-t border-borde pt-3">
             <Linea
-              etiqueta="Ganancia neta" valor={dinero(r.gananciaNeta, m)} fuerte
+              etiqueta={t.panel.gananciaNeta} valor={dinero(r.gananciaNeta, m)} fuerte
               tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'}
             />
           </div>
@@ -366,13 +366,13 @@ export default async function PaginaPanel({
       </div>
       ) : (
         <div className="tarjeta p-4">
-          <h2 className="text-[15px] font-bold tracking-tight">Tu resumen del periodo</h2>
+          <h2 className="text-[15px] font-bold tracking-tight">{t.panel.tuResumen}</h2>
           <dl className="mt-3 space-y-2.5 text-[14px]">
-            <Linea etiqueta="Vendido" valor={dinero(r.ventas, m)} fuerte />
-            {r.descuentos > 0 && <Linea etiqueta="Descuentos que diste" valor={`− ${dinero(r.descuentos, m)}`} />}
-            <Linea etiqueta="Operaciones" valor={numero(r.cantidadVentas)} />
-            <Linea etiqueta="Unidades entregadas" valor={numero(r.unidadesVendidas)} />
-            <Linea etiqueta="Ticket promedio" valor={dinero(r.ticketPromedio, m)} />
+            <Linea etiqueta={t.panel.vendido} valor={dinero(r.ventas, m)} fuerte />
+            {r.descuentos > 0 && <Linea etiqueta={t.panel.descuentosQueDiste} valor={`− ${dinero(r.descuentos, m)}`} />}
+            <Linea etiqueta={t.panel.operaciones} valor={numero(r.cantidadVentas)} />
+            <Linea etiqueta={t.panel.unidadesEntregadas} valor={numero(r.unidadesVendidas)} />
+            <Linea etiqueta={t.panel.ticketPromedio} valor={dinero(r.ticketPromedio, m)} />
           </dl>
           <p className="mt-4 text-[12.5px] leading-relaxed text-tinta/45">
             Los costos, márgenes y ganancias del negocio los ve la administración.

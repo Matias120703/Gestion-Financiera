@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import { dinero, fechaLegible } from '@/lib/formato';
 import type { Movimiento } from '@/lib/tipos';
 
@@ -19,6 +20,7 @@ export function DialogoAnular({
   onCerrar: () => void;
   onConfirmar: (motivo: string) => Promise<void>;
 }) {
+  const t = useTextos();
   const [motivo, setMotivo] = useState('');
   const [trabajando, setTrabajando] = useState(false);
   const [error, setError] = useState('');
@@ -62,19 +64,19 @@ export function DialogoAnular({
         </div>
 
         <ul className="mt-3.5 space-y-1.5 text-[13.5px] leading-relaxed text-tinta/65">
-          <li>· Queda en el historial marcada como anulada, no se borra.</li>
-          <li>· Deja de sumar en el panel, los reportes, el reto y el Excel.</li>
+          <li>{t.pantallas.anularQueda}</li>
+          <li>{t.pantallas.anularDejaSumar}</li>
           {esVenta && unidades > 0 && (
-            <li>· Vuelven <strong className="text-tinta">{unidades} unidad{unidades === 1 ? '' : 'es'}</strong> al stock.</li>
+            <li>{t.pantallas.anularVuelven}<strong className="text-tinta">{unidades} unidad{unidades === 1 ? '' : 'es'}</strong> al stock.</li>
           )}
-          <li>· Queda registrado que la anulaste vos.</li>
+          <li>{t.pantallas.anularQuienFue}</li>
         </ul>
 
         <div className="mt-4">
-          <label className="etiqueta" htmlFor="motivo-anulacion">Motivo <span className="font-normal text-tinta/35">(opcional)</span></label>
+          <label className="etiqueta" htmlFor="motivo-anulacion">{t.pantallas.motivo}<span className="font-normal text-tinta/35">(opcional)</span></label>
           <input
             id="motivo-anulacion" className="campo" maxLength={200} autoFocus
-            placeholder="Para acordarte después" value={motivo}
+            placeholder={t.pantallas.motivoEjemplo} value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
           />
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -92,7 +94,7 @@ export function DialogoAnular({
         {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
         <div className="mt-5 grid grid-cols-2 gap-2.5">
-          <button className="boton-suave py-3" onClick={onCerrar} disabled={trabajando}>No, dejarla</button>
+          <button className="boton-suave py-3" onClick={onCerrar} disabled={trabajando}>{t.pantallas.noDejarla}</button>
           <button className="boton-peligro py-3" onClick={confirmar} disabled={trabajando}>
             {trabajando ? 'Anulando…' : 'Sí, anular'}
           </button>

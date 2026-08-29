@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { textos } from '@/i18n';
 
 /**
  * La franja que avisa cómo viene la suscripción.
@@ -28,13 +29,14 @@ export function AvisoCuenta({
   /** Días enteros que faltan. Negativo o cero significa vencida. */
   diasRestantes: number;
 }) {
+  const t = textos();
   if (!puedeCargar) {
     return (
       <Franja
         tono="rojo"
-        titulo="Se te terminó la prueba"
-        detalle="Podés seguir entrando, viendo todo tu historial y bajando tu Excel. Para volver a cargar, activá tu plan."
-        accion="Ver planes"
+        titulo={t.pantallas.pruebaTermino}
+        detalle={t.pantallas.pruebaTerminoDetalle}
+        accion={t.pantallas.verPlanes}
       />
     );
   }
@@ -45,9 +47,9 @@ export function AvisoCuenta({
     return (
       <Franja
         tono="ambar"
-        titulo="Hoy es el último día de tu prueba"
-        detalle="Mañana vas a poder seguir viendo todo, pero no cargar. Activá tu plan y seguís donde estabas."
-        accion="Activar mi plan"
+        titulo={t.pantallas.ultimoDia}
+        detalle={t.pantallas.ultimoDiaDetalle}
+        accion={t.pantallas.activarMiPlan}
       />
     );
   }
@@ -55,9 +57,9 @@ export function AvisoCuenta({
   return (
     <Franja
       tono="ambar"
-      titulo={`Te quedan ${diasRestantes} ${diasRestantes === 1 ? 'día' : 'días'} de prueba`}
-      detalle="Después vas a poder seguir viendo todo lo tuyo, pero para cargar hace falta activar el plan."
-      accion="Ver planes"
+      titulo={t.pantallas.quedanDias(diasRestantes)}
+      detalle={t.pantallas.quedanDiasDetalle}
+      accion={t.pantallas.verPlanes}
     />
   );
 }

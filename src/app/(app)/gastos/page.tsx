@@ -1,4 +1,5 @@
 import { contextoObligatorio } from '@/lib/sesion';
+import { textos } from '@/i18n';
 import { rangoDesdeParams } from '@/lib/datos';
 import { traerResumen, traerGastosPorCategoria, traerPaginaMovimientos } from '@/lib/agregados';
 import { PantallaGastos } from '@/components/PantallaGastos';
@@ -15,6 +16,7 @@ export default async function PaginaGastos({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+  const t = textos();
   const rango = rangoDesdeParams(searchParams);
   // Los totales salen agregados; la lista es solo la primera página.
   const [r, categorias, paginaGastos, paginaIngresos] = await Promise.all([
@@ -34,15 +36,15 @@ export default async function PaginaGastos({
       <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo="Gastos del periodo" valor={dineroCorto(r.gastos, m)} detalle={dinero(r.gastos, m)} tono="malo" />
-        <Indicador titulo="Otros ingresos" valor={dineroCorto(r.otrosIngresos, m)} detalle={dinero(r.otrosIngresos, m)} />
+        <Indicador titulo={t.pantallas.gastosDelPeriodo} valor={dineroCorto(r.gastos, m)} detalle={dinero(r.gastos, m)} tono="malo" />
+        <Indicador titulo={t.panel.otrosIngresos} valor={dineroCorto(r.otrosIngresos, m)} detalle={dinero(r.otrosIngresos, m)} />
         <Indicador
-          titulo="Movimientos anulados"
+          titulo={t.pantallas.movimientosAnulados}
           valor={numero(r.movimientosAnulados)}
           detalle="no suman en los totales"
         />
         <Indicador
-          titulo="Categoría más pesada"
+          titulo={t.pantallas.categoriaMasPesada}
           valor={categorias[0]?.nombre ?? '—'}
           detalle={categorias[0] ? dinero(categorias[0].monto, m) : 'sin gastos'}
         />

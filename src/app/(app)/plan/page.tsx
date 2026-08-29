@@ -110,7 +110,7 @@ export default async function PaginaPlan({
         monedas={[...MONEDAS_DE_COBRO]}
         etiquetaMensual={t.plan.mensual}
         etiquetaAnual={t.plan.anual}
-        etiquetaAhorro={regalo > 0 ? t.plan.ahorroAnual : ''}
+        etiquetaAhorro={regalo > 0 ? t.plan.ahorroAnual(regalo) : ''}
       />
 
       {/* ---------------- Los planes ----------------
@@ -144,12 +144,21 @@ export default async function PaginaPlan({
               actual={esActual}
               etiquetaActual={t.plan.actual}
               incluye={t.plan.incluye}
-              puntos={[
-                t.plan.capturasLibres,
-                t.plan.personas(limites.miembros),
-                t.plan.conAdjuntos,
-                t.plan.conExcel,
-              ]}
+              puntos={
+                ctx.empresa.tipo_cuenta === 'personal'
+                  ? [
+                      t.plan.capturasLibres,
+                      t.plan.conAdjuntos,
+                      t.plan.conExcel,
+                      t.plan.soloVos,
+                    ]
+                  : [
+                      t.plan.capturasLibres,
+                      t.plan.personas(limites.miembros),
+                      t.plan.conAdjuntos,
+                      t.plan.conExcel,
+                    ]
+              }
               pie={
                 esActual ? null : whatsapp ? (
                   // Premium se cotiza: el precio depende de cuántos vendedores,
@@ -183,11 +192,9 @@ export default async function PaginaPlan({
 
       {whatsapp && (
         <div className="tarjeta p-4">
-          <p className="titulo-seccion mb-1.5">Cómo se paga</p>
+          <p className="titulo-seccion mb-1.5">{t.pantallas.comoSePaga}</p>
           <p className="text-[13.5px] leading-relaxed text-tinta/65">
-            Por transferencia. Tocás el botón, se abre un WhatsApp con nosotros y lo
-            arreglamos ahí mismo: no hace falta cargar ninguna tarjeta. Apenas entra la
-            transferencia te activamos la cuenta y seguís exactamente donde estabas.
+            {t.pantallas.comoSePagaDetalle}
           </p>
         </div>
       )}

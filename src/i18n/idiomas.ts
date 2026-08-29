@@ -1,16 +1,23 @@
 /**
- * Idiomas que entiende Orden.
+ * Idiomas que entiende Orden: español e inglés, los dos completos.
  *
- * `es` es el original: todo texto nuevo se escribe primero acá y de acá se
- * traduce. `en` está completo. Los otros cuatro están declarados y traducidos
- * en lo que hace falta; lo que todavía no tienen cae a inglés, no se rompe ni
- * muestra la clave cruda.
+ * POR QUÉ DOS Y NO SEIS
  *
- * Agregar un idioma es: crear el archivo en textos/, sumarlo a IDIOMAS y a
+ * Hubo portugués, alemán, francés e italiano. Estaban al 47% cada uno, y lo
+ * que faltaba caía a inglés — así que quien elegía portugués veía una mezcla
+ * de portugués e inglés y concluía, con razón, que el producto estaba a
+ * medio hacer.
+ *
+ * Un idioma a medias es peor que no ofrecerlo: uno promete algo que no
+ * cumple, el otro no promete nada. Y mantener seis significa traducir cada
+ * texto nuevo seis veces, para siempre, sin un solo cliente que los use.
+ *
+ * La regla ahora: **un idioma se agrega cuando hay alguien que lo necesita,
+ * y se agrega completo.** Crear el archivo en textos/, sumarlo a IDIOMAS y a
  * DICCIONARIOS. Ninguna pantalla se toca.
  */
 
-export const IDIOMAS = ['es', 'en', 'pt', 'de', 'fr', 'it'] as const;
+export const IDIOMAS = ['es', 'en'] as const;
 export type Idioma = (typeof IDIOMAS)[number];
 
 export const IDIOMA_POR_DEFECTO: Idioma = 'es';
@@ -26,12 +33,8 @@ export interface FichaIdioma {
 }
 
 export const FICHA: Record<Idioma, FichaIdioma> = {
-  es: { nombre: 'Español',   locale: 'es-PY', bandera: '🇵🇾' },
-  en: { nombre: 'English',   locale: 'en-US', bandera: '🇺🇸' },
-  pt: { nombre: 'Português', locale: 'pt-BR', bandera: '🇧🇷' },
-  de: { nombre: 'Deutsch',   locale: 'de-DE', bandera: '🇩🇪' },
-  fr: { nombre: 'Français',  locale: 'fr-FR', bandera: '🇫🇷' },
-  it: { nombre: 'Italiano',  locale: 'it-IT', bandera: '🇮🇹' },
+  es: { nombre: 'Español', locale: 'es-PY', bandera: '🇵🇾' },
+  en: { nombre: 'English', locale: 'en-US', bandera: '🇺🇸' },
 };
 
 export const COOKIE_IDIOMA = 'orden_idioma';
@@ -68,7 +71,7 @@ export function idiomaDeCabecera(cabecera: string | null | undefined): Idioma | 
  * persona y queda guardada en la empresa.
  */
 export const MONEDA_SUGERIDA: Record<Idioma, string> = {
-  es: 'PYG', en: 'USD', pt: 'BRL', de: 'EUR', fr: 'EUR', it: 'EUR',
+  es: 'PYG', en: 'USD',
 };
 
 /**
@@ -77,5 +80,5 @@ export const MONEDA_SUGERIDA: Record<Idioma, string> = {
  * nuevo se agrega su fila en `precios` y se toca este mapa.
  */
 export const MONEDA_DE_COBRO: Record<Idioma, string> = {
-  es: 'PYG', en: 'USD', pt: 'USD', de: 'USD', fr: 'USD', it: 'USD',
+  es: 'PYG', en: 'USD',
 };

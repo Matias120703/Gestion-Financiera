@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { textos } from '@/i18n';
 import { contextoObligatorio } from '@/lib/sesion';
 import { fichaDe } from '@/lib/rubros';
 import { clienteServidor } from '@/lib/supabase/servidor';
@@ -22,6 +23,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaReto() {
   const ctx = await contextoObligatorio();
+  const t = textos();
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
   if (fichaDe(ctx.empresa.rubro).sinSecciones.includes('/reto')) redirect('/panel');
 
@@ -46,8 +48,8 @@ export default async function PaginaReto() {
       <div className="space-y-5">
         <div className="tarjeta">
           <Vacio
-            titulo="Todavía no tenés un reto"
-            detalle="Poné una meta con fecha límite y el sistema calcula solo cuánto te falta y a qué ritmo tenés que ir."
+            titulo={t.pantallas.sinReto}
+            detalle={t.pantallas.sinRetoDetalle}
           />
           <div className="px-6 pb-6">
             <EditorReto empresaId={ctx.empresa.id} moneda={m} puedeGestionar={ctx.esAdmin} />
@@ -73,7 +75,7 @@ export default async function PaginaReto() {
       <div className="space-y-5">
         <div className="tarjeta overflow-hidden">
           <div className="bg-tinta px-5 py-6 text-white">
-            <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">Reto en curso</p>
+            <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">{t.pantallas.retoEnCurso}</p>
             <h2 className="mt-1.5 text-[22px] font-bold tracking-tight">{activo.nombre}</h2>
             <p className="mt-1 text-[13.5px] text-white/50">
               {fechaLegible(activo.fecha_inicio)} — {fechaLegible(activo.fecha_fin)}
@@ -154,9 +156,9 @@ export default async function PaginaReto() {
           {!terminó && (
             <p className="mt-3 text-[13.5px] font-semibold">
               {falta === 0 ? (
-                <span className="text-verde">¡Meta alcanzada! Todo lo que sigue es de más.</span>
+                <span className="text-verde">{t.pantallas.metaAlcanzadaDetalle}</span>
               ) : diasRestantes > 0 ? (
-                <>Te faltan <span className="text-verde">{dinero(falta, m)}</span> en {diasRestantes} día{diasRestantes === 1 ? '' : 's'}.</>
+                <>{t.pantallas.teFaltan}<span className="text-verde">{dinero(falta, m)}</span> en {diasRestantes} día{diasRestantes === 1 ? '' : 's'}.</>
               ) : (
                 <>Último día. Te faltan {dinero(falta, m)}.</>
               )}
@@ -165,15 +167,15 @@ export default async function PaginaReto() {
         </div>
 
         <div className="grid grid-cols-2 divide-x divide-borde border-t border-borde lg:grid-cols-4">
-          <Celda titulo="Por día para llegar" valor={dineroCorto(ritmoNecesario, m)} detalle={diasRestantes > 0 ? `${diasRestantes} días restantes` : 'sin días restantes'} />
-          <Celda titulo="Ritmo actual" valor={dineroCorto(ritmoActual, m)} detalle="promedio por día" />
+          <Celda titulo={t.pantallas.porDiaParaLlegar} valor={dineroCorto(ritmoNecesario, m)} detalle={diasRestantes > 0 ? `${diasRestantes} días restantes` : 'sin días restantes'} />
+          <Celda titulo={t.pantallas.ritmoActual} valor={dineroCorto(ritmoActual, m)} detalle="promedio por día" />
           <Celda
             titulo="Vas" valor={diferencia >= 0 ? 'adelantado' : 'atrasado'}
             detalle={`${diferencia >= 0 ? '+' : '−'} ${dineroCorto(Math.abs(diferencia), m)} vs. lo previsto`}
             tono={diferencia >= 0 ? 'bueno' : 'malo'}
           />
           <Celda
-            titulo="Si seguís así" valor={dineroCorto(proyeccion, m)}
+            titulo={t.pantallas.siSeguisAsi} valor={dineroCorto(proyeccion, m)}
             detalle={proyeccion >= meta ? 'llegás a la meta' : `te quedás a ${dineroCorto(meta - proyeccion, m)}`}
             tono={proyeccion >= meta ? 'bueno' : 'malo'}
           />
@@ -182,15 +184,15 @@ export default async function PaginaReto() {
 
       {/* ------------------------- números del reto ------------------------- */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo="Vendido" valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} />
+        <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} />
         {verRent ? (
-          <Indicador titulo="Ganancia neta" valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
+          <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
         ) : (
-          <Indicador titulo="Unidades" valor={numero(r.unidadesVendidas)} detalle="entregadas" />
+          <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle="entregadas" />
         )}
-        <Indicador titulo="Gastos" valor={dineroCorto(r.gastos, m)} tono="malo" />
+        <Indicador titulo={t.panel.gastos} valor={dineroCorto(r.gastos, m)} tono="malo" />
         <Indicador
-          titulo="Mejor día"
+          titulo={t.pantallas.mejorDia}
           valor={mejorDia && mejorDia.ventas > 0 ? dineroCorto(mejorDia.ventas, m) : '—'}
           detalle={mejorDia && mejorDia.ventas > 0 ? fechaLegible(mejorDia.fecha, false) : 'sin ventas todavía'}
         />
@@ -205,15 +207,15 @@ export default async function PaginaReto() {
 
       {(r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
-          <h2 className="mb-4 text-[15px] font-bold tracking-tight">Cómo viene cada día</h2>
+          <h2 className="mb-4 text-[15px] font-bold tracking-tight">{t.pantallas.comoVieneCadaDia}</h2>
           <GraficoDiario datos={serie} moneda={m} />
         </div>
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Seccion titulo="Lo que más está tirando">
+        <Seccion titulo={t.pantallas.loQueMasTira}>
           {top.length === 0 ? (
-            <Vacio titulo="Sin ventas todavía" detalle="Registrá tu primera venta del reto y acá vas a ver qué producto rinde más." />
+            <Vacio titulo={t.pantallas.sinVentasTodavia} detalle={t.pantallas.sinVentasRetoDetalle} />
           ) : (
             <ul className="divide-y divide-borde">
               {top.map((p, i) => (
@@ -240,7 +242,7 @@ export default async function PaginaReto() {
         </Seccion>
 
         <div className="tarjeta p-4">
-          <h2 className="text-[15px] font-bold tracking-tight">Ajustar el reto</h2>
+          <h2 className="text-[15px] font-bold tracking-tight">{t.pantallas.ajustarReto}</h2>
           <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
             Cambiá la meta o las fechas, o cerralo y empezá uno nuevo.
           </p>
@@ -269,9 +271,10 @@ function Celda({
 }
 
 function HistorialRetos({ retos, moneda }: { retos: Reto[]; moneda: string }) {
+  const t = textos();
   if (retos.length === 0) return null;
   return (
-    <Seccion titulo="Retos anteriores">
+    <Seccion titulo={t.pantallas.retosAnteriores}>
       <ul className="divide-y divide-borde">
         {retos.map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">

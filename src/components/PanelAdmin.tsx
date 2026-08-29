@@ -175,7 +175,9 @@ export function PanelAdmin({
                     <span className="min-w-0 flex-[2]">
                       <span className="block truncate text-[15px] font-bold">{c.nombre}</span>
                       <span className="mt-0.5 block truncate text-[12.5px] text-tinta/50">
-                        {c.correo || 'sin correo'}
+                        {c.sin_duenio
+                          ? 'sin dueño · nadie puede entrar'
+                          : c.contacto || c.correo || 'sin correo'}
                       </span>
                     </span>
 
@@ -381,6 +383,13 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
   const [nota, setNota] = useState('');
   const [dias, setDias] = useState(7);
   const [tipo, setTipo] = useState<TipoCuenta>(cuenta.tipo_cuenta);
+
+  // Ficha de seguimiento: quién es, cómo ubicarlo, a qué se dedica.
+  const [contacto, setContacto] = useState(cuenta.contacto);
+  const [telefono, setTelefono] = useState(cuenta.telefono);
+  const [seDedica, setSeDedica] = useState(cuenta.se_dedica);
+  const [notas, setNotas] = useState(cuenta.notas);
+  const [confirmaBorrado, setConfirmaBorrado] = useState('');
   const [historial, setHistorial] = useState<AccionAdmin[] | null>(null);
   const [trabajando, setTrabajando] = useState('');
   const [error, setError] = useState('');
@@ -421,6 +430,22 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
 
   const cambiarTipo = () => correr('cambiando', async () => clienteNavegador().rpc('cambiar_tipo_cuenta', {
     p_empresa: cuenta.empresa_id, p_tipo: tipo,
+  }));
+
+  const guardarFicha = () => correr('ficha', async () => clienteNavegador().rpc('guardar_ficha_cliente', {
+    p_empresa: cuenta.empresa_id,
+    p_contacto: contacto,
+    p_telefono: telefono,
+    p_se_dedica: seDedica,
+    p_notas: notas,
+  }));
+
+  const deshacer = () => correr('deshaciendo', async () =>
+    clienteNavegador().rpc('deshacer_ultimo_cambio', { p_empresa: cuenta.empresa_id }));
+
+  const borrar = () => correr('borrando', async () => clienteNavegador().rpc('borrar_cuenta', {
+    p_empresa: cuenta.empresa_id,
+    p_confirmacion: confirmaBorrado,
   }));
 
   async function verHistorial() {
@@ -473,6 +498,12 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
                 {cuenta.tipo_cuenta === 'personal' ? 'Personal' : 'Comercio'}
               </span>
             </div>
+            {cuenta.sin_duenio && (
+              <p className="mb-3 rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] font-medium text-ambar">
+                Esta cuenta quedó sin dueño: no hay nadie adentro y nadie puede entrar.
+                Pasa cuando se borra el usuario desde Supabase.
+              </p>
+            )}
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px] sm:grid-cols-3">
               <Dato etiqueta="Estado" valor={cuenta.estado} />
               <Dato etiqueta="Vence" valor={fechaCorta(cuenta.periodo_fin)} />
@@ -480,13 +511,19 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
               <Dato etiqueta="Última actividad" valor={fechaCorta(cuenta.ultima_actividad)} />
               <Dato etiqueta="Movimientos" valor={String(cuenta.movimientos)} />
               <Dato etiqueta="Capturas de IA" valor={`${cuenta.ia_usada} de ${cuenta.ia_tope}`} />
+              {cuenta.como_nos_conocio && (
+                <Dato etiqueta="Nos conoció por" valor={cuenta.como_nos_conocio} />
+              )}
             </dl>
           </div>
 
-          {whatsapp && (
+          {/* Si hay teléfono del cliente se le escribe A ÉL. El número de
+              Orden solo sirve para abrir el chat con uno mismo, que no es lo
+              que hace falta cuando hay que cobrarle a alguien. */}
+          {(cuenta.telefono || whatsapp) && (
             <a
-              href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(
-                `Hola! Te escribo de Orden por la cuenta "${cuenta.nombre}".`)}`}
+              href={`https://wa.me/${(cuenta.telefono || whatsapp || '').replace(/\D/g, '')}?text=${encodeURIComponent(
+                `Hola${cuenta.contacto ? ' ' + cuenta.contacto.split(' ')[0] : ''}! Te escribo de Orden por la cuenta "${cuenta.nombre}".`)}`}
               target="_blank" rel="noopener noreferrer"
               className="boton-suave flex w-full items-center justify-center gap-2 py-2.5"
             >
@@ -511,6 +548,47 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
               </button>
             </div>
           )}
+
+          {/* ---- quién es ---- */}
+          <div className="rounded-2xl border border-borde p-4">
+            <p className="titulo-seccion mb-3">Quién es</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="etiqueta">Nombre de contacto</label>
+                <input
+                  className="campo" placeholder="Con quién hablás"
+                  value={contacto} onChange={(e) => setContacto(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="etiqueta">WhatsApp</label>
+                <input
+                  className="campo" inputMode="tel" placeholder="595981234567"
+                  value={telefono} onChange={(e) => setTelefono(e.target.value)}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="etiqueta">A qué se dedica</label>
+                <input
+                  className="campo" placeholder="Perfumería, taller mecánico, estancia…"
+                  value={seDedica} onChange={(e) => setSeDedica(e.target.value)}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="etiqueta">Notas</label>
+                <textarea
+                  className="campo min-h-[70px]" placeholder="Lo que quieras acordarte de esta persona"
+                  value={notas} onChange={(e) => setNotas(e.target.value)}
+                />
+              </div>
+            </div>
+            <button className="boton-suave mt-3 w-full py-2.5" onClick={guardarFicha} disabled={ocupado}>
+              {trabajando === 'ficha' ? 'Guardando…' : 'Guardar ficha'}
+            </button>
+            <p className="mt-2 text-[12px] leading-snug text-tinta/50">
+              Con el WhatsApp cargado, el botón de arriba le escribe directo a esta persona.
+            </p>
+          </div>
 
           {/* ---- entró el pago ---- */}
           <div className="rounded-2xl border border-verde/30 bg-verde-claro/25 p-4">
@@ -595,6 +673,22 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
             </div>
           </div>
 
+          {/* ---- deshacer ----
+              Existe porque pasó: se activó un plan por error sobre una cuenta
+              que todavía estaba en prueba, y la prueba se perdió. */}
+          {cuenta.puede_deshacer && (
+            <div className="rounded-2xl border border-ambar/30 bg-ambar-claro/30 p-4">
+              <p className="titulo-seccion mb-1 text-ambar">¿Te equivocaste?</p>
+              <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/65">
+                Deshace el último cambio de plan y devuelve la cuenta a como estaba: mismo plan,
+                mismo estado, mismo vencimiento. Si se había anotado un cobro, ese ingreso se anula.
+              </p>
+              <button className="boton-suave w-full py-2.5" onClick={deshacer} disabled={ocupado}>
+                {trabajando === 'deshaciendo' ? 'Deshaciendo…' : 'Deshacer el último cambio'}
+              </button>
+            </div>
+          )}
+
           {/* ---- historial ---- */}
           {historial === null ? (
             <button className="boton-suave w-full py-2.5" onClick={verHistorial}>
@@ -638,6 +732,28 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
               onClick={cortar} disabled={ocupado}
             >
               {trabajando === 'cortando' ? 'Cortando…' : 'Cortar'}
+            </button>
+
+            <hr className="my-4 border-rojo/15" />
+
+            {/* Borrar de verdad. Pide el nombre exacto escrito a mano: un
+                botón rojo se toca por curiosidad, escribir el nombre letra
+                por letra no se hace sin querer. */}
+            <p className="titulo-seccion mb-1 text-rojo">Borrar la cuenta</p>
+            <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/60">
+              Se va todo: movimientos, productos, deudas y comprobantes. No hay papelera.
+              Para confirmar, escribí <strong className="text-tinta">{cuenta.nombre}</strong>.
+            </p>
+            <input
+              className="campo" placeholder={cuenta.nombre}
+              value={confirmaBorrado} onChange={(e) => setConfirmaBorrado(e.target.value)}
+            />
+            <button
+              className="boton-suave mt-2 w-full border-rojo/40 py-2.5 text-rojo hover:bg-rojo-claro disabled:opacity-40"
+              onClick={borrar}
+              disabled={ocupado || confirmaBorrado.trim() !== cuenta.nombre}
+            >
+              {trabajando === 'borrando' ? 'Borrando…' : 'Borrar para siempre'}
             </button>
           </div>
         </div>

@@ -60,14 +60,14 @@ export default async function PaginaAjustes() {
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-2">
-        <Seccion titulo={esPersonal ? 'Tu cuenta' : 'Tu negocio'}>
+        <Seccion titulo={esPersonal ? t.pantallas.tuCuenta : t.pantallas.tuNegocio}>
           <div className="px-4 pb-4 pt-2">
             <EditorEmpresa empresa={ctx.empresa} puedeEditar={ctx.esAdmin} />
           </div>
         </Seccion>
 
         {!esPersonal && (
-          <Seccion titulo="Sumar gente al equipo">
+          <Seccion titulo={t.pantallas.sumarGente}>
             <div className="px-4 pb-4 pt-2">
               {ctx.esAdmin && ctx.codigoAcceso ? (
                 <>
@@ -98,13 +98,13 @@ export default async function PaginaAjustes() {
         </Seccion>
       )}
 
-      <Seccion titulo="Estado del sistema">
+      <Seccion titulo={t.pantallas.estadoSistema}>
         <div className="space-y-3 px-4 pb-4 pt-3">
           <Estado
             activo={hayIA}
-            titulo="Registro por voz, foto y texto"
-            detalleOk="Funcionando. Tocá el botón verde y contale al sistema lo que pasó."
-            detalleMal="Falta configurar OPENAI_API_KEY en las variables de entorno del proyecto."
+            titulo={t.pantallas.estadoCaptura}
+            detalleOk={t.pantallas.estadoCapturaOk}
+            detalleMal={t.pantallas.estadoCapturaMal}
           />
           {/* Lo que se garantiza no es lo mismo según a quién se le habla.
               A un comercio le importa que un vendedor no vea sus costos; a
@@ -113,20 +113,20 @@ export default async function PaginaAjustes() {
             <>
               <Estado
                 activo
-                titulo="Tus datos son solo tuyos"
-                detalleOk="Nadie más puede entrar a esta cuenta, ni siquiera quien administra Orden. La separación está aplicada en la base de datos, no en la pantalla."
+                titulo={t.pantallas.estadoTuyos}
+                detalleOk={t.pantallas.estadoTuyosOk}
                 detalleMal=""
               />
               <Estado
                 activo
-                titulo="Tus números no se pueden falsear"
-                detalleOk="Un movimiento no se puede crear ni borrar salteando el sistema. Lo que se anula queda registrado y deja de sumar, pero no desaparece."
+                titulo={t.pantallas.estadoNumeros}
+                detalleOk={t.pantallas.estadoNumerosOk}
                 detalleMal=""
               />
               <Estado
                 activo
-                titulo="El saldo de una deuda solo baja pagando"
-                detalleOk="No se puede editar a mano: cada pago queda con su fecha. Así el historial siempre explica el saldo."
+                titulo={t.pantallas.estadoSaldo}
+                detalleOk={t.pantallas.estadoSaldoOk}
                 detalleMal=""
               />
             </>
@@ -134,28 +134,28 @@ export default async function PaginaAjustes() {
             <>
               <Estado
                 activo
-                titulo="Datos separados por empresa"
-                detalleOk="Cada empresa ve solo lo suyo. La separación está aplicada en la base de datos."
+                titulo={t.pantallas.estadoSeparados}
+                detalleOk={t.pantallas.estadoSeparadosOk}
                 detalleMal=""
               />
               <Estado
                 activo
-                titulo="Las ventas no se pueden falsear"
-                detalleOk="Los costos salen del catálogo, no del navegador. Una venta no se puede crear ni borrar salteando el sistema, y anular devuelve el stock exacto."
+                titulo={t.pantallas.estadoVentas}
+                detalleOk={t.pantallas.estadoVentasOk}
                 detalleMal=""
               />
               <Estado
                 activo
-                titulo="Los costos no salen del servidor sin permiso"
-                detalleOk="Un vendedor no puede recuperar el costo de compra, el margen ni la ganancia, ni siquiera consultando la base directamente."
+                titulo={t.pantallas.estadoCostos}
+                detalleOk={t.pantallas.estadoCostosOk}
                 detalleMal=""
               />
             </>
           )}
           <Estado
             activo
-            titulo="App instalable en el celular"
-            detalleOk="En Android: menú de Chrome → Instalar app. En iPhone: Compartir → Agregar a inicio."
+            titulo={t.pantallas.estadoApp}
+            detalleOk={t.pantallas.estadoAppOk}
             detalleMal=""
           />
         </div>
@@ -190,15 +190,15 @@ export default async function PaginaAjustes() {
       </Seccion>
 
       {!esPersonal && (
-      <Seccion titulo="Quién puede hacer qué">
+      <Seccion titulo={t.pantallas.quienPuedeQue}>
         <div className="overflow-x-auto">
           <table className="tabla min-w-[520px]">
             <thead>
               <tr>
-                <th>Acción</th>
-                <th className="text-center">Propietario</th>
-                <th className="text-center">Admin</th>
-                <th className="text-center">Vendedor</th>
+                <th>{t.pantallas.colAccion}</th>
+                <th className="text-center">{t.pantallas.colPropietario}</th>
+                <th className="text-center">{t.pantallas.colAdmin}</th>
+                <th className="text-center">{t.pantallas.colVendedor}</th>
               </tr>
             </thead>
             <tbody>
@@ -240,21 +240,21 @@ export default async function PaginaAjustes() {
       </Seccion>
       )}
 
-      <Seccion titulo="Cómo se calculan tus números">
+      <Seccion titulo={t.pantallas.comoSeCalculan}>
         {esPersonal && (
           <div className="space-y-2.5 px-4 pt-3 text-[13.5px] leading-relaxed text-tinta/65">
-            <p><strong className="text-tinta">Entró</strong> = tu sueldo y cualquier otro ingreso del período.</p>
-            <p><strong className="text-tinta">Salió</strong> = todos tus gastos.</p>
-            <p><strong className="text-tinta">Te quedó</strong> = lo que entró menos lo que salió.</p>
-            <p><strong className="text-tinta">Deudas</strong> = lo que falta pagar. El saldo solo baja registrando pagos.</p>
+            <p><strong className="text-tinta">{t.pantallas.entro}</strong> = tu sueldo y cualquier otro ingreso del período.</p>
+            <p><strong className="text-tinta">{t.pantallas.salio}</strong> = todos tus gastos.</p>
+            <p><strong className="text-tinta">{t.pantallas.teQuedo}</strong> = lo que entró menos lo que salió.</p>
+            <p><strong className="text-tinta">{t.nav.deudas}</strong> = lo que falta pagar. El saldo solo baja registrando pagos.</p>
           </div>
         )}
         {!esPersonal && (
         <div className="space-y-2.5 px-4 pb-5 pt-3 text-[13.5px] leading-relaxed text-tinta/65">
-          <p><strong className="text-tinta">Ventas</strong> = lo que realmente cobraste, ya con los descuentos restados.</p>
-          <p><strong className="text-tinta">Ganancia bruta</strong> = ventas − lo que te costó esa mercadería.</p>
-          <p><strong className="text-tinta">Ganancia neta</strong> = ganancia bruta + otros ingresos − todos los gastos del periodo.</p>
-          <p><strong className="text-tinta">Margen</strong> = qué porcentaje de cada venta te queda como ganancia.</p>
+          <p><strong className="text-tinta">{t.panel.vendido}</strong> = lo que realmente cobraste, ya con los descuentos restados.</p>
+          <p><strong className="text-tinta">{t.panel.gananciaBruta}</strong> = ventas − lo que te costó esa mercadería.</p>
+          <p><strong className="text-tinta">{t.panel.gananciaNeta}</strong> = ganancia bruta + otros ingresos − todos los gastos del periodo.</p>
+          <p><strong className="text-tinta">{t.productos.colMargen}</strong> = qué porcentaje de cada venta te queda como ganancia.</p>
           <p className="pt-1 text-[12.5px] leading-relaxed text-tinta/45">
             El costo de cada producto se congela en el momento de la venta. Si después cambiás el costo o el
             precio, tus reportes viejos siguen mostrando los números reales de ese día.
@@ -285,16 +285,15 @@ export default async function PaginaAjustes() {
       {/* Solo lo ve quien administra Orden. Para todos los demás este
           bloque no existe: ni el enlace, ni la mención de que hay un panel. */}
       {administraOrden && (
-        <Seccion titulo="Administración de Orden">
+        <Seccion titulo={t.pantallas.administracionOrden}>
           <Link
             href="/admin"
             className="boton-suave flex w-full items-center justify-center gap-2 py-2.5"
           >
-            Abrir el panel de cuentas
+            {t.pantallas.abrirPanel}
           </Link>
           <p className="mt-2 text-[12.5px] leading-relaxed text-tinta/45">
-            Quién se registró, en qué plan está y a quién le vence la prueba.
-            Los números de cada negocio no se ven desde ahí.
+            {t.pantallas.abrirPanelDetalle}
           </p>
         </Seccion>
       )}

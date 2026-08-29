@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { textos } from '@/i18n';
 
 /**
  * El marco de las páginas legales.
@@ -14,6 +15,7 @@ export function PaginaLegal({
   actualizado: string;
   children: React.ReactNode;
 }) {
+  const t = textos();
   return (
     <main className="min-h-screen bg-white">
       <header className="zona-segura-arriba border-b border-borde">
@@ -22,7 +24,7 @@ export function PaginaLegal({
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-verde text-base font-black text-white">o</span>
             <span className="text-[17px] font-bold tracking-tight">orden</span>
           </Link>
-          <Link href="/" className="boton-texto">Volver</Link>
+          <Link href="/" className="boton-texto">{t.comun.volver}</Link>
         </div>
       </header>
 
@@ -36,9 +38,9 @@ export function PaginaLegal({
 
         <div className="mt-12 border-t border-borde pt-6">
           <nav className="flex flex-wrap gap-x-5 gap-y-2 text-[13.5px] font-semibold text-tinta/50">
-            <Link href="/privacidad" className="hover:text-tinta">Privacidad</Link>
-            <Link href="/terminos" className="hover:text-tinta">Términos</Link>
-            <Link href="/" className="hover:text-tinta">Inicio</Link>
+            <Link href="/privacidad" className="hover:text-tinta">{t.pantallas.privacidad}</Link>
+            <Link href="/terminos" className="hover:text-tinta">{t.pantallas.terminos}</Link>
+            <Link href="/" className="hover:text-tinta">{t.pantallas.inicio}</Link>
           </nav>
         </div>
       </article>

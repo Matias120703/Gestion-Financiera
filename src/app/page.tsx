@@ -4,6 +4,8 @@ import type { Metadata } from 'next';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { dinero } from '@/lib/formato';
 import { textos, idiomaActual } from '@/i18n';
+import Demos from '@/components/Demos';
+import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
 
@@ -213,6 +215,25 @@ export default async function Portada() {
           como deuda — no como plata que entró.
         </p>
       </section>
+
+      {/* ---------------- Cómo se ve por dentro ----------------
+          Toda la sección aparece recién cuando hay al menos un video cargado
+          en src/lib/demos.ts. Un título que promete videos arriba de un hueco
+          vacío deja peor parada a la página que no tener la sección. */}
+      {HAY_DEMOS && (
+        <section className="border-t border-borde">
+          <div className="mx-auto max-w-5xl px-5 py-14">
+            <h2 className="text-[22px] font-bold tracking-tight lg:text-[27px]">
+              Así se ve por dentro.
+            </h2>
+            <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
+              Grabado de la app de verdad, sin retoques. Los videos no tienen audio
+              y no se descargan hasta que los apretás.
+            </p>
+            <Demos idioma={idioma} />
+          </div>
+        </section>
+      )}
 
       {/* ---------------- Qué te devuelve ---------------- */}
       <section className="border-y border-borde bg-arena">

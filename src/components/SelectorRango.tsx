@@ -1,12 +1,14 @@
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useTextos } from '@/i18n/cliente';
 import { useState } from 'react';
 import { ETIQUETAS_RANGO, type ClaveRango } from '@/lib/fechas';
 
 const RAPIDOS: ClaveRango[] = ['hoy', 'ayer', 'semana', 'mes', 'mes_pasado', 'anio', 'siempre'];
 
 export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desde: string; hasta: string }) {
+  const t = useTextos();
   const router = useRouter();
   const ruta = usePathname();
   const params = useSearchParams();
@@ -54,11 +56,11 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
       {abierto && (
         <div className="tarjeta flex flex-wrap items-end gap-3 p-3.5 aparecer">
           <label className="min-w-[140px] flex-1">
-            <span className="etiqueta">Desde</span>
+            <span className="etiqueta">{t.pantallas.desde}</span>
             <input type="date" className="campo py-2" value={d} onChange={(e) => setD(e.target.value)} />
           </label>
           <label className="min-w-[140px] flex-1">
-            <span className="etiqueta">Hasta</span>
+            <span className="etiqueta">{t.pantallas.hasta}</span>
             <input type="date" className="campo py-2" value={h} onChange={(e) => setH(e.target.value)} />
           </label>
           <button

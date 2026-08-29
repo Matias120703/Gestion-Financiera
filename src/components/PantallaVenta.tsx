@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -61,6 +62,7 @@ export function PantallaVenta({
   /** Ids ordenados por lo más vendido en los últimos 30 días. */
   frecuentes?: string[];
 }) {
+  const t = useTextos();
   const router = useRouter();
   const dec = decimalesDe(moneda);
 
@@ -251,7 +253,7 @@ export function PantallaVenta({
               <circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" />
             </svg>
             <input
-              className="campo pl-10" placeholder="Buscar producto…"
+              className="campo pl-10" placeholder={t.venta.buscarProducto}
               value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
@@ -276,15 +278,15 @@ export function PantallaVenta({
         {sinCatalogo ? (
           <div className="tarjeta">
             <Vacio
-              titulo="Todavía no cargaste productos"
-              detalle="Cargá tus productos con precio y costo para vender de dos toques y ver tu margen real."
+              titulo={t.venta.sinProductos}
+              detalle={t.venta.sinProductosDetalle}
             />
             <div className="px-6 pb-6 text-center">
-              <Link href="/productos" className="boton-principal">Cargar productos</Link>
+              <Link href="/productos" className="boton-principal">{t.venta.cargarProductos}</Link>
             </div>
           </div>
         ) : visibles.length === 0 ? (
-          <div className="tarjeta"><Vacio titulo="Nada coincide" detalle="Probá con otra palabra o cambiá de categoría." /></div>
+          <div className="tarjeta"><Vacio titulo={t.venta.nadaCoincide} detalle={t.venta.nadaCoincideDetalle} /></div>
         ) : (
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
             {visibles.map((p, i) => {
@@ -428,6 +430,7 @@ function Carrito(props: {
   setFecha: (s: string) => void;
   setCliente: (s: string) => void;
 }) {
+  const t = useTextos();
   const {
     carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha, cliente,
     guardando, error, sinMarco, onCambiar, onQuitar, onLimpiar, onCobrar,
@@ -439,7 +442,7 @@ function Carrito(props: {
   return (
     <div className={sinMarco ? '' : 'tarjeta overflow-hidden'}>
       <div className="flex items-center justify-between px-4 pb-2 pt-4">
-        <h2 className="text-[15px] font-bold tracking-tight">Esta venta</h2>
+        <h2 className="text-[15px] font-bold tracking-tight">{t.venta.estaVenta}</h2>
         {carrito.length > 0 && (
           <button type="button" onClick={onLimpiar} className="min-h-[40px] px-2 text-[13px] font-semibold text-tinta/40 hover:text-rojo">
             Vaciar
@@ -448,7 +451,7 @@ function Carrito(props: {
       </div>
 
       {carrito.length === 0 ? (
-        <Vacio titulo="Sin productos" detalle="Tocá un producto para sumarlo." />
+        <Vacio titulo={t.venta.carritoVacio} detalle={t.venta.carritoVacioDetalle} />
       ) : (
         <>
           <div className="max-h-[42vh] space-y-2 overflow-y-auto scroll-limpio px-4 lg:max-h-[38vh]">
@@ -469,7 +472,7 @@ function Carrito(props: {
                   <div className="mt-2 flex items-center gap-2">
                     <div className="flex items-center rounded-xl border border-borde">
                       <button
-                        type="button" aria-label="Restar uno"
+                        type="button" aria-label={t.venta.restarUno}
                         className="grid h-11 w-11 place-items-center rounded-l-xl text-[20px] text-tinta/50 active:bg-arena"
                         onClick={() => onCambiar(l.clave, { cantidad: Math.max(1, l.cantidad - 1) })}
                       >−</button>
@@ -481,7 +484,7 @@ function Carrito(props: {
                         onChange={(e) => onCambiar(l.clave, { cantidad: Math.max(0.01, Number(e.target.value) || 1) })}
                       />
                       <button
-                        type="button" aria-label="Sumar uno"
+                        type="button" aria-label={t.venta.sumarUno}
                         className="grid h-11 w-11 place-items-center rounded-r-xl text-[20px] text-tinta/50 active:bg-arena"
                         onClick={() => onCambiar(l.clave, { cantidad: l.cantidad + 1 })}
                       >+</button>
@@ -511,7 +514,7 @@ function Carrito(props: {
 
           <div className="space-y-3 border-t border-borde px-4 py-3.5">
             <div>
-              <span className="etiqueta">Cómo te pagan</span>
+              <span className="etiqueta">{t.venta.comoTePagan}</span>
               <div className="scroll-limpio flex gap-2 overflow-x-auto">
                 {METODOS.map((m) => (
                   <button
@@ -525,7 +528,7 @@ function Carrito(props: {
             </div>
 
             <label className="block">
-              <span className="etiqueta">Descuento</span>
+              <span className="etiqueta">{t.venta.descuento}</span>
               <input
                 type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
                 className="campo tabular-nums"
@@ -547,11 +550,11 @@ function Carrito(props: {
             {masOpciones && (
               <div className="grid grid-cols-2 gap-2.5 aparecer">
                 <label className="block">
-                  <span className="etiqueta">Cliente</span>
-                  <input className="campo py-2.5" placeholder="Opcional" value={cliente} onChange={(e) => setCliente(e.target.value)} />
+                  <span className="etiqueta">{t.venta.cliente}</span>
+                  <input className="campo py-2.5" placeholder={t.venta.opcional} value={cliente} onChange={(e) => setCliente(e.target.value)} />
                 </label>
                 <label className="block">
-                  <span className="etiqueta">Fecha</span>
+                  <span className="etiqueta">{t.venta.fecha}</span>
                   <input type="date" className="campo py-2.5" value={fecha} onChange={(e) => setFecha(e.target.value)} />
                 </label>
               </div>
@@ -559,20 +562,20 @@ function Carrito(props: {
 
             <div className="space-y-1.5 rounded-xl bg-arena p-3">
               <div className="flex justify-between text-[13px] text-tinta/60">
-                <span>Subtotal</span><span className="tabular-nums">{dinero(subtotal, moneda)}</span>
+                <span>{t.venta.subtotal}</span><span className="tabular-nums">{dinero(subtotal, moneda)}</span>
               </div>
               {descuento > 0 && (
                 <div className="flex justify-between text-[13px] text-rojo">
-                  <span>Descuento</span><span className="tabular-nums">− {dinero(Math.min(descuento, subtotal), moneda)}</span>
+                  <span>{t.venta.descuento}</span><span className="tabular-nums">− {dinero(Math.min(descuento, subtotal), moneda)}</span>
                 </div>
               )}
               <div className="flex items-baseline justify-between border-t border-borde pt-1.5">
-                <span className="text-[14px] font-bold">Total</span>
+                <span className="text-[14px] font-bold">{t.venta.total}</span>
                 <span className="text-[20px] font-bold tabular-nums">{dinero(total, moneda)}</span>
               </div>
               {verCostos && (
                 <div className="flex justify-between text-[12.5px] font-semibold text-verde-fuerte">
-                  <span>Te queda</span><span className="tabular-nums">{dinero(ganancia, moneda)}</span>
+                  <span>{t.venta.teQueda}</span><span className="tabular-nums">{dinero(ganancia, moneda)}</span>
                 </div>
               )}
             </div>
@@ -612,6 +615,7 @@ function DialogoLibre({
   onCerrar: () => void;
   onAgregar: (nombre: string, precio: number, costo: number) => void;
 }) {
+  const t = useTextos();
   const [nombre, setNombre] = useState('');
   const [precio, setPrecio] = useState(0);
   const [costo, setCosto] = useState(0);
@@ -624,12 +628,12 @@ function DialogoLibre({
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => { e.preventDefault(); if (precio > 0) onAgregar(nombre.trim(), precio, conCosto ? costo : 0); }}
       >
-        <h2 className="text-[18px] font-bold tracking-tight">Venta suelta</h2>
-        <p className="mt-1 text-[13.5px] text-tinta/55">Algo que no está en tu catálogo.</p>
+        <h2 className="text-[18px] font-bold tracking-tight">{t.venta.ventaSuelta}</h2>
+        <p className="mt-1 text-[13.5px] text-tinta/55">{t.venta.ventaSueltaDetalle}</p>
 
         <div className="mt-4 space-y-3">
           <label className="block">
-            <span className="etiqueta">Precio</span>
+            <span className="etiqueta">{t.venta.precio}</span>
             <input
               type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
               className="campo text-[22px] font-bold tabular-nums" autoFocus
@@ -639,9 +643,9 @@ function DialogoLibre({
           </label>
 
           <label className="block">
-            <span className="etiqueta">Qué es <span className="font-normal text-tinta/35">(opcional)</span></span>
+            <span className="etiqueta">{t.venta.queEs}<span className="font-normal text-tinta/35">(opcional)</span></span>
             <input
-              className="campo" placeholder="Ej. Cargador tipo C" maxLength={120}
+              className="campo" placeholder={t.venta.queEsEjemplo} maxLength={120}
               value={nombre} onChange={(e) => setNombre(e.target.value)}
             />
           </label>
@@ -657,7 +661,7 @@ function DialogoLibre({
 
           {verCostos && conCosto && (
             <label className="block aparecer">
-              <span className="etiqueta">Te costó</span>
+              <span className="etiqueta">{t.venta.teCosto}</span>
               <input
                 type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
                 className="campo tabular-nums" value={costo || ''} placeholder="0"
@@ -671,8 +675,8 @@ function DialogoLibre({
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2.5">
-          <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar}>Cancelar</button>
-          <button type="submit" className="boton-principal min-h-[48px]" disabled={precio <= 0}>Agregar</button>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar}>{t.comun.cancelar}</button>
+          <button type="submit" className="boton-principal min-h-[48px]" disabled={precio <= 0}>{t.venta.agregar}</button>
         </div>
       </form>
     </div>

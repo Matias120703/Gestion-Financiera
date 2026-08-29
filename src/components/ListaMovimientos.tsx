@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, numero, fechaLarga } from '@/lib/formato';
@@ -44,6 +45,7 @@ export function ListaMovimientos({
     filtros: { tipo?: TipoMovimiento | null; incluirAnuladas?: boolean; busqueda?: string | null },
   ) => Promise<{ movimientos: Movimiento[]; siguiente: Cursor | null }>;
 }) {
+  const t = useTextos();
   const router = useRouter();
   const [filtro, setFiltro] = useState<'todos' | TipoMovimiento>('todos');
   const [busqueda, setBusqueda] = useState('');
@@ -141,7 +143,7 @@ export function ListaMovimientos({
           <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-tinta/30" {...trazo}>
             <circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" />
           </svg>
-          <input className="campo pl-10" placeholder="Buscar por producto, categoría o cliente…"
+          <input className="campo pl-10" placeholder={t.pantallas.buscarMovimiento}
             value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         </div>
         <div className="scroll-limpio flex gap-2 overflow-x-auto">
@@ -170,7 +172,7 @@ export function ListaMovimientos({
 
       {porDia.length === 0 ? (
         <div className="tarjeta">
-          <Vacio titulo="Sin movimientos" detalle="Cambiá el rango de fechas o cargá tu primer movimiento con el botón verde." />
+          <Vacio titulo={t.pantallas.sinMovimientos} detalle={t.pantallas.sinMovimientosDetalle} />
         </div>
       ) : (
         <div className="space-y-4">
@@ -215,7 +217,7 @@ export function ListaMovimientos({
                                 {m.descripcion || 'Sin descripción'}
                               </span>
                               <span className="block truncate text-[12px] text-tinta/45">
-                                {anulado && <span className="font-bold text-rojo">ANULADA · </span>}
+                                {anulado && <span className="font-bold text-rojo">{t.pantallas.anulada} · </span>}
                                 {m.categoria} · {m.metodo_pago}
                                 {m.contraparte ? ` · ${m.contraparte}` : ''}
                                 {items.length > 0 ? ` · ${items.length} producto${items.length === 1 ? '' : 's'}` : ''}
@@ -240,7 +242,7 @@ export function ListaMovimientos({
                           {sePuedeAnular && (
                             <button
                               type="button" onClick={() => setAAnular(m)}
-                              aria-label="Anular" title="Anular este movimiento"
+                              aria-label={t.pantallas.anular} title="Anular este movimiento"
                               className="icono-toque shrink-0 text-tinta/25 transition hover:bg-rojo-claro hover:text-rojo"
                             >
                               <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
@@ -256,10 +258,10 @@ export function ListaMovimientos({
                               <table className="w-full text-[13px]">
                                 <thead>
                                   <tr className="text-[11px] font-bold uppercase tracking-wider text-tinta/40">
-                                    <th className="pb-1.5 text-left">Producto</th>
-                                    <th className="pb-1.5 text-right">Cant.</th>
-                                    <th className="pb-1.5 text-right">P. unit.</th>
-                                    <th className="pb-1.5 text-right">Total</th>
+                                    <th className="pb-1.5 text-left">{t.productos.colProducto}</th>
+                                    <th className="pb-1.5 text-right">{t.pantallas.colCant}</th>
+                                    <th className="pb-1.5 text-right">{t.pantallas.colPUnit}</th>
+                                    <th className="pb-1.5 text-right">{t.venta.total}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -276,7 +278,7 @@ export function ListaMovimientos({
                                 </tbody>
                               </table>
                             ) : (
-                              <p className="text-[13px] text-tinta/50">Movimiento sin detalle de productos.</p>
+                              <p className="text-[13px] text-tinta/50">{t.pantallas.sinDetalleProductos}</p>
                             )}
                             {Number(m.descuento) > 0 && (
                               <div className="mt-2 flex justify-between border-t border-borde pt-2 text-[13px]">

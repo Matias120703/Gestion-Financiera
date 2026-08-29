@@ -203,7 +203,7 @@ export function BotonCaptura({
         flujo.getTracks().forEach((t) => t.stop());
         const blob = new Blob(trozos.current, { type: tipo || 'audio/webm' });
         if (blob.size < 1200) {
-          setError('El audio salió muy corto. Probá de nuevo.');
+          setError(t.captura.audioCorto);
           setModo('menu');
           return;
         }
@@ -220,7 +220,7 @@ export function BotonCaptura({
       setModo('audio');
       cronometro.current = setInterval(() => setSegundos((s) => s + 1), 1000);
     } catch {
-      setError('No pude acceder al micrófono. Revisá los permisos del navegador.');
+      setError(t.captura.sinMicrofonoDetalle);
       setModo('menu');
     }
   }
@@ -245,7 +245,7 @@ export function BotonCaptura({
     e.target.value = '';
     if (!archivo) return;
     if (archivo.size > 8 * 1024 * 1024) {
-      setError('La foto pesa más de 8 MB. Sacá una más liviana.');
+      setError(t.captura.fotoPesada);
       return;
     }
     fotoRef.current = archivo;
@@ -259,7 +259,7 @@ export function BotonCaptura({
   // ---------------------------------------------------------- texto
   function enviarTexto() {
     if (texto.trim().length < 4) {
-      setError('Escribí un poco más para que pueda entender.');
+      setError(t.captura.escribiUnPocoMas);
       return;
     }
     const fd = new FormData();
@@ -308,7 +308,7 @@ export function BotonCaptura({
 
       } else if (borrador.tipo === 'pago_deuda') {
         const deudaId = borrador.deuda?.deuda_id;
-        if (!deudaId) throw new Error('Elegí a cuál de tus deudas corresponde el pago.');
+        if (!deudaId) throw new Error(t.captura.elegiLaDeuda);
 
         const { data, error } = await supabase.rpc('registrar_pago_deuda', {
           p_deuda: deudaId,
@@ -429,7 +429,7 @@ export function BotonCaptura({
       <button
         type="button"
         onClick={() => setModo('menu')}
-        aria-label="Registrar con voz, foto o texto"
+        aria-label={t.captura.botonAria}
         className="fixed right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-verde text-white shadow-[0_10px_30px_-6px_rgba(23,121,90,.7)] transition active:scale-95 lg:bottom-7 lg:right-7 lg:h-[60px] lg:w-[60px]"
         style={{ bottom: 'calc(86px + env(safe-area-inset-bottom))' }}
       >
@@ -449,7 +449,7 @@ export function BotonCaptura({
             {modo === 'menu' && (
               <>
                 <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />
-                <h2 className="text-[19px] font-bold tracking-tight">Registrar rápido</h2>
+                <h2 className="text-[19px] font-bold tracking-tight">{t.captura.registrarRapido}</h2>
                 <p className="mt-1 text-[14px] leading-relaxed text-tinta/60">
                   Contale al sistema lo que pasó. Él lo ordena y vos confirmás.
                 </p>
@@ -472,23 +472,23 @@ export function BotonCaptura({
 
                 <div className="mt-5 space-y-2.5">
                   <Opcion
-                    titulo="Hablar" detalle="&laquo;Vendí dos perfumes a 150 mil cada uno&raquo;"
+                    titulo={t.captura.porVoz} detalle="&laquo;Vendí dos perfumes a 150 mil cada uno&raquo;"
                     onClick={empezarGrabacion}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" /><path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" /></svg>}
                   />
                   <Opcion
-                    titulo="Sacar foto" detalle="Ticket, factura o comprobante"
+                    titulo={t.captura.porFoto} detalle={t.captura.porFotoDetalle}
                     onClick={() => archivoRef.current?.click()}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M3.5 8.5h3l1.5-2.5h8L17.5 8.5h3v10h-17z" /><circle cx="12" cy="13" r="3.2" /></svg>}
                   />
                   <Opcion
-                    titulo="Escribir" detalle="Sin formularios, como le contás a alguien"
+                    titulo={t.captura.porTexto} detalle={t.captura.porTextoDetalle}
                     onClick={() => { setError(''); setModo('texto'); }}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M4 20h16M6 16.5 16.5 6a2.1 2.1 0 0 1 3 3L9 19.5l-4 1z" /></svg>}
                   />
                 </div>
 
-                <button onClick={cerrar} className="mt-4 w-full py-2 text-[13.5px] font-semibold text-tinta/45">Cancelar</button>
+                <button onClick={cerrar} className="mt-4 w-full py-2 text-[13.5px] font-semibold text-tinta/45">{t.comun.cancelar}</button>
               </>
             )}
 
@@ -503,10 +503,10 @@ export function BotonCaptura({
                 <p className="mt-5 text-3xl font-bold tabular-nums tracking-tight">
                   {String(Math.floor(segundos / 60)).padStart(2, '0')}:{String(segundos % 60).padStart(2, '0')}
                 </p>
-                <p className="mt-2 text-[14px] text-tinta/60">Hablá normal. Decí qué vendiste o gastaste y cuánto.</p>
+                <p className="mt-2 text-[14px] text-tinta/60">{t.captura.hablaNormal}</p>
                 <div className="mt-6 grid grid-cols-2 gap-2.5">
-                  <button className="boton-suave py-3" onClick={() => terminarGrabacion(true)}>Cancelar</button>
-                  <button className="boton-principal py-3" onClick={() => terminarGrabacion(false)}>Listo</button>
+                  <button className="boton-suave py-3" onClick={() => terminarGrabacion(true)}>{t.comun.cancelar}</button>
+                  <button className="boton-principal py-3" onClick={() => terminarGrabacion(false)}>{t.comun.listo}</button>
                 </div>
               </div>
             )}
@@ -514,16 +514,16 @@ export function BotonCaptura({
             {/* ---------------- TEXTO ---------------- */}
             {modo === 'texto' && (
               <>
-                <h2 className="text-[19px] font-bold tracking-tight">Contame qué pasó</h2>
+                <h2 className="text-[19px] font-bold tracking-tight">{t.captura.contameQuePaso}</h2>
                 <textarea
                   className="campo mt-4 min-h-[130px] resize-none"
-                  autoFocus placeholder="Ej: vendí 3 perfumes Lattafa a 180 mil cada uno, pagó por transferencia"
+                  autoFocus placeholder={t.captura.ejemploLargo}
                   value={texto} onChange={(e) => setTexto(e.target.value)}
                 />
                 {error && <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
                 <div className="mt-4 grid grid-cols-2 gap-2.5">
-                  <button className="boton-suave py-3" onClick={() => setModo('menu')}>Atrás</button>
-                  <button className="boton-principal py-3" onClick={enviarTexto}>Interpretar</button>
+                  <button className="boton-suave py-3" onClick={() => setModo('menu')}>{t.captura.atras}</button>
+                  <button className="boton-principal py-3" onClick={enviarTexto}>{t.captura.interpretar}</button>
                 </div>
               </>
             )}
@@ -532,8 +532,8 @@ export function BotonCaptura({
             {modo === 'procesando' && (
               <div className="py-12 text-center">
                 <div className="mx-auto h-9 w-9 animate-spin rounded-full border-[3px] border-verde-claro border-t-verde" />
-                <p className="mt-5 text-[15px] font-semibold">Entendiendo lo que dijiste…</p>
-                <p className="mt-1 text-[13.5px] text-tinta/50">Tarda unos segundos.</p>
+                <p className="mt-5 text-[15px] font-semibold">{t.captura.interpretando}</p>
+                <p className="mt-1 text-[13.5px] text-tinta/50">{t.captura.tardaSegundos}</p>
               </div>
             )}
 
@@ -585,6 +585,7 @@ function Revision({
   onCancelar: () => void;
   onGuardar: () => void;
 }) {
+  const t = useTextos();
   const dec = decimalesDe(moneda);
   const bajaConfianza = (borrador.confianza ?? 1) < 0.65;
 
@@ -651,8 +652,8 @@ function Revision({
     <div className="max-h-[78vh] overflow-y-auto scroll-limpio">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[19px] font-bold tracking-tight">Revisá antes de guardar</h2>
-          <p className="mt-0.5 text-[13.5px] text-tinta/55">Podés corregir cualquier campo.</p>
+          <h2 className="text-[19px] font-bold tracking-tight">{t.captura.revisar}</h2>
+          <p className="mt-0.5 text-[13.5px] text-tinta/55">{t.captura.podesCorregir}</p>
         </div>
         <span className={`pastilla shrink-0 ${colorTipo}`}>
           {etiquetaTipo[borrador.tipo]}
@@ -667,7 +668,7 @@ function Revision({
 
       {bajaConfianza && (
         <p className="mb-4 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-          No estoy del todo seguro de esto. Revisalo bien antes de guardar.
+          {t.captura.bajaConfianza}
         </p>
       )}
       {borrador.aviso && (
@@ -676,45 +677,45 @@ function Revision({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="etiqueta">{esDeuda ? 'Nombre de la deuda' : 'Descripción'}</label>
+          <label className="etiqueta">{esDeuda ? t.captura.campoNombreDeuda : t.captura.campoDescripcion}</label>
           <input className="campo" value={borrador.descripcion} onChange={(e) => set('descripcion', e.target.value)} />
         </div>
 
         <div className={esDeuda ? 'col-span-2' : ''}>
-          <label className="etiqueta">Tipo</label>
+          <label className="etiqueta">{t.captura.campoTipo}</label>
           <select className="campo" value={borrador.tipo} onChange={(e) => setTipo(e.target.value as TipoCaptura)}>
-            {!esCuentaPersonal && <option value="venta">Venta</option>}
-            <option value="gasto">Gasto</option>
-            <option value="ingreso">{esCuentaPersonal ? 'Ingreso' : 'Otro ingreso'}</option>
-            <option value="deuda">Deuda</option>
-            <option value="pago_deuda">Pago de deuda</option>
+            {!esCuentaPersonal && <option value="venta">{t.captura.tipoVenta}</option>}
+            <option value="gasto">{t.captura.tipoGasto}</option>
+            <option value="ingreso">{esCuentaPersonal ? t.captura.tipoIngreso : t.captura.tipoOtroIngreso}</option>
+            <option value="deuda">{t.captura.tipoDeuda}</option>
+            <option value="pago_deuda">{t.captura.tipoPagoDeuda}</option>
           </select>
         </div>
 
         {/* Una deuda no tiene fecha de carga: tiene vencimiento, y va abajo. */}
         {!esDeuda && (
           <div>
-            <label className="etiqueta">Fecha</label>
+            <label className="etiqueta">{t.captura.campoFecha}</label>
             <input type="date" className="campo" value={borrador.fecha ?? ''} onChange={(e) => set('fecha', e.target.value)} />
           </div>
         )}
 
         {!esDeuda && !esPago && (
           <div>
-            <label className="etiqueta">Categoría</label>
+            <label className="etiqueta">{t.captura.campoCategoria}</label>
             <input className="campo" value={borrador.categoria} onChange={(e) => set('categoria', e.target.value)} />
           </div>
         )}
 
         {!esDeuda && (
           <div>
-            <label className="etiqueta">Cobro / pago</label>
+            <label className="etiqueta">{t.captura.campoCobroPago}</label>
             <select className="campo" value={borrador.metodo_pago} onChange={(e) => set('metodo_pago', e.target.value)}>
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="tarjeta">Tarjeta</option>
-              <option value="credito">Fiado / crédito</option>
-              <option value="otro">Otro</option>
+              <option value="efectivo">{t.captura.metodoEfectivo}</option>
+              <option value="transferencia">{t.captura.metodoTransferencia}</option>
+              <option value="tarjeta">{t.captura.metodoTarjeta}</option>
+              <option value="credito">{t.captura.metodoCredito}</option>
+              <option value="otro">{t.captura.metodoOtro}</option>
             </select>
           </div>
         )}
@@ -723,32 +724,32 @@ function Revision({
       {/* ---------------- DEUDA NUEVA ---------------- */}
       {esDeuda && (
         <div className="mt-5 rounded-2xl border border-ambar/25 bg-ambar-claro/40 p-4">
-          <p className="titulo-seccion mb-3">Datos de la deuda</p>
+          <p className="titulo-seccion mb-3">{t.captura.datosDeuda}</p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="etiqueta">Clase</label>
+              <label className="etiqueta">{t.captura.claseDeuda}</label>
               <select
                 className="campo" value={infoDeuda.clase}
                 onChange={(e) => setDeuda({ clase: e.target.value as DeudaInterpretada['clase'] })}
               >
-                <option value="tarjeta">Tarjeta</option>
-                <option value="prestamo">Préstamo</option>
-                <option value="proveedor">Proveedor</option>
-                <option value="otro">Otro</option>
+                <option value="tarjeta">{t.captura.metodoTarjeta}</option>
+                <option value="prestamo">{t.captura.clasePrestamo}</option>
+                <option value="proveedor">{t.captura.claseProveedor}</option>
+                <option value="otro">{t.captura.metodoOtro}</option>
               </select>
             </div>
 
             <div>
-              <label className="etiqueta">A quién</label>
+              <label className="etiqueta">{t.captura.aQuien}</label>
               <input
-                className="campo" placeholder="Banco, financiera…"
+                className="campo" placeholder={t.captura.aQuienEjemplo}
                 value={infoDeuda.acreedor ?? ''}
                 onChange={(e) => setDeuda({ acreedor: e.target.value || null })}
               />
             </div>
 
             <div>
-              <label className="etiqueta">Cuotas</label>
+              <label className="etiqueta">{t.captura.cuotas}</label>
               <input
                 type="number" inputMode="numeric" min={0} step={1}
                 className="campo" placeholder="—"
@@ -758,7 +759,7 @@ function Revision({
             </div>
 
             <div>
-              <label className="etiqueta">Monto por cuota</label>
+              <label className="etiqueta">{t.captura.montoPorCuota}</label>
               <input
                 type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
                 className="campo" placeholder="—"
@@ -768,14 +769,14 @@ function Revision({
             </div>
 
             <div className="col-span-2">
-              <label className="etiqueta">Próximo vencimiento</label>
+              <label className="etiqueta">{t.captura.proximoVencimiento}</label>
               <input
                 type="date" className="campo"
                 value={infoDeuda.vence_el ?? ''}
                 onChange={(e) => setDeuda({ vence_el: e.target.value || null })}
               />
               <p className="mt-1.5 text-[12.5px] text-tinta/50">
-                Si lo dejás vacío, la deuda no te va a avisar cuándo pagar.
+                {t.captura.sinVencimiento}
               </p>
             </div>
           </div>
@@ -785,20 +786,20 @@ function Revision({
       {/* ---------------- PAGO DE UNA DEUDA ---------------- */}
       {esPago && (
         <div className="mt-5 rounded-2xl border border-borde bg-arena p-4">
-          <label className="etiqueta">¿Cuál deuda estás pagando?</label>
+          <label className="etiqueta">{t.captura.cualDeuda}</label>
           {deudas.length === 0 ? (
             <p className="mt-1 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-              No hay deudas cargadas para imputar el pago. Cargá primero la deuda.
+              {t.captura.sinDeudasCargadas}
             </p>
           ) : (
             <select
               className="campo" value={infoDeuda.deuda_id ?? ''}
               onChange={(e) => setDeuda({ deuda_id: e.target.value || null })}
             >
-              <option value="">Elegí una…</option>
+              <option value="">{t.captura.elegiUna}</option>
               {deudas.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.nombre}{d.acreedor ? ' · ' + d.acreedor : ''} — falta {dinero(d.saldo, moneda)}
+                  {d.nombre}{d.acreedor ? ' · ' + d.acreedor : ''} — {t.captura.faltaPagar(dinero(d.saldo, moneda))}
                 </option>
               ))}
             </select>
@@ -806,7 +807,7 @@ function Revision({
 
           {deudaElegida && borrador.monto > deudaElegida.saldo && (
             <p className="mt-2.5 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-              Es más de lo que falta. Se va a aplicar solo {dinero(deudaElegida.saldo, moneda)} y la deuda queda saldada.
+              {t.captura.pagaDeMas(dinero(deudaElegida.saldo, moneda))}
             </p>
           )}
 
@@ -816,9 +817,9 @@ function Revision({
               checked={crearGasto} onChange={(e) => onCrearGasto(e.target.checked)}
             />
             <span className="text-[13.5px] leading-snug text-tinta/70">
-              Anotar también como gasto del día
+              {t.captura.anotarComoGasto}
               <span className="block text-[12.5px] text-tinta/45">
-                La plata salió del cajón. Desmarcalo solo si llevás la contabilidad aparte.
+                {t.captura.anotarComoGastoDetalle}
               </span>
             </span>
           </label>
@@ -827,7 +828,7 @@ function Revision({
 
       {borrador.items.length > 0 && (
         <div className="mt-5">
-          <p className="titulo-seccion mb-2">Productos</p>
+          <p className="titulo-seccion mb-2">{t.captura.productos}</p>
           <div className="space-y-2">
             {borrador.items.map((it, n) => (
               <div key={n} className="rounded-xl border border-borde p-3">
@@ -838,7 +839,7 @@ function Revision({
                   />
                   <button
                     type="button" onClick={() => quitarItem(n)}
-                    aria-label="Quitar producto"
+                    aria-label={t.captura.quitarProducto}
                     className="icono-toque shrink-0 text-tinta/35 hover:bg-rojo-claro hover:text-rojo"
                   >
                     <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -846,18 +847,18 @@ function Revision({
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <label className="block">
-                    <span className="mb-1 block text-[11.5px] font-semibold text-tinta/50">Cantidad</span>
+                    <span className="mb-1 block text-[11.5px] font-semibold text-tinta/50">{t.captura.cantidad}</span>
                     <input type="number" inputMode="numeric" min={0} step="any" className="campo py-2 text-[14px]" value={it.cantidad}
                       onChange={(e) => setItem(n, { cantidad: Number(e.target.value) || 0 })} />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[11.5px] font-semibold text-tinta/50">Precio c/u</span>
+                    <span className="mb-1 block text-[11.5px] font-semibold text-tinta/50">{t.captura.precioCadaUno}</span>
                     <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo py-2 text-[14px]" value={it.precio_unitario}
                       onChange={(e) => setItem(n, { precio_unitario: Number(e.target.value) || 0 })} />
                   </label>
                 </div>
                 {it.producto_id && (
-                  <p className="mt-2 text-[11.5px] font-semibold text-verde-fuerte">✓ vinculado a tu catálogo · descuenta stock</p>
+                  <p className="mt-2 text-[11.5px] font-semibold text-verde-fuerte">{t.captura.vinculadoAlCatalogo}</p>
                 )}
               </div>
             ))}
@@ -867,7 +868,7 @@ function Revision({
 
       <div className="mt-5 rounded-2xl bg-arena p-4">
         <label className="etiqueta">
-          {esDeuda ? 'Cuánto debés en total' : esPago ? 'Cuánto pagaste' : 'Total'}
+          {esDeuda ? t.captura.cuantoDebes : esPago ? t.captura.cuantoPagaste : t.captura.total}
         </label>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
@@ -881,9 +882,9 @@ function Revision({
       {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
       <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
-        <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>Atrás</button>
+        <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>{t.captura.atras}</button>
         <button className="boton-principal py-3" onClick={onGuardar} disabled={guardando || borrador.monto <= 0 || faltaElegirDeuda}>
-          {guardando ? paso || 'Guardando…' : 'Guardar'}
+          {guardando ? paso || t.comun.guardando : t.comun.guardar}
         </button>
       </div>
     </div>

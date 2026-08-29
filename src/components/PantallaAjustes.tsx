@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import type { Empresa } from '@/lib/tipos';
 import { mensajeDeError, verificarAfectados } from '@/lib/errores';
 
 export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; puedeEditar: boolean }) {
+  const t = useTextos();
   const router = useRouter();
   const [nombre, setNombre] = useState(empresa.nombre);
   const [moneda, setMoneda] = useState(empresa.moneda);
@@ -43,18 +45,18 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
   return (
     <form onSubmit={guardar} className="space-y-3">
       <label className="block">
-        <span className="etiqueta">Nombre</span>
+        <span className="etiqueta">{t.pantallas.nombreDelNegocio}</span>
         <input className="campo" maxLength={60} disabled={!puedeEditar} value={nombre} onChange={(e) => setNombre(e.target.value)} />
       </label>
 
       <label className="block">
-        <span className="etiqueta">Moneda</span>
+        <span className="etiqueta">{t.pantallas.moneda}</span>
         <select className="campo" disabled={!puedeEditar} value={moneda} onChange={(e) => setMoneda(e.target.value)}>
-          <option value="PYG">Guaraníes (Gs.)</option>
-          <option value="USD">Dólares (US$)</option>
-          <option value="ARS">Pesos argentinos ($)</option>
-          <option value="BRL">Reales (R$)</option>
-          <option value="EUR">Euros (€)</option>
+          <option value="PYG">{t.pantallas.monedaPYG}</option>
+          <option value="USD">{t.pantallas.monedaUSD}</option>
+          <option value="ARS">{t.pantallas.monedaARS}</option>
+          <option value="BRL">{t.pantallas.monedaBRL}</option>
+          <option value="EUR">{t.pantallas.monedaEUR}</option>
         </select>
         <span className="mt-1 block text-[12px] text-tinta/45">
           Cambiar la moneda no convierte los montos ya cargados, solo cambia cómo se muestran.

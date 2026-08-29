@@ -1,0 +1,12 @@
+Acá van los videos de la portada.
+
+Cada video necesita dos archivos con el mismo nombre:
+
+    cargar-venta.mp4   ← el video, sin audio, menos de 8 MB
+    cargar-venta.jpg   ← la primera pantalla, lo que se ve antes del play
+
+Después hay que anotarlo en  src/lib/demos.ts . Ahí está explicado
+paso a paso, con un ejemplo listo para copiar.
+
+Mientras la lista de ese archivo esté vacía, la portada no muestra
+ninguna sección de videos.

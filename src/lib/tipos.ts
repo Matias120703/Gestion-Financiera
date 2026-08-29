@@ -262,6 +262,22 @@ export interface CuentaAdmin {
   ultima_actividad: string | null;
   ia_usada: number;
   ia_tope: number;
+  /** El rubro elegido al crear la cuenta. Ver migración 021. */
+  rubro: Rubro;
+  /**
+   * Quedó sin nadie adentro. Pasa al borrar un usuario desde Supabase: la
+   * empresa sobrevive y nadie puede entrar. Ver migración 022.
+   */
+  sin_duenio: boolean;
+  /** Lo contestó quien creó la cuenta, no la administración. */
+  como_nos_conocio: string;
+  /** Ficha de seguimiento: solo la ve y la escribe la administración. */
+  contacto: string;
+  telefono: string;
+  se_dedica: string;
+  notas: string;
+  /** Si hay un cambio de plan que todavía se puede revertir. */
+  puede_deshacer: boolean;
 }
 
 /**

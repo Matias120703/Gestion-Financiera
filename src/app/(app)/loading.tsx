@@ -6,7 +6,7 @@
  */
 export default function Cargando() {
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Cargando">
+    <div className="space-y-4" aria-busy="true" aria-label="Loading">
       <div className="h-9 w-2/3 animate-pulse rounded-xl bg-borde/60" />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { useTextos } from '@/i18n/cliente';
 
 /**
  * PEDIR UNA CONTRASEÑA NUEVA.
@@ -23,6 +24,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
  * seguro para todos.
  */
 export default function PaginaRecuperar() {
+  const t = useTextos();
   const [email, setEmail] = useState('');
   const [cargando, setCargando] = useState(false);
   const [listo, setListo] = useState(false);
@@ -46,7 +48,7 @@ export default function PaginaRecuperar() {
     } catch (err: any) {
       // Un fallo de red sí se cuenta: no saber si se mandó es peor que
       // cualquier otra cosa. Lo que no se cuenta es si el correo existe.
-      setError(err?.message ?? 'No se pudo enviar. Probá de nuevo en un momento.');
+      setError(err?.message ?? t.acceso.noSePudoEnviar);
     } finally {
       setCargando(false);
     }
@@ -63,38 +65,36 @@ export default function PaginaRecuperar() {
         <div className="tarjeta p-6">
           {listo ? (
             <>
-              <p className="titulo-seccion">Revisá tu correo</p>
+              <p className="titulo-seccion">{t.acceso.revisaCorreo}</p>
               <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
-                Ya está en camino.
+                {t.acceso.enCamino}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
-                Si hay una cuenta con <strong className="text-tinta">{email.trim()}</strong>, te
-                acabamos de mandar un enlace para poner una contraseña nueva.
+                {t.acceso.siHayCuenta(email.trim())}
               </p>
               <p className="mt-3 text-[13.5px] leading-relaxed text-tinta/50">
-                Puede tardar un par de minutos. Si no lo ves, mirá en spam o correo no deseado.
+                {t.acceso.puedeTardar}
               </p>
               <Link href="/ingresar" className="boton-suave mt-6 flex w-full justify-center py-2.5">
-                Volver a entrar
+                {t.acceso.volverAEntrar}
               </Link>
             </>
           ) : (
             <>
-              <p className="titulo-seccion">Recuperar el acceso</p>
+              <p className="titulo-seccion">{t.acceso.recuperarTitulo}</p>
               <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
-                ¿Te olvidaste la contraseña?
+                {t.acceso.olvide}
               </h1>
               <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">
-                Poné tu correo y te mandamos un enlace para poner una nueva. Tus datos quedan
-                exactamente donde están.
+                {t.acceso.recuperarBajada}
               </p>
 
               <form onSubmit={enviar} className="mt-6 space-y-4" noValidate>
                 <div>
-                  <label className="etiqueta" htmlFor="email">Correo electrónico</label>
+                  <label className="etiqueta" htmlFor="email">{t.acceso.correo}</label>
                   <input
                     id="email" type="email" className="campo" required autoComplete="email"
-                    placeholder="nombre@correo.com" value={email}
+                    placeholder={t.acceso.correoEjemplo} value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
@@ -106,12 +106,12 @@ export default function PaginaRecuperar() {
                 )}
 
                 <button type="submit" className="boton-principal w-full py-3" disabled={cargando}>
-                  {cargando ? 'Mandando…' : 'Mandarme el enlace'}
+                  {cargando ? t.acceso.mandando : t.acceso.mandarEnlace}
                 </button>
               </form>
 
               <p className="mt-5 text-center text-sm text-tinta/60">
-                <Link href="/ingresar" className="boton-texto">Volver a entrar</Link>
+                <Link href="/ingresar" className="boton-texto">{t.acceso.volverAEntrar}</Link>
               </p>
             </>
           )}
