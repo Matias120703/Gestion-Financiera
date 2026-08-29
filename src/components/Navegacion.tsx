@@ -5,7 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
-import type { Empresa } from '@/lib/tipos';
+import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
+import { fichaDe } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
 import type { Textos } from '@/i18n/diccionarios';
 
@@ -85,8 +86,25 @@ const Ico = {
  * pantalla cambia con el idioma. La ruta y el icono no cambian nunca, así
  * que lo único que se arma en cada render es el texto.
  */
-export function itemsDe(t: Textos): ItemNav[] {
-  return [
+/**
+ * Lo que NO existe en una cuenta personal.
+ *
+ * Vender y Productos son de comercio, y un reto de ventas no significa nada
+ * para quien anota su sueldo. No se muestran «desactivados» ni con un
+ * candado: directamente no están. Una pantalla que se ve pero no sirve es
+ * peor que una que no existe — invita a tocarla y después decepciona.
+ *
+ * Las páginas además redirigen por su cuenta, así que esconderlas de acá no
+ * es la seguridad: es no ofrecer un camino que no lleva a ningún lado.
+ */
+const SOLO_COMERCIO = ['/vender', '/productos', '/reto'];
+
+export function itemsDe(
+  t: Textos,
+  tipo: TipoCuenta = 'emprendedor',
+  rubro: Rubro = 'comercio',
+): ItemNav[] {
+  const todos: ItemNav[] = [
     { href: '/panel',       texto: t.nav.panel,       icono: Ico.panel },
     { href: '/vender',      texto: t.nav.vender,      icono: Ico.vender },
     { href: '/gastos',      texto: t.nav.gastos,      icono: Ico.gastos },
@@ -98,6 +116,15 @@ export function itemsDe(t: Textos): ItemNav[] {
     { href: '/reportes',    texto: t.nav.reportes,    icono: Ico.reportes },
     { href: '/ajustes',     texto: t.nav.ajustes,     icono: Ico.ajustes },
   ];
+  // Dos filtros distintos que se aplican en orden: qué NO tiene una cuenta
+  // personal, y qué NO tiene este rubro. Un ganadero no ve el cierre del día
+  // porque su ganancia no se mide por día; ver src/lib/rubros.ts.
+  const ficha = fichaDe(rubro);
+  const visibles = tipo === 'personal'
+    ? todos.filter((i) => !SOLO_COMERCIO.includes(i.href))
+    : todos;
+  if (ficha.sinSecciones.length === 0) return visibles;
+  return visibles.filter((i) => !ficha.sinSecciones.includes(i.href));
 }
 
 /**
@@ -115,6 +142,23 @@ export function itemsDe(t: Textos): ItemNav[] {
  */
 const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre'];
 
+/**
+ * En una cuenta personal, el lugar de Vender lo ocupa Deudas.
+ *
+ * No es un relleno: para alguien que lleva sus finanzas, saber cuánto debe y
+ * cuándo vence la cuota es lo que más se mira. Es la pantalla que justifica
+ * la suscripción, así que va a un toque.
+ */
+const EN_BARRA_INFERIOR_PERSONAL = ['/panel', '/deudas', '/gastos', '/cierre'];
+
+function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio') {
+  const base = tipo === 'personal' ? EN_BARRA_INFERIOR_PERSONAL : EN_BARRA_INFERIOR;
+  // Si el rubro no tiene alguna de las cuatro, se cae sola: la barra queda de
+  // tres y el resto sigue a un toque desde «Más».
+  const ficha = fichaDe(rubro);
+  return base.filter((href) => !ficha.sinSecciones.includes(href));
+}
+
 function activo(ruta: string, href: string) {
   return ruta === href || ruta.startsWith(`${href}/`);
 }
@@ -122,7 +166,7 @@ function activo(ruta: string, href: string) {
 export function NavLateral({ empresa }: { empresa: Empresa }) {
   const ruta = usePathname();
   const t = useTextos();
-  const ITEMS = itemsDe(t);
+  const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro);
   return (
     <aside className="hidden w-[232px] shrink-0 flex-col border-r border-borde bg-white lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -150,18 +194,25 @@ export function NavLateral({ empresa }: { empresa: Empresa }) {
   );
 }
 
-export function NavInferior() {
+export function NavInferior({
+  tipo = 'emprendedor', rubro = 'comercio',
+}: { tipo?: TipoCuenta; rubro?: Rubro }) {
   const ruta = usePathname();
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
 
-  const todos = itemsDe(t);
-  const fijos = todos.filter((i) => EN_BARRA_INFERIOR.includes(i.href));
+  const enBarra = barraDe(tipo, rubro);
+  const todos = itemsDe(t, tipo, rubro);
+  // El orden de la barra manda sobre el orden del menú: en personal, Deudas
+  // tiene que quedar donde estaba Vender y no al final.
+  const fijos = enBarra
+    .map((href) => todos.find((i) => i.href === href))
+    .filter((i): i is ItemNav => Boolean(i));
 
   // «Más» se marca en verde cuando estás parado en una sección que no está
   // fija abajo. Si no, al entrar a Productos la barra no señalaría nada y
   // parecería que estás en ningún lado.
-  const enOtraSeccion = !EN_BARRA_INFERIOR.some((href) => activo(ruta, href));
+  const enOtraSeccion = !enBarra.some((href) => activo(ruta, href));
 
   // El menú se cierra solo al navegar. Sin esto queda tapando la pantalla
   // a la que acabás de entrar.

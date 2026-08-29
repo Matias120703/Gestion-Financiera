@@ -26,6 +26,12 @@
 --   · 013_borrar_usuario.sql
 --   · 014_borrar_mi_cuenta.sql
 --   · 015_deudas.sql
+--   · 016_panel_admin.sql
+--   · 017_precios_por_tipo.sql
+--   · 018_solo_lectura.sql
+--   · 019_orden_es_un_negocio.sql
+--   · 020_precios_ajustados.sql
+--   · 021_rubros.sql
 -- ============================================================
 
 -- ############################################################
@@ -5545,3 +5551,1686 @@ grant execute on function public.archivar_deuda(uuid, boolean)       to authenti
 grant execute on function public.listar_deudas(uuid, boolean)        to authenticated;
 grant execute on function public.resumen_deudas(uuid)                to authenticated;
 grant execute on function public.pagos_de_deuda(uuid)                to authenticated;
+
+
+-- ############################################################
+-- ##  016_panel_admin.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 016 · Tipo de cuenta y panel del dueño del sistema
+--
+-- Dos cosas que van juntas porque una no sirve sin la otra:
+--
+--   1. TIPO DE CUENTA. Orden pasa a atender dos públicos: alguien que lleva
+--      sus finanzas personales (deudas, sueldo, gastos) y un comerciante
+--      (todo lo anterior más ventas, productos y vendedores). No son dos
+--      sistemas: el personal es el comercial MENOS ventas y productos.
+--      De este campo cuelgan el largo de la prueba, los planes que se le
+--      muestran y las pantallas que ve.
+--
+--   2. EL PANEL DEL DUEÑO DEL SISTEMA. Mientras el cobro sea por
+--      transferencia y WhatsApp, alguien tiene que poder activar la cuenta
+--      a mano después de recibir el pago. Sin esto no se le puede cobrar a
+--      nadie.
+--
+-- LA REGLA QUE MANDA EN TODO ESTE ARCHIVO
+--
+-- El panel ve CUENTAS, no PLATA.
+--
+-- Para activarle el plan a alguien hace falta saber su nombre, su correo,
+-- qué plan tiene y cuándo vence. NO hace falta saber cuánto vendió, qué
+-- compró ni a quién le debe. Por eso ninguna función de acá devuelve un
+-- monto, una descripción, un producto ni una deuda. Ni una.
+--
+-- Sí devuelven señales de USO —cuántos movimientos, cuándo fue el último,
+-- cuántas capturas de IA consumió—, porque sin eso es imposible saber si
+-- una cuenta está viva o si alguien está consumiendo de más. Un conteo y
+-- una fecha no dicen nada del negocio de nadie.
+--
+-- Esto no es cosmética: es lo que permite prometerle a un comerciante que
+-- sus números no los mira nadie, y que sea verdad.
+--
+-- LO QUE ESTA MIGRACIÓN NO PUEDE EVITAR
+--
+-- Quien administra la base de datos siempre puede leerla. Eso no lo cambia
+-- ninguna función. Lo que sí se logra acá es que el panel no tenga forma de
+-- mostrarlo, ni por accidente ni por comodidad.
+--
+-- Idempotente. No toca datos existentes.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. TIPO DE CUENTA
+--
+--    Las empresas que ya existen son todas comercios: nacieron cuando
+--    Orden era solo para comerciantes. Por eso el default y el relleno
+--    son 'emprendedor'.
+-- ------------------------------------------------------------
+alter table public.empresas
+  add column if not exists tipo_cuenta text not null default 'emprendedor';
+
+do $$ begin
+  alter table public.empresas
+    add constraint empresas_tipo_cuenta_check
+    check (tipo_cuenta in ('personal', 'emprendedor'));
+exception when duplicate_object then null; end $$;
+
+comment on column public.empresas.tipo_cuenta is
+  'personal = finanzas propias (sin ventas ni productos). emprendedor = negocio completo.';
+
+-- ------------------------------------------------------------
+-- 2. LARGO DE LA PRUEBA, POR TIPO
+--
+--    Distintos a propósito. Una persona que anota sus gastos sabe en pocos
+--    días si le sirve. Un comerciante necesita ver un pedazo de mes suyo
+--    —una quincena con su cobro, sus cuotas y sus días flojos— antes de
+--    decidir si vale 190.000 al mes.
+--
+--    Y hay algo más de fondo: Orden se apoya en el hábito (la racha, el
+--    cierre del día). El hábito no se forma en una semana. Cortar la
+--    prueba antes de que se forme es apagar el propio motor.
+-- ------------------------------------------------------------
+create or replace function public.dias_de_prueba(p_tipo text)
+returns integer language sql immutable set search_path = public as $fn$
+  select case coalesce(p_tipo, 'emprendedor')
+    when 'personal' then 14
+    else 20
+  end;
+$fn$;
+
+grant execute on function public.dias_de_prueba(text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. QUIÉN ADMINISTRA EL SISTEMA
+--
+--    Una tabla y no una columna en `miembros` porque no es un rol dentro
+--    de una empresa: es un rol por ENCIMA de todas. Mezclarlo con los roles
+--    de empresa haría que un error en una consulta de permisos de negocio
+--    pudiera, en el peor caso, dar permisos de sistema.
+--
+--    Nadie se puede agregar solo. La tabla no tiene política de INSERT para
+--    usuarios: se carga desde el editor SQL de Supabase o con service_role.
+--    Un panel que se pudiera auto-otorgar sería una puerta abierta.
+-- ------------------------------------------------------------
+create table if not exists public.superadmins (
+  usuario_id uuid primary key references auth.users (id) on delete cascade,
+  nota       text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.superadmins enable row level security;
+
+-- Solo se ve a sí mismo. Sirve para que la interfaz sepa si mostrar el
+-- acceso al panel, sin revelar quiénes más lo son.
+drop policy if exists superadmins_select on public.superadmins;
+create policy superadmins_select on public.superadmins
+  for select to authenticated
+  using (usuario_id = auth.uid());
+
+-- Sin políticas de insert, update ni delete. Y además, revocado a nivel de
+-- privilegio: Supabase le otorga por defecto todos los permisos de tabla a
+-- `authenticated` sobre lo nuevo que aparece en `public`, así que confiar
+-- solo en "no hay policy" sería confiar en una configuración de la nube que
+-- no controlamos. Dos cerrojos, no uno.
+revoke all on public.superadmins from anon, authenticated;
+grant select on public.superadmins to authenticated;
+
+create or replace function public.es_superadmin()
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select exists (
+    select 1 from public.superadmins s where s.usuario_id = auth.uid()
+  );
+$fn$;
+
+-- Se revoca de PUBLIC, no solo de anon. Es la misma trampa de la migración
+-- 012: PostgreSQL le da EXECUTE a PUBLIC sobre toda función nueva, y `anon`
+-- hereda de PUBLIC. Revocarle solo a anon deja la puerta igual de abierta.
+-- Acá el daño sería chico —para un anónimo siempre devuelve falso— pero la
+-- regla no admite excepciones «inofensivas»: la próxima no lo sería.
+revoke all on function public.es_superadmin() from public, anon;
+grant execute on function public.es_superadmin() to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. REGISTRO DE LO QUE HACE EL PANEL
+--
+--    Todo lo que el panel modifica queda anotado, con quién, cuándo y qué
+--    había antes.
+--
+--    No es burocracia. El día que alguien diga «me desactivaste la cuenta
+--    sin avisar» o «yo pagué y no me activaste», la única forma de saber
+--    quién tiene razón es esto. Y como el panel puede cambiar el plan de
+--    cualquiera, sin registro no habría forma de auditar un error propio.
+-- ------------------------------------------------------------
+create table if not exists public.registro_admin (
+  id         uuid primary key default gen_random_uuid(),
+  actor_id   uuid references auth.users (id) on delete set null,
+  empresa_id uuid references public.empresas (id) on delete set null,
+  accion     text not null,
+  detalle    jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists registro_admin_empresa_idx
+  on public.registro_admin (empresa_id, created_at desc);
+create index if not exists registro_admin_fecha_idx
+  on public.registro_admin (created_at desc);
+
+alter table public.registro_admin enable row level security;
+
+drop policy if exists registro_admin_select on public.registro_admin;
+create policy registro_admin_select on public.registro_admin
+  for select to authenticated
+  using (public.es_superadmin());
+
+-- Se escribe solo desde las funciones de abajo, que son security definer.
+-- Nadie puede insertar a mano: un registro de auditoría en el que cualquiera
+-- puede escribir no sirve para auditar nada.
+revoke all on public.registro_admin from anon, authenticated;
+grant select on public.registro_admin to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LISTAR CUENTAS
+--
+--    El corazón del panel. Devuelve una fila por empresa con lo necesario
+--    para administrarla y NADA de lo que pasa adentro.
+--
+--    `dias_restantes` es lo que convierte esta lista en una herramienta de
+--    trabajo: ordenada por ese número, arriba quedan los que están por
+--    vencer, que son a quienes hay que escribirles hoy.
+-- ------------------------------------------------------------
+create or replace function public.listar_cuentas(
+  p_busqueda text default null,
+  p_estado   text default null,
+  p_limite   integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+  v_periodo text;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  v_periodo := to_char(now(), 'YYYY-MM');
+
+  select coalesce(jsonb_agg(x order by x->>'orden'), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',   e.id,
+      'nombre',       e.nombre,
+      'tipo_cuenta',  e.tipo_cuenta,
+      'moneda',       e.moneda,
+      'creada',       e.created_at,
+
+      -- Con quién hablar. Es dato de contacto, no dato del negocio.
+      'propietario',  coalesce(prop.nombre, 'Sin nombre'),
+      'correo',       coalesce(u.email, ''),
+
+      'plan',         public.plan_efectivo_calculado(e.id),
+      'plan_guardado', s.plan,
+      'estado',       s.estado,
+      'periodo_fin',  s.periodo_fin,
+      'prueba_fin',   s.prueba_fin,
+
+      -- Negativo = ya venció. Es el número por el que se ordena.
+      'dias_restantes', case
+        when s.periodo_fin is null then null
+        else floor(extract(epoch from (s.periodo_fin - now())) / 86400)::integer
+      end,
+
+      'miembros', (select count(*) from public.miembros m where m.empresa_id = e.id),
+
+      -- Señales de vida. Un conteo y una fecha: cuántas veces se usó el
+      -- sistema y cuándo fue la última. Sin montos: no se puede deducir
+      -- de acá cuánto factura nadie.
+      'movimientos', (select count(*) from public.movimientos mv where mv.empresa_id = e.id),
+      'ultima_actividad', (select max(mv.created_at) from public.movimientos mv where mv.empresa_id = e.id),
+
+      -- Cuánta IA consumió este mes. Lo que permite ver al raro antes de
+      -- que la factura de OpenAI lo muestre.
+      'ia_usada', coalesce((
+        select ui.usados from public.uso_ia ui
+        where ui.empresa_id = e.id and ui.periodo = v_periodo
+      ), 0),
+      'ia_tope', (public.limites_plan(public.plan_efectivo_calculado(e.id))->>'capturas_mes')::integer,
+
+      -- Ordena: primero lo vencido y lo que vence pronto, después el resto
+      -- por fecha de creación. Se arma como texto con relleno de ceros
+      -- porque jsonb_agg ordena por el valor de la clave, no numéricamente.
+      'orden', lpad(
+        greatest(0, coalesce(
+          floor(extract(epoch from (s.periodo_fin - now())) / 86400)::integer + 1000,
+          9999))::text, 5, '0')
+    ) as x
+    from public.empresas e
+    join public.suscripciones s on s.empresa_id = e.id
+    left join public.miembros prop
+      on prop.empresa_id = e.id and prop.rol = 'propietario'
+    left join auth.users u on u.id = prop.user_id
+    where (
+        p_busqueda is null
+        or trim(p_busqueda) = ''
+        or e.nombre ilike '%' || trim(p_busqueda) || '%'
+        or coalesce(u.email, '') ilike '%' || trim(p_busqueda) || '%'
+      )
+      and (p_estado is null or trim(p_estado) = '' or s.estado = p_estado)
+    limit greatest(1, least(coalesce(p_limite, 200), 500))
+  ) t;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 6. RESUMEN DEL PANEL
+--
+--    Los cuatro números que hay que ver al abrir: cuántas cuentas hay,
+--    cuántas están probando, cuántas pagan y —el importante— cuántas
+--    vencen esta semana, que es la lista de a quiénes escribir.
+-- ------------------------------------------------------------
+create or replace function public.resumen_panel()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select jsonb_build_object(
+    'cuentas',      count(*),
+    'personales',   count(*) filter (where e.tipo_cuenta = 'personal'),
+    'comercios',    count(*) filter (where e.tipo_cuenta = 'emprendedor'),
+    'en_prueba',    count(*) filter (where s.estado = 'prueba' and s.periodo_fin > now()),
+    'pagando',      count(*) filter (where s.estado = 'activa' and s.plan <> 'gratis'),
+    'vencidas',     count(*) filter (where s.periodo_fin is not null and s.periodo_fin <= now()),
+    'vencen_semana', count(*) filter (
+      where s.periodo_fin between now() and now() + interval '7 days'
+    ),
+    -- Cuánta IA se consumió este mes entre todos. Es el número que hay que
+    -- mirar para saber si la factura de OpenAI va a sorprender.
+    'ia_mes', coalesce((
+      select sum(ui.usados) from public.uso_ia ui
+      where ui.periodo = to_char(now(), 'YYYY-MM')
+    ), 0)
+  ) into v_res
+  from public.empresas e
+  join public.suscripciones s on s.empresa_id = e.id;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 7. CAMBIAR EL PLAN DE UNA CUENTA
+--
+--    Esto es lo que se aprieta cuando entra una transferencia.
+--
+--    Está separado de `aplicar_suscripcion()` —la que usa el webhook de
+--    Stripe— aunque hagan algo parecido. El motivo: aquella confía en una
+--    firma criptográfica, esta confía en una persona. Mezclarlas obligaría
+--    a que la de la firma acepte también llamadas de un humano, y ahí se
+--    pierde la garantía de que el plan solo cambia con un pago verificado.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_plan_cuenta(
+  p_empresa uuid,
+  p_plan    text,
+  p_meses   integer default 1,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes  public.suscripciones;
+  v_fin    timestamptz;
+  v_estado text;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  if p_plan not in ('gratis', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', p_plan using errcode = '22023';
+  end if;
+
+  select * into v_antes from public.suscripciones where empresa_id = p_empresa;
+  if v_antes.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  if p_plan = 'gratis' then
+    -- Bajar a gratis es cortar el servicio: vence ya.
+    v_estado := 'vencida';
+    v_fin := now();
+  else
+    v_estado := 'activa';
+    -- Si todavía le queda tiempo pago, se le suma; si no, arranca hoy.
+    -- Sin esto, activarle el mes a alguien que pagó antes de tiempo le
+    -- comería los días que ya tenía.
+    v_fin := greatest(coalesce(v_antes.periodo_fin, now()), now())
+             + make_interval(months => greatest(1, coalesce(p_meses, 1)));
+  end if;
+
+  update public.suscripciones
+  set plan = p_plan,
+      estado = v_estado,
+      periodo_inicio = case when p_plan = 'gratis' then periodo_inicio else now() end,
+      periodo_fin = v_fin,
+      proveedor_pago = case when p_plan = 'gratis' then proveedor_pago else 'transferencia' end,
+      updated_at = now()
+  where empresa_id = p_empresa;
+
+  -- El espejo en `empresas.plan` solo acepta 'gratis' o 'pro'; 'negocio'
+  -- se guarda como 'pro' porque para esa columna lo único que importa es
+  -- si paga o no. La autoridad es `suscripciones`.
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas
+  set plan = case when p_plan = 'gratis' then 'gratis' else 'pro' end
+  where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'cambiar_plan', jsonb_build_object(
+    'plan_antes', v_antes.plan, 'plan_despues', p_plan,
+    'estado_antes', v_antes.estado, 'estado_despues', v_estado,
+    'vence_antes', v_antes.periodo_fin, 'vence_despues', v_fin,
+    'meses', greatest(1, coalesce(p_meses, 1)),
+    'nota', left(coalesce(p_nota, ''), 300)
+  ));
+
+  return jsonb_build_object('plan', p_plan, 'estado', v_estado, 'periodo_fin', v_fin);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 8. ESTIRAR LA PRUEBA
+--
+--    Para el caso real: alguien está por vencer, dice «mañana te
+--    transfiero», y no se le va a cortar el servicio por 24 horas.
+--
+--    Solo estira, nunca acorta. Recortarle la prueba a alguien que ya la
+--    está usando es de las cosas que no deberían poder hacerse de un clic.
+-- ------------------------------------------------------------
+create or replace function public.extender_prueba(
+  p_empresa uuid,
+  p_dias    integer default 7,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes public.suscripciones;
+  v_fin   timestamptz;
+  v_dias  integer;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  v_dias := greatest(1, least(coalesce(p_dias, 7), 90));
+
+  select * into v_antes from public.suscripciones where empresa_id = p_empresa;
+  if v_antes.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  -- Desde hoy si ya venció, desde el vencimiento si todavía corre.
+  v_fin := greatest(coalesce(v_antes.periodo_fin, now()), now())
+           + make_interval(days => v_dias);
+
+  update public.suscripciones
+  set estado = 'prueba', plan = case when plan = 'gratis' then 'pro' else plan end,
+      periodo_fin = v_fin, prueba_fin = v_fin, updated_at = now()
+  where empresa_id = p_empresa;
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas set plan = 'pro' where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'extender_prueba', jsonb_build_object(
+    'dias', v_dias, 'vence_antes', v_antes.periodo_fin, 'vence_despues', v_fin,
+    'nota', left(coalesce(p_nota, ''), 300)
+  ));
+
+  return jsonb_build_object('periodo_fin', v_fin, 'dias', v_dias);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 9. CAMBIAR EL TIPO DE CUENTA
+--
+--    Para el que se registró como personal y abrió un negocio. Al revés
+--    también, aunque casi no va a pasar.
+--
+--    Importante: NO borra nada. Una cuenta que pasa de emprendedor a
+--    personal deja de ver ventas y productos, pero los datos quedan donde
+--    están. Si vuelve a comercio, los encuentra intactos.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_tipo_cuenta(
+  p_empresa uuid,
+  p_tipo    text
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes text;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  if p_tipo not in ('personal', 'emprendedor') then
+    raise exception 'Tipo de cuenta desconocido: %', p_tipo using errcode = '22023';
+  end if;
+
+  select tipo_cuenta into v_antes from public.empresas where id = p_empresa;
+  if v_antes is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  update public.empresas set tipo_cuenta = p_tipo where id = p_empresa;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'cambiar_tipo', jsonb_build_object(
+    'antes', v_antes, 'despues', p_tipo
+  ));
+
+  return jsonb_build_object('tipo_cuenta', p_tipo);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 10. HISTORIAL DE UNA CUENTA
+--
+--     Todo lo que se le hizo a una cuenta desde el panel. Es lo que se
+--     mira cuando alguien reclama.
+-- ------------------------------------------------------------
+create or replace function public.historial_cuenta(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'accion', r.accion,
+    'detalle', r.detalle,
+    'cuando', r.created_at,
+    'quien', coalesce(u.email, 'sistema')
+  ) order by r.created_at desc), '[]'::jsonb) into v_res
+  from public.registro_admin r
+  left join auth.users u on u.id = r.actor_id
+  where r.empresa_id = p_empresa;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 11. CREAR EMPRESA · ahora con tipo de cuenta y prueba según el tipo
+--
+--     Redefinición completa de la versión de la 009. Lo único que cambia:
+--     recibe el tipo de cuenta y el largo de la prueba sale de él.
+-- ------------------------------------------------------------
+create or replace function public.crear_empresa(
+  p_nombre text,
+  p_moneda text default 'PYG',
+  p_nombre_usuario text default null,
+  p_zona text default 'America/Asuncion',
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id uuid;
+  v_codigo text;
+  v_intentos int := 0;
+  v_fin timestamptz;
+  v_tipo text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) < 2 then
+    raise exception 'El nombre del negocio es muy corto.' using errcode = '22023';
+  end if;
+
+  v_tipo := case when p_tipo_cuenta = 'personal' then 'personal' else 'emprendedor' end;
+
+  loop
+    v_codigo := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+    exit when not exists (select 1 from public.empresa_accesos where codigo = v_codigo);
+    v_intentos := v_intentos + 1;
+    if v_intentos > 12 then
+      raise exception 'No se pudo generar un código de acceso.' using errcode = '55000';
+    end if;
+  end loop;
+
+  insert into public.empresas (nombre, moneda, creada_por, zona_horaria, tipo_cuenta)
+  values (trim(p_nombre), coalesce(p_moneda, 'PYG'), auth.uid(),
+          coalesce(nullif(trim(p_zona), ''), 'America/Asuncion'), v_tipo)
+  returning id into v_id;
+
+  insert into public.miembros (empresa_id, user_id, nombre, rol)
+  values (v_id, auth.uid(), coalesce(nullif(trim(p_nombre_usuario), ''), 'Propietario'), 'propietario');
+
+  insert into public.empresa_accesos (empresa_id, codigo)
+  values (v_id, v_codigo);
+
+  -- La prueba se escribe acá directamente y no llamando a iniciar_prueba()
+  -- porque esa función es de service_role: quien crea la empresa es un
+  -- usuario común, y no queremos otorgarle ese permiso para esto.
+  v_fin := now() + make_interval(days => public.dias_de_prueba(v_tipo));
+  insert into public.suscripciones (empresa_id, plan, estado, periodo_inicio, periodo_fin, prueba_fin)
+  values (v_id, 'pro', 'prueba', now(), v_fin, v_fin);
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas set plan = 'pro' where id = v_id;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  return v_id;
+end $fn$;
+
+-- La firma de 4 argumentos queda muerta: si no se borra, PostgREST ve dos
+-- funciones con el mismo nombre y no sabe cuál llamar.
+drop function if exists public.crear_empresa(text, text, text, text);
+
+-- ------------------------------------------------------------
+-- 12. PERMISOS
+--
+--     Todo revocado de PUBLIC, no solo de anon: anon hereda de PUBLIC, y
+--     revocarle solo a anon deja la puerta abierta. Ver migración 012.
+-- ------------------------------------------------------------
+revoke all on function public.listar_cuentas(text, text, integer)      from public, anon;
+revoke all on function public.resumen_panel()                          from public, anon;
+revoke all on function public.cambiar_plan_cuenta(uuid, text, integer, text) from public, anon;
+revoke all on function public.extender_prueba(uuid, integer, text)     from public, anon;
+revoke all on function public.cambiar_tipo_cuenta(uuid, text)          from public, anon;
+revoke all on function public.historial_cuenta(uuid)                   from public, anon;
+revoke all on function public.crear_empresa(text, text, text, text, text) from public, anon;
+
+grant execute on function public.listar_cuentas(text, text, integer)      to authenticated;
+grant execute on function public.resumen_panel()                          to authenticated;
+grant execute on function public.cambiar_plan_cuenta(uuid, text, integer, text) to authenticated;
+grant execute on function public.extender_prueba(uuid, integer, text)     to authenticated;
+grant execute on function public.cambiar_tipo_cuenta(uuid, text)          to authenticated;
+grant execute on function public.historial_cuenta(uuid)                   to authenticated;
+grant execute on function public.crear_empresa(text, text, text, text, text) to authenticated;
+
+-- El grant es a `authenticated` y no a un rol especial porque el permiso de
+-- verdad lo pone `es_superadmin()` adentro de cada función. Un usuario
+-- común que llame a cualquiera de estas recibe un 42501, no una fila.
+
+
+-- ############################################################
+-- ##  017_precios_por_tipo.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 017 · Precios por tipo de cuenta
+--
+-- POR QUÉ EL PRECIO NO PUEDE DEPENDER SOLO DEL PLAN
+--
+-- Una cuenta personal y un comercio pueden estar los dos en plan `pro` —los
+-- mismos topes, las mismas funciones— y aun así pagar distinto. No es una
+-- inconsistencia: es que **no reciben el mismo valor**.
+--
+-- Al comerciante, Orden le dice cuánta plata ganó de verdad. Eso se paga
+-- solo. A quien lleva sus finanzas personales le dice cuánto debe y cuándo
+-- vence la cuota; le sirve, pero no le genera un guaraní. Cobrarle lo mismo
+-- a los dos sería no haber entendido a ninguno.
+--
+-- Por eso el plan sigue decidiendo QUÉ SE PUEDE HACER (`limites_plan`), y el
+-- par tipo_cuenta + plan decide CUÁNTO SE PAGA. Son dos preguntas distintas
+-- y ahora tienen dos respuestas distintas.
+--
+-- LOS PRECIOS QUE QUEDAN (Paraguay)
+--
+--   personal    · plan único            60.000/mes    ·  600.000/año
+--   comercio    · Pro, hasta 3 vendedores  190.000/mes  · 1.900.000/año
+--   comercio    · Premium, desde          250.000/mes  · 2.500.000/año
+--
+-- El anual son diez meses por doce. No se escribe «dos meses gratis» a mano
+-- en ningún lado: `mesesDeRegalo()` lo calcula de estos números, así que si
+-- mañana cambian, el cartel sigue diciendo la verdad o desaparece.
+--
+-- Premium es «desde»: el precio final depende de cuántos vendedores quiera,
+-- a 60.000 cada uno por encima de los 3 que trae Pro. 250.000 es el primer
+-- escalón (4 vendedores) y por eso es el número que se muestra.
+--
+-- Idempotente. Reemplaza los precios viejos (35.000 / 79.000), que eran de
+-- cuando Orden tenía un solo público.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA COLUMNA
+-- ------------------------------------------------------------
+alter table public.precios
+  add column if not exists tipo_cuenta text not null default 'emprendedor';
+
+do $$ begin
+  alter table public.precios
+    add constraint precios_tipo_cuenta_check
+    check (tipo_cuenta in ('personal', 'emprendedor'));
+exception when duplicate_object then null; end $$;
+
+-- La unicidad ahora incluye el tipo: el mismo plan y la misma moneda pueden
+-- convivir con dos precios distintos, uno por público.
+alter table public.precios drop constraint if exists precios_plan_moneda_periodo_key;
+
+do $$ begin
+  alter table public.precios
+    add constraint precios_tipo_plan_moneda_periodo_key
+    unique (tipo_cuenta, plan, moneda, periodo);
+exception when duplicate_object then null; end $$;
+
+-- ------------------------------------------------------------
+-- 2. LOS PRECIOS
+--
+--    Se borran los viejos en vez de desactivarlos: un precio que ya no
+--    existe no tiene por qué quedar dando vueltas donde alguien lo pueda
+--    volver a activar por error.
+-- ------------------------------------------------------------
+delete from public.precios;
+
+insert into public.precios (tipo_cuenta, plan, moneda, periodo, importe) values
+  -- Cuenta personal. Un solo plan pago: no necesita nombre porque no compite
+  -- con ningún otro. En la interfaz es «la suscripción», no «Pro», para que
+  -- no choque con el Pro de comercios, que cuesta el triple.
+  ('personal',    'pro',     'PYG', 'mensual',   60000),
+  ('personal',    'pro',     'PYG', 'anual',    600000),
+  ('personal',    'pro',     'USD', 'mensual',     7.99),
+  ('personal',    'pro',     'USD', 'anual',      79.00),
+
+  -- Comercio · Pro: hasta 3 vendedores.
+  ('emprendedor', 'pro',     'PYG', 'mensual',  190000),
+  ('emprendedor', 'pro',     'PYG', 'anual',   1900000),
+  ('emprendedor', 'pro',     'USD', 'mensual',    24.99),
+  ('emprendedor', 'pro',     'USD', 'anual',     249.00),
+
+  -- Comercio · Premium: desde. El precio final se cotiza según cuántos
+  -- vendedores, a 60.000 cada uno arriba de los 3 de Pro.
+  ('emprendedor', 'negocio', 'PYG', 'mensual',  250000),
+  ('emprendedor', 'negocio', 'PYG', 'anual',   2500000),
+  ('emprendedor', 'negocio', 'USD', 'mensual',    32.99),
+  ('emprendedor', 'negocio', 'USD', 'anual',     329.00);
+
+-- ------------------------------------------------------------
+-- 3. CUÁNTO CUESTA CADA VENDEDOR DE MÁS
+--
+--    Vive en la base y no en el código por el mismo motivo que los precios:
+--    subirlo no puede requerir un despliegue. La usa la portada para
+--    explicar de dónde sale el «desde», y sirve para cotizar sin improvisar
+--    un número distinto en cada conversación de WhatsApp.
+-- ------------------------------------------------------------
+create or replace function public.precio_por_vendedor(p_moneda text default 'PYG')
+returns numeric language sql immutable set search_path = public as $fn$
+  select case upper(coalesce(p_moneda, 'PYG'))
+    when 'PYG' then 60000::numeric
+    when 'USD' then 7.99::numeric
+    else 7.99::numeric
+  end;
+$fn$;
+
+grant execute on function public.precio_por_vendedor(text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. LISTA DE PRECIOS · ahora filtra por público
+--
+--    `p_tipo` en null devuelve todo, que es lo que necesita la portada para
+--    mostrar los dos lados. La pantalla de Plan, en cambio, pide solo el
+--    tipo de la cuenta: a alguien que lleva sus finanzas personales no se le
+--    ofrece el plan de un local con vendedores.
+-- ------------------------------------------------------------
+create or replace function public.lista_precios(
+  p_moneda text default null,
+  p_tipo   text default null
+)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'tipo_cuenta', p.tipo_cuenta,
+    'plan', p.plan, 'moneda', p.moneda, 'periodo', p.periodo,
+    'importe', p.importe, 'referencia_externa', p.referencia_externa
+  ) order by p.tipo_cuenta, p.plan, p.periodo), '[]'::jsonb)
+  from public.precios p
+  where p.activo
+    and (p_moneda is null or p.moneda = p_moneda)
+    and (p_tipo is null or p.tipo_cuenta = p_tipo);
+$fn$;
+
+-- La firma de un argumento queda muerta: si no se borra, PostgREST ve dos
+-- funciones con el mismo nombre y no sabe cuál llamar.
+drop function if exists public.lista_precios(text);
+
+-- Los precios son públicos a propósito: alguien que todavía no tiene cuenta
+-- tiene que poder ver cuánto cuesta antes de registrarse.
+grant execute on function public.lista_precios(text, text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  018_solo_lectura.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 018 · Al vencer se deja de cargar, no de mirar
+--
+-- QUÉ CAMBIA
+--
+-- Hasta ahora, cuando se terminaba la prueba la cuenta caía al plan `gratis`
+-- y ahí se quedaba: 20 capturas de IA al mes, pero **carga manual sin
+-- límite**. Para un almacén chico eso alcanzaba de sobra. Era un sistema
+-- financiero completo, gratis para siempre, y nadie tenía motivo para pagar.
+--
+-- Ahora `gratis` deja de significar «plan gratuito» y pasa a significar
+-- **cuenta vencida**: se puede entrar, ver todo el historial y bajar el
+-- Excel, pero no cargar nada nuevo.
+--
+-- POR QUÉ NO SE BLOQUEA LA CUENTA ENTERA
+--
+-- Porque los datos son de esa persona, no nuestros. Dejar a alguien afuera de
+-- sus propios números es la clase de cosa que genera un mensaje furioso y
+-- mala fama — y en un mercado donde los comerciantes se conocen entre ellos,
+-- esa fama cuesta más que la suscripción que se estaría forzando.
+--
+-- Solo lectura tiene la misma presión que bloquear —para seguir trabajando
+-- hay que pagar— sin quedarse con lo ajeno. Y el Excel pasa a ser el mejor
+-- argumento de venta: «mirá todo lo que cargaste, seguí desde donde estás».
+--
+-- POR QUÉ CON TRIGGERS Y NO CON POLÍTICAS
+--
+-- Se escribe desde muchos lados: políticas RLS para gastos, `registrar_venta`
+-- para ventas, `crear_deuda` y `registrar_pago_deuda` para deudas, `adjuntar`
+-- para comprobantes, `marcar_cierre` para el cierre. Poner el control en cada
+-- uno significa que el día que se agregue una ruta nueva y alguien se olvide,
+-- se abre un agujero silencioso.
+--
+-- Un trigger por tabla lo agarra TODO, venga por donde venga, incluidas las
+-- funciones `security definer` que saltean RLS. Una definición por tabla en
+-- vez de una por camino.
+--
+-- Idempotente. No toca datos existentes.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. QUÉ DA CADA PLAN · ahora `gratis` es «vencida»
+--
+--    Dos cambios respecto de la 009:
+--
+--    · `excel` pasa a true. Es el corazón de todo esto: la persona tiene que
+--      poder llevarse lo suyo cuando quiera, aunque no pague.
+--    · aparece `escritura`, que es lo que los triggers de abajo consultan.
+--
+--    `capturas_mes` en 0 y no en 20: si igual no puede cargar el movimiento,
+--    darle capturas de IA sería gastar créditos de OpenAI para producir un
+--    borrador que después rebota.
+-- ------------------------------------------------------------
+create or replace function public.limites_plan(p_plan text)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case coalesce(p_plan, 'gratis')
+    when 'negocio' then jsonb_build_object(
+      'capturas_mes', 3000, 'miembros', 15,
+      'adjuntos', true, 'excel', true, 'avisos', true, 'escritura', true)
+    -- Tres personas: el dueño y un par de ayudantes. Una despensa chica no
+    -- tiene por qué pagar el plan de una cadena, y si la apretamos termina
+    -- compartiendo un solo login — que es peor para todos, porque perdemos
+    -- el registro de quién cargó cada venta.
+    when 'pro' then jsonb_build_object(
+      'capturas_mes', 600, 'miembros', 3,
+      'adjuntos', true, 'excel', true, 'avisos', true, 'escritura', true)
+    else jsonb_build_object(
+      -- CUENTA VENCIDA. Mira todo, se lleva todo, no carga nada.
+      'capturas_mes', 0, 'miembros', 1,
+      'adjuntos', false, 'excel', true, 'avisos', true, 'escritura', false)
+  end;
+$fn$;
+
+grant execute on function public.limites_plan(text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. ¿ESTA EMPRESA PUEDE CARGAR?
+--
+--    Una sola pregunta, un solo lugar donde se responde.
+-- ------------------------------------------------------------
+create or replace function public.puede_cargar(p_empresa uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select coalesce(
+    (public.limites_plan(public.plan_efectivo_calculado(p_empresa))->>'escritura')::boolean,
+    false);
+$fn$;
+
+revoke all on function public.puede_cargar(uuid) from public, anon;
+grant execute on function public.puede_cargar(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. EL GUARDIÁN
+--
+--    Sobre el `auth.uid() is null`: una escritura sin sesión no es de un
+--    cliente. Es el webhook de pagos, una tarea programada, una migración o
+--    un arreglo con `service_role`. Esas no las puede frenar el estado de
+--    cobro de nadie —si no, un pago no podría registrarse justamente cuando
+--    la cuenta está vencida, que es cuando más falta hace— y además se
+--    ahorra la consulta en las cargas masivas.
+-- ------------------------------------------------------------
+create or replace function public.exigir_cuenta_activa()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  if not public.puede_cargar(new.empresa_id) then
+    raise exception 'Se te terminó la prueba. Podés seguir viendo todo y bajando tu Excel, pero para cargar hay que activar el plan.'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end $fn$;
+
+-- Nadie la ejecuta a mano: la llama PostgreSQL al disparar el trigger, con
+-- los permisos del dueño de la función. Que figure como ejecutable por
+-- cualquiera no sirve para nada y ensucia la superficie. Misma trampa de la
+-- migración 012: PUBLIC recibe EXECUTE sobre toda función nueva, y `anon`
+-- hereda de PUBLIC.
+revoke all on function public.exigir_cuenta_activa() from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. DÓNDE SE APLICA
+--
+--    Solo INSERT y UPDATE. El DELETE queda libre a propósito: vaciar el
+--    negocio y borrar la cuenta tienen que funcionar siempre, incluso —sobre
+--    todo— con la cuenta vencida. Nadie debería tener que pagar para poder
+--    irse.
+-- ------------------------------------------------------------
+do $$
+declare
+  v_tabla text;
+begin
+  foreach v_tabla in array array[
+    'movimientos', 'movimiento_items', 'productos',
+    'deudas', 'pagos_deuda', 'adjuntos', 'cierres', 'retos'
+  ] loop
+    -- `if exists` porque este archivo se puede correr sobre una instalación
+    -- que todavía no tenga alguna tabla (deudas llegó en la 015).
+    if exists (
+      select 1 from information_schema.tables
+      where table_schema = 'public' and table_name = v_tabla
+    ) then
+      execute format('drop trigger if exists %I on public.%I',
+                     'cuenta_activa_' || v_tabla, v_tabla);
+      execute format(
+        'create trigger %I before insert or update on public.%I '
+        || 'for each row execute function public.exigir_cuenta_activa()',
+        'cuenta_activa_' || v_tabla, v_tabla);
+    end if;
+  end loop;
+end $$;
+
+-- ------------------------------------------------------------
+-- 5. EL ESTADO, PARA QUE LA PANTALLA LO EXPLIQUE
+--
+--    Sin esto la persona se encontraría con un error rojo al intentar
+--    cargar, sin entender por qué. Con esto, la app le puede avisar ANTES —y
+--    ofrecerle el botón de suscribirse— en vez de dejarla chocar contra una
+--    pared.
+-- ------------------------------------------------------------
+create or replace function public.estado_cuenta(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_sus   public.suscripciones;
+  v_plan  text;
+  v_dias  integer;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_sus from public.suscripciones where empresa_id = p_empresa;
+  v_plan := public.plan_efectivo_calculado(p_empresa);
+
+  v_dias := case
+    when v_sus.periodo_fin is null then null
+    else floor(extract(epoch from (v_sus.periodo_fin - now())) / 86400)::integer
+  end;
+
+  return jsonb_build_object(
+    'plan', v_plan,
+    'estado', v_sus.estado,
+    'en_prueba', v_sus.estado = 'prueba' and coalesce(v_sus.periodo_fin > now(), false),
+    'vencida', not coalesce(
+      (public.limites_plan(v_plan)->>'escritura')::boolean, false),
+    'puede_cargar', coalesce(
+      (public.limites_plan(v_plan)->>'escritura')::boolean, false),
+    'dias_restantes', v_dias,
+    'periodo_fin', v_sus.periodo_fin,
+    -- A partir de acá la pantalla decide si avisar. Tres días es cuando deja
+    -- de ser un dato y pasa a ser algo que hay que resolver.
+    'avisar', v_dias is not null and v_dias <= 3,
+    'tipo_cuenta', (select e.tipo_cuenta from public.empresas e where e.id = p_empresa)
+  );
+end $fn$;
+
+revoke all on function public.estado_cuenta(uuid) from public, anon;
+grant execute on function public.estado_cuenta(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  019_orden_es_un_negocio.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 019 · Orden lleva las finanzas de Orden
+--
+-- LA IDEA
+--
+-- El panel de administración mostraba cuentas ajenas y nada más. Pero quien
+-- administra Orden **también tiene un negocio**: cobra suscripciones, paga
+-- Supabase y OpenAI, y probablemente deba algo. Eso es exactamente lo que
+-- Orden sabe hacer.
+--
+-- Así que no se construye un módulo de finanzas adentro del panel. Se
+-- **enlaza**: quien administra tiene su propia empresa en Orden, como
+-- cualquier cliente, y el panel le suma dos cosas que ningún cliente
+-- necesita:
+--
+--   1. cuando activa el plan de alguien, el cobro se anota solo como
+--      ingreso en SU empresa;
+--   2. un resumen de cuánto entró por suscripciones.
+--
+-- Todo lo demás —deudas, gastos, cierre del día, Excel— ya existe y funciona.
+-- Escribir un segundo sistema de finanzas adentro del primero habría sido
+-- mantener dos veces la misma matemática.
+--
+-- EL EFECTO SECUNDARIO QUE VALE LA PENA
+--
+-- El dueño de Orden pasa a usar Orden todos los días para su propia plata.
+-- Es la mejor prueba que puede tener un producto: si algo molesta, lo va a
+-- sentir antes que ningún cliente.
+--
+-- Idempotente. No toca datos existentes.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. CUÁL ES LA EMPRESA DE ORDEN
+--
+--    Una sola fila. La restricción `unica` no es decorativa: sin ella, dos
+--    filas harían que los cobros se anoten en una empresa distinta según el
+--    orden en que salgan de la consulta, y eso es de los errores que se
+--    descubren tarde y mal.
+-- ------------------------------------------------------------
+create table if not exists public.ajustes_orden (
+  unica       boolean primary key default true check (unica),
+  empresa_id  uuid references public.empresas (id) on delete set null,
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.ajustes_orden enable row level security;
+
+-- Solo la administración la lee. Un cliente no tiene por qué saber que
+-- existe una empresa que representa a Orden.
+drop policy if exists ajustes_orden_select on public.ajustes_orden;
+create policy ajustes_orden_select on public.ajustes_orden
+  for select to authenticated
+  using (public.es_superadmin());
+
+revoke all on public.ajustes_orden from anon, authenticated;
+grant select on public.ajustes_orden to authenticated;
+
+create or replace function public.definir_empresa_orden(p_empresa uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  -- Tiene que ser una empresa suya. Apuntar a la de un cliente haría que los
+  -- cobros de Orden se anoten adentro del negocio de otro.
+  if p_empresa is not null and not exists (
+    select 1 from public.miembros m
+    where m.empresa_id = p_empresa and m.user_id = auth.uid()
+      and m.rol in ('propietario', 'admin')
+  ) then
+    raise exception 'Solo podés elegir una empresa tuya.' using errcode = '42501';
+  end if;
+
+  insert into public.ajustes_orden (unica, empresa_id, updated_at)
+  values (true, p_empresa, now())
+  on conflict (unica) do update set empresa_id = excluded.empresa_id, updated_at = now();
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'definir_empresa_orden', jsonb_build_object('empresa', p_empresa));
+
+  return jsonb_build_object('empresa_id', p_empresa);
+end $fn$;
+
+revoke all on function public.definir_empresa_orden(uuid) from public, anon;
+grant execute on function public.definir_empresa_orden(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. ACTIVAR UN PLAN TAMBIÉN ANOTA EL COBRO
+--
+--    Redefine `cambiar_plan_cuenta()` de la 016 sumando `p_importe`.
+--
+--    El cobro se anota en un bloque aparte con su propio manejador de
+--    errores, y eso es deliberado: **si falla anotar el ingreso, la cuenta
+--    del cliente se activa igual**. La prioridad es que quien pagó pueda
+--    trabajar; la contabilidad propia se arregla después y a mano. Al revés
+--    —dejar sin servicio a alguien que pagó porque no se pudo escribir un
+--    movimiento— sería absurdo.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_plan_cuenta(
+  p_empresa uuid,
+  p_plan    text,
+  p_meses   integer default 1,
+  p_nota    text default '',
+  p_importe numeric default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes    public.suscripciones;
+  v_fin      timestamptz;
+  v_estado   text;
+  v_orden    uuid;
+  v_cliente  text;
+  v_ingreso  uuid;
+  v_aviso    text := null;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  if p_plan not in ('gratis', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', p_plan using errcode = '22023';
+  end if;
+
+  select * into v_antes from public.suscripciones where empresa_id = p_empresa;
+  if v_antes.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select nombre into v_cliente from public.empresas where id = p_empresa;
+
+  if p_plan = 'gratis' then
+    v_estado := 'vencida';
+    v_fin := now();
+  else
+    v_estado := 'activa';
+    -- Si todavía le queda tiempo pago, se le suma; si no, arranca hoy.
+    v_fin := greatest(coalesce(v_antes.periodo_fin, now()), now())
+             + make_interval(months => greatest(1, coalesce(p_meses, 1)));
+  end if;
+
+  update public.suscripciones
+  set plan = p_plan,
+      estado = v_estado,
+      periodo_inicio = case when p_plan = 'gratis' then periodo_inicio else now() end,
+      periodo_fin = v_fin,
+      proveedor_pago = case when p_plan = 'gratis' then proveedor_pago else 'transferencia' end,
+      updated_at = now()
+  where empresa_id = p_empresa;
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas
+  set plan = case when p_plan = 'gratis' then 'gratis' else 'pro' end
+  where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  -- ---- el cobro, como ingreso de Orden ----
+  if p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select empresa_id into v_orden from public.ajustes_orden where unica;
+
+    if v_orden is null then
+      v_aviso := 'No hay una empresa de Orden elegida, así que el cobro no se anotó en tus finanzas.';
+    elsif v_orden = p_empresa then
+      -- Cobrarse a uno mismo sería inventarse un ingreso.
+      v_aviso := 'Esta ES tu empresa, así que no se anotó ningún ingreso.';
+    else
+      begin
+        insert into public.movimientos (
+          empresa_id, tipo, estado, fecha, descripcion, categoria,
+          subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+        ) values (
+          v_orden, 'ingreso', 'activo', public.hoy_empresa(v_orden),
+          'Suscripción ' || coalesce(v_cliente, 'cliente'), 'Suscripciones',
+          p_importe, 0, p_importe, 0, 'transferencia',
+          left(coalesce(v_cliente, ''), 80), auth.uid()
+        )
+        returning id into v_ingreso;
+      exception when others then
+        -- La cuenta del cliente YA quedó activa. Que no se pueda anotar el
+        -- ingreso propio no puede deshacer eso.
+        v_aviso := 'La cuenta se activó, pero el ingreso no se pudo anotar: ' || sqlerrm;
+      end;
+    end if;
+  end if;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'cambiar_plan', jsonb_build_object(
+    'plan_antes', v_antes.plan, 'plan_despues', p_plan,
+    'estado_antes', v_antes.estado, 'estado_despues', v_estado,
+    'vence_antes', v_antes.periodo_fin, 'vence_despues', v_fin,
+    'meses', greatest(1, coalesce(p_meses, 1)),
+    'importe', p_importe,
+    'ingreso_id', v_ingreso,
+    'nota', left(coalesce(p_nota, ''), 300)
+  ));
+
+  return jsonb_build_object(
+    'plan', p_plan, 'estado', v_estado, 'periodo_fin', v_fin,
+    'ingreso_anotado', v_ingreso is not null,
+    'aviso', v_aviso
+  );
+end $fn$;
+
+-- La firma de 4 argumentos queda muerta: si no se borra, PostgREST ve dos
+-- funciones con el mismo nombre y no sabe cuál llamar.
+drop function if exists public.cambiar_plan_cuenta(uuid, text, integer, text);
+
+revoke all on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric)
+  from public, anon;
+grant execute on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric)
+  to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LAS FINANZAS DE ORDEN, PARA EL PANEL
+--
+--    Cuánto entró por suscripciones y cómo está la propia empresa. Los
+--    números salen de los mismos movimientos que ve cualquier cliente: no
+--    hay una contabilidad paralela.
+-- ------------------------------------------------------------
+create or replace function public.finanzas_orden()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_orden uuid;
+  v_hoy   date;
+  v_res   jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select empresa_id into v_orden from public.ajustes_orden where unica;
+
+  if v_orden is null then
+    -- Sin configurar. La pantalla ofrece elegirla en vez de mostrar ceros,
+    -- que parecerían un negocio fundido.
+    return jsonb_build_object('configurada', false);
+  end if;
+
+  v_hoy := public.hoy_empresa(v_orden);
+
+  select jsonb_build_object(
+    'configurada', true,
+    'empresa_id', v_orden,
+    'nombre', (select e.nombre from public.empresas e where e.id = v_orden),
+    'moneda', (select e.moneda from public.empresas e where e.id = v_orden),
+
+    -- Suscripciones cobradas este mes y en total.
+    'cobrado_mes', coalesce(sum(m.monto) filter (
+      where m.categoria = 'Suscripciones'
+        and m.fecha >= date_trunc('month', v_hoy)::date), 0),
+    'cobrado_total', coalesce(sum(m.monto) filter (where m.categoria = 'Suscripciones'), 0),
+    'cobros_mes', coalesce(count(*) filter (
+      where m.categoria = 'Suscripciones'
+        and m.fecha >= date_trunc('month', v_hoy)::date), 0),
+
+    -- Y el negocio entero, no solo las suscripciones.
+    'ingresos_mes', coalesce(sum(m.monto) filter (
+      where m.tipo in ('venta', 'ingreso')
+        and m.fecha >= date_trunc('month', v_hoy)::date), 0),
+    'gastos_mes', coalesce(sum(m.monto) filter (
+      where m.tipo = 'gasto'
+        and m.fecha >= date_trunc('month', v_hoy)::date), 0)
+  ) into v_res
+  from public.movimientos m
+  where m.empresa_id = v_orden and m.estado = 'activo';
+
+  -- Lo que se debe sale de su propia tabla.
+  return v_res || jsonb_build_object(
+    'deuda_total', coalesce((
+      select sum(d.saldo) from public.deudas d
+      where d.empresa_id = v_orden and d.activa), 0),
+    'deudas_vencidas', coalesce((
+      select count(*) from public.deudas d
+      where d.empresa_id = v_orden and d.activa
+        and d.saldo > 0 and d.vence_el is not null and d.vence_el < v_hoy), 0)
+  );
+end $fn$;
+
+revoke all on function public.finanzas_orden() from public, anon;
+grant execute on function public.finanzas_orden() to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. UNA CUENTA PERSONAL ES DE UNA SOLA PERSONA
+--
+--    Redefine `unirse_empresa()` de la 009.
+--
+--    Antes el tope salía solo del plan, y una cuenta personal en `pro`
+--    permitía tres. No tiene sentido: quien lleva sus finanzas propias no
+--    tiene vendedores. Y como el código de acceso se puede compartir por
+--    WhatsApp sin querer, conviene que la base lo impida y no solo que la
+--    pantalla lo esconda.
+-- ------------------------------------------------------------
+create or replace function public.unirse_empresa(
+  p_codigo text,
+  p_nombre_usuario text default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id      uuid;
+  v_cuantos integer;
+  v_tope    integer;
+  v_tipo    text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select a.empresa_id into v_id
+  from public.empresa_accesos a
+  where a.codigo = upper(trim(coalesce(p_codigo, ''))) and a.activo;
+
+  if v_id is null then
+    raise exception 'El código no corresponde a ninguna empresa.' using errcode = '42501';
+  end if;
+
+  -- Ya es miembro: no es un error, simplemente devolvemos la empresa.
+  if exists (select 1 from public.miembros where empresa_id = v_id and user_id = auth.uid()) then
+    return v_id;
+  end if;
+
+  select tipo_cuenta into v_tipo from public.empresas where id = v_id;
+  if v_tipo = 'personal' then
+    raise exception 'Esa es una cuenta personal: no admite más personas.'
+      using errcode = '54000';
+  end if;
+
+  select count(*)::int into v_cuantos from public.miembros where empresa_id = v_id;
+  v_tope := (public.limites_plan(public.plan_efectivo_calculado(v_id))->>'miembros')::integer;
+
+  if v_cuantos >= v_tope then
+    raise exception 'Este negocio llegó al máximo de % personas de su plan. El plan Negocio permite más.', v_tope
+      using errcode = '54000';
+  end if;
+
+  insert into public.miembros (empresa_id, user_id, nombre, rol)
+  values (v_id, auth.uid(), coalesce(nullif(trim(p_nombre_usuario), ''), 'Colaborador'), 'vendedor')
+  on conflict (empresa_id, user_id) do nothing;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.unirse_empresa(text, text) from public, anon;
+grant execute on function public.unirse_empresa(text, text) to authenticated;
+
+
+-- ############################################################
+-- ##  020_precios_ajustados.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 020 · Precios en dólares y un mes de regalo
+--
+-- DOS CORRECCIONES SOBRE LA 017
+--
+-- 1. LOS DÓLARES ESTABAN MAL. Se habían puesto números «bonitos» de
+--    marketing (7,99 y 24,99) sin mirar el cambio real. A 190.000 guaraníes
+--    le corresponden unos 32 dólares, no 25: cobrar 25 era regalar el 20% a
+--    todo el que pague en dólares.
+--
+--    Los precios en guaraníes NO cambian. Es la conversión la que estaba
+--    equivocada.
+--
+--      personal   Gs.  60.000  →  US$ 11
+--      Pro        Gs. 190.000  →  US$ 32
+--      Premium    Gs. 250.000  →  US$ 42   (el mismo cambio que Pro)
+--
+-- 2. EL ANUAL DA UN MES, NO DOS. Doce meses al precio de once.
+--
+--    Dos meses era demasiado para un producto que todavía no tiene historia
+--    de retención: se regalaba un sexto del año a cambio de un adelanto que
+--    hoy no hace falta. Con uno, el descuento sigue siendo un motivo real
+--    para pagar por año y el número cierra mejor.
+--
+--    El cartel de «un mes de regalo» no se escribe a mano en ningún lado:
+--    `mesesDeRegalo()` lo calcula de estos importes. Si mañana cambian, el
+--    texto sigue diciendo la verdad o desaparece — nunca miente.
+--
+-- Idempotente.
+-- ============================================================
+
+delete from public.precios;
+
+insert into public.precios (tipo_cuenta, plan, moneda, periodo, importe) values
+  -- Cuenta personal. Un solo plan pago.
+  ('personal',    'pro',     'PYG', 'mensual',   60000),
+  ('personal',    'pro',     'PYG', 'anual',    660000),
+  ('personal',    'pro',     'USD', 'mensual',      11),
+  ('personal',    'pro',     'USD', 'anual',       121),
+
+  -- Comercio · Pro: hasta 3 vendedores.
+  ('emprendedor', 'pro',     'PYG', 'mensual',  190000),
+  ('emprendedor', 'pro',     'PYG', 'anual',   2090000),
+  ('emprendedor', 'pro',     'USD', 'mensual',      32),
+  ('emprendedor', 'pro',     'USD', 'anual',       352),
+
+  -- Comercio · Premium: desde. Cada vendedor extra suma aparte.
+  ('emprendedor', 'negocio', 'PYG', 'mensual',  250000),
+  ('emprendedor', 'negocio', 'PYG', 'anual',   2750000),
+  ('emprendedor', 'negocio', 'USD', 'mensual',      42),
+  ('emprendedor', 'negocio', 'USD', 'anual',       462);
+
+-- Cada vendedor de más, con el mismo cambio que el resto.
+create or replace function public.precio_por_vendedor(p_moneda text default 'PYG')
+returns numeric language sql immutable set search_path = public as $fn$
+  select case upper(coalesce(p_moneda, 'PYG'))
+    when 'PYG' then 60000::numeric
+    when 'USD' then 10::numeric
+    else 10::numeric
+  end;
+$fn$;
+
+grant execute on function public.precio_por_vendedor(text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  021_rubros.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 021 · El rubro de cada negocio
+--
+-- LA IDEA: UN MOTOR, VARIAS PUERTAS
+--
+-- Entró plata, salió plata, esto me queda, debo esto y vence tal día. Eso es
+-- igual para un almacén, un ganadero, un agricultor y un taller — y es el
+-- 90% de Orden. Lo que cambia entre ellos es más chico de lo que parece:
+--
+--   · las palabras («producto» vs «hacienda» vs «cultivo»);
+--   · las categorías de gasto (Publicidad vs Sanidad vs Fertilizante);
+--   · el RITMO, que es lo único que rompe algo de verdad.
+--
+-- POR QUÉ EL RITMO IMPORTA MÁS QUE LAS PALABRAS
+--
+-- Orden está construido sobre el hábito diario: la racha, el cierre del día,
+-- el recordatorio de la noche. Eso le calza perfecto a quien vende todos los
+-- días.
+--
+-- A un ganadero no. Compra un ternero, gasta en maíz y sanidad durante
+-- dieciocho meses, y recién ahí vende. Su cierre del día diría «hoy no hubo
+-- actividad» casi siempre, y su racha se cortaría sin parar. Un sistema que
+-- todos los días te dice que fallaste, cuando no fallaste en nada, se
+-- desinstala.
+--
+-- Por eso el rubro decide QUÉ SECCIONES EXISTEN, no solo cómo se llaman.
+--
+-- DÓNDE VIVE CADA COSA
+--
+-- Acá vive el DATO: qué rubro eligió cada empresa, y las categorías de gasto
+-- que le corresponden (para que la IA las sugiera sin desplegar nada).
+--
+-- Las palabras y qué pantallas se muestran viven en `src/lib/rubros.ts`,
+-- porque son presentación y no seguridad: que un ganadero vea el cierre del
+-- día no filtra nada de nadie. La regla de siempre —lo que protege va en
+-- PostgreSQL— sigue intacta.
+--
+-- Idempotente. Todo lo que ya existe queda como 'comercio', que es lo que es.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA COLUMNA
+-- ------------------------------------------------------------
+alter table public.empresas
+  add column if not exists rubro text not null default 'comercio';
+
+do $$ begin
+  alter table public.empresas
+    add constraint empresas_rubro_check
+    check (rubro in ('comercio', 'ganaderia', 'agricultura', 'servicios'));
+exception when duplicate_object then null; end $$;
+
+comment on column public.empresas.rubro is
+  'Adapta vocabulario, categorías y qué secciones existen. No es un permiso: '
+  'lo que protege datos sigue siendo RLS y los roles.';
+
+-- ------------------------------------------------------------
+-- 2. LAS CATEGORÍAS DE GASTO DE CADA RUBRO
+--
+--    Viven en la base y no en el código por el mismo motivo que los precios:
+--    ajustar una lista no puede requerir un despliegue. Las usa el prompt de
+--    la captura para sugerir, y la persona puede escribir cualquier otra —la
+--    columna `categoria` es texto libre y va a seguir siéndolo. Una lista
+--    cerrada obligaría a alguien a meter su gasto en el casillero
+--    equivocado, que es peor que no sugerir nada.
+-- ------------------------------------------------------------
+create or replace function public.categorias_de_rubro(p_rubro text)
+returns jsonb language sql immutable set search_path = public as $fn$
+  -- Cada categoría viene con PISTAS, no solo con su nombre.
+  --
+  -- Hizo falta al probarlo con el modelo real: «compré veinte bolsas de maíz»
+  -- caía en «Otros» porque nada le decía que el maíz de un ganadero es
+  -- comida de animales. Con las pistas cae en Alimentación. Un nombre de
+  -- categoría solo, sin contexto, no alcanza para clasificar bien.
+  select case coalesce(p_rubro, 'comercio')
+    when 'ganaderia' then jsonb_build_array(
+      jsonb_build_object('nombre','Alimentación','pistas','maíz, balanceado, ración, fardos, sal, pasto'),
+      jsonb_build_object('nombre','Sanidad','pistas','vacunas, antiparasitarios, veterinario, remedios'),
+      jsonb_build_object('nombre','Personal','pistas','peón, capataz, jornales, sueldos'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo, pastaje'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de hacienda, camión jaula'),
+      jsonb_build_object('nombre','Mantenimiento','pistas','alambrado, aguadas, maquinaria, herramientas'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+    when 'agricultura' then jsonb_build_array(
+      jsonb_build_object('nombre','Semilla','pistas','semilla, plantines'),
+      jsonb_build_object('nombre','Fertilizante','pistas','urea, fosfato, abono'),
+      jsonb_build_object('nombre','Agroquímicos','pistas','herbicida, fungicida, insecticida'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Cosecha','pistas','cosechadora, trilla, secado'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de granos'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo'),
+      jsonb_build_object('nombre','Personal','pistas','jornales, tractorista, peón'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+    when 'servicios' then jsonb_build_array(
+      jsonb_build_object('nombre','Materiales','pistas','cemento, arena, cables, pintura, insumos'),
+      jsonb_build_object('nombre','Repuestos','pistas','piezas, filtros, aceite'),
+      jsonb_build_object('nombre','Herramientas','pistas',''),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Personal','pistas','ayudante, jornales, sueldos'),
+      jsonb_build_object('nombre','Transporte','pistas','flete, viaje, delivery'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+    else jsonb_build_array(
+      jsonb_build_object('nombre','Mercadería','pistas','lo que comprás para revender'),
+      jsonb_build_object('nombre','Transporte','pistas','combustible, flete, delivery'),
+      jsonb_build_object('nombre','Comida','pistas',''),
+      jsonb_build_object('nombre','Publicidad','pistas',''),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono'),
+      jsonb_build_object('nombre','Alquiler','pistas',''),
+      jsonb_build_object('nombre','Sueldos','pistas','empleados, jornales'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+  end;
+$fn$;
+
+grant execute on function public.categorias_de_rubro(text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. ¿ESTE RUBRO CIERRA EL DÍA?
+--
+--    Una sola pregunta en un solo lugar, para que la pantalla y las tareas
+--    programadas no puedan contestarla distinto. Sin esto, el recordatorio
+--    de la noche le seguiría llegando a un ganadero aunque la pantalla del
+--    cierre no exista — que es la peor combinación posible.
+-- ------------------------------------------------------------
+create or replace function public.rubro_cierra_el_dia(p_rubro text)
+returns boolean language sql immutable set search_path = public as $fn$
+  select coalesce(p_rubro, 'comercio') in ('comercio', 'servicios');
+$fn$;
+
+grant execute on function public.rubro_cierra_el_dia(text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. CAMBIAR DE RUBRO
+--
+--    NO borra nada. Cambiar de rubro cambia palabras, categorías sugeridas y
+--    qué pantallas se ven; los datos quedan donde están. Si alguien vuelve
+--    atrás, los encuentra intactos.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_rubro(p_empresa uuid, p_rubro text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el propietario o un administrador puede cambiar el rubro.'
+      using errcode = '42501';
+  end if;
+
+  if p_rubro not in ('comercio', 'ganaderia', 'agricultura', 'servicios') then
+    raise exception 'Rubro desconocido: %', p_rubro using errcode = '22023';
+  end if;
+
+  select rubro into v_antes from public.empresas where id = p_empresa;
+  if v_antes is null then
+    raise exception 'Esa empresa no existe.' using errcode = 'P0002';
+  end if;
+
+  update public.empresas set rubro = p_rubro where id = p_empresa;
+
+  return jsonb_build_object('rubro', p_rubro, 'antes', v_antes);
+end $fn$;
+
+revoke all on function public.cambiar_rubro(uuid, text) from public, anon;
+grant execute on function public.cambiar_rubro(uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. CREAR EMPRESA · ahora también con rubro
+--
+--    Redefinición de la versión de la 016. Lo único que cambia: recibe el
+--    rubro. Una cuenta personal no tiene rubro de negocio —no vende nada—
+--    así que se le fuerza 'comercio', que es el neutro y del que no ve
+--    ninguna pantalla de comercio igual.
+-- ------------------------------------------------------------
+create or replace function public.crear_empresa(
+  p_nombre text,
+  p_moneda text default 'PYG',
+  p_nombre_usuario text default null,
+  p_zona text default 'America/Asuncion',
+  p_tipo_cuenta text default 'emprendedor',
+  p_rubro text default 'comercio'
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id uuid;
+  v_codigo text;
+  v_intentos int := 0;
+  v_fin timestamptz;
+  v_tipo text;
+  v_rubro text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) < 2 then
+    raise exception 'El nombre del negocio es muy corto.' using errcode = '22023';
+  end if;
+
+  v_tipo := case when p_tipo_cuenta = 'personal' then 'personal' else 'emprendedor' end;
+
+  v_rubro := case
+    when v_tipo = 'personal' then 'comercio'
+    when p_rubro in ('comercio', 'ganaderia', 'agricultura', 'servicios') then p_rubro
+    else 'comercio'
+  end;
+
+  loop
+    v_codigo := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+    exit when not exists (select 1 from public.empresa_accesos where codigo = v_codigo);
+    v_intentos := v_intentos + 1;
+    if v_intentos > 12 then
+      raise exception 'No se pudo generar un código de acceso.' using errcode = '55000';
+    end if;
+  end loop;
+
+  insert into public.empresas (nombre, moneda, creada_por, zona_horaria, tipo_cuenta, rubro)
+  values (trim(p_nombre), coalesce(p_moneda, 'PYG'), auth.uid(),
+          coalesce(nullif(trim(p_zona), ''), 'America/Asuncion'), v_tipo, v_rubro)
+  returning id into v_id;
+
+  insert into public.miembros (empresa_id, user_id, nombre, rol)
+  values (v_id, auth.uid(), coalesce(nullif(trim(p_nombre_usuario), ''), 'Propietario'), 'propietario');
+
+  insert into public.empresa_accesos (empresa_id, codigo)
+  values (v_id, v_codigo);
+
+  -- La prueba se escribe acá directamente y no llamando a iniciar_prueba()
+  -- porque esa función es de service_role: quien crea la empresa es un
+  -- usuario común, y no queremos otorgarle ese permiso para esto.
+  v_fin := now() + make_interval(days => public.dias_de_prueba(v_tipo));
+  insert into public.suscripciones (empresa_id, plan, estado, periodo_inicio, periodo_fin, prueba_fin)
+  values (v_id, 'pro', 'prueba', now(), v_fin, v_fin);
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas set plan = 'pro' where id = v_id;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  return v_id;
+end $fn$;
+
+-- La firma de 5 argumentos queda muerta: si no se borra, PostgREST ve dos
+-- funciones con el mismo nombre y no sabe cuál llamar.
+drop function if exists public.crear_empresa(text, text, text, text, text);
+
+revoke all on function public.crear_empresa(text, text, text, text, text, text)
+  from public, anon;
+grant execute on function public.crear_empresa(text, text, text, text, text, text)
+  to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. EL RECORDATORIO NO LE LLEGA A QUIEN NO CIERRA EL DÍA
+--
+--    Redefine `empresas_sin_cargar_hoy()` de la 008, con la MISMA firma y
+--    la misma forma de respuesta: lo único que se agrega es el filtro por
+--    rubro. Cambiarle el tipo de retorno habría roto la tarea de la noche
+--    en silencio.
+--
+--    Sin este filtro, un ganadero recibiría todas las noches un «no
+--    cargaste nada hoy» — y no cargó nada porque no tenía nada que cargar.
+--    Es la forma más rápida de que alguien apague los avisos y no los
+--    vuelva a encender nunca.
+-- ------------------------------------------------------------
+create or replace function public.empresas_sin_cargar_hoy(p_racha_minima integer default 2)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id', e.id,
+      'nombre',     e.nombre,
+      'zona',       e.zona_horaria,
+      'racha',      r.largo
+    ) as x
+    from public.empresas e
+    join lateral (
+      with dias as (
+        select distinct m.fecha from public.movimientos m
+        where m.empresa_id = e.id and m.estado = 'activo'
+          and m.fecha <= (now() at time zone e.zona_horaria)::date
+      ),
+      numeradas as (
+        select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+      ),
+      rachas as (
+        select count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+      )
+      select largo, hasta from rachas order by hasta desc limit 1
+    ) r on true
+    where public.rubro_cierra_el_dia(e.rubro)
+      and r.hasta = (now() at time zone e.zona_horaria)::date - 1
+      and r.largo >= greatest(p_racha_minima, 1)
+  ) s;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.empresas_sin_cargar_hoy(integer) from public, anon, authenticated;
+grant execute on function public.empresas_sin_cargar_hoy(integer) to service_role;

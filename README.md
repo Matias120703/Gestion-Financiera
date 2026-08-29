@@ -195,23 +195,119 @@ curl -H "Authorization: Bearer TU_CRON_SECRETO" https://tudominio.com/api/tareas
 
 ---
 
+## La cuenta personal
+
+Orden atiende a dos públicos con un solo sistema. **La cuenta personal no es
+un producto aparte: es el comercial menos ventas y productos.** Restar es
+barato; mantener dos sistemas era lo caro.
+
+Se elige al crear la cuenta, en la primera pregunta de la pantalla —antes que
+el nombre— porque de ahí cuelga todo: el largo de la prueba (20 días un
+comercio, 14 una persona), el precio, y qué pantallas van a existir.
+
+### Qué desaparece, y por qué desaparece
+
+En una cuenta personal **Vender, Productos y Reto no existen**. No se muestran
+en gris ni con un candado: no están en el menú, y las páginas redirigen si
+alguien escribe la URL a mano.
+
+Una pantalla que se ve pero no sirve es peor que una que no existe: invita a
+tocarla y después decepciona. Y un reto de ventas no significa nada para quien
+anota su sueldo.
+
+En la barra de abajo del celular, **el lugar de Vender lo ocupa Deudas**. No es
+relleno: para alguien que lleva sus finanzas, saber cuánto debe y cuándo vence
+la cuota es lo que más mira. Es la pantalla que justifica la suscripción, así
+que va a un toque.
+
+### El tipo que sobra
+
+Con las deudas, el problema fue un tipo que **faltaba**: sin `deuda`, el modelo
+empujó «debo cinco millones» al casillero más parecido y lo cargó como
+ingreso.
+
+Acá el problema es el inverso: un tipo que **sobra**. Si la captura por voz
+tiene `venta` disponible en una cuenta personal, la va a usar — *«cobré mi
+sueldo»* y *«me pagaron los 500 mil»* se parecen bastante a una venta. Y una
+venta mueve stock y espera productos que en esta cuenta no existen.
+
+Por eso el prompt de cuenta personal es **otro**, no el mismo con una nota al
+pie: conoce cuatro tipos (`ingreso`, `gasto`, `deuda`, `pago_deuda`), dice
+explícitamente que «venta» no existe, y trae sus propias categorías —Sueldo,
+Comida, Alquiler, Salud— en vez de las de un comercio.
+
+Y no se confía solo en la instrucción. **El saneo del servidor también lo
+aplica**: si el modelo igual devolviera `venta` en una cuenta personal, se
+convierte en el `ingreso` que en realidad era. Una instrucción se puede
+ignorar; el saneo no.
+
+Tampoco se le pide el catálogo a la base: no hay productos que vincular, así
+que es una consulta menos y un prompt más corto.
+
+### Cómo se probó
+
+Con llamadas reales al modelo, usando el prompt de verdad:
+
+```
+OK  "cobré mi sueldo, cuatro millones"          → ingreso · Sueldo
+OK  "me pagaron quinientos mil por un trabajo"  → ingreso
+OK  "pagué el alquiler, un millón ochocientos"  → gasto · Alquiler
+OK  "debo tres millones de la tarjeta"          → deuda · tarjeta
+OK  "pagué la cuota de la tarjeta"              → pago_deuda, imputado
+```
+
+Ocho de ocho, sin una sola venta y sin items.
+
+---
+
 ## Cobrar la suscripción
 
 ### Planes
 
+Orden le vende a **dos públicos distintos**, y por eso hay dos listas.
+
+**Para un comercio** — 20 días de prueba:
+
 | Plan | Guaraníes | Dólares | Para quién |
 |---|---|---|---|
-| Gratis | — | — | Carga manual sin límite, historial completo, 20 capturas con IA al mes, 1 persona |
-| Pro | Gs. 35.000 / mes | US$ 4,99 / mes | Captura sin tope, comprobantes, Excel, hasta 3 personas |
-| Negocio | Gs. 79.000 / mes | US$ 8,99 / mes | Todo lo de Pro y hasta 15 personas con roles |
+| Pro | Gs. 190.000 / mes | US$ 24,99 / mes | Hasta 3 vendedores, 600 capturas con IA al mes, comprobantes, Excel |
+| Premium | desde Gs. 250.000 / mes | desde US$ 32,99 / mes | Sin tope de vendedores, 3.000 capturas al mes, roles |
 
-El anual da **dos meses gratis**. No es un capricho de marketing: a cinco dólares, la
-comisión fija de una pasarela se lleva cerca del 10% *todos los meses*. Cobrando una vez al
-año se paga una sola vez, y de paso baja muchísimo la cantidad de gente que se va.
+**Para una cuenta personal** — 14 días de prueba:
 
-**Los precios viven en la tabla `precios`, no en el código.** Cambiar uno es un `update` en
-Supabase; no hace falta desplegar nada. Para abrir un país nuevo se agrega una fila con su
-moneda.
+| Plan | Guaraníes | Dólares | Para quién |
+|---|---|---|---|
+| Personal | Gs. 60.000 / mes | US$ 7,99 / mes | Sueldo, gastos y deudas. Sin ventas ni productos |
+
+Premium es **«desde»**: cada vendedor por encima de los 3 que trae Pro suma
+**Gs. 60.000 al mes**. 250.000 es el primer escalón —cuatro vendedores— y por
+eso es el número que se muestra. El precio final se cierra por WhatsApp.
+
+**Los vendedores no pagan.** La suscripción la paga una sola persona: el dueño.
+
+### Por qué el mismo plan cuesta distinto
+
+Una cuenta personal y un comercio pueden estar los dos en plan `pro`, con los
+mismos topes y las mismas funciones, y pagar tres veces distinto. No es una
+inconsistencia: **no reciben el mismo valor.**
+
+Al comerciante, Orden le dice cuánta plata ganó de verdad. Eso se paga solo. A
+quien lleva sus finanzas personales le dice cuánto debe y cuándo vence la
+cuota; le sirve, pero no le genera un guaraní. Cobrarles lo mismo sería no
+haber entendido a ninguno de los dos.
+
+Por eso el plan sigue decidiendo **qué se puede hacer** (`limites_plan()`), y
+el par `tipo_cuenta` + `plan` decide **cuánto se paga**. Dos preguntas
+distintas, dos respuestas distintas. Ver la migración 017.
+
+El anual da **dos meses gratis**: se calcula de los propios importes con
+`mesesDeRegalo()`, así que si mañana cambian, el cartel sigue diciendo la
+verdad o desaparece — nunca miente.
+
+**Los precios viven en la tabla `precios`, no en el código.** Cambiar uno es un
+`update` en Supabase; no hace falta desplegar nada. Para abrir un país nuevo se
+agrega una fila con su moneda.
+
 
 **Toda empresa nueva arranca con 14 días de Pro, sin tarjeta.** Cuando vence cae a gratis:
 sigue viendo todo su historial y cargando a mano, y pierde la captura ilimitada, los
@@ -249,6 +345,100 @@ comerciante paraguayo.
 `/plan?pago=listo` no prueba nada: esa URL se puede escribir a mano. Lo único que activa un
 plan es `aplicar_suscripcion()`, que solo puede llamar `service_role` desde un webhook con
 firma verificada.
+
+---
+
+## Cuando se termina la prueba
+
+Se deja de **cargar**, no de **mirar**.
+
+La cuenta vencida sigue entrando, viendo todo su historial y bajándose su
+Excel. Lo único que no puede es agregar algo nuevo: ni una venta, ni un gasto,
+ni una deuda, ni un comprobante, ni el cierre del día.
+
+### Por qué no se bloquea la cuenta entera
+
+Porque los datos son de esa persona, no nuestros. Dejar a alguien afuera de
+sus propios números es la clase de cosa que genera un mensaje furioso y mala
+fama — y en un mercado donde los comerciantes se conocen entre ellos, esa fama
+cuesta más que la suscripción que se estaría forzando.
+
+Solo lectura tiene **la misma presión** que bloquear —para seguir trabajando
+hay que pagar— sin quedarse con lo ajeno. Y el Excel pasa a ser el mejor
+argumento de venta que hay: *«mirá todo lo que cargaste, seguí desde donde
+estás»*.
+
+Por la misma razón, **el DELETE queda libre**: vaciar el negocio y borrar la
+cuenta funcionan con la cuenta vencida. Nadie debería tener que pagar para
+poder irse.
+
+### `gratis` cambió de significado
+
+Antes era un plan: 20 capturas con IA al mes y **carga manual sin límite**.
+Para un almacén chico eso alcanzaba de sobra — era un sistema financiero
+completo, gratis para siempre, y nadie tenía motivo para pagar.
+
+Ahora `gratis` significa **cuenta vencida**. El plan ya no existe como
+destino: se prueba y se paga.
+
+El tope de IA pasó de 20 a **cero**, y no por mezquindad: si igual no va a
+poder guardar el movimiento, gastar créditos de OpenAI para producir un
+borrador que después rebota es tirar plata sin darle nada a nadie.
+
+El Excel, en cambio, pasó de `false` a **`true`**. Es el corazón de todo esto.
+
+### Por qué con triggers y no con políticas
+
+Se escribe desde muchos lados: políticas RLS para los gastos, `registrar_venta`
+para las ventas, `crear_deuda` y `registrar_pago_deuda` para las deudas,
+`adjuntar` para los comprobantes, `marcar_cierre` para el cierre. Poner el
+control en cada uno significa que el día que se agregue una ruta nueva y
+alguien se olvide, **se abre un agujero silencioso** — de esos que no fallan,
+simplemente dejan pasar.
+
+Un trigger por tabla lo agarra todo, venga por donde venga, incluidas las
+funciones `security definer` que saltean RLS. Una definición por tabla en vez
+de una por camino.
+
+Hay una excepción deliberada: **si no hay sesión, pasa**. Una escritura sin
+`auth.uid()` no es de un cliente — es el webhook de pagos, una tarea
+programada o una migración. Si se bloquearan, un pago no podría registrarse
+justamente cuando la cuenta está vencida, que es cuando más falta hace.
+
+### Se avisa antes del choque
+
+`estado_cuenta()` le dice a la pantalla en qué situación está, y una franja lo
+explica arriba de todo:
+
+- **vencida** → qué sí se puede hacer (mirar, bajar el Excel) y el botón para
+  activar;
+- **tres días o menos** → cuántos quedan;
+- **último día** → aparte, porque «mañana» y «en tres días» no se leen igual.
+
+Con la cuenta al día no se muestra nada. Una franja permanente pidiendo plata
+convierte el producto en un cartel publicitario.
+
+---
+
+## Suscribirse es abrir un WhatsApp
+
+No cargar una tarjeta. En Paraguay, entre pedirle a un comerciante que ponga
+los datos de su tarjeta en un formulario de un sistema que recién conoce, y
+que le escriba a una persona para arreglar una transferencia, **lo segundo
+cierra muchas más ventas**. No es una limitación técnica: es cómo se hacen los
+negocios ahí.
+
+El mensaje va escrito de antemano con el negocio, el plan y el precio. Importa
+más de lo que parece: sin eso, del otro lado llegan diez «hola» sueltos por
+día y hay que preguntar todo de nuevo, con lo que cada suscripción tarda dos
+días en vez de diez minutos.
+
+Premium no manda precio sino **la pregunta**, porque depende de cuántos
+vendedores sean.
+
+El número sale de `NEXT_PUBLIC_WHATSAPP`. **Si no está configurado el botón no
+se dibuja** y vuelve solo el camino de la pasarela: las dos rutas conviven sin
+tocar código. Nunca un botón que no lleva a ningún lado.
 
 ---
 
@@ -405,6 +595,96 @@ archiva, porque ahí sí hay gasto del que colgarla.
 
 ---
 
+## El panel de quien administra Orden
+
+Mientras el cobro sea por transferencia y WhatsApp, alguien tiene que poder
+activar una cuenta a mano cuando entra el pago. **Sin este panel no se le
+puede cobrar a nadie**, así que no es una comodidad: es la pieza que hace que
+el negocio exista.
+
+Vive en `/admin`, fuera del grupo `(app)`, porque no pertenece a ninguna
+empresa y no debe tener la navegación del negocio.
+
+### La regla: ve cuentas, no plata
+
+Para activarle el plan a alguien hace falta su nombre, su correo, qué plan
+tiene y cuándo vence. **No hace falta saber cuánto vendió, qué compró ni a
+quién le debe.**
+
+Por eso ninguna función del panel devuelve un monto, una descripción, un
+producto ni una deuda. Y no es una promesa escrita en un comentario: hay una
+prueba que le pasa una lista de palabras prohibidas —`monto`, `saldo`,
+`costo`, `precio`, `deuda`…— a lo que el panel devuelve, **y falla si aparece
+alguna**. Si mañana alguien agrega un campo de más sin pensarlo, la suite se
+pone roja antes de que llegue a producción.
+
+Sí devuelve señales de **uso**: cuántos movimientos tiene la cuenta, cuándo
+fue el último y cuántas capturas de IA consumió este mes. Sin eso es
+imposible saber si una cuenta está viva o si alguien está quemando créditos
+de OpenAI. Un conteo y una fecha no dicen nada del negocio de nadie.
+
+Lo que esto **no** puede evitar: quien administra la base de datos siempre
+puede leerla. Eso no lo cambia ninguna función. Lo que sí se logra es que el
+panel no tenga forma de mostrarlo, ni por accidente ni por comodidad — que es
+lo que permite prometerle a un comerciante que sus números no los mira nadie,
+y que sea verdad.
+
+### Quién entra
+
+Una tabla `superadmins`, no un rol dentro de `miembros`. Es un permiso **por
+encima** de todas las empresas, y mezclarlo con los roles de negocio haría
+que un error en una consulta de permisos comunes pudiera, en el peor caso,
+dar permisos de sistema.
+
+**Nadie se agrega solo.** La tabla no tiene política de INSERT, y además el
+privilegio está revocado a `authenticated`. Son dos cerrojos a propósito:
+Supabase le otorga por defecto todos los permisos de tabla a `authenticated`
+sobre lo nuevo que aparece en `public`, así que confiar solo en «no hay
+policy» sería confiar en una configuración de la nube que no controlamos. Se
+carga desde el editor SQL.
+
+Y no existe una pantalla de «no tenés permiso»: a quien no administra se lo
+manda a su propio panel, sin decirle que esto existe. Una puerta que anuncia
+que está cerrada invita a golpearla.
+
+### Ordenado por urgencia, no por nombre
+
+La lista arranca filtrada por **vencen pronto**, y ese es el punto. Con
+veinte clientes, que el dueño escriba por WhatsApp el día 11 de una prueba
+convierte muchísimo más que cualquier notificación automática. **El panel no
+es solo donde se activan cuentas: es la lista de a quién hay que escribirle
+hoy.**
+
+### Activar suma, nunca resta
+
+Cuando entra una transferencia, `cambiar_plan_cuenta()` **suma** el mes al
+tiempo que ya tenía. Si a alguien le quedaban seis días pagos y transfiere
+antes, no los pierde. Sin ese `greatest()`, adelantarse al pago te castigaba.
+
+`extender_prueba()` solo estira, con tope de 90 días. Recortarle la prueba a
+alguien que la está usando no debería poder hacerse de un clic.
+
+### Todo queda anotado
+
+Cada acción del panel se escribe en `registro_admin` con quién, cuándo, qué
+había antes y una nota libre.
+
+No es burocracia. El día que alguien diga «me cortaste sin avisar» o «yo
+pagué y no me activaste», esto es lo único que sabe quién tiene razón —
+incluso cuando el error es propio. Un registro donde cualquiera pueda
+escribir no sirve para auditar nada, así que el INSERT también está revocado:
+solo entran filas desde las funciones `security definer`.
+
+### Cortar no es secuestrar
+
+Bajar a gratis corta la carga, pero la persona **sigue entrando, viendo lo
+suyo y bajándose su Excel**. Tiene la misma presión que bloquear —para seguir
+trabajando hay que pagar— sin quedarse con los datos de nadie. En un mercado
+donde los comerciantes se conocen entre ellos, esa diferencia vale más que
+cualquier suscripción forzada.
+
+---
+
 ## Irse, y empezar de nuevo
 
 Dos cosas distintas, las dos en **Ajustes → Zona delicada** (hay que abrirla:
@@ -542,6 +822,7 @@ src/
   lib/
     agregados.ts        lecturas agregadas: los números salen de PostgreSQL
     habito.ts           cierre del día y racha
+    admin.ts            lecturas del panel: cuentas, nunca movimientos
     adjuntos.ts         subir, ver y borrar comprobantes
     captura.ts          el prompt y el esquema de la captura por voz, foto y texto
     deudas.ts           lecturas de deudas y de sus pagos
@@ -568,7 +849,8 @@ supabase/
                         009_planes_precios.sql, 010_preferencias_avisos.sql,
                         011_baja_de_miembros.sql, 012_cerrar_anon.sql,
                         013_borrar_usuario.sql, 014_borrar_mi_cuenta.sql,
-                        015_deudas.sql
+                        015_deudas.sql, 016_panel_admin.sql,
+                        017_precios_por_tipo.sql, 018_solo_lectura.sql
   schema.sql            generado: las migraciones concatenadas
   generar-schema.js     lo regenera (npm run esquema)
 pruebas/
@@ -584,6 +866,8 @@ pruebas/
   equipo.test.js        baja de miembros y rotación del código de invitación
   borrado.test.js       vaciar el negocio y borrar la cuenta sin llevarse nada de más
   deudas.test.js        saldos, pagos, vencimientos y quién puede verlos
+  panel.test.js         el panel: quién entra y que no se filtre plata
+  solo-lectura.test.js  al vencer no se carga nada, pero se ve y se baja todo
   verificar-data-api.js verificación manual contra tu Supabase real
   ayuda-db.js           levanta Postgres en memoria imitando a Supabase
 v1-legacy/              la versión anterior, por si querés consultarla
@@ -765,10 +1049,10 @@ consola del navegador.
 subir. Un usuario que guarda diez por día suma ~550 MB al año. Sin esa compresión, con las
 fotos que saca un celular de hoy, serían 9 GB — sesenta veces más, todos los meses.
 
-**Pasarela de pago.** Acá está la trampa del precio bajo: una comisión de 3,5% + US$ 0,30
-sobre un plan de US$ 4,99 se lleva casi el 10%, y se la lleva **todos los meses**. Por eso
-existe el plan anual con dos meses gratis: se paga la comisión fija una vez al año en vez
-de doce.
+**Pasarela de pago.** Hoy no se paga ninguna: el cobro es por transferencia, arreglado por
+WhatsApp. Cuando se automatice, ojo con el plan personal: una comisión de 3,5% + US$ 0,30
+sobre US$ 7,99 se lleva cerca del 8%, **todos los meses**. Por eso existe el plan anual con
+dos meses gratis — la comisión fija se paga una vez al año en vez de doce.
 
 ### Dónde queda el equilibrio
 

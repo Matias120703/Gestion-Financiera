@@ -13,6 +13,8 @@ import { permisosDe } from '@/lib/permisos';
 import { textos } from '@/i18n';
 import { traerRacha } from '@/lib/habito';
 import { TarjetaRacha } from '@/components/Racha';
+import { fichaDe } from '@/lib/rubros';
+import { traerResumenDeudas } from '@/lib/deudas';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +24,23 @@ export default async function PaginaPanel({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+
+  /**
+   * Un negocio de ciclo largo no se mide por día.
+   *
+   * Un ganadero compra un ternero, gasta en maíz y sanidad durante dieciocho
+   * meses, y recién ahí vende. Para él, «cómo vengo este mes contra el mes
+   * pasado» es comparar cero contra cero — y los indicadores de comercio
+   * (ticket promedio, unidades entregadas, operaciones) son números que no
+   * significan nada cuando vendés tres veces al año.
+   *
+   * Peor todavía era la racha: le decía «0 días» todos los días, para
+   * siempre. Le sacamos el recordatorio de la noche en la 021 y esto quedó
+   * haciendo exactamente lo mismo en la pantalla que más mira.
+   */
+  const cicloLargo = fichaDe(ctx.empresa.rubro).ciclosLargos
+    && ctx.empresa.tipo_cuenta !== 'personal';
+
   const rango = rangoDesdeParams(searchParams);
   const previo = rangoAnterior(rango);
 
@@ -44,6 +63,24 @@ export default async function PaginaPanel({
     traerRetoActivo(ctx.empresa.id),
     traerRacha(ctx.empresa.id),
   ]);
+
+  /**
+   * En ciclo largo, lo que reemplaza a «cuántas ventas hice hoy» es «cuánto
+   * llevo en el año» y «cuánto debo». Son las dos preguntas que sí tienen
+   * respuesta cuando la plata entra tres veces al año.
+   *
+   * Si la lectura de deudas falla no se cae el panel: el indicador queda en
+   * cero y el resto sigue. Es un dato de contexto, no un número financiero
+   * del que dependa una decisión — para eso está la pantalla de Deudas, que
+   * sí lanza si no puede leer.
+   */
+  const desdeAnio = `${hoyISO().slice(0, 4)}-01-01`;
+  const [delAnio, deudas] = cicloLargo
+    ? await Promise.all([
+        traerResumen(ctx.empresa.id, desdeAnio, hoyISO()),
+        traerResumenDeudas(ctx.empresa.id).catch(() => null),
+      ])
+    : [null, null];
 
   const m = ctx.empresa.moneda;
   const t = textos();
@@ -81,7 +118,8 @@ export default async function PaginaPanel({
 
   return (
     <div className="space-y-5">
-      <TarjetaRacha racha={racha} t={t} />
+      {/* La racha solo donde el hábito es diario. Ver el comentario de arriba. */}
+      {!cicloLargo && <TarjetaRacha racha={racha} t={t} />}
 
       <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
 
@@ -110,17 +148,26 @@ export default async function PaginaPanel({
               variacion={variacion(r.ventas, rPrevio.ventas)}
             />
             <Indicador
-              titulo="Ganancia bruta"
-              valor={dineroCorto(r.gananciaBruta, m)}
-              detalle={`margen ${porcentaje(r.margenBruto, 0)}`}
-            />
-            <Indicador
               titulo="Gastos"
               valor={dineroCorto(r.gastos, m)}
               detalle={mayorGasto ? `mayor: ${mayorGasto.nombre.slice(0, 22)}` : 'sin gastos'}
               tono={r.gastos > 0 ? 'malo' : 'neutro'}
-              variacion={variacion(r.gastos, rPrevio.gastos)}
+              variacion={cicloLargo ? undefined : variacion(r.gastos, rPrevio.gastos)}
             />
+            {cicloLargo ? (
+              <Indicador
+                titulo="En lo que va del año"
+                valor={dineroCorto(delAnio?.gananciaNeta ?? 0, m)}
+                detalle={`${dineroCorto(delAnio?.ventas ?? 0, m)} vendido`}
+                tono={(delAnio?.gananciaNeta ?? 0) >= 0 ? 'bueno' : 'malo'}
+              />
+            ) : (
+              <Indicador
+                titulo="Ganancia bruta"
+                valor={dineroCorto(r.gananciaBruta, m)}
+                detalle={`margen ${porcentaje(r.margenBruto, 0)}`}
+              />
+            )}
           </>
         ) : (
           <>
@@ -161,8 +208,34 @@ export default async function PaginaPanel({
         </Link>
       )}
 
-      {/* ---------------- Movimiento diario ---------------- */}
-      {dias.length > 1 && (r.cantidadVentas > 0 || r.gastos > 0) && (
+      {/* ---------------- Lo que se debe, en ciclo largo ----------------
+          Cuando la plata entra tres veces al año, saber cuánto se debe y
+          cuándo vence es más útil que cualquier promedio diario. */}
+      {cicloLargo && deudas && deudas.total_debido > 0 && (
+        <Link href="/deudas" className="tarjeta block p-4 transition hover:border-verde/50">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-semibold text-tinta/55">Lo que debés</p>
+              <p className="mt-0.5 text-[22px] font-bold tabular-nums">{dinero(deudas.total_debido, m)}</p>
+            </div>
+            {deudas.vencidas > 0 ? (
+              <span className="pastilla bg-rojo-claro text-rojo">
+                {deudas.vencidas} vencida{deudas.vencidas === 1 ? '' : 's'}
+              </span>
+            ) : deudas.vence_pronto > 0 ? (
+              <span className="pastilla bg-ambar-claro text-ambar">
+                {deudas.vence_pronto} vence{deudas.vence_pronto === 1 ? '' : 'n'} esta semana
+              </span>
+            ) : null}
+          </div>
+        </Link>
+      )}
+
+      {/* ---------------- Movimiento diario ----------------
+          En ciclo largo no se dibuja: son trescientos sesenta y cinco días
+          planos con tres picos. Un gráfico que no muestra nada ocupa lugar y
+          hace parecer que el sistema no tiene datos. */}
+      {!cicloLargo && dias.length > 1 && (r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
           <h2 className="mb-4 text-[15px] font-bold tracking-tight">Día por día</h2>
           <GraficoDiario datos={serie} moneda={m} />

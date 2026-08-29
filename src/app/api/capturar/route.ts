@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   // RLS se encarga: si no es miembro, no devuelve nada.
   const { data: empresa } = await supabase
     .from('empresas')
-    .select('id, moneda')
+    .select('id, moneda, tipo_cuenta, rubro')
     .eq('id', empresaId)
     .maybeSingle();
   if (!empresa) return respuestaVacia('No tenés acceso a esta empresa.', 403);
@@ -76,20 +76,37 @@ export async function POST(request: Request) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  /**
+   * Una cuenta personal no vende.
+   *
+   * Importa más de lo que parece: si el modelo tiene «venta» disponible, va a
+   * usarla. «Cobré mi sueldo» y «me pagaron los 500 mil» se parecen mucho a
+   * una venta, y quedarían cargadas como tal — con la diferencia de que una
+   * venta mueve stock y espera productos que en esta cuenta no existen.
+   *
+   * Es el mismo error que tuvimos con las deudas, al revés: ahí faltaba un
+   * tipo, acá sobra uno.
+   */
+  const esPersonal = empresa.tipo_cuenta === 'personal';
+
   // ---------- 2. Catálogo para que la IA pueda vincular productos ----------
   // Por la puerta oficial: si quien captura es un vendedor, los costos
   // llegan en null y nunca entran al prompt. La base decide, no esta ruta.
-  const { data: productos, error: errorCatalogo } = await supabase.rpc('listar_productos', {
-    p_empresa: empresaId,
-    p_incluir_pausados: false,
-  });
+  // En una cuenta personal ni se pide: no hay catálogo que vincular.
+  let catalogo: Producto[] = [];
+  if (!esPersonal) {
+    const { data: productos, error: errorCatalogo } = await supabase.rpc('listar_productos', {
+      p_empresa: empresaId,
+      p_incluir_pausados: false,
+    });
 
-  if (errorCatalogo) {
-    console.error('[capturar] catálogo', errorCatalogo.message);
-    return respuestaVacia('No pudimos leer tu catálogo. Probá de nuevo en un momento.', 503);
+    if (errorCatalogo) {
+      console.error('[capturar] catálogo', errorCatalogo.message);
+      return respuestaVacia('No pudimos leer tu catálogo. Probá de nuevo en un momento.', 503);
+    }
+
+    catalogo = (Array.isArray(productos) ? productos : []) as Producto[];
   }
-
-  const catalogo = (Array.isArray(productos) ? productos : []) as Producto[];
 
   /**
    * Las deudas ya cargadas, para poder reconocer «pagué la cuota de la
@@ -112,8 +129,20 @@ export async function POST(request: Request) {
     saldo: Number(d.saldo ?? 0),
   }));
 
+  /**
+   * Las categorías de gasto del rubro. Si falla, se usan las de comercio: el
+   * prompt tiene su propio respaldo, así que una lista que no llega degrada
+   * la sugerencia pero no rompe la captura.
+   */
+  const { data: cats } = await supabase.rpc('categorias_de_rubro', {
+    p_rubro: (empresa as any).rubro ?? 'comercio',
+  });
+  const categorias = Array.isArray(cats)
+    ? cats.map((c: any) => ({ nombre: String(c?.nombre ?? c), pistas: c?.pistas ? String(c.pistas) : undefined }))
+    : [];
+
   const hoy = hoyISO();
-  const sistema = instrucciones(hoy, empresa.moneda, catalogo, deudas);
+  const sistema = instrucciones(hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias);
 
   try {
     let textoUsuario = '';
@@ -204,8 +233,15 @@ export async function POST(request: Request) {
 
     const fechaValida = typeof datos.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(datos.fecha) ? datos.fecha : hoy;
 
-    const TIPOS = ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda'];
-    const tipo = TIPOS.includes(datos.tipo) ? datos.tipo : 'gasto';
+    const TIPOS = esPersonal
+      ? ['gasto', 'ingreso', 'deuda', 'pago_deuda']
+      : ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda'];
+    // El saneo también lo aplica, no solo el prompt: una instrucción se puede
+    // ignorar, esto no. Si igual devolviera 'venta' en una cuenta personal,
+    // acá se convierte en el ingreso que en realidad era.
+    const tipo = TIPOS.includes(datos.tipo)
+      ? datos.tipo
+      : (esPersonal && datos.tipo === 'venta') ? 'ingreso' : 'gasto';
 
     // Los datos de la deuda se limpian acá y no se confía en lo que llegó:
     // el `deuda_id` tiene que ser uno REAL de esta empresa, o no vale. Sin

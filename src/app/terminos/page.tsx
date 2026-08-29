@@ -16,7 +16,8 @@ export const metadata: Metadata = {
  * decía, no sirvió de nada.
  *
  * Lo que dice acá tiene que coincidir con lo que hace el sistema:
- *   · la prueba de 14 días → migración 009, `crear_empresa`
+ *   · el largo de la prueba según el tipo de cuenta → migración 016,
+ *     `dias_de_prueba()`: 20 días un comercio, 14 una cuenta personal
  *   · caer a gratis al vencer → `plan_efectivo_calculado()`
  *   · los topes de cada plan → `limites_plan()`
  *
@@ -48,8 +49,11 @@ export default function Terminos() {
 
       <Apartado titulo="Prueba gratis y planes">
         <p>
-          Todo negocio nuevo arranca con <strong className="text-tinta">14 días de plan Pro,
-          sin pedir tarjeta</strong>. Cuando terminan, la cuenta pasa sola al plan gratis.
+          Toda cuenta nueva arranca con <strong className="text-tinta">plan Pro y sin pedir
+          tarjeta</strong>: <strong className="text-tinta">20 días</strong> si es un negocio y{' '}
+          <strong className="text-tinta">14 días</strong> si es una cuenta personal. Un comercio
+          necesita ver un pedazo de mes suyo antes de decidir; quien anota sus gastos lo sabe
+          antes. Cuando terminan, la cuenta pasa sola al plan gratis.
         </p>
         <p>
           <strong className="text-tinta">Al pasar a gratis no perdés ningún dato.</strong> Seguís

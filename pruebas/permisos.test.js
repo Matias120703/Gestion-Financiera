@@ -89,15 +89,17 @@ async function principal() {
     ok('tiene exactamente una suscripción',
       (await db.query('select count(*)::int n from public.suscripciones where empresa_id=$1', [C.empresaId])).rows[0].n, 1);
 
-    // Desde la 009 la empresa nace con 14 días de prueba de `pro`, no en gratis.
+    // Desde la 009 la empresa nace en prueba de `pro`, no en gratis.
+    // Desde la 016 el largo depende del tipo de cuenta: 20 días para un
+    // comercio (que es lo que crea montarEmpresa) y 14 para una personal.
     const s = (await db.query('select plan, estado, prueba_fin from public.suscripciones where empresa_id=$1', [C.empresaId])).rows[0];
     ok('plan inicial', s.plan, 'pro');
     ok('estado inicial', s.estado, 'prueba');
     ok('la prueba tiene fecha de vencimiento', s.prueba_fin !== null, true);
-    ok('y vence dentro de 14 días',
+    ok('y un comercio vence dentro de 20 días',
       (await db.query(
         `select round(extract(epoch from (prueba_fin - now())) / 86400)::int d
-         from public.suscripciones where empresa_id=$1`, [C.empresaId])).rows[0].d, 14);
+         from public.suscripciones where empresa_id=$1`, [C.empresaId])).rows[0].d, 20);
     ok('y su código de acceso',
       (await db.query('select count(*)::int n from public.empresa_accesos where empresa_id=$1', [C.empresaId])).rows[0].n, 1);
     ok('plan efectivo', await planInterno(db, C.empresaId), 'pro');
@@ -170,9 +172,14 @@ async function principal() {
       (await db.query('select plan from public.empresas where id=$1', [A.empresaId])).rows[0].plan, 'pro');
     ok('plan efectivo', await planInterno(db, A.empresaId), 'pro');
 
-    // Volvemos a gratis para no contaminar el resto.
+    // Bajar a gratis funciona...
     await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [A.empresaId]));
     ok('vuelve a gratis', await planInterno(db, A.empresaId), 'gratis');
+
+    // ...pero desde la 018 gratis es CUENTA VENCIDA y no deja cargar nada.
+    // Se la devolvemos a un plan que paga, o el resto de la suite no podría
+    // ni crear un producto.
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'pro','activa')", [A.empresaId]));
   }
 
   // =====================================================================
@@ -229,7 +236,7 @@ async function principal() {
 
     // Limpiamos al recién llegado para no ensuciar el resto.
     await db.query('delete from public.miembros where user_id=$1', [nuevo]);
-    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [A.empresaId]));
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'pro','activa')", [A.empresaId]));
   }
 
   // =====================================================================
@@ -266,7 +273,8 @@ async function principal() {
         db.query('select public.unirse_empresa($1,$2)', [codigo, 'Cuarto'])));
 
     await db.query('delete from public.miembros where user_id=$1', [cuarto]);
-    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [A.empresaId]));
+    // A pro, no a gratis: gratis ahora es cuenta vencida y bloquea escrituras.
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'pro','activa')", [A.empresaId]));
   }
 
   // =====================================================================
@@ -430,6 +438,7 @@ async function principal() {
     const gratisB = await H.intentarComo(db, 'authenticated', B.uid, () =>
       db.query('select public.empresa_es_pro($1) e', [B.empresaId]).then((r) => r.rows[0].e));
     ok('y también cuando es gratis', gratisB.valor, false);
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'pro','activa')", [B.empresaId]));
 
     // Una empresa sin fila de suscripción no puede colarse como pro.
     const huerfana = (await db.query(
@@ -439,9 +448,11 @@ async function principal() {
     await db.query('delete from public.empresas where id=$1', [huerfana]);
 
     // Y el espejo sigue sin poder tocarse desde el cliente.
+    // Con un valor DISTINTO al que ya tiene: si se escribe el mismo, no hay
+    // cambio que frenar y la prueba pasaría sin probar nada.
     rechazado('un admin no puede tocar empresas.plan',
       await H.intentarComo(db, 'authenticated', adminA, () =>
-        db.query("update public.empresas set plan='pro' where id=$1", [A.empresaId])),
+        db.query("update public.empresas set plan='gratis' where id=$1", [A.empresaId])),
       'sistema de suscripciones');
   }
 
@@ -480,7 +491,7 @@ async function principal() {
       ok(`${rol} no puede llamar al cálculo interno`, priv, false);
     }
 
-    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [B.empresaId]));
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'pro','activa')", [B.empresaId]));
   }
 
   // =====================================================================
@@ -540,7 +551,7 @@ async function principal() {
     const datos = await H.intentarComo(db, 'authenticated', adminA, () =>
       db.query('select public.datos_empresa($1) d', [A.empresaId]).then((r) => r.rows[0].d));
     ok('datos_empresa le da el código al admin', typeof datos.valor.codigo_acceso, 'string');
-    ok('y el plan efectivo', datos.valor.plan_efectivo, 'gratis');
+    ok('y el plan efectivo', datos.valor.plan_efectivo, 'pro');
 
     const datosVendedor = await H.intentarComo(db, 'authenticated', vendedorA, () =>
       db.query('select public.datos_empresa($1) d', [A.empresaId]).then((r) => r.rows[0].d));

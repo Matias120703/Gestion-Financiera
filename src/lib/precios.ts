@@ -26,9 +26,19 @@ export function monedaDeCobro(idioma: Idioma, elegida?: string | null): string {
   return MONEDA_DE_COBRO[idioma] ?? 'USD';
 }
 
-export async function traerPrecios(moneda: string): Promise<Precio[]> {
+/**
+ * Los precios de UN público.
+ *
+ * El tipo importa: a alguien que lleva sus finanzas personales no se le
+ * ofrece el plan de un local con vendedores, y no paga lo mismo por el
+ * mismo plan. Ver migración 017.
+ */
+export async function traerPrecios(moneda: string, tipo?: string): Promise<Precio[]> {
   const supabase = clienteServidor();
-  const respuesta = await supabase.rpc('lista_precios', { p_moneda: moneda });
+  const respuesta = await supabase.rpc('lista_precios', {
+    p_moneda: moneda,
+    p_tipo: tipo ?? null,
+  });
   const lista = exigir(respuesta, 'precios') as Precio[];
   return Array.isArray(lista) ? lista : [];
 }

@@ -13,6 +13,9 @@ import type { Producto } from './tipos';
  */
 
 /** Lo mínimo de una deuda que el modelo necesita para reconocerla. */
+/** Una categoría de gasto con ejemplos de qué va adentro. Ver migración 021. */
+export type CategoriaSugerida = { nombre: string; pistas?: string };
+
 export type DeudaConocida = { id: string; nombre: string; acreedor: string; saldo: number };
 
 /** Esquema estricto: obliga al modelo a devolver exactamente esta forma. */
@@ -81,6 +84,20 @@ export function instrucciones(
   moneda: string,
   catalogo: Producto[],
   deudas: DeudaConocida[] = [],
+  /**
+   * Una cuenta personal no vende. Sin esto, «cobré mi sueldo» se parece
+   * bastante a una venta y el modelo la elegiría — cargando un movimiento
+   * que espera productos y mueve stock en una cuenta que no tiene ni una
+   * cosa ni la otra.
+   */
+  esPersonal = false,
+  /**
+   * Las categorías de gasto de este rubro, que salen de la base
+   * (`categorias_de_rubro`). Sugerir «Publicidad» a un ganadero es tan inútil
+   * como sugerirle «Sanidad» a una perfumería: la persona termina metiendo
+   * el gasto en el casillero equivocado, y después los reportes mienten.
+   */
+  categorias: CategoriaSugerida[] = [],
 ) {
   // El costo NO va en el prompt: la base lo asigna sola al registrar la venta.
   // Mandarlo sería filtrarlo sin necesidad.
@@ -88,10 +105,120 @@ export function instrucciones(
     ? catalogo.slice(0, 120).map((p) => `- ${p.nombre} | id=${p.id} | precio=${p.precio}`).join('\n')
     : '(el catálogo está vacío)';
 
+  // Con las pistas, no solo el nombre: «veinte bolsas de maíz» caía en
+  // «Otros» hasta que el modelo supo que el maíz de un ganadero es comida de
+  // animales. Un nombre suelto no alcanza para clasificar bien.
+  const listaCategorias = categorias.length
+    ? categorias.map((c) => (c.pistas ? `"${c.nombre}" (${c.pistas})` : `"${c.nombre}"`)).join('\n     - ')
+    : '"Mercadería", "Transporte", "Comida", "Publicidad", "Servicios", "Alquiler", "Sueldos", "Impuestos", "Otros"';
+
   const listaDeudas = deudas.length
     ? deudas.slice(0, 40).map((d) =>
         `- ${d.nombre}${d.acreedor ? ` (${d.acreedor})` : ''} | id=${d.id} | falta=${d.saldo}`).join('\n')
     : '(no hay deudas cargadas)';
+
+  if (esPersonal) {
+    return `Sos el asistente de finanzas personales de alguien en Paraguay. Convertís lenguaje cotidiano en un movimiento financiero estructurado.
+
+FECHA DE HOY: ${hoy}
+MONEDA: ${moneda}
+
+DEUDAS YA CARGADAS:
+${listaDeudas}
+
+ESTA ES UNA CUENTA PERSONAL, NO UN NEGOCIO.
+
+Quien te habla no vende nada: lleva sus propias finanzas. Anota su sueldo,
+lo que gasta y lo que debe.
+
+REGLAS:
+
+1. TIPO — solo existen CUATRO. "venta" NO existe acá, nunca la uses.
+   - "ingreso": entró plata. El sueldo, un aguinaldo, un trabajo extra, algo
+     que le devolvieron, plata que le prestaron y no tiene que devolver.
+   - "gasto": salió plata. Comida, transporte, alquiler, farmacia, ropa,
+     servicios, salidas.
+   - "deuda": DEBE plata. No entró ni salió nada ahora: se está anotando una
+     obligación.
+   - "pago_deuda": está pagando una cuota o parte de una deuda YA cargada.
+
+   OJO con el sueldo: "cobré mi sueldo", "me pagaron", "entraron 3 millones"
+   son INGRESO. Aunque suene a que le pagaron por algo, no es una venta:
+   en esta cuenta no se vende.
+
+2. DEUDA vs INGRESO — la confusión más cara.
+   La pregunta que decide: ¿la plata ENTRÓ ahora, o está contando lo que DEBE?
+
+   Son DEUDA:
+   - "debo tres millones de la tarjeta"                    → deuda
+   - "saqué un préstamo de diez millones en doce cuotas"   → deuda
+   - "le debo un millón a mi hermano"                      → deuda
+
+   Son PAGO_DEUDA:
+   - "pagué la cuota de la tarjeta, quinientos mil"        → pago_deuda
+   - "aboné un millón del préstamo"                        → pago_deuda
+
+   Es INGRESO:
+   - "cobré mi sueldo, cuatro millones"                    → ingreso
+   - "me devolvieron doscientos mil"                       → ingreso
+
+   Si la frase tiene "debo", "tengo una deuda", "saqué un préstamo" o "me
+   fiaron", es DEUDA. Nunca ingreso.
+
+3. CAMPOS DE LA DEUDA
+   Cuando el tipo es "deuda", completá el objeto "deuda":
+   - clase: "tarjeta" si menciona tarjeta; "prestamo" si dice préstamo,
+     financiera o banco; "proveedor" si le debe a un comercio; "otro" si no
+     queda claro (por ejemplo, plata que le debe a una persona).
+   - acreedor: a quién le debe, SOLO si lo dice. Si no, null. NUNCA lo saques
+     de la lista de arriba: esa lista sirve para reconocer pagos de deudas que
+     ya existen, no para completar una deuda nueva.
+   - cuotas y monto_cuota: solo si los dice. Si no, null.
+   - vence_el: solo si menciona una fecha concreta. Si no, null.
+   - "monto" es el TOTAL de la deuda.
+   - deuda_id: null.
+   - Si se parece mucho a una deuda que YA está en la lista, avisalo en
+     "aviso": cargar dos veces la misma hace parecer que se debe el doble.
+
+   Cuando el tipo es "pago_deuda":
+   - deuda_id: el id EXACTO de la lista que mejor coincida. Si ninguna
+     coincide con claridad, dejalo en null y explicá la duda en "aviso".
+   - "monto" es lo que pagó.
+
+   Para "gasto" e "ingreso", TODO el objeto "deuda" va en null.
+
+4. MONTOS EN GUARANÍES — prestá mucha atención:
+   - "150 mil", "150 lucas", "150k"  → 150000
+   - "2 millones", "2 palos"          → 2000000
+   - "1 millón y medio"               → 1500000
+   - "25 mil quinientos"              → 25500
+   - Nunca devuelvas separadores de miles ni símbolos: solo el número.
+   ${moneda !== 'PYG' ? `- OJO: la moneda es ${moneda}, los montos chicos SÍ pueden ser literales.` : ''}
+
+5. "items" SIEMPRE va vacío: []. Acá no hay productos.
+
+6. FECHA
+   - Sin referencia temporal → hoy (${hoy}).
+   - "ayer", "anteayer", "el lunes" → calculá la fecha real en YYYY-MM-DD.
+
+7. CATEGORÍA
+   - Gastos: elegí una corta y clara: "Comida", "Transporte", "Alquiler",
+     "Servicios", "Salud", "Educación", "Ropa", "Salidas", "Otros".
+   - Ingresos: "Sueldo" si es el sueldo, si no "Otros ingresos".
+
+8. CONFIANZA (0 a 1)
+   - 0.9+ si el monto y el concepto están claros.
+   - 0.5-0.7 si tuviste que asumir el monto o la escala.
+   - Menos de 0.5 si el mensaje es confuso; explicá la duda en "aviso" con
+     una frase corta en español rioplatense.
+   - "aviso" es null cuando todo está claro.
+
+9. DESCRIPCIÓN
+   - Corta y concreta. Ej: "Sueldo de agosto", "Supermercado".
+   - En una deuda es el NOMBRE con el que la va a reconocer en la lista:
+     "Tarjeta Visa", "Préstamo del banco". Sin el monto adentro.
+   - Nunca inventes datos que no estén en el mensaje.`;
+  }
 
   return `Sos el asistente contable de un negocio pequeño en Paraguay. Convertís lenguaje cotidiano en un movimiento financiero estructurado.
 
@@ -129,6 +256,17 @@ REGLAS:
    Son PAGO_DEUDA:
    - "pagué la cuota de la tarjeta, quinientos mil"              → pago_deuda
    - "aboné un millón del préstamo del banco"                    → pago_deuda
+
+   OJO: «pagar» solo NO alcanza para que sea pago_deuda. Casi todo lo que
+   uno paga es un GASTO común:
+   - "le pagué al peón un millón"                                → gasto
+   - "pagué el flete"                                            → gasto
+   - "pagué las vacunas"                                         → gasto
+   - "pagué la luz"                                              → gasto
+
+   Es pago_deuda SOLO si se refiere a una deuda de la lista de arriba, o si
+   dice claramente "cuota", "tarjeta", "préstamo" o "financiera". Si no hay
+   ninguna deuda cargada, es casi seguro que NO es pago_deuda.
 
    Es INGRESO de verdad:
    - "me devolvieron doscientos mil"                             → ingreso
@@ -194,7 +332,10 @@ REGLAS:
 
 6. CATEGORÍA
    - Ventas → "Ventas".
-   - Gastos → elegí una corta y clara: "Mercadería", "Transporte", "Comida", "Publicidad", "Servicios", "Alquiler", "Sueldos", "Impuestos", "Otros".
+   - Gastos → elegí una de estas, mirando lo que hay entre paréntesis:
+     - ${listaCategorias}
+     Si ninguna encaja de verdad, escribí una corta y clara: es mejor una
+     categoría nueva que meter el gasto en el casillero equivocado.
 
 7. CONFIANZA (0 a 1)
    - 0.9+ si el monto y el concepto están explícitos y claros.

@@ -24,10 +24,26 @@ export interface Empresa {
    */
   plan: string;
   permitir_stock_negativo: boolean;
+  /**
+   * 'personal' = finanzas propias, sin ventas ni productos.
+   * 'emprendedor' = el negocio completo.
+   * De acá cuelgan el largo de la prueba, los planes que se muestran y
+   * qué pantallas existen.
+   */
+  tipo_cuenta: TipoCuenta;
+  /** Solo tiene sentido en una cuenta de negocio. Ver src/lib/rubros.ts. */
+  rubro: Rubro;
   creada_por: string;
   created_at: string;
 }
 
+export type TipoCuenta = 'personal' | 'emprendedor';
+/**
+ * El rubro adapta vocabulario, categorías sugeridas y qué secciones existen.
+ * NO es un permiso: lo que protege datos sigue siendo RLS y los roles.
+ * Ver migración 021 y src/lib/rubros.ts.
+ */
+export type Rubro = 'comercio' | 'ganaderia' | 'agricultura' | 'servicios';
 export type PlanEfectivo = 'gratis' | 'pro' | 'negocio';
 export type PeriodoCobro = 'mensual' | 'anual';
 export type EstadoSuscripcion = 'activa' | 'prueba' | 'vencida' | 'cancelada' | 'morosa';
@@ -40,6 +56,12 @@ export interface LimitesPlan {
   adjuntos: boolean;
   excel: boolean;
   avisos: boolean;
+  /**
+   * Si es false, la cuenta está vencida: se ve todo y se baja el Excel, pero
+   * no se carga nada nuevo. Lo aplica PostgreSQL con triggers, no la
+   * pantalla — acá solo sirve para avisar antes del choque. Ver migración 018.
+   */
+  escritura: boolean;
 }
 
 export interface EstadoDelPlan {
@@ -209,6 +231,80 @@ export interface CapturaInterpretada {
   transcripcion?: string | null;
 }
 
+
+/**
+ * Una cuenta vista desde el panel del dueño del sistema.
+ *
+ * Fijate qué NO hay acá: ni un monto, ni una venta, ni una deuda. Solo lo
+ * necesario para administrar el cobro, más señales de uso (cuántos
+ * movimientos, cuándo fue el último, cuánta IA consumió) que no dicen nada
+ * del negocio de nadie. Ver la migración 016.
+ */
+export interface CuentaAdmin {
+  empresa_id: string;
+  nombre: string;
+  tipo_cuenta: TipoCuenta;
+  moneda: string;
+  creada: string;
+  propietario: string;
+  correo: string;
+  /** El que manda: lo calcula la base mirando estado y fechas. */
+  plan: PlanEfectivo;
+  /** Lo que dice la columna, que puede estar vencido. Solo para depurar. */
+  plan_guardado: string;
+  estado: EstadoSuscripcion;
+  periodo_fin: string | null;
+  prueba_fin: string | null;
+  /** Negativo = ya venció. Es el número por el que se ordena la lista. */
+  dias_restantes: number | null;
+  miembros: number;
+  movimientos: number;
+  ultima_actividad: string | null;
+  ia_usada: number;
+  ia_tope: number;
+}
+
+/**
+ * Las finanzas de Orden mismo, para el panel.
+ *
+ * Salen de los mismos movimientos que ve cualquier cliente: no hay una
+ * contabilidad paralela. Ver migración 019.
+ */
+export type FinanzasOrden =
+  | { configurada: false }
+  | {
+      configurada: true;
+      empresa_id: string;
+      nombre: string;
+      moneda: string;
+      cobrado_mes: number;
+      cobrado_total: number;
+      cobros_mes: number;
+      ingresos_mes: number;
+      gastos_mes: number;
+      deuda_total: number;
+      deudas_vencidas: number;
+    };
+
+export interface ResumenPanel {
+  cuentas: number;
+  personales: number;
+  comercios: number;
+  en_prueba: number;
+  pagando: number;
+  vencidas: number;
+  vencen_semana: number;
+  ia_mes: number;
+}
+
+/** Una acción del panel, para el historial de una cuenta. */
+export interface AccionAdmin {
+  accion: string;
+  detalle: Record<string, any>;
+  cuando: string;
+  quien: string;
+}
+
 /** Un respaldo colgado de un movimiento. Ver migración 007. */
 export interface Adjunto {
   id: string;
@@ -270,6 +366,13 @@ export interface CierreDelDia {
 }
 
 export interface Precio {
+  /**
+   * El mismo plan cuesta distinto según a quién se le vende: una cuenta
+   * personal y un comercio pueden estar los dos en `pro` y pagar distinto,
+   * porque no reciben el mismo valor. El plan decide QUÉ SE PUEDE HACER;
+   * este par decide CUÁNTO SE PAGA. Ver migración 017.
+   */
+  tipo_cuenta: TipoCuenta;
   plan: 'pro' | 'negocio';
   moneda: string;
   periodo: PeriodoCobro;

@@ -249,31 +249,34 @@ const leerRacha = (db, uid, empresaId) =>
     ok('en prueba el tope es el de pro', enPrueba.tope, 600);
     ok('y arranca en cero', enPrueba.usados, 0);
 
-    // La bajamos a gratis para probar el tope chico.
-    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [F.empresaId]));
-
-    const gratis = await H.comoUsuario(db, F.uid, () =>
-      db.query('select public.uso_ia_actual($1) u', [F.empresaId]).then((x) => x.rows[0].u));
-    ok('en gratis el tope es veinte', gratis.tope, 20);
-
-    for (let i = 0; i < 20; i++) {
+    // Gastamos algunas mientras está viva, para tener un contador con historia.
+    for (let i = 0; i < 5; i++) {
       await H.comoUsuario(db, F.uid, () => db.query('select public.consumir_credito_ia($1)', [F.empresaId]));
     }
 
+    // La vencemos. Desde la 018, `gratis` es CUENTA VENCIDA y el tope de IA
+    // es CERO: si igual no va a poder guardar el movimiento, gastar créditos
+    // de OpenAI para producir un borrador que después rebota es tirar plata.
+    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [F.empresaId]));
+
+    const vencida = await H.comoUsuario(db, F.uid, () =>
+      db.query('select public.uso_ia_actual($1) u', [F.empresaId]).then((x) => x.rows[0].u));
+    ok('vencida, el tope de IA es cero', vencida.tope, 0);
+
     const pasado = await H.comoUsuario(db, F.uid, () =>
       db.query('select public.consumir_credito_ia($1) c', [F.empresaId]).then((x) => x.rows[0].c));
-    ok('la captura veintiuno no se permite', pasado.permitido, false);
-    ok('y el contador no se pasó del tope', pasado.usados, 20);
+    ok('y no se permite ni una captura', pasado.permitido, false);
 
-    ok('en la tabla tampoco',
-      (await db.query('select usados from public.uso_ia where empresa_id=$1', [F.empresaId])).rows[0].usados, 20);
+    ok('el contador no se movió',
+      (await db.query('select usados from public.uso_ia where empresa_id=$1', [F.empresaId])).rows[0].usados, 5);
 
-    // Al pasar a un plan pago, el cupo se abre con el mismo contador.
+    // Al pagar, el cupo se abre y el contador sigue donde estaba: los meses
+    // se cuentan por período, no por plan.
     await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'pro','activa')", [F.empresaId]));
     const conPro = await H.comoUsuario(db, F.uid, () =>
       db.query('select public.consumir_credito_ia($1) c', [F.empresaId]).then((x) => x.rows[0].c));
     ok('con pro vuelve a permitir', conPro.permitido, true);
-    ok('y sigue contando desde donde iba', conPro.usados, 21);
+    ok('y sigue contando desde donde iba', conPro.usados, 6);
 
     rechazado('nadie gasta créditos de otra empresa',
       await H.intentar(db, A.uid, () => db.query('select public.consumir_credito_ia($1)', [F.empresaId])),
@@ -290,14 +293,51 @@ const leerRacha = (db, uid, empresaId) =>
   // ===================================================================
   {
     const precios = (await db.query('select public.lista_precios($1) p', ['PYG'])).rows[0].p;
-    ok('hay cuatro precios en guaraníes', precios.length, 4);
-    ok('pro mensual en guaraníes',
-      Number(precios.find((x) => x.plan === 'pro' && x.periodo === 'mensual').importe), 35000);
-    ok('el anual da dos meses gratis',
-      Number(precios.find((x) => x.plan === 'pro' && x.periodo === 'anual').importe), 350000);
-
     const dolares = (await db.query('select public.lista_precios($1) p', ['USD'])).rows[0].p;
-    ok('y también están en dólares', dolares.length, 4);
+    const buscar = (lista, tipo, plan, periodo) => Number(
+      lista.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === periodo).importe);
+
+    // Dos para la cuenta personal (mensual y anual) y cuatro para comercio.
+    ok('hay seis precios en guaraníes', precios.length, 6);
+    ok('la cuenta personal', buscar(precios, 'personal', 'pro', 'mensual'), 60000);
+    ok('el Pro de un comercio', buscar(precios, 'emprendedor', 'pro', 'mensual'), 190000);
+    ok('y el Premium, desde', buscar(precios, 'emprendedor', 'negocio', 'mensual'), 250000);
+
+    // LA REGLA, no el número: el mismo plan tiene que costar menos para una
+    // cuenta personal que para un comercio. Si algún día alguien iguala los
+    // precios sin querer, esto lo frena aunque los importes hayan cambiado.
+    ok('el mismo plan cuesta menos a una persona que a un comercio',
+      buscar(precios, 'personal', 'pro', 'mensual') < buscar(precios, 'emprendedor', 'pro', 'mensual'),
+      true);
+
+    // El anual son diez meses por doce, en los dos públicos. El cartel de
+    // «dos meses gratis» sale de esta cuenta, así que tiene que dar exacto.
+    ok('el anual personal da un mes de regalo',
+      buscar(precios, 'personal', 'pro', 'anual') / buscar(precios, 'personal', 'pro', 'mensual'), 11);
+    ok('y el anual de comercio también',
+      buscar(precios, 'emprendedor', 'pro', 'anual') / buscar(precios, 'emprendedor', 'pro', 'mensual'), 11);
+
+    // LA REGLA de los dólares: el mismo cambio para todos los planes. Si
+    // alguien toca un precio suelto sin mirar los otros, esto lo frena.
+    const dolar = (tipo, plan) => buscar(precios, tipo, plan, 'mensual')
+      / Number(dolares.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === 'mensual').importe);
+    ok('Pro y Premium usan el mismo cambio',
+      Math.abs(dolar('emprendedor', 'pro') - dolar('emprendedor', 'negocio')) < 250, true);
+
+    // A una cuenta personal no se le ofrece el plan de un local con vendedores.
+    const soloPersonal = (await db.query('select public.lista_precios($1,$2) p', ['PYG', 'personal'])).rows[0].p;
+    ok('filtrando por personal vienen solo los suyos', soloPersonal.length, 2);
+    ok('y ninguno es el plan de comercio',
+      soloPersonal.some((x) => x.plan === 'negocio'), false);
+
+    ok('cada vendedor de más tiene precio',
+      Number((await db.query("select public.precio_por_vendedor('PYG') v")).rows[0].v), 60000);
+
+    ok('y también están en dólares', dolares.length, 6);
+    ok('la cuenta personal en dólares',
+      buscar(dolares, 'personal', 'pro', 'mensual'), 11);
+    ok('el Pro de un comercio en dólares',
+      buscar(dolares, 'emprendedor', 'pro', 'mensual'), 32);
 
     rechazado('nadie cambia un precio desde el cliente',
       await H.intentar(db, A.uid, () => db.query("update public.precios set importe = 1")),

@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   // RLS: si no es miembro de la empresa, esta consulta vuelve vacía.
   const { data: empresa } = await supabase
     .from('empresas')
-    .select('id, nombre, moneda')
+    .select('id, nombre, moneda, tipo_cuenta, rubro')
     .eq('id', empresaId)
     .maybeSingle();
   if (!empresa) return NextResponse.json({ error: 'No tenés acceso a esta empresa.' }, { status: 403 });
@@ -73,7 +73,10 @@ export async function GET(request: Request) {
     }
 
     const libro = construirLibro({
-      empresa: { nombre: empresa.nombre, moneda: empresa.moneda },
+      empresa: {
+        nombre: empresa.nombre, moneda: empresa.moneda,
+        tipo_cuenta: empresa.tipo_cuenta, rubro: empresa.rubro,
+      },
       desde,
       hasta,
       resumen,

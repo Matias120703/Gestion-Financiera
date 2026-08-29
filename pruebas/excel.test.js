@@ -148,6 +148,63 @@ const productosBd = [
   ok('pero el vendido del día figura', diaSc.getCell('C7').value, 300000);
 
   console.log('\ntamaño del archivo:', fs.statSync(ruta).size, 'bytes');
+  // ---- Una cuenta personal no habla de ventas ----
+  //
+  // <<No se registraron ventas en este periodo>> acusaba a la persona de no
+  // hacer algo que el sistema ni siquiera le ofrece: en una cuenta personal
+  // no se vende nada. Y un reporte que solo senala lo que falta no invita a
+  // volver a abrirlo.
+  const gastoSuelto = { ...base, id:'g1', tipo:'gasto', fecha:'2026-08-10', descripcion:'Supermercado',
+    categoria:'Comida', subtotal:80000, monto:80000, costo_total:0, metodo_pago:'efectivo',
+    movimiento_items:[] };
+
+  const textoDelResumen = async (empresa, archivo) => {
+    const libro = libroDe({ empresa, desde:'2026-08-10', hasta:'2026-08-10', movimientos:[gastoSuelto] });
+    const r = path.join(__dirname, '..', '.compilado', archivo);
+    await libro.xlsx.writeFile(r);
+    const leido = new ExcelJS.Workbook();
+    await leido.xlsx.readFile(r);
+    let texto = '';
+    leido.getWorksheet('Resumen').eachRow((fila) => {
+      fila.eachCell((c) => { if (typeof c.value === 'string') texto += c.value + ' '; });
+    });
+    return texto;
+  };
+
+  const tPersonal = await textoDelResumen(
+    { nombre:'Mis finanzas', moneda:'PYG', tipo_cuenta:'personal' }, 'personal.xlsx');
+  ok('una cuenta personal no dice <<no se registraron ventas>>',
+    /no se registraron ventas/i.test(tPersonal), false);
+  ok('y en cambio empuja a seguir cargando',
+    /anotá tu sueldo|contale al sistema|seguí cargando/i.test(tPersonal), true);
+
+  // Un comercio sin ventas SI lo dice: ahi el dato es real y es un problema.
+  const tComercio = await textoDelResumen(
+    { nombre:'Perfumeria', moneda:'PYG', tipo_cuenta:'emprendedor' }, 'comercio.xlsx');
+  ok('un comercio sin ventas si lo dice',
+    /no se registraron ventas/i.test(tComercio), true);
+  // ---- En ciclo largo no hay hoja «Dia por dia» ----
+  //
+  // Para una ganaderia serian 365 filas en cero con tres picos. Una hoja
+  // vacia no informa: ocupa y hace dudar del resto del reporte.
+  const hojasDe = async (empresa, archivo) => {
+    const libro = libroDe({ empresa, desde:'2026-08-01', hasta:'2026-08-10', movimientos:[gastoSuelto] });
+    const r = path.join(__dirname, '..', '.compilado', archivo);
+    await libro.xlsx.writeFile(r);
+    const leido = new ExcelJS.Workbook();
+    await leido.xlsx.readFile(r);
+    return leido.worksheets.map((h) => h.name);
+  };
+
+  const hojasCampo = await hojasDe(
+    { nombre:'Estancia', moneda:'PYG', rubro:'ganaderia' }, 'ganaderia.xlsx');
+  ok('una ganaderia NO trae la hoja dia por dia',
+    hojasCampo.includes('Día por día'), false);
+  ok('pero si trae el resto', hojasCampo.includes('Resumen') && hojasCampo.includes('Gastos'), true);
+
+  const hojasTienda = await hojasDe(
+    { nombre:'Almacen', moneda:'PYG', rubro:'comercio' }, 'comercio-hojas.xlsx');
+  ok('un comercio si la trae', hojasTienda.includes('Día por día'), true);
   console.log(fallos===0 ? '>>> EXCEL OK' : `>>> ${fallos} FALLAS`);
   process.exit(fallos?1:0);
 })();

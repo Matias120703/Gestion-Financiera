@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
-import type { CapturaInterpretada, DeudaInterpretada, ItemInterpretado, Origen, TipoCaptura } from '@/lib/tipos';
+import type { CapturaInterpretada, DeudaInterpretada, ItemInterpretado, Origen, TipoCaptura, TipoCuenta } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
 import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
 import { useTextos } from '@/i18n/cliente';
@@ -31,12 +31,19 @@ function mimeSoportado(): string {
 }
 
 export function BotonCaptura({
-  empresaId, moneda, guardaComprobantes = false,
+  empresaId, moneda, guardaComprobantes = false, tipoCuenta = 'emprendedor',
 }: {
   empresaId: string;
   moneda: string;
   /** Del plan, no de la interfaz: la base rechaza el adjunto igual si no toca. */
   guardaComprobantes?: boolean;
+  /**
+   * En una cuenta personal no existe «venta». El servidor ya lo impone —el
+   * prompt no la ofrece y el saneo la convertiría en ingreso—, pero el
+   * selector de la pantalla de revisión tampoco tiene que mostrarla: ofrecer
+   * a mano lo que el sistema no acepta es prometer algo que va a fallar.
+   */
+  tipoCuenta?: TipoCuenta;
 }) {
   const router = useRouter();
   const ruta = usePathname();
@@ -534,6 +541,7 @@ export function BotonCaptura({
             {modo === 'revisar' && borrador && (
               <Revision
                 borrador={borrador} moneda={moneda} error={error} guardando={guardando} paso={paso}
+                tipoCuenta={tipoCuenta}
                 deudas={deudas} crearGasto={crearGasto} onCrearGasto={setCrearGasto}
                 onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
               />
@@ -561,7 +569,7 @@ function Opcion({ titulo, detalle, icono, onClick }: { titulo: string; detalle: 
 }
 
 function Revision({
-  borrador, moneda, error, guardando, paso, deudas, crearGasto, onCrearGasto,
+  borrador, moneda, error, guardando, paso, tipoCuenta, deudas, crearGasto, onCrearGasto,
   onCambio, onCancelar, onGuardar,
 }: {
   borrador: CapturaInterpretada;
@@ -569,6 +577,7 @@ function Revision({
   error: string;
   guardando: boolean;
   paso: string;
+  tipoCuenta: TipoCuenta;
   deudas: DeudaBreve[];
   crearGasto: boolean;
   onCrearGasto: (v: boolean) => void;
@@ -579,6 +588,7 @@ function Revision({
   const dec = decimalesDe(moneda);
   const bajaConfianza = (borrador.confianza ?? 1) < 0.65;
 
+  const esCuentaPersonal = tipoCuenta === 'personal';
   const esDeuda = borrador.tipo === 'deuda';
   const esPago = borrador.tipo === 'pago_deuda';
   const infoDeuda = borrador.deuda ?? DEUDA_VACIA;
@@ -673,9 +683,9 @@ function Revision({
         <div className={esDeuda ? 'col-span-2' : ''}>
           <label className="etiqueta">Tipo</label>
           <select className="campo" value={borrador.tipo} onChange={(e) => setTipo(e.target.value as TipoCaptura)}>
-            <option value="venta">Venta</option>
+            {!esCuentaPersonal && <option value="venta">Venta</option>}
             <option value="gasto">Gasto</option>
-            <option value="ingreso">Otro ingreso</option>
+            <option value="ingreso">{esCuentaPersonal ? 'Ingreso' : 'Otro ingreso'}</option>
             <option value="deuda">Deuda</option>
             <option value="pago_deuda">Pago de deuda</option>
           </select>

@@ -142,7 +142,10 @@ const contar = (db, tabla, empresaId) =>
   // ===================================================================
   {
     const B = await H.montarEmpresa(db, { email: 'duenio@beta.com', nombre: 'Beta' });
-    await H.comoServicio(db, () => db.query("select public.aplicar_suscripcion($1,'gratis')", [B.empresaId]));
+    // Se queda en la prueba de pro, que es donde nace. Antes se la bajaba a
+    // gratis para probar el tope chico, pero desde la 018 gratis es CUENTA
+    // VENCIDA y no permite ni una captura — y lo que se prueba acá no tiene
+    // nada que ver con el plan: es que vaciar el negocio no borre el contador.
 
     for (let i = 0; i < 5; i++) {
       await H.comoUsuario(db, B.uid, () => db.query('select public.consumir_credito_ia($1)', [B.empresaId]));

@@ -1,6 +1,7 @@
 import { contextoObligatorio } from '@/lib/sesion';
 import { BarraSuperior, NavInferior, NavLateral } from '@/components/Navegacion';
 import { BotonCaptura } from '@/components/CapturaInteligente';
+import { AvisoCuenta } from '@/components/AvisoCuenta';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,16 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         />
 
         <main className="flex-1 px-4 pb-28 pt-5 lg:px-7 lg:pb-10">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <div className="mx-auto w-full max-w-6xl">
+            {/* Va en el layout y no en cada pantalla: la cuenta vencida no es
+                un asunto del panel ni de gastos, es del sistema entero. */}
+            <AvisoCuenta
+              puedeCargar={ctx.limites?.escritura ?? true}
+              enPrueba={ctx.suscripcion?.en_prueba ?? false}
+              diasRestantes={ctx.suscripcion?.dias_restantes ?? 99}
+            />
+            {children}
+          </div>
         </main>
 
         {/* `guardaComprobantes` sale del plan que calculó la base, no de una
@@ -31,8 +41,9 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
           empresaId={ctx.empresa.id}
           moneda={ctx.empresa.moneda}
           guardaComprobantes={ctx.limites?.adjuntos ?? false}
+          tipoCuenta={ctx.empresa.tipo_cuenta}
         />
-        <NavInferior />
+        <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} />
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import {
 } from '@/lib/precios';
 import type { PeriodoCobro } from '@/lib/tipos';
 import { SelectorCobro } from '@/components/SelectorCobro';
+import { BotonSuscribirme, BotonCotizar } from '@/components/BotonSuscribirme';
 import { BotonPagar } from '@/components/BotonPagar';
 
 export const dynamic = 'force-dynamic';
@@ -39,9 +40,19 @@ export default async function PaginaPlan({
   const moneda = monedaDeCobro(ctx.idioma, typeof searchParams.moneda === 'string' ? searchParams.moneda : null);
   const periodo: PeriodoCobro = searchParams.periodo === 'anual' ? 'anual' : 'mensual';
 
-  const precios = await traerPrecios(moneda);
+  const precios = await traerPrecios(moneda, ctx.empresa.tipo_cuenta);
+  // Una cuenta personal tiene un solo plan pago. Ofrecerle el de un local
+  // con vendedores sería venderle algo que no puede usar.
+  const planesVisibles: PlanPago[] = ctx.empresa.tipo_cuenta === 'personal'
+    ? ['pro']
+    : ['pro', 'negocio'];
   const sus = ctx.suscripcion;
   const uso = ctx.capturasIA;
+
+  // Mientras el cobro sea por transferencia, el camino es WhatsApp. Si algún
+  // día se enchufa una pasarela, con quitar el número vuelve solo el botón de
+  // pago: las dos rutas conviven sin tocar nada más.
+  const whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP ?? '').replace(/D/g, '') || null;
 
   const regalo = mesesDeRegalo(precioDe(precios, 'pro', 'mensual'), precioDe(precios, 'pro', 'anual'));
 
@@ -102,27 +113,26 @@ export default async function PaginaPlan({
         etiquetaAhorro={regalo > 0 ? t.plan.ahorroAnual : ''}
       />
 
-      {/* ---------------- Los tres planes ---------------- */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Tarjeta
-          nombre={t.plan.gratis}
-          precio={dinero(0, moneda, true, locale)}
-          porPeriodo=""
-          actual={ctx.planEfectivo === 'gratis'}
-          etiquetaActual={t.plan.actual}
-          incluye={t.plan.incluye}
-          puntos={[
-            t.plan.historialCompleto,
-            t.plan.soloManual,
-            t.plan.capturasMes(LIMITES_VISIBLES.gratis.capturas),
-            t.plan.personas(LIMITES_VISIBLES.gratis.miembros),
-          ]}
-        />
-
-        {(['pro', 'negocio'] as PlanPago[]).map((plan) => {
+      {/* ---------------- Los planes ----------------
+          Ya no aparece una tarjeta «Gratis». Desde la migración 018, gratis
+          dejó de ser un plan y pasa a significar CUENTA VENCIDA: se ve todo y
+          se baja el Excel, pero no se carga nada. Ofrecerlo como si fuera una
+          opción era invitar a elegir el estado de «no poder trabajar». */}
+      <div className={`grid gap-4 ${planesVisibles.length === 1 ? 'sm:max-w-md' : 'md:grid-cols-2'}`}>
+        {planesVisibles.map((plan) => {
           const precio = precioDe(precios, plan, periodo);
           const limites = LIMITES_VISIBLES[plan];
-          const esActual = ctx.planEfectivo === plan;
+          /**
+           * «Tu plan actual» solo si LO ESTÁ PAGANDO.
+           *
+           * Acá había un error que costaba plata: durante la prueba el plan
+           * efectivo ES `pro`, así que la tarjeta de Pro se marcaba como actual
+           * y se le escondía el botón. Resultado: quien estaba probando —el
+           * único que está por decidir— no tenía forma de suscribirse.
+           *
+           * Estar en prueba no es estar pagando.
+           */
+          const esActual = !sus.en_prueba && ctx.planEfectivo === plan;
 
           return (
             <Tarjeta
@@ -141,7 +151,22 @@ export default async function PaginaPlan({
                 t.plan.conExcel,
               ]}
               pie={
-                esActual ? null : (
+                esActual ? null : whatsapp ? (
+                  // Premium se cotiza: el precio depende de cuántos vendedores,
+                  // así que se manda la pregunta y no un número.
+                  plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
+                    <BotonCotizar whatsapp={whatsapp} empresa={ctx.empresa.nombre} />
+                  ) : (
+                    <BotonSuscribirme
+                      whatsapp={whatsapp}
+                      empresa={ctx.empresa.nombre}
+                      plan={plan === 'pro' ? t.plan.pro : t.plan.negocio}
+                      precio={precio ? dinero(Number(precio.importe), moneda, true, locale) : ''}
+                      periodo={periodo}
+                      etiqueta={sus.en_prueba ? 'Activar este plan' : 'Suscribirme'}
+                    />
+                  )
+                ) : (
                   <BotonPagar
                     plan={plan}
                     periodo={periodo}
@@ -155,6 +180,17 @@ export default async function PaginaPlan({
           );
         })}
       </div>
+
+      {whatsapp && (
+        <div className="tarjeta p-4">
+          <p className="titulo-seccion mb-1.5">Cómo se paga</p>
+          <p className="text-[13.5px] leading-relaxed text-tinta/65">
+            Por transferencia. Tocás el botón, se abre un WhatsApp con nosotros y lo
+            arreglamos ahí mismo: no hace falta cargar ninguna tarjeta. Apenas entra la
+            transferencia te activamos la cuenta y seguís exactamente donde estabas.
+          </p>
+        </div>
+      )}
 
       <p className="text-center text-[12.5px] font-semibold text-tinta/40">
         {t.plan.sinTarjeta} · {t.plan.cancelarCuando}

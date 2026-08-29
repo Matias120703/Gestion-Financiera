@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
+import { fichaDe } from '@/lib/rubros';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { traerResumen, traerRanking, traerSerieDiaria } from '@/lib/agregados';
 import { diasDelRango, diffDias, hoyISO } from '@/lib/fechas';
@@ -10,8 +12,21 @@ import type { Reto } from '@/lib/tipos';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Solo comercio.
+ *
+ * Una cuenta personal no vende ni lleva productos, así que esta pantalla no
+ * existe para ella. Redirige en vez de mostrar un cartel de «no disponible»:
+ * si nunca se ofreció el camino, llegar acá es una URL escrita a mano o un
+ * enlace viejo, y lo útil es dejar a la persona donde sí hay algo.
+ */
 export default async function PaginaReto() {
   const ctx = await contextoObligatorio();
+  // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
+  if (fichaDe(ctx.empresa.rubro).sinSecciones.includes('/reto')) redirect('/panel');
+
+  if (ctx.empresa.tipo_cuenta === 'personal') redirect('/panel');
+
   const supabase = clienteServidor();
   const m = ctx.empresa.moneda;
 

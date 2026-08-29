@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
+import { fichaDe } from '@/lib/rubros';
 import { comparar, traerCierre } from '@/lib/habito';
 import { dinero, dineroCorto, fechaLarga, porcentaje } from '@/lib/formato';
 import { textos } from '@/i18n';
@@ -28,6 +30,9 @@ export default async function PaginaCierre({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+  // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
+  if (fichaDe(ctx.empresa.rubro).sinSecciones.includes('/cierre')) redirect('/panel');
+
   const t = textos();
   const locale = FICHA[ctx.idioma].locale;
   const abrev = t.formato;

@@ -69,7 +69,17 @@ export interface DatosReporte {
    * propietario y administradores. La ruta /api/excel lo verifica antes
    * de llamar acá.
    */
-  empresa: { nombre: string; moneda: string };
+  empresa: {
+    nombre: string;
+    moneda: string;
+    tipo_cuenta?: 'personal' | 'emprendedor';
+    /**
+     * En un negocio de ciclo largo —ganadería, agricultura— la hoja «Día por
+     * día» son trescientas sesenta y cinco filas en cero con tres picos. No
+     * se genera: una hoja vacía no informa, ocupa y hace dudar del resto.
+     */
+    rubro?: string;
+  };
   desde: string;
   hasta: string;
   /**
@@ -94,6 +104,9 @@ export function construirLibro({
   empresa, desde, hasta, resumen, ranking, categorias, serie, movimientos, productosBd,
 }: DatosReporte): ExcelJS.Workbook {
   const moneda = empresa.moneda;
+  const esPersonal = empresa.tipo_cuenta === 'personal';
+  const cicloLargo = !esPersonal
+    && (empresa.rubro === 'ganaderia' || empresa.rubro === 'agricultura');
   const fmt = formatoMoneda(moneda);
   const fmtPorc = '0.0"%"';
   const fmtNum = '#,##0.##';
@@ -224,7 +237,30 @@ export function construirLibro({
       nota(`Se anularon ${r.movimientosAnulados} movimiento(s), de los cuales ${r.ventasAnuladas} son ventas. `
         + 'Figuran en el detalle pero no suman en ningún total.');
     }
-    if (productos.length === 0) nota('No se registraron ventas en este periodo.');
+    /**
+     * Cuando no hay nada que destacar, el Excel dice algo útil en vez de
+     * señalar un vacío.
+     *
+     * «No se registraron ventas en este periodo» está bien para un comercio:
+     * es un dato, y probablemente un problema que hay que mirar. Pero en una
+     * cuenta personal no hay ventas NUNCA —no se vende nada— así que era una
+     * frase que acusaba a la persona de no hacer algo que el sistema ni
+     * siquiera le ofrece.
+     *
+     * Y un reporte que solo señala lo que falta no invita a volver a
+     * abrirlo. Si no hay nada que destacar, conviene que empuje.
+     */
+    if (esPersonal) {
+      if (r.ingresosTotales === 0 && r.gastos === 0) {
+        nota('Todavía no cargaste nada en este periodo. Contale al sistema un gasto por voz y en diez segundos ya tenés tu primer número.');
+      } else if (r.gastos > 0 && r.ingresosTotales === 0) {
+        nota('Cargaste gastos pero ningún ingreso. Anotá tu sueldo y vas a ver de verdad cuánto te queda cada mes.');
+      } else if (r.gananciaNeta > 0) {
+        nota(`Te quedó ${simboloDe(moneda)} ${Math.round(r.gananciaNeta).toLocaleString('es-PY')} en el periodo. Seguí cargando todos los días y en un mes vas a saber exactamente a dónde se te va la plata.`);
+      }
+    } else if (productos.length === 0) {
+      nota('No se registraron ventas en este periodo.');
+    }
   }
 
   // ==========================================================
@@ -455,8 +491,10 @@ export function construirLibro({
 
   // ==========================================================
   // HOJA 5 · DÍA POR DÍA
+  //
+  // No se genera en ciclo largo: ver el comentario de `rubro` arriba.
   // ==========================================================
-  {
+  if (!cicloLargo) {
     const h = libro.addWorksheet('Día por día', {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
