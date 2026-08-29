@@ -1,59 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
-import { LISTA_RUBROS } from '@/lib/rubros';
+import DatosDelNegocio from '@/components/DatosDelNegocio';
+import {
+  DATOS_VACIOS, leerPendiente, limpiarPendiente, telefonoLimpio, telefonoValido,
+  zonaDelNavegador, type DatosRegistro,
+} from '@/lib/registro';
 import { useTextos } from '@/i18n/cliente';
-import type { Rubro } from '@/lib/tipos';
 
+/**
+ * ARMAR LA EMPRESA DE ALGUIEN QUE YA TIENE SESIÓN
+ *
+ * Registrarse de cero pasa por `/crear`, que pregunta todo esto ANTES del
+ * correo y la contraseña. Esta pantalla es la que queda para los tres casos
+ * en que la persona ya entró pero todavía no tiene empresa:
+ *
+ *   · volvió por el enlace de confirmación del correo, así que la sesión
+ *     recién existe ahora;
+ *   · se suma a una empresa que ya existe con un código;
+ *   · algo se cortó en el medio y quedó con cuenta pero sin negocio.
+ *
+ * En el primer caso las respuestas del primer paso están guardadas en el
+ * navegador: se levantan y el formulario aparece completo. Volver a
+ * preguntarle lo mismo a alguien que ya lo contestó es la forma más segura
+ * de que abandone.
+ */
 export default function PaginaEmpezar() {
   const router = useRouter();
   const t = useTextos();
   const [pestania, setPestania] = useState<'crear' | 'unirme'>('crear');
-  /**
-   * Qué tipo de cuenta se está creando.
-   *
-   * Es la decisión más importante de esta pantalla y por eso se pregunta
-   * PRIMERO, antes que el nombre. De acá cuelgan el largo de la prueba, el
-   * precio, y qué pantallas van a existir: un comercio ve ventas y productos,
-   * una cuenta personal no.
-   *
-   * Se puede cambiar después —no se pierde nada— pero elegir bien de entrada
-   * evita que alguien pruebe el sistema equivocado y concluya que no le sirve.
-   */
-  const [tipoCuenta, setTipoCuenta] = useState<'emprendedor' | 'personal'>('emprendedor');
-  /**
-   * En qué anda el negocio.
-   *
-   * Solo se pregunta si es cuenta de negocio: alguien que lleva sus finanzas
-   * personales no tiene rubro. De acá cuelgan las categorías que la IA le va
-   * a sugerir y qué pantallas existen — un ganadero no tiene cierre del día
-   * porque su ganancia no se mide por día.
-   *
-   * Se puede cambiar después en Ajustes sin perder nada.
-   */
-  const [rubro, setRubro] = useState<Rubro>('comercio');
-  /**
-   * De dónde salió esta persona.
-   *
-   * Se pregunta acá y no se deduce después: en el momento la respuesta es
-   * honesta, reconstruida de memoria un mes más tarde no vale nada. Y es la
-   * única forma de saber qué canal trae clientes de verdad antes de gastar
-   * en publicidad.
-   *
-   * Opcional a propósito. Una pregunta obligatoria en el registro es una
-   * puerta más que cruzar, y este dato no vale una cuenta perdida.
-   */
-  const [comoNosConocio, setComoNosConocio] = useState('');
-  const [nombre, setNombre] = useState('');
-  const [moneda, setMoneda] = useState('PYG');
+  const [datos, setDatos] = useState<DatosRegistro>(DATOS_VACIOS);
   const [codigo, setCodigo] = useState('');
-  const [miNombre, setMiNombre] = useState('');
+  const [nombreParaUnirse, setNombreParaUnirse] = useState('');
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+
+  // Lo que contestó antes de confirmar el correo, si llegó por ese camino.
+  useEffect(() => {
+    const guardado = leerPendiente();
+    if (guardado) setDatos(guardado);
+  }, []);
+
+  const cambiar = (parcial: Partial<DatosRegistro>) =>
+    setDatos((d) => ({ ...d, ...parcial }));
+
   function activar(empresaId: string) {
+    limpiarPendiente();
     document.cookie = `${COOKIE_EMPRESA}=${empresaId}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
     router.push('/panel');
     router.refresh();
@@ -62,23 +57,31 @@ export default function PaginaEmpezar() {
   async function crear(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (!datos.nombre.trim()) {
+      setError(datos.tipoCuenta === 'personal' ? t.registro.faltaNombreCuenta : t.registro.faltaNegocio);
+      return;
+    }
+    if (!telefonoValido(datos.telefono)) {
+      setError(t.registro.telefonoRaro);
+      return;
+    }
+
     setCargando(true);
     try {
       const supabase = clienteNavegador();
-      const { data, error } = await supabase.rpc('crear_empresa', {
-        p_nombre: nombre.trim(),
-        p_moneda: moneda,
-        p_nombre_usuario: miNombre.trim() || null,
-        // La zona del navegador. Decide qué día es "hoy" para el cierre y la
-        // racha: un negocio en São Paulo con la hora de Asunción vería el
-        // cierre del día equivocado durante una hora todas las noches. Si el
-        // navegador no la sabe, la base pone Asunción y se corrige en Ajustes.
+      const { data, error: fallo } = await supabase.rpc('crear_empresa', {
+        p_nombre: datos.nombre.trim(),
+        p_moneda: datos.moneda,
+        p_nombre_usuario: datos.miNombre.trim() || null,
         p_zona: zonaDelNavegador(),
-        p_tipo_cuenta: tipoCuenta,
-        p_rubro: tipoCuenta === 'personal' ? 'comercio' : rubro,
-        p_como_nos_conocio: comoNosConocio,
+        p_tipo_cuenta: datos.tipoCuenta,
+        p_rubro: datos.tipoCuenta === 'personal' ? 'comercio' : datos.rubro,
+        p_como_nos_conocio: datos.comoNosConocio,
+        p_telefono: telefonoLimpio(datos.telefono),
+        p_se_dedica: datos.seDedica.trim(),
       });
-      if (error) throw error;
+      if (fallo) throw fallo;
       activar(data as string);
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo crear la empresa.');
@@ -92,11 +95,11 @@ export default function PaginaEmpezar() {
     setCargando(true);
     try {
       const supabase = clienteNavegador();
-      const { data, error } = await supabase.rpc('unirse_empresa', {
+      const { data, error: fallo } = await supabase.rpc('unirse_empresa', {
         p_codigo: codigo.trim().toUpperCase(),
-        p_nombre_usuario: miNombre.trim() || null,
+        p_nombre_usuario: nombreParaUnirse.trim() || null,
       });
-      if (error) throw error;
+      if (fallo) throw fallo;
       activar(data as string);
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo unir a la empresa.');
@@ -113,7 +116,7 @@ export default function PaginaEmpezar() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
-      <div className="w-full max-w-[440px] aparecer">
+      <div className="w-full max-w-[520px] aparecer">
         <div className="mb-7 flex items-center gap-2.5 text-white">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-verde text-lg font-black">o</span>
           <span className="text-lg font-bold tracking-tight">orden</span>
@@ -141,91 +144,17 @@ export default function PaginaEmpezar() {
           </div>
 
           {pestania === 'crear' ? (
-            <form onSubmit={crear} className="mt-5 space-y-4">
-              <div>
-                <label className="etiqueta">{t.pantallas.paraQueLoVasAUsar}</label>
-                <div className="mt-1 grid gap-2">
-                  <Eleccion
-                    activo={tipoCuenta === 'emprendedor'}
-                    onClick={() => setTipoCuenta('emprendedor')}
-                    titulo={t.pantallas.paraMiNegocio}
-                    detalle={t.pantallas.paraMiNegocioDetalle}
-                    prueba={t.pantallas.diasPrueba(20)}
-                  />
-                  <Eleccion
-                    activo={tipoCuenta === 'personal'}
-                    onClick={() => setTipoCuenta('personal')}
-                    titulo={t.pantallas.paraMi}
-                    detalle={t.pantallas.paraMiDetalle}
-                    prueba={t.pantallas.diasPrueba(14)}
-                  />
-                </div>
-              </div>
+            <form onSubmit={crear} className="mt-5" noValidate>
+              <DatosDelNegocio datos={datos} alCambiar={cambiar} />
 
-              {tipoCuenta !== 'personal' && (
-                <div>
-                  <label className="etiqueta" htmlFor="rubro">{t.pantallas.enQueAndas}</label>
-                  <select
-                    id="rubro" className="campo" value={rubro}
-                    onChange={(e) => setRubro(e.target.value as Rubro)}
-                  >
-                    {LISTA_RUBROS.map((r) => (
-                      <option key={r.clave} value={r.clave}>{r.nombre}</option>
-                    ))}
-                  </select>
-                  <p className="mt-1.5 text-[12.5px] leading-snug text-tinta/50">
-                    {LISTA_RUBROS.find((r) => r.clave === rubro)?.ejemplo}
-                    {'. '}
-                    {t.pantallas.rubroDetalle}
-                  </p>
-                </div>
+              {error && (
+                <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">
+                  {error}
+                </p>
               )}
 
-              <div>
-                <label className="etiqueta" htmlFor="nombre">
-                  {tipoCuenta === 'personal' ? t.pantallas.poneleNombre : t.pantallas.nombreDelNegocio}
-                </label>
-                <input id="nombre" className="campo" required maxLength={60}
-                  placeholder={tipoCuenta === 'personal' ? t.pantallas.ejemploPersonal : t.pantallas.ejemploNegocio}
-                  value={nombre}
-                  onChange={(e) => setNombre(e.target.value)} />
-              </div>
-              <div>
-                <label className="etiqueta" htmlFor="moneda">{t.pantallas.moneda}</label>
-                <select id="moneda" className="campo" value={moneda} onChange={(e) => setMoneda(e.target.value)}>
-                  <option value="PYG">{t.pantallas.monedaPYG}</option>
-                  <option value="USD">{t.pantallas.monedaUSD}</option>
-                  <option value="ARS">{t.pantallas.monedaARS}</option>
-                  <option value="BRL">{t.pantallas.monedaBRL}</option>
-                  <option value="EUR">{t.pantallas.monedaEUR}</option>
-                </select>
-              </div>
-              <div>
-                <label className="etiqueta" htmlFor="conocio">{t.pantallas.comoNosConociste}</label>
-                <select
-                  id="conocio" className="campo" value={comoNosConocio}
-                  onChange={(e) => setComoNosConocio(e.target.value)}
-                >
-                  <option value="">{t.pantallas.prefieroNoDecir}</option>
-                  <option value="TikTok">TikTok</option>
-                  <option value="Instagram">Instagram</option>
-                  <option value="Facebook">Facebook</option>
-                  <option value="WhatsApp">WhatsApp</option>
-                  <option value="Un conocido">{t.pantallas.unConocido}</option>
-                  <option value="Google">Google</option>
-                  <option value="Otro">{t.captura.metodoOtro}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="etiqueta" htmlFor="mi-nombre">{t.pantallas.tuNombre}</label>
-                <input id="mi-nombre" className="campo" maxLength={40}
-                  placeholder={tipoCuenta === 'personal' ? t.pantallas.comoTeLlamamos : t.pantallas.comoTeVen}
-                  value={miNombre} onChange={(e) => setMiNombre(e.target.value)} />
-              </div>
-              {error && <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
-              <button className="boton-principal w-full py-3" disabled={cargando}>
-                {cargando ? 'Creando…' : 'Crear y empezar'}
+              <button className="boton-principal mt-6 w-full py-3" disabled={cargando}>
+                {cargando ? t.registro.creandoCuenta : t.pantallas.crearYEmpezar}
               </button>
             </form>
           ) : (
@@ -239,11 +168,11 @@ export default function PaginaEmpezar() {
               <div>
                 <label className="etiqueta" htmlFor="mi-nombre-2">{t.pantallas.tuNombre}</label>
                 <input id="mi-nombre-2" className="campo" maxLength={40} placeholder={t.pantallas.quienCargo}
-                  value={miNombre} onChange={(e) => setMiNombre(e.target.value)} />
+                  value={nombreParaUnirse} onChange={(e) => setNombreParaUnirse(e.target.value)} />
               </div>
               {error && <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
               <button className="boton-principal w-full py-3" disabled={cargando}>
-                {cargando ? 'Entrando…' : 'Unirme'}
+                {cargando ? t.pantallas.entrando : t.pantallas.unirme}
               </button>
             </form>
           )}
@@ -255,46 +184,4 @@ export default function PaginaEmpezar() {
       </div>
     </main>
   );
-}
-
-/** Una de las dos formas de usar Orden, en la pantalla donde se elige. */
-function Eleccion({
-  activo, onClick, titulo, detalle, prueba,
-}: {
-  activo: boolean;
-  onClick: () => void;
-  titulo: string;
-  detalle: string;
-  prueba: string;
-}) {
-  return (
-    <button
-      type="button" onClick={onClick} aria-pressed={activo}
-      className={`rounded-xl border p-3 text-left transition ${
-        activo ? 'border-verde bg-verde-claro/40 ring-1 ring-verde/25' : 'border-borde hover:bg-arena'
-      }`}
-    >
-      <span className="flex items-center justify-between gap-2">
-        <span className="text-[14.5px] font-bold">{titulo}</span>
-        <span className={`pastilla shrink-0 ${activo ? 'bg-verde text-white' : 'bg-arena text-tinta/50'}`}>
-          {prueba}
-        </span>
-      </span>
-      <span className="mt-0.5 block text-[12.5px] leading-snug text-tinta/60">{detalle}</span>
-    </button>
-  );
-}
-
-/**
- * La zona horaria que informa el navegador, o Asunción si no la sabe.
- *
- * Se manda al crear la empresa. La persona la puede corregir después en
- * Ajustes; esto solo evita que el 99% de los casos tengan que hacerlo.
- */
-function zonaDelNavegador(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Asuncion';
-  } catch {
-    return 'America/Asuncion';
-  }
 }

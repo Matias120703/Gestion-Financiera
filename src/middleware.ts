@@ -10,7 +10,9 @@ type CookieEntrante = { name: string; value: string; options?: CookieOptions };
 // que lee alguien antes de decidir si se registra. Si pasaran por el control
 // de sesión, el link que le mandás a un cliente lo tiraría a un login.
 const PUBLICAS = [
-  '/ingresar', '/auth', '/sin-conexion', '/privacidad', '/terminos',
+  // Registrarse es, por definición, algo que se hace sin sesión. Si /crear
+  // no fuera pública, el botón principal de la portada rebotaría al login.
+  '/ingresar', '/crear', '/auth', '/sin-conexion', '/privacidad', '/terminos',
   // Quien se olvidó la contraseña no tiene sesión, por definición. Si estas
   // dos no fueran públicas, el enlace del correo lo rebotaría al login y el
   // circuito no cerraría nunca.
@@ -52,7 +54,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && ruta === '/ingresar') {
+  if (user && (ruta === '/ingresar' || ruta === '/crear')) {
     const url = request.nextUrl.clone();
     url.pathname = '/panel';
     url.search = '';

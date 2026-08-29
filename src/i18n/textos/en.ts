@@ -175,6 +175,8 @@ export const en: Textos = {
     correoEjemplo: 'name@email.com',
     contrasena: 'Password',
     minimoSeis: 'At least 6 characters',
+    mostrarClave: 'Show password',
+    ocultarClave: 'Hide password',
     entrar: 'Sign in',
     crearCuenta: 'Create account',
     unMomento: 'One moment…',
@@ -217,6 +219,36 @@ export const en: Textos = {
     sesionVencida: 'The link expired. Request a new one.',
     cambiada: 'Password changed.',
     entrando: 'Signing you in. Everything of yours is right where it was.',
+  },
+
+  registro: {
+    paso: (n: number, total: number) => `Step ${n} of ${total}`,
+
+    contanos: 'Tell us about you.',
+    contanosBajada: 'Thirty seconds. This is what lets Orden arrive already set up for your kind of work.',
+
+    nombreApellido: 'Full name',
+    nombreApellidoEjemplo: 'What you go by',
+    telefono: 'Phone',
+    telefonoEjemplo: '+595 981 234 567',
+    telefonoDetalle: "It's how we reach you if something happens with your account. We don't hand it to anyone.",
+    aQueTeDedicas: 'What you do',
+    aQueTeDedicasEjemplo: 'Perfume shop, repair shop, cattle ranch…',
+    opcional: 'Optional',
+
+    tuAcceso: 'Now, your login.',
+    tuAccesoBajada: 'This is what gets you into Orden from any phone or computer.',
+    revisaDatos: 'What you told us',
+    editar: 'Edit',
+    crearMiCuenta: 'Create my account',
+    creandoCuenta: 'Creating your account…',
+
+    faltaNombre: 'Add your name to continue.',
+    faltaNegocio: 'The business name is missing.',
+    faltaNombreCuenta: 'Give your account a name.',
+    telefonoRaro: 'That phone number looks incomplete. Check it or leave it empty.',
+    sinCuentaAun: "Don't have an account yet?",
+    empezarAhora: 'Start now',
   },
 
   venta: {
@@ -298,6 +330,9 @@ export const en: Textos = {
     unirmeConCodigo: 'Join with a code',
     codigoEmpresa: 'Business code',
     quienCargo: 'So they know who recorded each sale',
+    crearYEmpezar: 'Create and start',
+    unirme: 'Join',
+    entrando: 'Signing in…',
     cerrarSesion: 'Sign out',
     comoNosConociste: 'How did you hear about us?',
     prefieroNoDecir: 'Rather not say',

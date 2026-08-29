@@ -122,6 +122,49 @@ const suscripcion = (db, id) => db.query(
     'TikTok');
 
   // ═══════════════════════════════════════════════════════════
+  grupo('2b · El registro carga la ficha solo');
+
+  // Migración 023: quien se registra contesta nombre, teléfono y a qué se
+  // dedica ANTES del correo y la contraseña, y eso baja a la ficha sin que
+  // nadie del lado de Orden tenga que preguntarlo por WhatsApp.
+  const uidReg = await H.crearUsuario(db, 'registro@correo.com');
+  let conFicha;
+  await H.comoUsuario(db, uidReg, async () => {
+    const r = await db.query(
+      'select public.crear_empresa($1,$2,$3,$4,$5,$6,$7,$8,$9) as id',
+      ['Taller Aranda', 'PYG', 'Matías Aranda', 'America/Asuncion', 'emprendedor',
+        'servicios', 'ChatGPT', '0981 234-567', 'Taller mecánico']);
+    conFicha = r.rows[0].id;
+  });
+
+  const nueva = (await H.intentar(db, jefe,
+    () => db.query('select public.listar_cuentas() j'))).valor.rows[0].j
+    .find((f) => f.empresa_id === conFicha);
+
+  ok('el nombre y apellido queda de contacto', nueva.contacto, 'Matías Aranda');
+  ok('el teléfono se guarda solo con dígitos', nueva.telefono, '0981234567');
+  ok('y a qué se dedica', nueva.se_dedica, 'Taller mecánico');
+  ok('junto con el canal', nueva.como_nos_conocio, 'ChatGPT');
+  ok('y el rubro elegido', nueva.rubro, 'servicios');
+
+  // Sin respuestas no se crea una fila de ficha: tres campos vacíos en la
+  // lista de clientes no son un dato, son ruido.
+  const uidMudo = await H.crearUsuario(db, 'mudo@correo.com');
+  let sinFicha;
+  await H.comoUsuario(db, uidMudo, async () => {
+    const r = await db.query('select public.crear_empresa($1) as id', ['Anónima']);
+    sinFicha = r.rows[0].id;
+  });
+  ok('sin datos no se crea ficha',
+    (await db.query('select count(*)::int n from public.ficha_cliente where empresa_id=$1', [sinFicha])).rows[0].n,
+    0);
+
+  rechazado('quien se registra no puede escribir la ficha de otro',
+    await H.intentar(db, uidReg, () => db.query(
+      "insert into public.ficha_cliente (empresa_id, contacto) values ($1,'Yo')", [cliente.empresaId])),
+    'denied|permission|policy|row-level');
+
+  // ═══════════════════════════════════════════════════════════
   grupo('3 · Deshacer una activación hecha por error');
 
   const antes = await suscripcion(db, cliente.empresaId);

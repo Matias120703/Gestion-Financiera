@@ -197,6 +197,8 @@ export const es = {
     correoEjemplo: 'nombre@correo.com',
     contrasena: 'Contraseña',
     minimoSeis: 'Mínimo 6 caracteres',
+    mostrarClave: 'Mostrar la contraseña',
+    ocultarClave: 'Ocultar la contraseña',
     entrar: 'Entrar',
     crearCuenta: 'Crear cuenta',
     unMomento: 'Un momento…',
@@ -239,6 +241,44 @@ export const es = {
     sesionVencida: 'El enlace venció. Pedí uno nuevo.',
     cambiada: 'Contraseña cambiada.',
     entrando: 'Te estamos haciendo entrar. Todo lo tuyo sigue donde estaba.',
+  },
+
+  /**
+   * REGISTRO: las dos pantallas de crear la cuenta.
+   *
+   * Primero se pregunta quién es la persona y recién después el correo y la
+   * contraseña. El orden importa: pedirle una contraseña a alguien que
+   * todavía no sabe si el producto le sirve es la forma más rápida de
+   * perderlo.
+   */
+  registro: {
+    paso: (n: number, total: number) => `Paso ${n} de ${total}`,
+
+    contanos: 'Contanos de vos.',
+    contanosBajada: 'Son treinta segundos. Con esto Orden te queda armado para tu trabajo desde el primer día.',
+
+    nombreApellido: 'Nombre y apellido',
+    nombreApellidoEjemplo: 'Cómo te llamás',
+    telefono: 'Teléfono',
+    telefonoEjemplo: '0981 234 567',
+    telefonoDetalle: 'Es por dónde te vamos a escribir si pasa algo con tu cuenta. No se lo damos a nadie.',
+    aQueTeDedicas: 'A qué te dedicás',
+    aQueTeDedicasEjemplo: 'Perfumería, taller mecánico, estancia…',
+    opcional: 'Opcional',
+
+    tuAcceso: 'Ahora, tu acceso.',
+    tuAccesoBajada: 'Con esto entrás a Orden desde cualquier celular o computadora.',
+    revisaDatos: 'Lo que pusiste',
+    editar: 'Editar',
+    crearMiCuenta: 'Crear mi cuenta',
+    creandoCuenta: 'Creando tu cuenta…',
+
+    faltaNombre: 'Escribí tu nombre para seguir.',
+    faltaNegocio: 'Falta el nombre del negocio.',
+    faltaNombreCuenta: 'Ponele un nombre a tu cuenta.',
+    telefonoRaro: 'Ese teléfono parece incompleto. Revisalo o dejalo vacío.',
+    sinCuentaAun: '¿Todavía no tenés cuenta?',
+    empezarAhora: 'Empezá ahora',
   },
 
   /** VENDER: la pantalla de mostrador. */
@@ -324,6 +364,9 @@ export const es = {
     unirmeConCodigo: 'Unirme con código',
     codigoEmpresa: 'Código de la empresa',
     quienCargo: 'Para que sepan quién cargó cada venta',
+    crearYEmpezar: 'Crear y empezar',
+    unirme: 'Unirme',
+    entrando: 'Entrando…',
     cerrarSesion: 'Cerrar sesión',
     comoNosConociste: '¿Cómo nos conociste?',
     prefieroNoDecir: 'Prefiero no decir',

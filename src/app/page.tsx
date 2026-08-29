@@ -123,7 +123,7 @@ export default async function Portada() {
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="/ingresar?crear=1" className="boton-principal px-6 py-3 text-[15px]">
+            <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
               Probar 20 días gratis
             </Link>
             <span className="text-[13.5px] font-semibold text-tinta/45">
@@ -389,7 +389,7 @@ export default async function Portada() {
         </div>
 
         <div className="mt-8">
-          <Link href="/ingresar?crear=1" className="boton-principal px-6 py-3 text-[15px]">
+          <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
             Empezar la prueba gratis
           </Link>
         </div>

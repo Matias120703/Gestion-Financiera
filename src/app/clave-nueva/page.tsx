@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import CampoClave from '@/components/CampoClave';
 import { useTextos } from '@/i18n/cliente';
 
 /**
@@ -133,22 +134,21 @@ export default function PaginaClaveNueva() {
               </h1>
 
               <form onSubmit={guardar} className="mt-6 space-y-4" noValidate>
-                <div>
-                  <label className="etiqueta" htmlFor="clave">{t.acceso.claveNueva}</label>
-                  <input
-                    id="clave" type="password" className="campo" required minLength={6}
-                    autoComplete="new-password" placeholder={t.acceso.minimoSeis}
-                    value={clave} onChange={(e) => setClave(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="etiqueta" htmlFor="repetida">{t.acceso.repetila}</label>
-                  <input
-                    id="repetida" type="password" className="campo" required minLength={6}
-                    autoComplete="new-password" placeholder={t.acceso.laMismaDeArriba}
-                    value={repetida} onChange={(e) => setRepetida(e.target.value)}
-                  />
-                </div>
+                <CampoClave
+                  id="clave"
+                  etiqueta={t.acceso.claveNueva}
+                  valor={clave}
+                  alCambiar={setClave}
+                  autoComplete="new-password"
+                />
+                <CampoClave
+                  id="repetida"
+                  etiqueta={t.acceso.repetila}
+                  valor={repetida}
+                  alCambiar={setRepetida}
+                  autoComplete="new-password"
+                  marcador={t.acceso.laMismaDeArriba}
+                />
 
                 {error && (
                   <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">
