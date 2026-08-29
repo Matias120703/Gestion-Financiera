@@ -9,7 +9,13 @@ type CookieEntrante = { name: string; value: string; options?: CookieOptions };
 // La portada y los legales tienen que verse SIN cuenta: son justamente lo
 // que lee alguien antes de decidir si se registra. Si pasaran por el control
 // de sesión, el link que le mandás a un cliente lo tiraría a un login.
-const PUBLICAS = ['/ingresar', '/auth', '/sin-conexion', '/privacidad', '/terminos'];
+const PUBLICAS = [
+  '/ingresar', '/auth', '/sin-conexion', '/privacidad', '/terminos',
+  // Quien se olvidó la contraseña no tiene sesión, por definición. Si estas
+  // dos no fueran públicas, el enlace del correo lo rebotaría al login y el
+  // circuito no cerraría nunca.
+  '/recuperar', '/clave-nueva',
+];
 
 export async function middleware(request: NextRequest) {
   let respuesta = NextResponse.next({ request });

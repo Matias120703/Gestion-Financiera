@@ -1,0 +1,168 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { clienteNavegador } from '@/lib/supabase/cliente';
+
+/**
+ * PONER LA CONTRASEÑA NUEVA.
+ *
+ * Acá cae la persona al tocar el enlace del correo. Supabase ya la dejó con
+ * una sesión temporal al llegar: por eso alcanza con `updateUser`.
+ *
+ * ESPERAR ANTES DE DECIR QUE EL ENLACE NO SIRVE
+ *
+ * La sesión no está lista en el primer render — el cliente todavía está
+ * leyendo el token que viene en el fragmento de la URL. Si se comprobara al
+ * instante, TODOS verían «enlace vencido» durante un parpadeo, incluso con
+ * un enlace perfecto. Por eso se escucha el evento y solo se da por vencido
+ * cuando Supabase terminó de mirar.
+ *
+ * Y si de verdad venció, no se deja a la persona en un callejón: se le
+ * ofrece pedir otro enlace.
+ */
+export default function PaginaClaveNueva() {
+  const router = useRouter();
+  const [estado, setEstado] = useState<'mirando' | 'listo' | 'sinSesion'>('mirando');
+  const [clave, setClave] = useState('');
+  const [repetida, setRepetida] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
+  const [hecho, setHecho] = useState(false);
+
+  useEffect(() => {
+    const supabase = clienteNavegador();
+    let vivo = true;
+
+    // El evento llega cuando el cliente terminó de procesar el enlace.
+    const { data: sub } = supabase.auth.onAuthStateChange((_evento, sesion) => {
+      if (!vivo) return;
+      if (sesion) setEstado('listo');
+    });
+
+    // Y por si la sesión ya estaba lista antes de suscribirnos.
+    supabase.auth.getSession().then(({ data }) => {
+      if (!vivo) return;
+      if (data.session) setEstado('listo');
+      else setTimeout(() => { if (vivo) setEstado((e) => (e === 'mirando' ? 'sinSesion' : e)); }, 2500);
+    });
+
+    return () => { vivo = false; sub.subscription.unsubscribe(); };
+  }, []);
+
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+
+    if (clave.length < 6) {
+      setError('La contraseña necesita al menos 6 caracteres.');
+      return;
+    }
+    // Se piden dos veces porque acá no hay forma de corregir un error de
+    // tipeo: si se guarda mal, la persona queda afuera otra vez.
+    if (clave !== repetida) {
+      setError('Las dos contraseñas no coinciden.');
+      return;
+    }
+
+    setCargando(true);
+    try {
+      const supabase = clienteNavegador();
+      const { error: e1 } = await supabase.auth.updateUser({ password: clave });
+      if (e1) throw e1;
+      setHecho(true);
+      // Se entra derecho: ya tiene sesión, mandarla a iniciar de nuevo sería
+      // pedirle que escriba la clave que acaba de escribir.
+      setTimeout(() => { router.push('/panel'); router.refresh(); }, 1400);
+    } catch (err: any) {
+      const m: string = err?.message ?? 'No se pudo guardar.';
+      if (/should be different/i.test(m)) setError('Esa es la contraseña que ya tenías. Poné una distinta.');
+      else if (/session/i.test(m)) setError('El enlace venció. Pedí uno nuevo.');
+      else setError(m);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
+      <div className="w-full max-w-[400px] aparecer">
+        <div className="mb-7 flex items-center gap-2.5 text-white">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-verde text-lg font-black">o</span>
+          <span className="text-lg font-bold tracking-tight">orden</span>
+        </div>
+
+        <div className="tarjeta p-6">
+          {estado === 'mirando' && (
+            <p className="py-6 text-center text-[14px] text-tinta/55">Un momento…</p>
+          )}
+
+          {estado === 'sinSesion' && (
+            <>
+              <p className="titulo-seccion">Enlace vencido</p>
+              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+                Este enlace ya no sirve.
+              </h1>
+              <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
+                Los enlaces para cambiar la contraseña duran poco, a propósito. Pedí uno nuevo y
+                usalo apenas te llegue.
+              </p>
+              <Link href="/recuperar" className="boton-principal mt-6 flex w-full justify-center py-3">
+                Pedir otro enlace
+              </Link>
+            </>
+          )}
+
+          {estado === 'listo' && (hecho ? (
+            <>
+              <p className="titulo-seccion">Listo</p>
+              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+                Contraseña cambiada.
+              </h1>
+              <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
+                Te estamos haciendo entrar. Todo lo tuyo sigue donde estaba.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="titulo-seccion">Casi</p>
+              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+                Poné tu contraseña nueva.
+              </h1>
+
+              <form onSubmit={guardar} className="mt-6 space-y-4" noValidate>
+                <div>
+                  <label className="etiqueta" htmlFor="clave">Contraseña nueva</label>
+                  <input
+                    id="clave" type="password" className="campo" required minLength={6}
+                    autoComplete="new-password" placeholder="Mínimo 6 caracteres"
+                    value={clave} onChange={(e) => setClave(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="etiqueta" htmlFor="repetida">Repetila</label>
+                  <input
+                    id="repetida" type="password" className="campo" required minLength={6}
+                    autoComplete="new-password" placeholder="La misma de arriba"
+                    value={repetida} onChange={(e) => setRepetida(e.target.value)}
+                  />
+                </div>
+
+                {error && (
+                  <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">
+                    {error}
+                  </p>
+                )}
+
+                <button type="submit" className="boton-principal w-full py-3" disabled={cargando}>
+                  {cargando ? 'Guardando…' : 'Guardar y entrar'}
+                </button>
+              </form>
+            </>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}

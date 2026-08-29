@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, Suspense } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 
@@ -125,6 +126,16 @@ function Formulario() {
               {cargando ? 'Un momento…' : modo === 'entrar' ? 'Entrar' : 'Crear cuenta'}
             </button>
           </form>
+
+          {/* Solo al entrar: a quien se está registrando no le sirve de nada
+              y le agrega una decisión más en el peor momento. */}
+          {modo === 'entrar' && (
+            <p className="mt-4 text-center">
+              <Link href="/recuperar" className="text-[13.5px] font-semibold text-tinta/50 hover:text-tinta">
+                ¿Te olvidaste la contraseña?
+              </Link>
+            </p>
+          )}
 
           <p className="mt-5 text-center text-sm text-tinta/60">
             {modo === 'entrar' ? '¿Todavía no tenés cuenta?' : '¿Ya tenés cuenta?'}{' '}
