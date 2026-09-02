@@ -306,10 +306,10 @@ export default async function Portada() {
               nombre="Pro"
               precio={importe(proMes)}
               porMes
-              para="Para el negocio con hasta 3 vendedores"
+              para="Para el negocio con hasta 2 vendedores"
               puntos={[
                 'Voz, foto y texto: 600 cargas por mes',
-                'Hasta 3 vendedores, cada uno con su cuenta',
+                'Vos y hasta 2 vendedores, cada uno con su cuenta',
                 'Comprobantes guardados y Excel de cinco hojas',
                 'Deudas del negocio con sus vencimientos',
               ]}
