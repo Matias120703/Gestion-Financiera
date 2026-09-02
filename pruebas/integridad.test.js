@@ -419,6 +419,16 @@ async function principal() {
          values ($1, 'gasto', current_date + 400, 100, 100)`, [A.empresaId])),
       'policy|denied|fecha');
 
+    // El borde, no solo el caso absurdo. La policy tolera un día de más
+    // porque el teléfono puede ir adelantado respecto de Asunción; dos ya
+    // es plata que no entró. La pantalla de Organización tapa su fecha con
+    // este mismo tope, y si alguien lo mueve acá tiene que romperse algo.
+    rechazado('ni pasado mañana, que es el borde real',
+      await H.intentar(db, A.uid, () => db.query(
+        `insert into public.movimientos (empresa_id, tipo, fecha, subtotal, monto)
+         values ($1, 'gasto', current_date + 2, 100, 100)`, [A.empresaId])),
+      'policy|denied|fecha');
+
     // Anulación de un gasto: sin stock, pero con la misma auditoría.
     const anul = await H.intentar(db, A.uid, () => db.query('select public.anular_movimiento($1, $2)', [gasto.valor, 'Cargado dos veces']));
     aceptado('un gasto también se anula', anul);

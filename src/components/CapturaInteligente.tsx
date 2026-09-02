@@ -9,6 +9,7 @@ import { hoyISO } from '@/lib/fechas';
 import type { CapturaInterpretada, DeudaInterpretada, ItemInterpretado, Origen, TipoCaptura, TipoCuenta } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
 import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
+import { comprimirFoto } from '@/lib/imagen';
 import { useTextos } from '@/i18n/cliente';
 
 type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
@@ -240,7 +241,24 @@ export function BotonCaptura({
   }
 
   // ---------------------------------------------------------- foto
-  function elegirFoto(e: React.ChangeEvent<HTMLInputElement>) {
+  /**
+   * La foto se achica ANTES de subirla, y esto es la mitad de por qué la
+   * captura por foto tardaba tanto.
+   *
+   * La cámara de un celular saca 3 a 6 MB. Eso viajaba entero desde datos
+   * móviles hasta el servidor, ahí se convertía a base64 —que lo agranda un
+   * 33% más— y recién después salía para OpenAI. Con una foto de 4 MB eran
+   * varios segundos que la persona pasaba mirando «Leyendo el comprobante…»
+   * sin que hubiera empezado a leerse nada.
+   *
+   * Achicada al lado más largo de 1600 px queda en unos 150 KB, y un ticket
+   * impreso se lee igual de bien. La función ya existía y se usaba para
+   * guardar el comprobante; simplemente no se estaba usando acá.
+   *
+   * Si comprimir falla —un formato raro, un navegador viejo— sube la
+   * original. Mejor lenta que perdida.
+   */
+  async function elegirFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
     e.target.value = '';
     if (!archivo) return;
@@ -248,11 +266,17 @@ export function BotonCaptura({
       setError(t.captura.fotoPesada);
       return;
     }
+
+    // La original se guarda para el respaldo: el comprobante que queda
+    // pegado al movimiento tiene su propio camino de compresión.
     fotoRef.current = archivo;
+
+    const { archivo: liviano } = await comprimirFoto(archivo);
+
     const fd = new FormData();
     fd.append('modo', 'foto');
     fd.append('empresa_id', empresaId);
-    fd.append('archivo', archivo);
+    fd.append('archivo', liviano);
     analizar(fd);
   }
 

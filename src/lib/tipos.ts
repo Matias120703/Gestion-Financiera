@@ -434,6 +434,122 @@ export interface ResumenDeudas {
   proximo_vencimiento: string | null;
 }
 
+/**
+ * LA CUENTA PERSONAL
+ *
+ * Lo que devuelve `resumen_personal()`. El ciclo no es el mes calendario:
+ * va de cobro a cobro, porque para alguien con sueldo el mes útil empieza el
+ * día que cobra.
+ */
+export interface IngresoFijo {
+  id: string;
+  nombre: string;
+  importe: number;
+  dia_del_mes: number;
+  /** Cuál define el ciclo, si hay varios. */
+  principal: boolean;
+}
+
+/**
+ * Algo que se paga todos los meses: el wifi, la línea del celular, el bus.
+ *
+ * `dia_del_mes` puede ir en null a propósito — el pasaje del bus se gasta
+ * todos los días, no tiene fecha. Obligar a inventar un día haría que el
+ * dato sea mentira.
+ */
+export interface GastoFijo {
+  id: string;
+  nombre: string;
+  importe: number;
+  categoria: string;
+  dia_del_mes: number | null;
+  notas: string;
+}
+
+/**
+ * Un fondo de ahorro. Guardar plata no es gastarla —seguís teniéndola— así
+ * que un aporte no aparece como gasto en ningún reporte. Pero sí baja lo
+ * disponible: no la podés gastar dos veces.
+ */
+export interface Ahorro {
+  id: string;
+  nombre: string;
+  /** Cuánto quiere juntar. Null si ahorra sin meta puesta. */
+  meta: number | null;
+  /** Para cuándo lo quiere tener. Null si ahorra sin fecha. */
+  fecha_limite: string | null;
+  saldo: number;
+  /** Lo que falta para la meta, nunca negativo. Null si no hay meta. */
+  falta: number | null;
+  /** Negativo si la fecha ya pasó. Null si no hay fecha. */
+  dias_para_limite: number | null;
+  /**
+   * Cuánto habría que guardar por mes para llegar a tiempo, calculado en la
+   * base. Null cuando no hay ritmo que calcular, y son tres situaciones
+   * distintas que se distinguen mirando los otros campos: sin meta, sin
+   * fecha, o con la fecha ya vencida sin haber llegado. Cero significa que
+   * la meta ya está juntada.
+   */
+  por_mes: number | null;
+}
+
+/**
+ * Una categoría que la cuenta puede usar: las de fábrica más las que la
+ * persona creó. `propia` marca cuáles se pueden editar o borrar.
+ */
+export interface CategoriaDeCuenta {
+  nombre: string;
+  pistas: string;
+  propia: boolean;
+}
+
+/** De dónde vino la plata que entró en el ciclo. */
+export interface EntradaPorCategoria {
+  categoria: string;
+  monto: number;
+}
+
+export interface LineaPlan {
+  categoria: string;
+  planeado: number;
+  gastado: number;
+  /** Negativo si se pasó. No se recorta en cero a propósito. */
+  resta: number;
+}
+
+export interface ResumenPersonal {
+  desde: string;
+  hasta: string;
+  dia_cobro: number;
+  dias_restantes: number;
+  entro: number;
+  salio: number;
+  /** Cuotas que todavía no se pagaron y vencen antes de que cierre el ciclo. */
+  cuotas_por_vencer: number;
+  /**
+   * Lo que falta pagar de los gastos fijos, comparado por categoría contra
+   * lo que ya se gastó en el ciclo. Nunca cuenta dos veces algo ya pagado.
+   */
+  fijos_por_pagar: number;
+  disponible: number;
+  por_dia: number;
+  plan: LineaPlan[];
+  gastado_sin_planear: number;
+  ingresos_fijos: IngresoFijo[];
+  gastos_fijos: GastoFijo[];
+  ahorros: Ahorro[];
+  /** Lo guardado en este ciclo, neto de retiros. Puede ser negativo. */
+  ahorrado_en_el_ciclo: number;
+  /** Lo acumulado de siempre, sumando todos los fondos. */
+  ahorro_total: number;
+  de_donde_vino: EntradaPorCategoria[];
+  esperado: number;
+  /** La suma de todos los gastos fijos del mes, se hayan pagado o no. */
+  fijo_mensual: number;
+  /** Hay ingresos fijos cargados y todavía no entró ninguno en este ciclo. */
+  cobro_pendiente: boolean;
+}
+
 export interface PagoDeuda {
   id: string;
   monto: number;

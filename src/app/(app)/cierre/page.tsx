@@ -31,7 +31,7 @@ export default async function PaginaCierre({
 }) {
   const ctx = await contextoObligatorio();
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
-  if (fichaDe(ctx.empresa.rubro).sinSecciones.includes('/cierre')) redirect('/panel');
+  if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).sinSecciones.includes('/cierre')) redirect('/panel');
 
   const t = textos();
   const locale = FICHA[ctx.idioma].locale;

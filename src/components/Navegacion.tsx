@@ -56,6 +56,12 @@ const Ico = {
       <circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 1.8" />
     </svg>
   ),
+  organizacion: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="M4 6.5h16v13H4z" /><path d="M4 10.5h16" /><path d="M9 10.5v9" />
+      <path d="M8 3.5v3M16 3.5v3" />
+    </svg>
+  ),
   deudas: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <path d="M3.5 7.5h17v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
@@ -87,17 +93,12 @@ const Ico = {
  * que lo único que se arma en cada render es el texto.
  */
 /**
- * Lo que NO existe en una cuenta personal.
+ * Lo que existe SOLO en una cuenta personal.
  *
- * Vender y Productos son de comercio, y un reto de ventas no significa nada
- * para quien anota su sueldo. No se muestran «desactivados» ni con un
- * candado: directamente no están. Una pantalla que se ve pero no sirve es
- * peor que una que no existe — invita a tocarla y después decepciona.
- *
- * Las páginas además redirigen por su cuenta, así que esconderlas de acá no
- * es la seguridad: es no ofrecer un camino que no lleva a ningún lado.
+ * Organización es la contracara del cierre del día: donde un comercio mira
+ * cómo le fue hoy, una persona mira si llega a fin de mes.
  */
-const SOLO_COMERCIO = ['/vender', '/productos', '/reto'];
+const SOLO_PERSONAL = ['/organizacion'];
 
 export function itemsDe(
   t: Textos,
@@ -113,18 +114,19 @@ export function itemsDe(
     { href: '/productos',   texto: t.nav.productos,   icono: Ico.productos },
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
+    { href: '/organizacion', texto: t.nav.organizacion, icono: Ico.organizacion },
     { href: '/reportes',    texto: t.nav.reportes,    icono: Ico.reportes },
     { href: '/ajustes',     texto: t.nav.ajustes,     icono: Ico.ajustes },
   ];
-  // Dos filtros distintos que se aplican en orden: qué NO tiene una cuenta
-  // personal, y qué NO tiene este rubro. Un ganadero no ve el cierre del día
-  // porque su ganancia no se mide por día; ver src/lib/rubros.ts.
-  const ficha = fichaDe(rubro);
-  const visibles = tipo === 'personal'
-    ? todos.filter((i) => !SOLO_COMERCIO.includes(i.href))
-    : todos;
-  if (ficha.sinSecciones.length === 0) return visibles;
-  return visibles.filter((i) => !ficha.sinSecciones.includes(i.href));
+  // UN solo filtro, y sale de la ficha. Antes eran dos —uno por tipo de
+  // cuenta y otro por rubro— y ahí estuvo el error que se arrastró meses: a
+  // una cuenta personal se le guarda rubro 'comercio', así que el filtro por
+  // rubro le daba la ficha de un almacén y le dejaba el cierre del día. La
+  // ficha ahora contesta las dos cosas junto; ver src/lib/rubros.ts.
+  const ficha = fichaDe(rubro, tipo);
+  const visibles = todos.filter((i) => !ficha.sinSecciones.includes(i.href));
+  if (tipo === 'personal') return visibles;
+  return visibles.filter((i) => !SOLO_PERSONAL.includes(i.href));
 }
 
 /**
@@ -149,13 +151,13 @@ const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre'];
  * cuándo vence la cuota es lo que más se mira. Es la pantalla que justifica
  * la suscripción, así que va a un toque.
  */
-const EN_BARRA_INFERIOR_PERSONAL = ['/panel', '/deudas', '/gastos', '/cierre'];
+const EN_BARRA_INFERIOR_PERSONAL = ['/panel', '/deudas', '/gastos', '/organizacion'];
 
 function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio') {
   const base = tipo === 'personal' ? EN_BARRA_INFERIOR_PERSONAL : EN_BARRA_INFERIOR;
-  // Si el rubro no tiene alguna de las cuatro, se cae sola: la barra queda de
-  // tres y el resto sigue a un toque desde «Más».
-  const ficha = fichaDe(rubro);
+  // Si la cuenta no tiene alguna de las cuatro, se cae sola: la barra queda
+  // de tres y el resto sigue a un toque desde «Más».
+  const ficha = fichaDe(rubro, tipo);
   return base.filter((href) => !ficha.sinSecciones.includes(href));
 }
 

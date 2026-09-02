@@ -63,6 +63,7 @@ export const es = {
     deudas: 'Deudas',
     cierre: 'Cierre del día',
     cierreCorto: 'Cierre',
+    organizacion: 'Presupuesto',
 
     plan: 'Mi plan',
     miCuenta: 'Mi cuenta',
@@ -280,6 +281,192 @@ export const es = {
     sinCuentaAun: '¿Todavía no tenés cuenta?',
     empezarAhora: 'Empezá ahora',
   },
+
+  /**
+   * ORGANIZACIÓN · la pantalla de la cuenta personal.
+   *
+   * Contesta una sola pregunta, y todo lo demás es el detalle de cómo se
+   * llegó a ese número: cuánto te queda y para cuántos días. Un comercio
+   * mira cómo le fue hoy; una persona con sueldo mira si llega a fin de mes.
+   */
+  organizacion: {
+    titulo: 'Presupuesto y ahorro',
+
+    teQuedan: 'Disponible',
+    paraDias: (n: number) => (n === 1 ? 'para el último día del período' : `para los ${n} días restantes`),
+    hastaEl: (fecha: string) => `hasta el ${fecha}, tu próxima fecha de cobro`,
+    hastaFinDeMes: (fecha: string) => `hasta el ${fecha}`,
+    porDia: (monto: string) => `${monto} por día`,
+    enRojo: 'Tu gasto supera lo que te queda disponible para este período.',
+
+    comoSaleEseNumero: 'Detalle del cálculo',
+    entro: 'Ingresos del período',
+    salio: 'Gastos registrados',
+    cuotasPorVencer: 'Cuotas de deuda a vencer',
+    fijosPorPagar: 'Gastos fijos pendientes',
+    disponible: 'Disponible',
+
+    cobroPendiente: 'Falta registrar tu ingreso',
+    cobroPendienteDetalle:
+      'No hay ingresos registrados en este período. Registralos y el disponible se calcula solo.',
+
+    // ---- ingresos fijos ----
+    entradas: 'Ingresos fijos',
+    entradasDetalle:
+      'Tu sueldo y cualquier ingreso que se repita cada mes. Definen la fecha en que arranca tu período: el mes se cuenta de cobro a cobro, no del 1 al 30.',
+    sinEntradas: 'Sin ingresos fijos registrados',
+    sinEntradasDetalle:
+      'Registrá tu sueldo para que Orden calcule tu período desde tu fecha de cobro real.',
+    agregarEntrada: 'Registrar ingreso fijo',
+    queEs: 'Concepto',
+    queEsEjemplo: 'Sueldo, alquiler que cobro, honorarios',
+    cuanto: 'Importe',
+    queDiaEntra: 'Día de acreditación',
+    marcaMiCiclo: 'Define mi período',
+    marcaMiCicloDetalle: 'Tu mes va a contarse desde este día hasta el mismo día del mes siguiente.',
+    entraElDia: (d: number) => `se acredita el ${d}`,
+    quitarEntrada: 'Eliminar',
+    confirmarQuitarEntrada: (nombre: string) =>
+      `¿Eliminar «${nombre}»? Tus movimientos registrados no se modifican.`,
+
+    // ---- presupuesto ----
+    elegiCategoria: 'Seleccioná una categoría',
+
+    soloPersonal: 'Esta sección corresponde a las cuentas personales.',
+    // ---- manejo de ingresos, dentro de la tarjeta de arriba ----
+    verDetalle: 'Ver detalle',
+    ocultarDetalle: 'Ocultar',
+    loQueCobras: 'Lo que cobrás todos los meses',
+    agregarOtroIngreso: 'Agregar otro ingreso fijo',
+    dosPagos:
+      'Si cobrás más de una vez al mes —sueldo a fin de mes y comisión a los quince días, por ejemplo— registrá cada uno por separado con su día. Marcá como «Define mi período» el que consideres tu cobro principal.',
+    registrarIngreso: 'Registrar un ingreso recibido',
+    registrarIngresoDetalle:
+      'Una bonificación, una comisión, horas extra o algo que vendiste. A diferencia de los ingresos fijos, esto sí suma plata a tu período.',
+    conceptoIngreso: 'Concepto',
+    conceptoIngresoEjemplo: 'Bonificación de agosto, comisión, horas extra',
+    fechaIngreso: 'Fecha',
+    fechaFutura:
+      'Esa fecha todavía no llegó. Un ingreso se registra el día que la plata entra: '
+      + 'si lo cargás antes, Orden te muestra plata que todavía no tenés.',
+    registrar: 'Registrar',
+
+
+    // ---- gastos fijos ----
+    salidas: 'Gastos fijos',
+    salidasDetalle:
+      'Alquiler, seguro, internet, línea del celular, transporte. Orden los descuenta de tu disponible desde el inicio del período y deja de descontarlos cuando registrás el pago.',
+    sinSalidas: 'Sin gastos fijos registrados',
+    sinSalidasDetalle:
+      'Registrá lo que pagás todos los meses y vas a conocer tu disponible real desde el primer día del período.',
+    agregarSalida: 'Registrar gasto fijo',
+    queGasto: 'Concepto',
+    queGastoEjemplo: 'Alquiler, seguro, internet, línea del celular',
+    sinDiaFijo: 'Sin fecha fija',
+    sinDiaFijoDetalle: 'Dejalo así para gastos diarios o sin vencimiento definido, como el transporte.',
+    venceElDia: (d: number) => `vence el ${d}`,
+    todoElMes: 'sin fecha fija',
+    detalleGasto: 'Observaciones',
+    detalleGastoEjemplo: 'Proveedor, número de contrato, plan contratado',
+    yaPagado: 'al día',
+    faltaPagarFijo: (monto: string) => `${monto} pendiente`,
+    totalPorMes: (monto: string) => `${monto} mensuales`,
+    quitarSalida: 'Eliminar',
+    confirmarQuitarSalida: (nombre: string) =>
+      `¿Eliminar «${nombre}»? Tus movimientos registrados no se modifican.`,
+
+    // ---- ahorro ----
+    ahorros: 'Ahorro',
+    ahorrosDetalle:
+      'El ahorro no es un gasto: la plata sigue siendo tuya, así que no figura como gasto en ningún reporte. Sí se descuenta del disponible, porque dejaste de tenerla para gastar.',
+    sinAhorros: 'Sin fondos de ahorro',
+    sinAhorrosDetalle: 'Creá un fondo —emergencias, un viaje, una compra— y destinale parte de tus ingresos.',
+    agregarAhorro: 'Crear fondo',
+    nombreDelFondo: 'Destino del fondo',
+    nombreDelFondoEjemplo: 'Emergencias, viaje, vehículo',
+    metaOpcional: 'Objetivo',
+    metaDetalle: 'Dejalo vacío si querés ahorrar sin un objetivo definido.',
+    fechaLimite: 'Para cuándo',
+    fechaLimiteDetalle:
+      'Si es para algo con fecha —un viaje, una cuota, un curso— ponela y te decimos cuánto guardar por mes para llegar.',
+    paraEl: (fecha: string) => `Para el ${fecha}`,
+    ritmo: (porMes: string, fecha: string) => `Guardá ${porMes} por mes para llegar al ${fecha}.`,
+    faltan: (monto: string) => `Faltan ${monto}`,
+    metaCumplida: 'Objetivo alcanzado.',
+    fechaVencida: (falta: string) =>
+      `La fecha ya pasó y faltaron ${falta}. Poné una fecha nueva o ajustá el objetivo.`,
+    editarFondo: 'Editar',
+    guardarPlata: 'Depositar',
+    retirarPlata: 'Retirar',
+    cuantoGuardas: 'Importe a depositar',
+    cuantoRetiras: 'Importe a retirar',
+    deLaMeta: (meta: string, pct: number) => `${pct}% de ${meta}`,
+    sinMeta: 'sin objetivo definido',
+    ahorradoEsteCiclo: 'Destinado a ahorro',
+    quitarFondo: 'Eliminar fondo',
+    confirmarQuitarFondo: (nombre: string) => `¿Eliminar el fondo «${nombre}»?`,
+
+    // ---- categorías propias ----
+    categoriaPropia: 'Crear una categoría',
+    categoriaPropiaDetalle:
+      'Si ninguna de las categorías representa tu gasto, definí la tuya. Orden la va a usar también al interpretar lo que dictes.',
+    nombreCategoria: 'Nombre de la categoría',
+    nombreCategoriaEjemplo: 'Mascotas, club, aporte familiar',
+    pistasCategoria: 'Qué incluye',
+    pistasCategoriaDetalle:
+      'Escribí algunos ejemplos separados por coma. Sirven para que Orden clasifique solo lo que registres por voz o foto.',
+    pistasCategoriaEjemplo: 'veterinaria, alimento balanceado, baño',
+    crearCategoria: 'Crear categoría',
+    eliminarCategoria: 'Eliminar categoría',
+    confirmarEliminarCategoria: (nombre: string) =>
+      `¿Eliminar la categoría «${nombre}»? Los movimientos ya registrados la conservan.`,
+  },
+
+  /**
+   * EL PANEL DE UNA CUENTA PERSONAL.
+   *
+   * Nada de «ganancia bruta» ni «margen»: una persona no vende. Le queda
+   * plata hasta fin de mes, y quiere saber cuánta.
+   */
+  panelPersonal: {
+    guardado: 'Ahorro',
+    esteMes: (monto: string) => `+${monto} este período`,
+    venceEl: (fecha: string) => `próximo vencimiento: ${fecha}`,
+
+    deDondeVino: 'Origen de tus ingresos',
+    organizar: 'Administrar',
+    sinEntradas: 'Sin ingresos registrados en este período',
+    sinEntradasDetalle:
+      'Registrá tu sueldo y cualquier otro ingreso. Podés dictarlo por voz y Orden lo clasifica solo.',
+    fueraDeLoHabitual: (monto: string, principal: string) =>
+      `${monto} de tus ingresos de este período no provienen de ${principal}.`,
+
+    tusAhorros: 'Fondos de ahorro',
+    sinAhorros: 'Sin fondos de ahorro',
+    sinAhorrosDetalle: 'Los fondos que crees van a aparecer acá con su saldo y su progreso.',
+    deLaMeta: (meta: string, pct: number) => `${pct}% de ${meta}`,
+  },
+  /** EL REPORTE DE UNA CUENTA PERSONAL. Nada de «ganancia»: una persona no
+   *  produce ganancia, le queda o no le queda. */
+  reportePersonal: {
+    ingresos: 'Ingresos',
+    gastos: 'Gastos',
+    resultado: 'Resultado',
+    ahorraste: (monto: string) => `En este período te sobraron ${monto} después de tus gastos.`,
+    gastasteDeMas: (monto: string) => `En este período gastaste ${monto} más de lo que ingresaste.`,
+
+    origen: 'Origen de tus ingresos',
+    sinIngresos: 'Sin ingresos en este período',
+    sinIngresosDetalle: 'Cuando registres lo que cobrás, vas a ver acá de dónde viene cada parte.',
+
+    destino: 'Distribución de tus gastos',
+    sinGastos: 'Sin gastos en este período',
+    sinGastosDetalle: 'Cuando registres tus gastos, vas a ver acá cómo se reparten.',
+
+    descarga: 'Descargar tus movimientos',
+    descargaDetalle: 'Planilla con el detalle de todo lo que registraste en el período.',
+  },
+
 
   /** VENDER: la pantalla de mostrador. */
   venta: {
@@ -639,6 +826,11 @@ export const es = {
     avisos: 'Avisos',
     avisoCierre: 'Recordarme cerrar el día',
     avisoCierreDetalle: 'Solo si a esa hora todavía no cargaste nada.',
+    // Una cuenta personal no cierra el día: su ciclo va de cobro a cobro. Lo
+    // que sí necesita es que no se le escapen los gastos chicos, que son los
+    // que más fácil se olvidan y los que más ensucian el número del final.
+    avisoCarga: 'Recordarme cargar mis gastos',
+    avisoCargaDetalle: 'Solo si a esa hora todavía no cargaste nada, y solo si venís cargando.',
     avisoSemanal: 'Resumen de la semana por email',
     avisoSemanalDetalle: 'Los lunes, con lo que pasó los últimos siete días.',
     horaCierre: 'A qué hora recordarte',

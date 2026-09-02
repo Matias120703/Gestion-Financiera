@@ -9,9 +9,9 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "esquema": "node supabase/generar-schema.js",
-    "probar:calculos": "tsc src/lib/calculos.ts src/lib/fechas.ts src/lib/formato.ts src/lib/reporte.ts src/lib/lectura.ts --outDir .compilado --module commonjs --target es2020 --skipLibCheck --moduleResolution node --esModuleInterop && node pruebas/calculos.test.js && node pruebas/excel.test.js && node pruebas/confiabilidad.test.js",
+    "probar:calculos": "tsc src/lib/calculos.ts src/lib/captura.ts src/lib/fechas.ts src/lib/formato.ts src/lib/reporte.ts src/lib/lectura.ts --outDir .compilado --module commonjs --target es2020 --skipLibCheck --moduleResolution node --esModuleInterop && node pruebas/calculos.test.js && node pruebas/excel.test.js && node pruebas/confiabilidad.test.js && node pruebas/prompt.test.js",
     "probar:integridad": "node pruebas/integridad.test.js",
-    "probar": "npm run probar:calculos && npm run probar:migracion && npm run probar:integridad && npm run probar:permisos && npm run probar:agregados && npm run probar:adjuntos && npm run probar:habito && npm run probar:equipo && npm run probar:borrado && npm run probar:deudas && npm run probar:panel && npm run probar:solo-lectura && npm run probar:orden-negocio && npm run probar:rubros && npm run probar:ficha",
+    "probar": "npm run probar:calculos && npm run probar:migracion && npm run probar:integridad && npm run probar:permisos && npm run probar:agregados && npm run probar:adjuntos && npm run probar:habito && npm run probar:equipo && npm run probar:borrado && npm run probar:deudas && npm run probar:panel && npm run probar:solo-lectura && npm run probar:orden-negocio && npm run probar:rubros && npm run probar:ficha && npm run probar:personal",
     "verificar": "npm run typecheck && npm run lint && npm run probar && npm run build",
     "probar:migracion": "node pruebas/migracion.test.js",
     "probar:permisos": "node pruebas/permisos.test.js",
@@ -25,7 +25,8 @@
     "probar:solo-lectura": "node pruebas/solo-lectura.test.js",
     "probar:orden-negocio": "node pruebas/orden-negocio.test.js",
     "probar:rubros": "node pruebas/rubros.test.js",
-    "probar:ficha": "node pruebas/ficha-cliente.test.js"
+    "probar:ficha": "node pruebas/ficha-cliente.test.js",
+    "probar:personal": "node pruebas/personal.test.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

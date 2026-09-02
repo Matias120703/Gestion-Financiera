@@ -9,11 +9,50 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const MODELO_TEXTO = process.env.MODELO_IA || 'gpt-4o-mini';
-const MODELO_AUDIO = process.env.MODELO_AUDIO || 'whisper-1';
+
+/**
+ * El modelo que escucha.
+ *
+ * `gpt-4o-mini-transcribe` transcribe bastante más rápido que `whisper-1`, y
+ * la espera del audio es la que más se siente: la persona ya habló y está
+ * mirando la pantalla. Si por lo que sea no estuviera disponible, se cae solo
+ * a whisper (ver `transcribir`), así que cambiarlo no puede romper la captura.
+ */
+const MODELO_AUDIO = process.env.MODELO_AUDIO || 'gpt-4o-mini-transcribe';
+const MODELO_AUDIO_RESPALDO = 'whisper-1';
 const LIMITE_ARCHIVO = 9 * 1024 * 1024;
 
 function respuestaVacia(mensaje: string, estado = 400) {
   return NextResponse.json({ error: mensaje }, { status: estado });
+}
+
+/** Lo que se le dice al modelo antes de escuchar, para que no invente montos. */
+const PISTA_AUDIO =
+  'Nota de voz de alguien en Paraguay registrando ventas, gastos o cobros. '
+  + 'Puede decir montos como "150 mil", "dos millones", "150 lucas".';
+
+/**
+ * Transcribe, y si el modelo rápido no está disponible usa whisper.
+ *
+ * El respaldo existe porque el modelo por defecto se puede cambiar por
+ * variable de entorno y porque los nombres de modelo cambian con el tiempo.
+ * Que una captura por voz falle entera por eso sería absurdo: whisper es más
+ * lento, pero anda.
+ */
+async function transcribir(openai: OpenAI, archivo: File): Promise<string> {
+  try {
+    const t = await openai.audio.transcriptions.create({
+      file: archivo, model: MODELO_AUDIO, language: 'es', prompt: PISTA_AUDIO,
+    });
+    return (t.text ?? '').trim();
+  } catch (e: any) {
+    if (MODELO_AUDIO === MODELO_AUDIO_RESPALDO) throw e;
+    console.warn('[capturar] audio con', MODELO_AUDIO, 'falló; voy con whisper:', e?.message);
+    const t = await openai.audio.transcriptions.create({
+      file: archivo, model: MODELO_AUDIO_RESPALDO, language: 'es', prompt: PISTA_AUDIO,
+    });
+    return (t.text ?? '').trim();
+  }
 }
 
 export async function POST(request: Request) {
@@ -48,13 +87,52 @@ export async function POST(request: Request) {
     );
   }
 
-  // ---------- 1 bis. Cupo de capturas ----------
-  // Antes de hablar con OpenAI, no después. El costo lo pagamos nosotros por
-  // pedido, así que el tope tiene que frenar ANTES de gastar. Y lo decide la
-  // base, no esta ruta: un cliente manipulado no puede saltárselo.
-  const { data: cupo, error: errorCupo } = await supabase.rpc('consumir_credito_ia', {
-    p_empresa: empresaId,
-  });
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  /**
+   * Una cuenta personal no vende.
+   *
+   * Importa más de lo que parece: si el modelo tiene «venta» disponible, va a
+   * usarla. «Cobré mi sueldo» y «me pagaron los 500 mil» se parecen mucho a
+   * una venta, y quedarían cargadas como tal — con la diferencia de que una
+   * venta mueve stock y espera productos que en esta cuenta no existen.
+   *
+   * Es el mismo error que tuvimos con las deudas, al revés: ahí faltaba un
+   * tipo, acá sobra uno.
+   */
+  const esPersonal = empresa.tipo_cuenta === 'personal';
+
+  /**
+   * ---------- 1 bis. TODO EL CONTEXTO, DE UNA SOLA VEZ ----------
+   *
+   * Antes esto eran cinco consultas una atrás de la otra: el cupo, el
+   * catálogo, las deudas, las categorías y los fijos. Cada una espera a que
+   * vuelva la anterior, y la base está en Ohio mientras la aplicación corre
+   * en São Paulo — son unos 120 ms de ida y vuelta por consulta. Casi un
+   * segundo de espera antes de que OpenAI empezara siquiera a leer.
+   *
+   * Ninguna depende de otra, así que van todas juntas. Lo único que sigue
+   * siendo secuencial es lo que tiene que serlo: el cupo se revisa ANTES de
+   * llamar a OpenAI, porque el costo lo pagamos nosotros por pedido. Que la
+   * consulta salga en paralelo no cambia eso: lo que importa es que la
+   * decisión se toma antes de gastar, y sigue siendo así.
+   */
+  const [respCupo, respProductos, respDeudas, respCats, respFijos, respIngresos] = await Promise.all([
+    supabase.rpc('consumir_credito_ia', { p_empresa: empresaId }),
+    esPersonal
+      ? Promise.resolve({ data: [], error: null })
+      : supabase.rpc('listar_productos', { p_empresa: empresaId, p_incluir_pausados: false }),
+    supabase.rpc('listar_deudas', { p_empresa: empresaId, p_incluir_saldadas: false }),
+    // Las de fábrica de esta cuenta MÁS las que la persona creó. Es la misma
+    // función que alimenta las pantallas: si fueran dos fuentes distintas,
+    // alguien crearía «Mascotas» en su presupuesto y la IA seguiría
+    // clasificando en «Otros» para siempre.
+    supabase.rpc('categorias_de_empresa', { p_empresa: empresaId, p_clase: 'gasto' }),
+    supabase.rpc('fijos_para_captura', { p_empresa: empresaId }),
+    supabase.rpc('categorias_de_empresa', { p_empresa: empresaId, p_clase: 'ingreso' }),
+  ]);
+
+  const { data: cupo, error: errorCupo } = respCupo;
 
   if (errorCupo) {
     console.error('[capturar] cupo', errorCupo.message);
@@ -74,38 +152,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  /**
-   * Una cuenta personal no vende.
-   *
-   * Importa más de lo que parece: si el modelo tiene «venta» disponible, va a
-   * usarla. «Cobré mi sueldo» y «me pagaron los 500 mil» se parecen mucho a
-   * una venta, y quedarían cargadas como tal — con la diferencia de que una
-   * venta mueve stock y espera productos que en esta cuenta no existen.
-   *
-   * Es el mismo error que tuvimos con las deudas, al revés: ahí faltaba un
-   * tipo, acá sobra uno.
-   */
-  const esPersonal = empresa.tipo_cuenta === 'personal';
-
-  // ---------- 2. Catálogo para que la IA pueda vincular productos ----------
+  // ---------- 2. Lo que llegó, ya sin esperas ----------
   // Por la puerta oficial: si quien captura es un vendedor, los costos
   // llegan en null y nunca entran al prompt. La base decide, no esta ruta.
   // En una cuenta personal ni se pide: no hay catálogo que vincular.
   let catalogo: Producto[] = [];
   if (!esPersonal) {
-    const { data: productos, error: errorCatalogo } = await supabase.rpc('listar_productos', {
-      p_empresa: empresaId,
-      p_incluir_pausados: false,
-    });
-
-    if (errorCatalogo) {
-      console.error('[capturar] catálogo', errorCatalogo.message);
+    if (respProductos.error) {
+      console.error('[capturar] catálogo', respProductos.error.message);
       return respuestaVacia('No pudimos leer tu catálogo. Probá de nuevo en un momento.', 503);
     }
-
-    catalogo = (Array.isArray(productos) ? productos : []) as Producto[];
+    catalogo = (Array.isArray(respProductos.data) ? respProductos.data : []) as Producto[];
   }
 
   /**
@@ -117,12 +174,7 @@ export async function POST(request: Request) {
    * Un vendedor no puede leerlas —la función exige administración— así que
    * para él llega vacío y la captura sigue funcionando igual.
    */
-  const { data: deudasCrudas } = await supabase.rpc('listar_deudas', {
-    p_empresa: empresaId,
-    p_incluir_saldadas: false,
-  });
-
-  const deudas = (Array.isArray(deudasCrudas) ? deudasCrudas : []).map((d: any) => ({
+  const deudas = (Array.isArray(respDeudas.data) ? respDeudas.data : []).map((d: any) => ({
     id: String(d.id),
     nombre: String(d.nombre ?? ''),
     acreedor: String(d.acreedor ?? ''),
@@ -130,19 +182,51 @@ export async function POST(request: Request) {
   }));
 
   /**
-   * Las categorías de gasto del rubro. Si falla, se usan las de comercio: el
-   * prompt tiene su propio respaldo, así que una lista que no llega degrada
-   * la sugerencia pero no rompe la captura.
+   * Las categorías de gasto de esta cuenta. Si falla, se usan las de
+   * comercio: el prompt tiene su propio respaldo, así que una lista que no
+   * llega degrada la sugerencia pero no rompe la captura.
    */
-  const { data: cats } = await supabase.rpc('categorias_de_rubro', {
-    p_rubro: (empresa as any).rubro ?? 'comercio',
-  });
-  const categorias = Array.isArray(cats)
-    ? cats.map((c: any) => ({ nombre: String(c?.nombre ?? c), pistas: c?.pistas ? String(c.pistas) : undefined }))
+  const categorias = Array.isArray(respCats.data)
+    ? respCats.data.map((c: any) => ({
+        nombre: String(c?.nombre ?? c),
+        pistas: c?.pistas ? String(c.pistas) : undefined,
+      }))
+    : [];
+
+  /**
+   * Lo que se repite todos los meses, con su monto.
+   *
+   * Sin esto, alguien con el sueldo cargado decía «ya cobré mi sueldo de este
+   * mes» y el sistema le contestaba «no pude sacar el monto, escribilo vos»
+   * — teniendo el monto guardado en la fila de al lado. Mismo trato que las
+   * deudas: la función exige administración, así que a un vendedor le llega
+   * vacío y la captura sigue andando igual.
+   */
+  const fijos = (Array.isArray(respFijos.data) ? respFijos.data : []).map((f: any) => ({
+    clase: f?.clase === 'ingreso' ? ('ingreso' as const) : ('gasto' as const),
+    nombre: String(f?.nombre ?? ''),
+    importe: Number(f?.importe ?? 0),
+    categoria: f?.categoria ? String(f.categoria) : undefined,
+  })).filter((f) => f.nombre !== '' && f.importe > 0);
+
+  /**
+   * En qué casilleros puede caer lo que ENTRA.
+   *
+   * El prompt personal tenía esta lista escrita a mano y NO coincidía con la
+   * de la base: clasificaba en «Salidas» donde el plan ofrece «Ocio». Un
+   * gasto en una categoría que el plan no conoce queda afuera de la cuenta
+   * que la persona hizo. Ahora las dos listas salen del mismo lugar.
+   */
+  const ingresos = Array.isArray(respIngresos.data)
+    ? respIngresos.data.map((c: any) => ({
+        nombre: String(c?.nombre ?? c),
+        pistas: c?.pistas ? String(c.pistas) : undefined,
+      }))
     : [];
 
   const hoy = hoyISO();
-  const sistema = instrucciones(hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias);
+  const sistema = instrucciones(
+    hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos);
 
   try {
     let textoUsuario = '';
@@ -159,13 +243,7 @@ export async function POST(request: Request) {
       if (!(archivo instanceof File)) return respuestaVacia('No llegó el audio.');
       if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia('El audio es demasiado largo.');
 
-      const t = await openai.audio.transcriptions.create({
-        file: archivo,
-        model: MODELO_AUDIO,
-        language: 'es',
-        prompt: 'Nota de voz de un comerciante paraguayo registrando ventas y gastos. Puede decir montos como "150 mil", "dos millones", "150 lucas".',
-      });
-      transcripcion = (t.text ?? '').trim();
+      transcripcion = await transcribir(openai, archivo);
       if (!transcripcion) return respuestaVacia('No se entendió el audio. Probá de nuevo hablando más cerca.');
       textoUsuario = transcripcion;
     } else if (modo === 'foto') {

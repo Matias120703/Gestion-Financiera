@@ -60,8 +60,17 @@ export function SelectorIdioma() {
   );
 }
 
-/** Interruptores de avisos + alta del dispositivo para push. */
-export function AjustesDeAvisos({ inicial }: { inicial: Prefs }) {
+/**
+ * Interruptores de avisos + alta del dispositivo para push.
+ *
+ * `esPersonal` solo cambia cómo se llama el primer aviso. Es el mismo
+ * interruptor y la misma preferencia guardada: lo que cambia es que a una
+ * persona no se le puede ofrecer «cerrar el día», porque esa pantalla no
+ * existe en su cuenta y ese recorte del tiempo no es el suyo.
+ */
+export function AjustesDeAvisos({
+  inicial, esPersonal = false,
+}: { inicial: Prefs; esPersonal?: boolean }) {
   const t = useTextos();
   const router = useRouter();
   const [prefs, setPrefs] = useState<Prefs>(inicial);
@@ -92,8 +101,8 @@ export function AjustesDeAvisos({ inicial }: { inicial: Prefs }) {
   return (
     <div className="space-y-4">
       <Interruptor
-        titulo={t.ajustes.avisoCierre}
-        detalle={t.ajustes.avisoCierreDetalle}
+        titulo={esPersonal ? t.ajustes.avisoCarga : t.ajustes.avisoCierre}
+        detalle={esPersonal ? t.ajustes.avisoCargaDetalle : t.ajustes.avisoCierreDetalle}
         encendido={prefs.aviso_cierre}
         alCambiar={(v) => guardar({ aviso_cierre: v })}
       />

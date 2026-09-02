@@ -18,6 +18,23 @@ export type CategoriaSugerida = { nombre: string; pistas?: string };
 
 export type DeudaConocida = { id: string; nombre: string; acreedor: string; saldo: number };
 
+/**
+ * Algo que se repite todos los meses: el sueldo, el wifi, la línea del
+ * celular.
+ *
+ * Se le pasa a la IA por el mismo motivo que las deudas: no para que adivine,
+ * sino para que no tenga que hacerlo. Alguien con el sueldo cargado dice «ya
+ * cobré mi sueldo» y no repite el monto — porque ya se lo dijo al sistema una
+ * vez, y volver a pedírselo es la clase de cosa que hace que se deje de usar
+ * la captura por voz.
+ */
+export type FijoConocido = {
+  clase: 'ingreso' | 'gasto';
+  nombre: string;
+  importe: number;
+  categoria?: string;
+};
+
 /** Esquema estricto: obliga al modelo a devolver exactamente esta forma. */
 export const ESQUEMA = {
   type: 'object',
@@ -98,6 +115,12 @@ export function instrucciones(
    * el gasto en el casillero equivocado, y después los reportes mienten.
    */
   categorias: CategoriaSugerida[] = [],
+  /**
+   * Lo que se repite todos los meses, con su monto. Ver `FijoConocido`.
+   */
+  fijos: FijoConocido[] = [],
+  /** En qué casilleros puede caer lo que ENTRA. Ver `listaIngresos`. */
+  ingresos: CategoriaSugerida[] = [],
 ) {
   // El costo NO va en el prompt: la base lo asigna sola al registrar la venta.
   // Mandarlo sería filtrarlo sin necesidad.
@@ -112,10 +135,51 @@ export function instrucciones(
     ? categorias.map((c) => (c.pistas ? `"${c.nombre}" (${c.pistas})` : `"${c.nombre}"`)).join('\n     - ')
     : '"Mercadería", "Transporte", "Comida", "Publicidad", "Servicios", "Alquiler", "Sueldos", "Impuestos", "Otros"';
 
+  /**
+   * De dónde vino la plata.
+   *
+   * Para un negocio casi todo ingreso es una venta y el desglose da igual.
+   * Para alguien con sueldo es la distinción más importante que existe: qué
+   * parte de lo que entró es lo de todos los meses y qué parte fue de una.
+   * Es la diferencia entre «gano bien» y «este mes zafé».
+   */
+  const listaIngresos = ingresos.length
+    ? ingresos.map((c) => (c.pistas ? `"${c.nombre}" (${c.pistas})` : `"${c.nombre}"`)).join('\n     - ')
+    : '"Sueldo", "Extra", "Vendí algo", "Otros ingresos"';
+
   const listaDeudas = deudas.length
     ? deudas.slice(0, 40).map((d) =>
         `- ${d.nombre}${d.acreedor ? ` (${d.acreedor})` : ''} | id=${d.id} | falta=${d.saldo}`).join('\n')
     : '(no hay deudas cargadas)';
+
+  const listaFijos = fijos.length
+    ? fijos.slice(0, 40).map((f) =>
+        `- ${f.nombre} | ${f.clase === 'ingreso' ? 'ENTRA' : 'SALE'} ${f.importe}`
+        + `${f.categoria ? ` | categoría "${f.categoria}"` : ''}`).join('\n')
+    : '';
+
+  /**
+   * La regla que convierte esa lista en algo útil.
+   *
+   * Vale para los dos lados: «ya cobré mi sueldo» y «pagué el wifi» tienen
+   * exactamente el mismo problema —la persona no repite un monto que ya
+   * cargó— y exactamente la misma solución.
+   */
+  const bloqueFijos = fijos.length ? `
+LO QUE SE REPITE TODOS LOS MESES (con su monto ya conocido):
+${listaFijos}
+
+CÓMO USAR ESA LISTA — importante:
+   Si el mensaje menciona uno de esos por su nombre y NO dice un monto,
+   usá el monto de la lista y poné confianza alta (0.9).
+   - "ya cobré mi sueldo" / "entró mi sueldo"     → ingreso por el monto del sueldo
+   - "pagué el wifi" / "ya está el internet"      → gasto por el monto del wifi
+   - "cargué la línea del celular"                → gasto por el monto de la línea
+   Si SÍ dice un monto, mandá el que dijo: la lista es lo habitual, no una regla.
+   Si menciona uno de la lista y además dice otro monto, ganá el que dijo y
+   avisá la diferencia en "aviso".
+   Para un gasto de la lista, usá la categoría que dice la lista.
+` : '';
 
   if (esPersonal) {
     return `Sos el asistente de finanzas personales de alguien en Paraguay. Convertís lenguaje cotidiano en un movimiento financiero estructurado.
@@ -125,7 +189,7 @@ MONEDA: ${moneda}
 
 DEUDAS YA CARGADAS:
 ${listaDeudas}
-
+${bloqueFijos}
 ESTA ES UNA CUENTA PERSONAL, NO UN NEGOCIO.
 
 Quien te habla no vende nada: lleva sus propias finanzas. Anota su sueldo,
@@ -201,10 +265,16 @@ REGLAS:
    - Sin referencia temporal → hoy (${hoy}).
    - "ayer", "anteayer", "el lunes" → calculá la fecha real en YYYY-MM-DD.
 
-7. CATEGORÍA
-   - Gastos: elegí una corta y clara: "Comida", "Transporte", "Alquiler",
-     "Servicios", "Salud", "Educación", "Ropa", "Salidas", "Otros".
-   - Ingresos: "Sueldo" si es el sueldo, si no "Otros ingresos".
+7. CATEGORÍA — usá EXACTAMENTE una de estas listas, con esa misma escritura.
+   Inventar una parecida rompe el plan de gastos: el plan se arma por
+   categoría, y un gasto en una categoría que no está en la lista queda
+   afuera de la cuenta que la persona hizo.
+
+   Si es GASTO:
+     - ${listaCategorias}
+
+   Si es INGRESO:
+     - ${listaIngresos}
 
 8. CONFIANZA (0 a 1)
    - 0.9+ si el monto y el concepto están claros.
@@ -230,7 +300,7 @@ ${lista}
 
 DEUDAS YA CARGADAS:
 ${listaDeudas}
-
+${bloqueFijos}
 REGLAS:
 
 1. TIPO

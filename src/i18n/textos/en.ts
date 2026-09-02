@@ -57,6 +57,7 @@ export const en: Textos = {
     deudas: 'Debts',
     cierre: 'Daily close',
     cierreCorto: 'Close',
+    organizacion: 'Budget',
 
     plan: 'My plan',
     miCuenta: 'My account',
@@ -250,6 +251,171 @@ export const en: Textos = {
     sinCuentaAun: "Don't have an account yet?",
     empezarAhora: 'Start now',
   },
+
+  organizacion: {
+    titulo: 'Budget and savings',
+
+    teQuedan: 'Available',
+    paraDias: (n: number) => (n === 1 ? 'for the last day of the period' : `for the ${n} days remaining`),
+    hastaEl: (fecha: string) => `until ${fecha}, your next payday`,
+    hastaFinDeMes: (fecha: string) => `until ${fecha}`,
+    porDia: (monto: string) => `${monto} per day`,
+    enRojo: 'Your spending exceeds what is available for this period.',
+
+    comoSaleEseNumero: 'How this is calculated',
+    entro: 'Income this period',
+    salio: 'Recorded spending',
+    cuotasPorVencer: 'Debt instalments coming due',
+    fijosPorPagar: 'Fixed costs outstanding',
+    disponible: 'Available',
+
+    cobroPendiente: 'Your income is not recorded yet',
+    cobroPendienteDetalle:
+      'No income recorded for this period. Record it and the available balance works itself out.',
+
+    entradas: 'Recurring income',
+    entradasDetalle:
+      'Your pay and anything else that comes in every month. They set the date your period starts: the month runs from payday to payday, not from the 1st to the 30th.',
+    sinEntradas: 'No recurring income recorded',
+    sinEntradasDetalle:
+      'Record your pay so Orden works out your period from your actual payday.',
+    agregarEntrada: 'Add recurring income',
+    queEs: 'Description',
+    queEsEjemplo: 'Salary, rent received, fees',
+    cuanto: 'Amount',
+    queDiaEntra: 'Day it lands',
+    marcaMiCiclo: 'Sets my period',
+    marcaMiCicloDetalle: 'Your month will run from this day to the same day next month.',
+    entraElDia: (d: number) => `lands on the ${d}th`,
+    quitarEntrada: 'Delete',
+    confirmarQuitarEntrada: (nombre: string) =>
+      `Delete "${nombre}"? Your recorded entries are not affected.`,
+
+    elegiCategoria: 'Select a category',
+
+    soloPersonal: 'This section belongs to personal accounts.',
+    verDetalle: 'View details',
+    ocultarDetalle: 'Hide',
+    loQueCobras: 'What you get paid every month',
+    agregarOtroIngreso: 'Add another recurring income',
+    dosPagos:
+      'If you get paid more than once a month — salary at month end and commission two weeks later, say — record each one separately with its own day. Mark the one you consider your main payment as "Sets my period".',
+    registrarIngreso: 'Record income received',
+    registrarIngresoDetalle:
+      'A bonus, a commission, overtime or something you sold. Unlike recurring income, this does add money to your period.',
+    conceptoIngreso: 'Description',
+    conceptoIngresoEjemplo: 'August bonus, commission, overtime',
+    fechaIngreso: 'Date',
+    fechaFutura:
+      "That date has not arrived yet. Income is recorded the day the money comes in: "
+      + 'enter it early and Orden shows you money you do not have yet.',
+    registrar: 'Record',
+
+
+    salidas: 'Fixed costs',
+    salidasDetalle:
+      'Rent, insurance, internet, your phone line, transport. Orden subtracts them from your available balance from the start of the period and stops once you record the payment.',
+    sinSalidas: 'No fixed costs recorded',
+    sinSalidasDetalle:
+      'Record what you pay every month and you will know your real available balance from day one of the period.',
+    agregarSalida: 'Add a fixed cost',
+    queGasto: 'Description',
+    queGastoEjemplo: 'Rent, insurance, internet, phone line',
+    sinDiaFijo: 'No set date',
+    sinDiaFijoDetalle: 'Leave it like this for daily costs or ones with no due date, such as transport.',
+    venceElDia: (d: number) => `due on the ${d}th`,
+    todoElMes: 'no set date',
+    detalleGasto: 'Notes',
+    detalleGastoEjemplo: 'Provider, contract number, plan',
+    yaPagado: 'up to date',
+    faltaPagarFijo: (monto: string) => `${monto} outstanding`,
+    totalPorMes: (monto: string) => `${monto} per month`,
+    quitarSalida: 'Delete',
+    confirmarQuitarSalida: (nombre: string) =>
+      `Delete "${nombre}"? Your recorded entries are not affected.`,
+
+    ahorros: 'Savings',
+    ahorrosDetalle:
+      'Savings are not spending: the money is still yours, so it never shows up as an expense in any report. It does come off your available balance, because you no longer have it to spend.',
+    sinAhorros: 'No savings funds',
+    sinAhorrosDetalle: 'Create a fund — emergencies, a trip, a purchase — and put part of your income into it.',
+    agregarAhorro: 'Create fund',
+    nombreDelFondo: 'What the fund is for',
+    nombreDelFondoEjemplo: 'Emergencies, a trip, a vehicle',
+    metaOpcional: 'Target',
+    metaDetalle: 'Leave it empty to save without a set target.',
+    fechaLimite: 'By when',
+    fechaLimiteDetalle:
+      'If it is for something with a date — a trip, an instalment, a course — set it and we tell you how much to put aside each month.',
+    paraEl: (fecha: string) => `By ${fecha}`,
+    ritmo: (porMes: string, fecha: string) => `Put aside ${porMes} a month to get there by ${fecha}.`,
+    faltan: (monto: string) => `${monto} to go`,
+    metaCumplida: 'Target reached.',
+    fechaVencida: (falta: string) =>
+      `That date has passed and you were ${falta} short. Set a new date or adjust the target.`,
+    editarFondo: 'Edit',
+    guardarPlata: 'Deposit',
+    retirarPlata: 'Withdraw',
+    cuantoGuardas: 'Amount to deposit',
+    cuantoRetiras: 'Amount to withdraw',
+    deLaMeta: (meta: string, pct: number) => `${pct}% of ${meta}`,
+    sinMeta: 'no target set',
+    ahorradoEsteCiclo: 'Put into savings',
+    quitarFondo: 'Delete fund',
+    confirmarQuitarFondo: (nombre: string) => `Delete the "${nombre}" fund?`,
+
+    categoriaPropia: 'Create a category',
+    categoriaPropiaDetalle:
+      'If none of the categories fit your spending, define your own. Orden will use it when interpreting what you dictate too.',
+    nombreCategoria: 'Category name',
+    nombreCategoriaEjemplo: 'Pets, club, family support',
+    pistasCategoria: 'What it covers',
+    pistasCategoriaDetalle:
+      'Write a few examples separated by commas. They let Orden classify what you record by voice or photo on its own.',
+    pistasCategoriaEjemplo: 'vet, pet food, grooming',
+    crearCategoria: 'Create category',
+    eliminarCategoria: 'Delete category',
+    confirmarEliminarCategoria: (nombre: string) =>
+      `Delete the "${nombre}" category? Entries already recorded keep it.`,
+  },
+
+  panelPersonal: {
+    guardado: 'Savings',
+    esteMes: (monto: string) => `+${monto} this period`,
+    venceEl: (fecha: string) => `next due: ${fecha}`,
+
+    deDondeVino: 'Where your income comes from',
+    organizar: 'Manage',
+    sinEntradas: 'No income recorded this period',
+    sinEntradasDetalle:
+      'Record your pay and any other income. You can dictate it and Orden classifies it on its own.',
+    fueraDeLoHabitual: (monto: string, principal: string) =>
+      `${monto} of your income this period did not come from ${principal}.`,
+
+    tusAhorros: 'Savings funds',
+    sinAhorros: 'No savings funds',
+    sinAhorrosDetalle: 'Funds you create show up here with their balance and progress.',
+    deLaMeta: (meta: string, pct: number) => `${pct}% of ${meta}`,
+  },
+  reportePersonal: {
+    ingresos: 'Income',
+    gastos: 'Spending',
+    resultado: 'Net result',
+    ahorraste: (monto: string) => `You had ${monto} left over this period after your spending.`,
+    gastasteDeMas: (monto: string) => `You spent ${monto} more than you took in this period.`,
+
+    origen: 'Where your income came from',
+    sinIngresos: 'No income this period',
+    sinIngresosDetalle: 'Once you record what you get paid, you will see where each part comes from.',
+
+    destino: 'How your spending breaks down',
+    sinGastos: 'No spending this period',
+    sinGastosDetalle: 'Once you record your spending, you will see how it breaks down here.',
+
+    descarga: 'Download your entries',
+    descargaDetalle: 'A spreadsheet with everything you recorded in the period.',
+  },
+
 
   venta: {
     buscarProducto: 'Search products…',
@@ -595,6 +761,8 @@ export const en: Textos = {
     zonaDetalle: 'Decides when your day ends for the daily close and the streak.',
     avisos: 'Notifications',
     avisoCierre: 'Remind me to close the day',
+    avisoCarga: 'Remind me to log my spending',
+    avisoCargaDetalle: 'Only if you have logged nothing by then, and only if you have been logging.',
     avisoCierreDetalle: "Only if you still haven't recorded anything by then.",
     avisoSemanal: 'Weekly summary by email',
     avisoSemanalDetalle: 'On Mondays, with what happened over the last seven days.',

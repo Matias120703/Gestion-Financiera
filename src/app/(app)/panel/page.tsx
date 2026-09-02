@@ -10,7 +10,9 @@ import { dinero, dineroCorto, porcentaje, numero, fechaLegible, dineroQuizas } f
 import { SelectorRango } from '@/components/SelectorRango';
 import { Indicador, GraficoDiario, Barra, Vacio, Seccion } from '@/components/Piezas';
 import { permisosDe } from '@/lib/permisos';
-import { textos } from '@/i18n';
+import { textos, idiomaActual, FICHA } from '@/i18n';
+import { traerResumenPersonal } from '@/lib/personal';
+import { PanelPersonal } from '@/components/PanelPersonal';
 import { traerRacha } from '@/lib/habito';
 import { TarjetaRacha } from '@/components/Racha';
 import { fichaDe } from '@/lib/rubros';
@@ -26,6 +28,49 @@ export default async function PaginaPanel({
   const ctx = await contextoObligatorio();
 
   /**
+   * UNA CUENTA PERSONAL TIENE SU PROPIO PANEL.
+   *
+   * Se corta acá arriba, antes de pedir un solo dato, y no con condicionales
+   * repartidos por toda la pantalla. Ese fue el error que dejó el cierre del
+   * día colgado meses en las cuentas personales: una pantalla sola tratando
+   * de servir a todos, y el caso que nadie miró.
+   *
+   * Lo que hay más abajo —ganancia bruta, margen, ranking de productos,
+   * ticket promedio— no significa nada para alguien que cobra un sueldo. Le
+   * habla como si vendiera algo.
+   */
+  if (ctx.empresa.tipo_cuenta === 'personal') {
+    const t = textos();
+    if (!ctx.esAdmin) {
+      return (
+        <div className="mx-auto max-w-lg">
+          <div className="tarjeta">
+            <Vacio titulo={t.organizacion.titulo} detalle={t.deudas.soloAdmin} />
+          </div>
+        </div>
+      );
+    }
+
+    // Las deudas son contexto: si fallan, el panel igual se muestra. Para el
+    // número del que depende una decisión está la pantalla de Deudas, que sí
+    // lanza si no puede leer.
+    const [resumenPersonal, deudasPersonal] = await Promise.all([
+      traerResumenPersonal(ctx.empresa.id),
+      traerResumenDeudas(ctx.empresa.id).catch(() => null),
+    ]);
+
+    return (
+      <PanelPersonal
+        resumen={resumenPersonal}
+        deudas={deudasPersonal}
+        moneda={ctx.empresa.moneda}
+        locale={FICHA[idiomaActual()].locale}
+        t={t}
+      />
+    );
+  }
+
+  /**
    * Un negocio de ciclo largo no se mide por día.
    *
    * Un ganadero compra un ternero, gasta en maíz y sanidad durante dieciocho
@@ -38,8 +83,9 @@ export default async function PaginaPanel({
    * siempre. Le sacamos el recordatorio de la noche en la 021 y esto quedó
    * haciendo exactamente lo mismo en la pantalla que más mira.
    */
-  const cicloLargo = fichaDe(ctx.empresa.rubro).ciclosLargos
-    && ctx.empresa.tipo_cuenta !== 'personal';
+  // Ya no hace falta descartar la cuenta personal: si llegó hasta acá, es de
+  // negocio. El corte de arriba se lo llevó.
+  const cicloLargo = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).ciclosLargos;
 
   const rango = rangoDesdeParams(searchParams);
   const previo = rangoAnterior(rango);

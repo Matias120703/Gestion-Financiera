@@ -1,8 +1,10 @@
 import { contextoObligatorio } from '@/lib/sesion';
-import { textos } from '@/i18n';
+import { textos, idiomaActual, FICHA } from '@/i18n';
+import { ReportePersonal } from '@/components/ReportePersonal';
 import { rangoDesdeParams, traerProductos } from '@/lib/datos';
 import {
   traerResumen, traerRanking, traerGastosPorCategoria, traerCobrosPorMetodo,
+  traerIngresosPorCategoria,
 } from '@/lib/agregados';
 import { dinero, dineroCorto, porcentaje, numero, fechaLegible, dineroQuizas, porcentajeQuizas } from '@/lib/formato';
 import { SelectorRango } from '@/components/SelectorRango';
@@ -20,6 +22,55 @@ export default async function PaginaReportes({
   const ctx = await contextoObligatorio();
   const t = textos();
   const rango = rangoDesdeParams(searchParams);
+
+  /**
+   * UNA CUENTA PERSONAL TIENE SU PROPIO REPORTE.
+   *
+   * Igual que el panel, se corta acá arriba. Lo que hay más abajo —vendido,
+   * ganancia bruta, ganancia neta, ranking de productos, cobros por método,
+   * plata parada en stock— no existe para alguien que cobra un sueldo. Verlo
+   * ahí no es solo ruido: le dice que este sistema no es para él.
+   */
+  if (ctx.empresa.tipo_cuenta === 'personal') {
+    const [rp, origen, destino] = await Promise.all([
+      traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
+      traerIngresosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
+      traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
+    ]);
+    const permisosP = permisosDe(ctx.miembro.rol);
+
+    return (
+      <div className="space-y-4">
+        <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
+
+        {permisosP.descargarExcel && (
+          <div className="tarjeta flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-[16px] font-bold tracking-tight">{t.reportePersonal.descarga}</h2>
+              <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
+                {rango.desde === rango.hasta
+                  ? fechaLegible(rango.desde)
+                  : `${fechaLegible(rango.desde)} — ${fechaLegible(rango.hasta)}`}
+                {' · '}{t.reportePersonal.descargaDetalle}
+              </p>
+            </div>
+            <BotonExcel empresaId={ctx.empresa.id} desde={rango.desde} hasta={rango.hasta} />
+          </div>
+        )}
+
+        <ReportePersonal
+          ingresos={rp.ingresosTotales}
+          gastos={rp.gastos}
+          porOrigen={origen}
+          porDestino={destino}
+          moneda={ctx.empresa.moneda}
+          locale={FICHA[idiomaActual()].locale}
+          t={t}
+        />
+      </div>
+    );
+  }
+
   // Todo agregado en la base: cinco llamadas que devuelven pocas filas cada una.
   const [r, ranking, categorias, metodos, productos] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),

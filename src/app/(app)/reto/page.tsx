@@ -25,7 +25,7 @@ export default async function PaginaReto() {
   const ctx = await contextoObligatorio();
   const t = textos();
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
-  if (fichaDe(ctx.empresa.rubro).sinSecciones.includes('/reto')) redirect('/panel');
+  if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).sinSecciones.includes('/reto')) redirect('/panel');
 
   if (ctx.empresa.tipo_cuenta === 'personal') redirect('/panel');
 

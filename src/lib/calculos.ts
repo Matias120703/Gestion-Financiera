@@ -281,6 +281,58 @@ export function rankingProductos(movimientos: Movimiento[]): FilaProducto[] {
 
 export interface FilaCategoria { nombre: string; monto: number; operaciones: number; participacion: number }
 
+/**
+ * Lo que se movió en los fondos de ahorro dentro de un período.
+ *
+ * El ahorro no es un gasto —la plata sigue siendo de la persona— así que
+ * no entra en ningún total de gastos. Se cuenta aparte, y por eso tiene
+ * su propia forma.
+ */
+export interface FilaFondo {
+  nombre: string;
+  aportado: number;
+  retirado: number;
+  neto: number;
+  /** El saldo del fondo A HOY. Es de otro recorte: nunca se suma con lo del período. */
+  saldo_hoy: number;
+}
+
+export interface AhorroDelPeriodo {
+  aportado: number;
+  retirado: number;
+  /** Aportes menos retiros. Negativo si en el período sacó más de lo que puso. */
+  neto: number;
+  porFondo: FilaFondo[];
+}
+
+/**
+ * De dónde vino la plata, agrupado por categoría.
+ *
+ * Espejo exacto de `gastosPorCategoria`, y espejo en JavaScript de la
+ * función `ingresos_por_categoria` de la migración 028. Existe por el mismo
+ * motivo que el resto de este archivo: la base es la que calcula en
+ * producción, y esto es la referencia contra la que se comprueba que dé lo
+ * mismo.
+ *
+ * Ventas e ingresos van juntos: para quien mira el reporte, todo lo que
+ * entró es lo que entró. La distinción es interna.
+ */
+export function ingresosPorCategoria(movimientos: Movimiento[]): FilaCategoria[] {
+  const mapa = new Map<string, FilaCategoria>();
+  for (const m of movimientos) {
+    if ((m.tipo !== 'ingreso' && m.tipo !== 'venta') || !esValido(m)) continue;
+    const clave = (m.categoria || 'General').trim();
+    const actual = mapa.get(clave) ?? { nombre: clave, monto: 0, operaciones: 0, participacion: 0 };
+    actual.monto += Number(m.monto) || 0;
+    actual.operaciones += 1;
+    mapa.set(clave, actual);
+  }
+  const filas = Array.from(mapa.values());
+  const total = filas.reduce((s, f) => s + f.monto, 0);
+  for (const f of filas) f.participacion = total > 0 ? (f.monto / total) * 100 : 0;
+  return filas.sort((a, b) => b.monto - a.monto);
+}
+
 export function gastosPorCategoria(movimientos: Movimiento[]): FilaCategoria[] {
   const mapa = new Map<string, FilaCategoria>();
   for (const m of movimientos) {

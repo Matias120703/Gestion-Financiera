@@ -1,5 +1,7 @@
 import { clienteServidor } from './supabase/servidor';
-import type { FilaCategoria, FilaDia, FilaProducto, Resumen } from './calculos';
+import type {
+  AhorroDelPeriodo, FilaCategoria, FilaDia, FilaProducto, Resumen,
+} from './calculos';
 import { exigir, exigirLista, recorrerPaginas } from './lectura';
 import type { Movimiento, TipoMovimiento } from './tipos';
 
@@ -184,6 +186,28 @@ export async function traerSerieDiaria(
 
 // ------------------------------------------------------------------ gastos y cobros
 
+/**
+ * De dónde vino la plata en el período elegido.
+ *
+ * Espejo de `traerGastosPorCategoria`. Para un comercio casi todo lo que entra
+ * es una venta y este desglose no dice nada; para alguien con sueldo es el
+ * número que separa «gano bien» de «este mes zafé».
+ */
+export async function traerIngresosPorCategoria(
+  empresaId: string, desde: string, hasta: string,
+): Promise<FilaCategoria[]> {
+  const supabase = clienteServidor();
+  const respuesta = await supabase.rpc('ingresos_por_categoria', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  return exigirLista<any>(respuesta, 'ingresos por categoría').map((f) => ({
+    nombre: String(f.nombre),
+    monto: num(f.monto),
+    operaciones: num(f.operaciones),
+    participacion: num(f.participacion),
+  }));
+}
+
 export async function traerGastosPorCategoria(
   empresaId: string, desde: string, hasta: string,
 ): Promise<FilaCategoria[]> {
@@ -197,6 +221,39 @@ export async function traerGastosPorCategoria(
     operaciones: num(f.operaciones),
     participacion: num(f.participacion),
   }));
+}
+
+
+/**
+ * Lo que se guardó y se sacó de los fondos de ahorro DENTRO del período
+ * elegido.
+ *
+ * `resumen_personal` también cuenta el ahorro, pero siempre del ciclo en
+ * curso —de cobro a cobro—. Este mira el rango que la persona pidió, que es
+ * el único recorte que puede convivir con el resto del reporte sin mentir.
+ */
+export async function traerAhorroDelPeriodo(
+  empresaId: string, desde: string, hasta: string,
+): Promise<AhorroDelPeriodo> {
+  const supabase = clienteServidor();
+  const respuesta = await supabase.rpc('resumen_ahorro_periodo', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  const d = exigir(respuesta, 'ahorro del período') as any;
+  return {
+    aportado: num(d?.aportado),
+    retirado: num(d?.retirado),
+    neto: num(d?.neto),
+    porFondo: Array.isArray(d?.por_fondo)
+      ? d.por_fondo.map((f: any) => ({
+          nombre: String(f?.nombre ?? ''),
+          aportado: num(f?.aportado),
+          retirado: num(f?.retirado),
+          neto: num(f?.neto),
+          saldo_hoy: num(f?.saldo_hoy),
+        }))
+      : [],
+  };
 }
 
 export interface FilaCobro { metodo: string; monto: number; participacion: number }

@@ -34,6 +34,14 @@
 --   · 021_rubros.sql
 --   · 022_ficha_y_correcciones.sql
 --   · 023_registro_con_ficha.sql
+--   · 024_cuenta_personal.sql
+--   · 025_gastos_fijos.sql
+--   · 026_ahorros_y_entradas.sql
+--   · 027_categorias_propias.sql
+--   · 028_ingresos_por_categoria.sql
+--   · 029_meta_con_fecha.sql
+--   · 030_ahorro_del_periodo.sql
+--   · 031_aviso_para_personas.sql
 -- ============================================================
 
 -- ############################################################
@@ -7815,3 +7823,2136 @@ revoke all on function public.crear_empresa(text, text, text, text, text, text, 
   from public, anon;
 grant execute on function public.crear_empresa(text, text, text, text, text, text, text, text, text)
   to authenticated;
+
+
+-- ############################################################
+-- ##  024_cuenta_personal.sql
+-- ############################################################
+
+-- ORDEN · Migración 024 · La cuenta personal deja de ser un comercio disfrazado
+--
+-- Hasta acá, "personal" solo quitaba pantallas: no había Vender, ni Productos,
+-- ni Reto. Pero por debajo seguía siendo una cuenta de comercio, y eso se
+-- filtraba por dos agujeros que nadie había mirado:
+--
+--   · EL CIERRE DEL DÍA SEGUÍA AHÍ. Esa pantalla se oculta por RUBRO, y a
+--     toda cuenta personal se le guarda rubro 'comercio' porque una persona
+--     no tiene rubro. O sea que el filtro nunca se le aplicó. Alguien que
+--     lleva su sueldo estaba viendo «cuánto ganaste hoy», que para él no
+--     significa nada: su plata no se mide por día.
+--
+--   · LAS CATEGORÍAS ERAN LAS DE UN ALMACÉN. Mercadería, Publicidad,
+--     Sueldos («empleados, jornales»), Impuestos. Ninguna de Comida, Salud,
+--     Ropa o Cuidado personal. La IA venía clasificando el gasto de una
+--     persona con los casilleros de un negocio.
+--
+-- Lo segundo importa más de lo que parece: el presupuesto que se agrega en
+-- esta misma migración se arma POR CATEGORÍA. Con las categorías de un
+-- comercio, toda la organización quedaría construida sobre casilleros
+-- equivocados.
+--
+-- Y se agrega lo que hacía falta para que la cuenta personal sirva de verdad:
+-- ingresos que se repiten, un plan de en qué se va la plata, y un ciclo que
+-- va de cobro a cobro en vez de día a día.
+
+-- ============================================================
+-- 1. LA PUERTA: LAS DOS PREGUNTAS AHORA SABEN QUÉ TIPO DE CUENTA ES
+--
+--    Las dos funciones pasan a recibir el tipo de cuenta. Se REEMPLAZAN las
+--    versiones de un solo argumento en vez de convivir con ellas: dos
+--    funciones contestando la misma pregunta es exactamente cómo se llega a
+--    que la pantalla diga una cosa y la tarea de la noche otra.
+-- ============================================================
+
+drop function if exists public.categorias_de_rubro(text);
+
+create or replace function public.categorias_de_rubro(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case
+    when coalesce(p_tipo_cuenta, 'emprendedor') = 'personal' then jsonb_build_array(
+      jsonb_build_object('nombre','Comida','pistas','supermercado, almacén, verdulería, carnicería, despensa, panadería'),
+      jsonb_build_object('nombre','Alquiler','pistas','alquiler, expensas, condominio'),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono, cable, gas'),
+      jsonb_build_object('nombre','Transporte','pistas','colectivo, nafta, combustible, pasaje, taxi, uber, peaje'),
+      jsonb_build_object('nombre','Salud','pistas','farmacia, remedios, médico, dentista, seguro médico, análisis'),
+      jsonb_build_object('nombre','Educación','pistas','colegio, cuota, universidad, útiles, curso, libros'),
+      jsonb_build_object('nombre','Ropa','pistas','ropa, calzado, zapatillas, campera'),
+      jsonb_build_object('nombre','Cuidado personal','pistas','peluquería, uñas, barbería, cosmética, gimnasio, perfume'),
+      jsonb_build_object('nombre','Ocio','pistas','salida, restaurante, cine, streaming, viaje, cerveza, cumpleaños'),
+      jsonb_build_object('nombre','Hogar','pistas','limpieza, muebles, arreglos, electrodomésticos, ferretería'),
+      jsonb_build_object('nombre','Cuotas y deudas','pistas','tarjeta, préstamo, cuota, financiera'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'ganaderia' then jsonb_build_array(
+      jsonb_build_object('nombre','Alimentación','pistas','maíz, balanceado, ración, fardos, sal, pasto'),
+      jsonb_build_object('nombre','Sanidad','pistas','vacunas, antiparasitarios, veterinario, remedios'),
+      jsonb_build_object('nombre','Personal','pistas','peón, capataz, jornales, sueldos'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo, pastaje'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de hacienda, camión jaula'),
+      jsonb_build_object('nombre','Mantenimiento','pistas','alambrado, aguadas, maquinaria, herramientas'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'agricultura' then jsonb_build_array(
+      jsonb_build_object('nombre','Semilla','pistas','semilla, plantines'),
+      jsonb_build_object('nombre','Fertilizante','pistas','urea, fosfato, abono'),
+      jsonb_build_object('nombre','Agroquímicos','pistas','herbicida, fungicida, insecticida'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Cosecha','pistas','cosechadora, trilla, secado'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de granos'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo'),
+      jsonb_build_object('nombre','Personal','pistas','jornales, tractorista, peón'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'servicios' then jsonb_build_array(
+      jsonb_build_object('nombre','Materiales','pistas','cemento, arena, cables, pintura, insumos'),
+      jsonb_build_object('nombre','Repuestos','pistas','piezas, filtros, aceite'),
+      jsonb_build_object('nombre','Herramientas','pistas',''),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Personal','pistas','ayudante, jornales, sueldos'),
+      jsonb_build_object('nombre','Transporte','pistas','flete, viaje, delivery'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    else jsonb_build_array(
+      jsonb_build_object('nombre','Mercadería','pistas','lo que comprás para revender'),
+      jsonb_build_object('nombre','Transporte','pistas','combustible, flete, delivery'),
+      jsonb_build_object('nombre','Comida','pistas',''),
+      jsonb_build_object('nombre','Publicidad','pistas',''),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono'),
+      jsonb_build_object('nombre','Alquiler','pistas',''),
+      jsonb_build_object('nombre','Sueldos','pistas','empleados, jornales'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+  end;
+$fn$;
+
+grant execute on function public.categorias_de_rubro(text, text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- ¿ESTA CUENTA CIERRA EL DÍA?
+--
+-- Una persona con sueldo no cierra el día por el mismo motivo que un
+-- ganadero no lo cierra: el día no es su ciclo. El del ganadero es el
+-- novillo; el de alguien con sueldo va de cobro a cobro.
+-- ------------------------------------------------------------
+drop function if exists public.rubro_cierra_el_dia(text);
+
+create or replace function public.rubro_cierra_el_dia(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns boolean language sql immutable set search_path = public as $fn$
+  select coalesce(p_tipo_cuenta, 'emprendedor') <> 'personal'
+     and coalesce(p_rubro, 'comercio') in ('comercio', 'servicios');
+$fn$;
+
+grant execute on function public.rubro_cierra_el_dia(text, text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- El recordatorio de la noche, con la misma firma y la misma forma de
+-- respuesta que en la 008 y la 021. Lo único que cambia es que ahora la
+-- cuenta personal tampoco recibe el «no cargaste nada hoy».
+-- ------------------------------------------------------------
+create or replace function public.empresas_sin_cargar_hoy(p_racha_minima integer default 2)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id', e.id,
+      'nombre',     e.nombre,
+      'zona',       e.zona_horaria,
+      'racha',      r.largo
+    ) as x
+    from public.empresas e
+    join lateral (
+      with dias as (
+        select distinct m.fecha from public.movimientos m
+        where m.empresa_id = e.id and m.estado = 'activo'
+          and m.fecha <= (now() at time zone e.zona_horaria)::date
+      ),
+      numeradas as (
+        select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+      ),
+      rachas as (
+        select count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+      )
+      select largo, hasta from rachas order by hasta desc limit 1
+    ) r on true
+    where public.rubro_cierra_el_dia(e.rubro, e.tipo_cuenta)
+      and r.hasta = (now() at time zone e.zona_horaria)::date - 1
+      and r.largo >= greatest(p_racha_minima, 1)
+  ) s;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.empresas_sin_cargar_hoy(integer) from public, anon, authenticated;
+grant execute on function public.empresas_sin_cargar_hoy(integer) to service_role;
+
+-- ============================================================
+-- 2. INGRESOS FIJOS
+--
+--    No se llama «sueldo» a propósito. Mucha gente tiene más de una entrada
+--    —sueldo, changas, el alquiler de una pieza— y un comisionista no tiene
+--    sueldo fijo pero sí ingresos que se repiten. Un solo concepto los cubre
+--    a todos; una casilla llamada «salario» dejaría afuera a la mitad.
+--
+--    Esto NO crea movimientos. Es lo que la persona ESPERA cobrar, no lo que
+--    cobró. La plata entra cuando la carga, como cualquier otro ingreso. Si
+--    esta tabla generara movimientos sola, el sistema mostraría plata que
+--    todavía no existe — que es la única mentira que un sistema de plata no
+--    se puede permitir.
+-- ============================================================
+create table if not exists public.ingresos_fijos (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  nombre      text not null check (char_length(trim(nombre)) between 1 and 60),
+  importe     numeric(14,2) not null check (importe > 0),
+  -- Qué día del mes entra. Define el ciclo: para alguien con sueldo, el mes
+  -- útil no va del 1 al 30, va de cobro a cobro.
+  dia_del_mes smallint not null default 1 check (dia_del_mes between 1 and 31),
+  -- Cuál manda para definir el ciclo, si hay varios.
+  principal   boolean not null default false,
+  activo      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists ingresos_fijos_empresa_idx
+  on public.ingresos_fijos (empresa_id) where activo;
+
+-- Un solo principal por cuenta: si hubiera dos, el ciclo dependería del
+-- orden en que se leyeran las filas.
+create unique index if not exists ingresos_fijos_un_principal
+  on public.ingresos_fijos (empresa_id) where principal and activo;
+
+-- ============================================================
+-- 3. EL PLAN: EN QUÉ SE VA A IR LA PLATA
+--
+--    Un número por categoría, que vale todos los meses. No se guarda una
+--    copia por mes a propósito: obligaría a rearmar el plan cada treinta
+--    días, y un plan que hay que rehacer es un plan que se abandona.
+--
+--    La comparación contra la realidad sale gratis: cada gasto ya se guarda
+--    con su categoría desde el día uno.
+-- ============================================================
+create table if not exists public.presupuesto (
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  categoria  text not null check (char_length(trim(categoria)) between 1 and 40),
+  importe    numeric(14,2) not null check (importe >= 0),
+  updated_at timestamptz not null default now(),
+  primary key (empresa_id, categoria)
+);
+
+-- ------------------------------------------------------------
+-- Permisos de las dos tablas.
+--
+-- Se lee con `es_admin`, no con `es_miembro`. Cuánto cobra alguien y cómo
+-- reparte su plata es del mismo orden que sus deudas y sus costos: un
+-- vendedor no lo ve nunca. Hoy una cuenta personal no tiene vendedores, pero
+-- la tabla es genérica y el día que un comercio use el presupuesto la regla
+-- ya tiene que estar puesta.
+-- ------------------------------------------------------------
+alter table public.ingresos_fijos enable row level security;
+alter table public.presupuesto    enable row level security;
+
+drop policy if exists ingresos_fijos_select on public.ingresos_fijos;
+create policy ingresos_fijos_select on public.ingresos_fijos
+  for select to authenticated using (public.es_admin(empresa_id));
+
+drop policy if exists presupuesto_select on public.presupuesto;
+create policy presupuesto_select on public.presupuesto
+  for select to authenticated using (public.es_admin(empresa_id));
+
+revoke all on public.ingresos_fijos from anon, authenticated;
+revoke all on public.presupuesto    from anon, authenticated;
+grant select on public.ingresos_fijos to authenticated;
+grant select on public.presupuesto    to authenticated;
+
+-- La cuenta vencida queda en solo lectura, igual que todo lo demás. El
+-- DELETE sigue libre: nadie tiene que pagar para poder irse.
+do $$
+declare v_tabla text;
+begin
+  foreach v_tabla in array array['ingresos_fijos', 'presupuesto'] loop
+    execute format('drop trigger if exists %I on public.%I',
+                   'cuenta_activa_' || v_tabla, v_tabla);
+    execute format(
+      'create trigger %I before insert or update on public.%I '
+      || 'for each row execute function public.exigir_cuenta_activa()',
+      'cuenta_activa_' || v_tabla, v_tabla);
+  end loop;
+end $$;
+
+-- ============================================================
+-- 4. ESCRIBIR: SIEMPRE POR LA PUERTA OFICIAL
+-- ============================================================
+create or replace function public.guardar_ingreso_fijo(
+  p_empresa   uuid,
+  p_nombre    text,
+  p_importe   numeric,
+  p_dia       integer default 1,
+  p_principal boolean default false,
+  p_id        uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare v_id uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber qué es cuando entre.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_importe, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  -- Si este pasa a ser el principal, el anterior deja de serlo. Se hace
+  -- ANTES de escribir, porque el índice único no admite dos.
+  if coalesce(p_principal, false) then
+    update public.ingresos_fijos
+    set principal = false, updated_at = now()
+    where empresa_id = p_empresa and principal
+      and (p_id is null or id <> p_id);
+  end if;
+
+  if p_id is null then
+    insert into public.ingresos_fijos (empresa_id, nombre, importe, dia_del_mes, principal)
+    values (p_empresa, trim(p_nombre), p_importe,
+            least(greatest(coalesce(p_dia, 1), 1), 31), coalesce(p_principal, false))
+    returning id into v_id;
+  else
+    update public.ingresos_fijos
+    set nombre = trim(p_nombre), importe = p_importe,
+        dia_del_mes = least(greatest(coalesce(p_dia, 1), 1), 31),
+        principal = coalesce(p_principal, false), updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese ingreso no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_ingreso_fijo(uuid, text, numeric, integer, boolean, uuid)
+  from public, anon;
+grant execute on function public.guardar_ingreso_fijo(uuid, text, numeric, integer, boolean, uuid)
+  to authenticated;
+
+create or replace function public.borrar_ingreso_fijo(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  delete from public.ingresos_fijos where id = p_id and empresa_id = p_empresa;
+  if not found then
+    raise exception 'Ese ingreso no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  return jsonb_build_object('borrado', true);
+end $fn$;
+
+revoke all on function public.borrar_ingreso_fijo(uuid, uuid) from public, anon;
+grant execute on function public.borrar_ingreso_fijo(uuid, uuid) to authenticated;
+
+-- Poner en cero es sacar la categoría del plan. Sin esto haría falta un
+-- segundo botón de borrar para algo que la persona piensa como «ya no le
+-- pongo número a esto».
+create or replace function public.guardar_presupuesto(
+  p_empresa   uuid,
+  p_categoria text,
+  p_importe   numeric
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_categoria, ''))) = 0 then
+    raise exception 'Falta la categoría.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_importe, 0) <= 0 then
+    delete from public.presupuesto
+    where empresa_id = p_empresa and categoria = trim(p_categoria);
+    return jsonb_build_object('quitada', true);
+  end if;
+
+  insert into public.presupuesto (empresa_id, categoria, importe, updated_at)
+  values (p_empresa, trim(p_categoria), p_importe, now())
+  on conflict (empresa_id, categoria) do update
+    set importe = excluded.importe, updated_at = now();
+
+  return jsonb_build_object('guardado', true);
+end $fn$;
+
+revoke all on function public.guardar_presupuesto(uuid, text, numeric) from public, anon;
+grant execute on function public.guardar_presupuesto(uuid, text, numeric) to authenticated;
+
+-- ============================================================
+-- 5. EL CICLO: DE COBRO A COBRO
+--
+--    Para alguien con sueldo el mes útil no empieza el 1. Empieza el día que
+--    cobra y termina el día antes del próximo cobro. Esa es la pregunta que
+--    de verdad le quita el sueño: es 20, ¿llego al 30?
+-- ============================================================
+
+-- El día de cobro de un mes dado, recortado si el mes es más corto: quien
+-- cobra el 31 en febrero cobra el 28.
+create or replace function public.fecha_de_cobro(p_mes date, p_dia integer)
+returns date language sql immutable set search_path = public as $fn$
+  select (date_trunc('month', p_mes)
+          + (least(
+               greatest(coalesce(p_dia, 1), 1),
+               extract(day from (date_trunc('month', p_mes) + interval '1 month - 1 day'))::int
+             ) - 1) * interval '1 day')::date;
+$fn$;
+
+-- Revocar ANTES de otorgar: `anon` hereda de PUBLIC, así que un grant
+-- suelto la deja abierta aunque nunca se la haya nombrado.
+revoke all on function public.fecha_de_cobro(date, integer) from public, anon;
+grant execute on function public.fecha_de_cobro(date, integer) to authenticated;
+
+create or replace function public.ciclo_personal(p_empresa uuid)
+returns table (desde date, hasta date, dia_cobro integer)
+language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona   text;
+  v_hoy    date;
+  v_dia    integer;
+  v_inicio date;
+begin
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  -- Manda el ingreso marcado como principal; si no hay, el más grande. Sin
+  -- ningún ingreso fijo cargado, el ciclo es el mes corrido.
+  select i.dia_del_mes into v_dia
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo
+  order by i.principal desc, i.importe desc, i.created_at
+  limit 1;
+
+  v_dia := coalesce(v_dia, 1);
+
+  v_inicio := public.fecha_de_cobro(v_hoy, v_dia);
+  if v_hoy < v_inicio then
+    v_inicio := public.fecha_de_cobro((v_hoy - interval '1 month')::date, v_dia);
+  end if;
+
+  desde     := v_inicio;
+  hasta     := public.fecha_de_cobro((v_inicio + interval '1 month')::date, v_dia) - 1;
+  dia_cobro := v_dia;
+  return next;
+end $fn$;
+
+revoke all on function public.ciclo_personal(uuid) from public, anon;
+grant execute on function public.ciclo_personal(uuid) to authenticated;
+
+-- ============================================================
+-- 6. LA PANTALLA, EN UNA SOLA LLAMADA
+--
+--    Contesta la única pregunta que importa: cuánto te queda y para cuántos
+--    días. Todo lo demás de esta función es el detalle de cómo se llegó a
+--    ese número.
+--
+--    `disponible` sale de plata REAL: lo que entró menos lo que salió, menos
+--    las cuotas que todavía faltan pagar antes de que cierre el ciclo. No se
+--    suma el sueldo esperado si todavía no entró — decirle a alguien que
+--    tiene plata que no cobró es cómo se hace que deje de creerte.
+-- ============================================================
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_c            record;
+  v_zona         text;
+  v_hoy          date;
+  v_entro        numeric := 0;
+  v_salio        numeric := 0;
+  v_cuotas       numeric := 0;
+  v_dias         integer;
+  v_plan         jsonb;
+  v_sin_planear  numeric := 0;
+  v_fijos        jsonb;
+  v_esperado     numeric := 0;
+  v_hubo_ingreso boolean := false;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  select * into v_c from public.ciclo_personal(p_empresa);
+
+  select
+    coalesce(sum(m.monto) filter (where m.tipo in ('ingreso', 'venta')), 0),
+    coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+    bool_or(m.tipo in ('ingreso', 'venta'))
+  into v_entro, v_salio, v_hubo_ingreso
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.fecha between v_c.desde and v_c.hasta;
+
+  -- Cuotas que todavía no se pagaron y vencen antes de que cierre el ciclo.
+  -- Lo ya pagado no se cuenta acá: está en `v_salio` como gasto, y sumarlo
+  -- dos veces le descontaría a la persona plata que ya descontó.
+  select coalesce(sum(d.monto_cuota), 0) into v_cuotas
+  from public.deudas d
+  where d.empresa_id = p_empresa
+    and d.activa and d.saldo > 0
+    and d.monto_cuota is not null
+    and d.vence_el between v_hoy and v_c.hasta;
+
+  v_dias := greatest(1, (v_c.hasta - v_hoy) + 1);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'categoria', p.categoria,
+      'planeado',  p.importe,
+      'gastado',   coalesce(g.total, 0),
+      'resta',     p.importe - coalesce(g.total, 0)
+    ) order by p.categoria), '[]'::jsonb)
+  into v_plan
+  from public.presupuesto p
+  left join lateral (
+    select sum(m.monto) as total
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = p.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true
+  where p.empresa_id = p_empresa;
+
+  -- Lo que se gastó fuera del plan. Sin este número el plan miente por
+  -- omisión: podés estar bien en las cinco categorías que anotaste y
+  -- fundido igual.
+  select coalesce(sum(m.monto), 0) into v_sin_planear
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+    and m.fecha between v_c.desde and v_c.hasta
+    and not exists (
+      select 1 from public.presupuesto p
+      where p.empresa_id = p_empresa and p.categoria = m.categoria);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', i.id, 'nombre', i.nombre, 'importe', i.importe,
+      'dia_del_mes', i.dia_del_mes, 'principal', i.principal
+    ) order by i.principal desc, i.importe desc), '[]'::jsonb),
+    coalesce(sum(i.importe), 0)
+  into v_fijos, v_esperado
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo;
+
+  return jsonb_build_object(
+    'desde', v_c.desde,
+    'hasta', v_c.hasta,
+    'dia_cobro', v_c.dia_cobro,
+    'dias_restantes', v_dias,
+    'entro', v_entro,
+    'salio', v_salio,
+    'cuotas_por_vencer', v_cuotas,
+    'disponible', v_entro - v_salio - v_cuotas,
+    'por_dia', round((v_entro - v_salio - v_cuotas) / v_dias, 2),
+    'plan', v_plan,
+    'gastado_sin_planear', v_sin_planear,
+    'ingresos_fijos', v_fijos,
+    'esperado', v_esperado,
+    -- Para poder preguntarle «¿ya cobraste?» en vez de mostrarle un cero
+    -- sin explicación el día que arranca el ciclo.
+    'cobro_pendiente', v_esperado > 0 and not coalesce(v_hubo_ingreso, false)
+  );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  025_gastos_fijos.sql
+-- ############################################################
+
+-- ORDEN · Migración 025 · Lo que se paga todos los meses
+--
+-- Faltaba la otra mitad. La 024 trajo lo que ENTRA todos los meses; esto es
+-- lo que SALE sí o sí: el wifi, la línea del celular, el pasaje del bus, la
+-- cuota del gimnasio.
+--
+-- Sin esto, el número de «te quedan» mentía por optimismo. El día que cobrás
+-- te decía que tenías 1.850.000 disponibles cuando 500.000 ya estaban
+-- comprometidos antes de que decidieras nada. Es el error más caro que puede
+-- cometer un sistema de plata: hacerte creer que tenés más de lo que tenés.
+--
+-- CÓMO SE EVITA CONTAR DOS VECES
+--
+-- Un gasto fijo es algo que va a pasar, no algo que pasó. Cuando de verdad
+-- pagás el wifi, lo cargás como cualquier gasto — y a partir de ahí ya no
+-- puede seguir descontándose, o estaría restado dos veces.
+--
+-- La regla, por categoría:
+--
+--     pendiente = max(0, suma de los fijos − lo ya gastado en esa categoría)
+--
+-- Wifi 200.000 en «Servicios»: si todavía no gastaste nada en Servicios,
+-- faltan 200.000. Si gastaste 150.000, faltan 50.000. Si gastaste 200.000 o
+-- más, no falta nada.
+--
+-- No hace falta que nadie marque «ya lo pagué», que es justo lo que la gente
+-- deja de hacer a la segunda semana. Y si tenés dos fijos en la misma
+-- categoría —wifi y luz, los dos «Servicios»— se suman y se comparan juntos,
+-- que es exactamente lo correcto.
+
+create table if not exists public.gastos_fijos (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  nombre      text not null check (char_length(trim(nombre)) between 1 and 60),
+  importe     numeric(14,2) not null check (importe > 0),
+  -- En qué casillero cae. Es lo que permite saber si ya se pagó: se compara
+  -- contra lo gastado en esta misma categoría durante el ciclo.
+  categoria   text not null default 'Otros' check (char_length(trim(categoria)) between 1 and 40),
+  -- Qué día vence. Puede ir vacío a propósito: el pasaje del bus se gasta
+  -- todos los días, no tiene fecha. Obligar a inventar un día haría que el
+  -- dato sea mentira.
+  dia_del_mes smallint check (dia_del_mes is null or dia_del_mes between 1 and 31),
+  -- Para escribir lo que no entra en un nombre de sesenta caracteres.
+  notas       text not null default '',
+  activo      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists gastos_fijos_empresa_idx
+  on public.gastos_fijos (empresa_id) where activo;
+
+alter table public.gastos_fijos enable row level security;
+
+drop policy if exists gastos_fijos_select on public.gastos_fijos;
+create policy gastos_fijos_select on public.gastos_fijos
+  for select to authenticated using (public.es_admin(empresa_id));
+
+revoke all on public.gastos_fijos from anon, authenticated;
+grant select on public.gastos_fijos to authenticated;
+
+do $$ begin
+  execute 'drop trigger if exists cuenta_activa_gastos_fijos on public.gastos_fijos';
+  execute 'create trigger cuenta_activa_gastos_fijos before insert or update '
+       || 'on public.gastos_fijos for each row execute function public.exigir_cuenta_activa()';
+end $$;
+
+create or replace function public.guardar_gasto_fijo(
+  p_empresa   uuid,
+  p_nombre    text,
+  p_importe   numeric,
+  p_categoria text default 'Otros',
+  p_dia       integer default null,
+  p_notas     text default '',
+  p_id        uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id  uuid;
+  v_dia smallint;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para reconocerlo cuando lo pagues.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_importe, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  v_dia := case
+    when p_dia is null then null
+    else least(greatest(p_dia, 1), 31)::smallint end;
+
+  if p_id is null then
+    insert into public.gastos_fijos (empresa_id, nombre, importe, categoria, dia_del_mes, notas)
+    values (p_empresa, trim(p_nombre), p_importe,
+            coalesce(nullif(trim(p_categoria), ''), 'Otros'), v_dia,
+            left(coalesce(p_notas, ''), 500))
+    returning id into v_id;
+  else
+    update public.gastos_fijos
+    set nombre = trim(p_nombre), importe = p_importe,
+        categoria = coalesce(nullif(trim(p_categoria), ''), 'Otros'),
+        dia_del_mes = v_dia, notas = left(coalesce(p_notas, ''), 500),
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese gasto fijo no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_gasto_fijo(uuid, text, numeric, text, integer, text, uuid)
+  from public, anon;
+grant execute on function public.guardar_gasto_fijo(uuid, text, numeric, text, integer, text, uuid)
+  to authenticated;
+
+create or replace function public.borrar_gasto_fijo(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  delete from public.gastos_fijos where id = p_id and empresa_id = p_empresa;
+  if not found then
+    raise exception 'Ese gasto fijo no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  return jsonb_build_object('borrado', true);
+end $fn$;
+
+revoke all on function public.borrar_gasto_fijo(uuid, uuid) from public, anon;
+grant execute on function public.borrar_gasto_fijo(uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- LO QUE SE REPITE, PARA QUE LA IA LO SEPA
+--
+-- Sin esto pasaba lo que tenía que pasar: alguien con el sueldo cargado
+-- decía «ya cobré mi sueldo de este mes» y el sistema contestaba «no pude
+-- sacar el monto del mensaje, escribilo vos». El monto estaba guardado en la
+-- fila de al lado. Es lo mismo que ya se hace con las deudas: la IA no
+-- adivina, se le da lo que la cuenta ya sabe.
+--
+-- Va con `es_admin` como todo lo demás de esta familia: un vendedor no tiene
+-- por qué enterarse de cuánto cobra el dueño, ni siquiera de rebote por el
+-- prompt de una captura.
+-- ------------------------------------------------------------
+create or replace function public.fijos_para_captura(p_empresa uuid)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select case when public.es_admin(p_empresa) then coalesce((
+    select jsonb_agg(x order by x->>'nombre') from (
+      select jsonb_build_object(
+        'clase', 'ingreso', 'nombre', i.nombre, 'importe', i.importe,
+        'dia', i.dia_del_mes, 'categoria', 'Sueldo') as x
+      from public.ingresos_fijos i
+      where i.empresa_id = p_empresa and i.activo
+      union all
+      select jsonb_build_object(
+        'clase', 'gasto', 'nombre', g.nombre, 'importe', g.importe,
+        'dia', g.dia_del_mes, 'categoria', g.categoria) as x
+      from public.gastos_fijos g
+      where g.empresa_id = p_empresa and g.activo
+    ) t), '[]'::jsonb)
+  else '[]'::jsonb end;
+$fn$;
+
+revoke all on function public.fijos_para_captura(uuid) from public, anon;
+grant execute on function public.fijos_para_captura(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- EL RESUMEN, AHORA CON LO QUE FALTA PAGAR
+--
+-- Cambia una sola cosa en el número grande: `disponible` ahora también
+-- descuenta los gastos fijos que todavía no se pagaron en este ciclo.
+-- ------------------------------------------------------------
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_c            record;
+  v_zona         text;
+  v_hoy          date;
+  v_entro        numeric := 0;
+  v_salio        numeric := 0;
+  v_cuotas       numeric := 0;
+  v_fijos_falta  numeric := 0;
+  v_dias         integer;
+  v_plan         jsonb;
+  v_sin_planear  numeric := 0;
+  v_entradas     jsonb;
+  v_salidas      jsonb;
+  v_esperado     numeric := 0;
+  v_fijo_mes     numeric := 0;
+  v_hubo_ingreso boolean := false;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  select * into v_c from public.ciclo_personal(p_empresa);
+
+  select
+    coalesce(sum(m.monto) filter (where m.tipo in ('ingreso', 'venta')), 0),
+    coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+    bool_or(m.tipo in ('ingreso', 'venta'))
+  into v_entro, v_salio, v_hubo_ingreso
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(d.monto_cuota), 0) into v_cuotas
+  from public.deudas d
+  where d.empresa_id = p_empresa
+    and d.activa and d.saldo > 0
+    and d.monto_cuota is not null
+    and d.vence_el between v_hoy and v_c.hasta;
+
+  -- Lo que falta pagar de los fijos, categoría por categoría. Ver el
+  -- comentario de arriba sobre por qué se compara contra lo ya gastado.
+  select coalesce(sum(greatest(0, f.total - coalesce(g.gastado, 0))), 0)
+  into v_fijos_falta
+  from (
+    select categoria, sum(importe) as total
+    from public.gastos_fijos
+    where empresa_id = p_empresa and activo
+    group by categoria
+  ) f
+  left join lateral (
+    select sum(m.monto) as gastado
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = f.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true;
+
+  v_dias := greatest(1, (v_c.hasta - v_hoy) + 1);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'categoria', p.categoria,
+      'planeado',  p.importe,
+      'gastado',   coalesce(g.total, 0),
+      'resta',     p.importe - coalesce(g.total, 0)
+    ) order by p.categoria), '[]'::jsonb)
+  into v_plan
+  from public.presupuesto p
+  left join lateral (
+    select sum(m.monto) as total
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = p.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true
+  where p.empresa_id = p_empresa;
+
+  select coalesce(sum(m.monto), 0) into v_sin_planear
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+    and m.fecha between v_c.desde and v_c.hasta
+    and not exists (
+      select 1 from public.presupuesto p
+      where p.empresa_id = p_empresa and p.categoria = m.categoria);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', i.id, 'nombre', i.nombre, 'importe', i.importe,
+      'dia_del_mes', i.dia_del_mes, 'principal', i.principal
+    ) order by i.principal desc, i.importe desc), '[]'::jsonb),
+    coalesce(sum(i.importe), 0)
+  into v_entradas, v_esperado
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', g.id, 'nombre', g.nombre, 'importe', g.importe,
+      'categoria', g.categoria, 'dia_del_mes', g.dia_del_mes, 'notas', g.notas
+    ) order by g.dia_del_mes nulls last, g.importe desc), '[]'::jsonb),
+    coalesce(sum(g.importe), 0)
+  into v_salidas, v_fijo_mes
+  from public.gastos_fijos g
+  where g.empresa_id = p_empresa and g.activo;
+
+  return jsonb_build_object(
+    'desde', v_c.desde,
+    'hasta', v_c.hasta,
+    'dia_cobro', v_c.dia_cobro,
+    'dias_restantes', v_dias,
+    'entro', v_entro,
+    'salio', v_salio,
+    'cuotas_por_vencer', v_cuotas,
+    'fijos_por_pagar', v_fijos_falta,
+    'disponible', v_entro - v_salio - v_cuotas - v_fijos_falta,
+    'por_dia', round((v_entro - v_salio - v_cuotas - v_fijos_falta) / v_dias, 2),
+    'plan', v_plan,
+    'gastado_sin_planear', v_sin_planear,
+    'ingresos_fijos', v_entradas,
+    'gastos_fijos', v_salidas,
+    'esperado', v_esperado,
+    'fijo_mensual', v_fijo_mes,
+    'cobro_pendiente', v_esperado > 0 and not coalesce(v_hubo_ingreso, false)
+  );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  026_ahorros_y_entradas.sql
+-- ############################################################
+
+-- ORDEN · Migración 026 · Ahorros, y de dónde vino la plata
+--
+-- Le faltaban dos cosas a la cuenta personal, y una de ellas es la que más
+-- define si alguien siente que le va bien: el ahorro.
+--
+-- POR QUÉ EL AHORRO NO ES UN GASTO
+--
+-- Era tentador resolverlo con una categoría de gasto llamada «Ahorro»: no
+-- costaba nada y ya quedaba descontado de lo disponible. Pero sería mentira
+-- en el peor lugar posible. Guardar plata no es gastarla — no se fue a
+-- ningún lado, la tenés. Si el reporte de fin de año dijera que gastaste
+-- cuatro millones en «Ahorro», la persona vería su mejor mes como el peor.
+--
+-- Así que el ahorro es una MUDANZA, no una salida: la plata pasa del bolsillo
+-- de gastar al bolsillo de guardar. Y por eso sí baja lo disponible —no la
+-- podés gastar dos veces— pero no cuenta como gasto en ningún reporte. Un
+-- retiro hace el camino inverso y vuelve a estar disponible.
+--
+-- LO SEGUNDO: DE DÓNDE VINO
+--
+-- Hasta acá todo ingreso caía en una bolsa sin nombre. Para una persona con
+-- sueldo eso pierde la única distinción que le importa: qué parte de lo que
+-- entró es su sueldo y qué parte fue extra —horas extra, una changa, haber
+-- vendido algo que no usaba—. Es la diferencia entre «gano bien» y «este mes
+-- zafé».
+
+-- ============================================================
+-- 1. LOS FONDOS DE AHORRO
+-- ============================================================
+create table if not exists public.ahorros (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  nombre     text not null check (char_length(trim(nombre)) between 1 and 60),
+  -- Cuánto quiere juntar. Opcional: mucha gente ahorra sin una meta puesta,
+  -- y exigirla sería inventarle un número para poder empezar.
+  meta       numeric(14,2) check (meta is null or meta > 0),
+  activo     boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists ahorros_empresa_idx on public.ahorros (empresa_id) where activo;
+
+-- Cada vez que entra o sale plata del fondo. No se guarda un saldo: se
+-- calcula sumando. Un saldo guardado se desincroniza el día que algo falla
+-- en el medio, y entonces el número que la persona mira deja de ser cierto.
+create table if not exists public.movimientos_ahorro (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  ahorro_id  uuid not null references public.ahorros (id) on delete cascade,
+  tipo       text not null check (tipo in ('aporte', 'retiro')),
+  monto      numeric(14,2) not null check (monto > 0),
+  fecha      date not null default (now() at time zone 'America/Asuncion')::date,
+  nota       text not null default '',
+  creado_por uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists movimientos_ahorro_idx
+  on public.movimientos_ahorro (empresa_id, fecha desc);
+create index if not exists movimientos_ahorro_fondo_idx
+  on public.movimientos_ahorro (ahorro_id);
+
+alter table public.ahorros            enable row level security;
+alter table public.movimientos_ahorro enable row level security;
+
+drop policy if exists ahorros_select on public.ahorros;
+create policy ahorros_select on public.ahorros
+  for select to authenticated using (public.es_admin(empresa_id));
+
+drop policy if exists movimientos_ahorro_select on public.movimientos_ahorro;
+create policy movimientos_ahorro_select on public.movimientos_ahorro
+  for select to authenticated using (public.es_admin(empresa_id));
+
+revoke all on public.ahorros            from anon, authenticated;
+revoke all on public.movimientos_ahorro from anon, authenticated;
+grant select on public.ahorros            to authenticated;
+grant select on public.movimientos_ahorro to authenticated;
+
+do $$
+declare v_tabla text;
+begin
+  foreach v_tabla in array array['ahorros', 'movimientos_ahorro'] loop
+    execute format('drop trigger if exists %I on public.%I',
+                   'cuenta_activa_' || v_tabla, v_tabla);
+    execute format(
+      'create trigger %I before insert or update on public.%I '
+      || 'for each row execute function public.exigir_cuenta_activa()',
+      'cuenta_activa_' || v_tabla, v_tabla);
+  end loop;
+end $$;
+
+create or replace function public.saldo_ahorro(p_ahorro uuid)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select coalesce(sum(case when tipo = 'aporte' then monto else -monto end), 0)
+  from public.movimientos_ahorro where ahorro_id = p_ahorro;
+$fn$;
+
+revoke all on function public.saldo_ahorro(uuid) from public, anon;
+grant execute on function public.saldo_ahorro(uuid) to authenticated;
+
+create or replace function public.guardar_ahorro(
+  p_empresa uuid,
+  p_nombre  text,
+  p_meta    numeric default null,
+  p_id      uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare v_id uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber para qué estás juntando.' using errcode = '22023';
+  end if;
+
+  if p_meta is not null and p_meta <= 0 then
+    raise exception 'La meta tiene que ser mayor que cero, o dejala vacía.' using errcode = '22023';
+  end if;
+
+  if p_id is null then
+    insert into public.ahorros (empresa_id, nombre, meta)
+    values (p_empresa, trim(p_nombre), p_meta)
+    returning id into v_id;
+  else
+    update public.ahorros
+    set nombre = trim(p_nombre), meta = p_meta, updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese fondo no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_ahorro(uuid, text, numeric, uuid) from public, anon;
+grant execute on function public.guardar_ahorro(uuid, text, numeric, uuid) to authenticated;
+
+-- Un fondo con plata adentro no se borra de un toque. No es burocracia: si
+-- se borrara, el registro de esa plata desaparecería y el historial diría que
+-- nunca existió. Primero se retira, que además deja el rastro de a dónde fue.
+create or replace function public.borrar_ahorro(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_saldo numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  select public.saldo_ahorro(p_id) into v_saldo
+  from public.ahorros where id = p_id and empresa_id = p_empresa;
+
+  if v_saldo is null then
+    raise exception 'Ese fondo no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if v_saldo > 0 then
+    raise exception 'Ese fondo todavía tiene plata. Retirala primero y después borralo.'
+      using errcode = '22023';
+  end if;
+
+  delete from public.ahorros where id = p_id and empresa_id = p_empresa;
+  return jsonb_build_object('borrado', true);
+end $fn$;
+
+revoke all on function public.borrar_ahorro(uuid, uuid) from public, anon;
+grant execute on function public.borrar_ahorro(uuid, uuid) to authenticated;
+
+create or replace function public.mover_ahorro(
+  p_empresa uuid,
+  p_ahorro  uuid,
+  p_tipo    text,
+  p_monto   numeric,
+  p_fecha   date default null,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_saldo numeric;
+  v_zona  text;
+  v_id    uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if p_tipo not in ('aporte', 'retiro') then
+    raise exception 'Solo se puede guardar o retirar.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  select public.saldo_ahorro(a.id) into v_saldo
+  from public.ahorros a where a.id = p_ahorro and a.empresa_id = p_empresa;
+
+  if v_saldo is null then
+    raise exception 'Ese fondo no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- No se puede sacar lo que no hay. Un saldo negativo no significa nada:
+  -- nadie tiene menos que cero guardado en una lata.
+  if p_tipo = 'retiro' and p_monto > v_saldo then
+    raise exception 'Ese fondo tiene menos de lo que querés retirar.' using errcode = '22023';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+
+  insert into public.movimientos_ahorro (empresa_id, ahorro_id, tipo, monto, fecha, nota, creado_por)
+  values (p_empresa, p_ahorro, p_tipo, p_monto,
+          coalesce(p_fecha, (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date),
+          left(coalesce(p_nota, ''), 200), auth.uid())
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'id', v_id,
+    'saldo', v_saldo + case when p_tipo = 'aporte' then p_monto else -p_monto end);
+end $fn$;
+
+revoke all on function public.mover_ahorro(uuid, uuid, text, numeric, date, text) from public, anon;
+grant execute on function public.mover_ahorro(uuid, uuid, text, numeric, date, text) to authenticated;
+
+create or replace function public.borrar_movimiento_ahorro(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  delete from public.movimientos_ahorro where id = p_id and empresa_id = p_empresa;
+  if not found then
+    raise exception 'Ese movimiento no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  return jsonb_build_object('borrado', true);
+end $fn$;
+
+revoke all on function public.borrar_movimiento_ahorro(uuid, uuid) from public, anon;
+grant execute on function public.borrar_movimiento_ahorro(uuid, uuid) to authenticated;
+
+-- ============================================================
+-- 2. DE DÓNDE VINO LA PLATA
+--
+--    Para un negocio, un ingreso es un ingreso. Para una persona con sueldo,
+--    la distinción entre «esto es lo que gano todos los meses» y «esto fue
+--    de una» es la más importante que hay: es la diferencia entre gano bien
+--    y este mes zafé.
+-- ============================================================
+create or replace function public.categorias_de_ingreso(p_tipo_cuenta text default 'emprendedor')
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case when coalesce(p_tipo_cuenta, 'emprendedor') = 'personal' then jsonb_build_array(
+      jsonb_build_object('nombre','Sueldo','pistas','sueldo, salario, quincena, me pagaron el mes'),
+      jsonb_build_object('nombre','Extra','pistas','horas extra, bonificación, comisión, aguinaldo, propina'),
+      jsonb_build_object('nombre','Changa','pistas','trabajo aparte, freelance, un servicio suelto'),
+      jsonb_build_object('nombre','Vendí algo','pistas','vendí, revendí, me compraron algo mío'),
+      jsonb_build_object('nombre','Me devolvieron','pistas','devolución, reintegro, me pagaron lo que le presté'),
+      jsonb_build_object('nombre','Regalo o ayuda','pistas','me regalaron, me ayudaron, me mandaron plata'),
+      jsonb_build_object('nombre','Otros ingresos','pistas',''))
+    else jsonb_build_array(
+      jsonb_build_object('nombre','Ventas','pistas','lo que entra por vender'),
+      jsonb_build_object('nombre','Aporte de capital','pistas','plata que puso el dueño'),
+      jsonb_build_object('nombre','Devolución','pistas','reintegro, nota de crédito'),
+      jsonb_build_object('nombre','Otros ingresos','pistas',''))
+  end;
+$fn$;
+
+revoke all on function public.categorias_de_ingreso(text) from public, anon;
+grant execute on function public.categorias_de_ingreso(text) to anon, authenticated;
+
+-- ============================================================
+-- 3. EL RESUMEN, CON EL AHORRO Y EL DESGLOSE
+--
+--    `disponible` ahora también descuenta lo que se guardó en este ciclo.
+--    No porque se haya gastado —no se gastó— sino porque ya no está para
+--    gastar. Un retiro va al revés y vuelve a sumar.
+-- ============================================================
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_c            record;
+  v_zona         text;
+  v_hoy          date;
+  v_entro        numeric := 0;
+  v_salio        numeric := 0;
+  v_cuotas       numeric := 0;
+  v_fijos_falta  numeric := 0;
+  v_ahorro_ciclo numeric := 0;
+  v_ahorro_total numeric := 0;
+  v_dias         integer;
+  v_plan         jsonb;
+  v_sin_planear  numeric := 0;
+  v_entradas     jsonb;
+  v_salidas      jsonb;
+  v_fondos       jsonb;
+  v_de_donde     jsonb;
+  v_esperado     numeric := 0;
+  v_fijo_mes     numeric := 0;
+  v_hubo_ingreso boolean := false;
+  v_disponible   numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  select * into v_c from public.ciclo_personal(p_empresa);
+
+  select
+    coalesce(sum(m.monto) filter (where m.tipo in ('ingreso', 'venta')), 0),
+    coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+    bool_or(m.tipo in ('ingreso', 'venta'))
+  into v_entro, v_salio, v_hubo_ingreso
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(d.monto_cuota), 0) into v_cuotas
+  from public.deudas d
+  where d.empresa_id = p_empresa
+    and d.activa and d.saldo > 0
+    and d.monto_cuota is not null
+    and d.vence_el between v_hoy and v_c.hasta;
+
+  select coalesce(sum(greatest(0, f.total - coalesce(g.gastado, 0))), 0)
+  into v_fijos_falta
+  from (
+    select categoria, sum(importe) as total
+    from public.gastos_fijos
+    where empresa_id = p_empresa and activo
+    group by categoria
+  ) f
+  left join lateral (
+    select sum(m.monto) as gastado
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = f.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true;
+
+  -- Lo guardado en ESTE ciclo, neto de retiros.
+  select coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0)
+  into v_ahorro_ciclo
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa and ma.fecha between v_c.desde and v_c.hasta;
+
+  -- Y lo acumulado de siempre, que es el número del que la gente se
+  -- enorgullece.
+  select coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0)
+  into v_ahorro_total
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa;
+
+  v_dias := greatest(1, (v_c.hasta - v_hoy) + 1);
+  v_disponible := v_entro - v_salio - v_cuotas - v_fijos_falta - v_ahorro_ciclo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'categoria', p.categoria,
+      'planeado',  p.importe,
+      'gastado',   coalesce(g.total, 0),
+      'resta',     p.importe - coalesce(g.total, 0)
+    ) order by p.categoria), '[]'::jsonb)
+  into v_plan
+  from public.presupuesto p
+  left join lateral (
+    select sum(m.monto) as total
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = p.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true
+  where p.empresa_id = p_empresa;
+
+  select coalesce(sum(m.monto), 0) into v_sin_planear
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+    and m.fecha between v_c.desde and v_c.hasta
+    and not exists (
+      select 1 from public.presupuesto p
+      where p.empresa_id = p_empresa and p.categoria = m.categoria);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', i.id, 'nombre', i.nombre, 'importe', i.importe,
+      'dia_del_mes', i.dia_del_mes, 'principal', i.principal
+    ) order by i.principal desc, i.importe desc), '[]'::jsonb),
+    coalesce(sum(i.importe), 0)
+  into v_entradas, v_esperado
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', g.id, 'nombre', g.nombre, 'importe', g.importe,
+      'categoria', g.categoria, 'dia_del_mes', g.dia_del_mes, 'notas', g.notas
+    ) order by g.dia_del_mes nulls last, g.importe desc), '[]'::jsonb),
+    coalesce(sum(g.importe), 0)
+  into v_salidas, v_fijo_mes
+  from public.gastos_fijos g
+  where g.empresa_id = p_empresa and g.activo;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', a.id, 'nombre', a.nombre, 'meta', a.meta,
+    'saldo', public.saldo_ahorro(a.id)
+  ) order by a.created_at), '[]'::jsonb)
+  into v_fondos
+  from public.ahorros a
+  where a.empresa_id = p_empresa and a.activo;
+
+  -- De dónde vino lo que entró en el ciclo.
+  select coalesce(jsonb_agg(x order by (x->>'monto')::numeric desc), '[]'::jsonb)
+  into v_de_donde
+  from (
+    select jsonb_build_object('categoria', m.categoria, 'monto', sum(m.monto)) as x
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo'
+      and m.tipo in ('ingreso', 'venta')
+      and m.fecha between v_c.desde and v_c.hasta
+    group by m.categoria
+  ) t;
+
+  return jsonb_build_object(
+    'desde', v_c.desde,
+    'hasta', v_c.hasta,
+    'dia_cobro', v_c.dia_cobro,
+    'dias_restantes', v_dias,
+    'entro', v_entro,
+    'salio', v_salio,
+    'cuotas_por_vencer', v_cuotas,
+    'fijos_por_pagar', v_fijos_falta,
+    'ahorrado_en_el_ciclo', v_ahorro_ciclo,
+    'ahorro_total', v_ahorro_total,
+    'disponible', v_disponible,
+    'por_dia', round(v_disponible / v_dias, 2),
+    'plan', v_plan,
+    'gastado_sin_planear', v_sin_planear,
+    'ingresos_fijos', v_entradas,
+    'gastos_fijos', v_salidas,
+    'ahorros', v_fondos,
+    'de_donde_vino', v_de_donde,
+    'esperado', v_esperado,
+    'fijo_mensual', v_fijo_mes,
+    'cobro_pendiente', v_esperado > 0 and not coalesce(v_hubo_ingreso, false)
+  );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  027_categorias_propias.sql
+-- ############################################################
+
+-- ORDEN · Migración 027 · Cada uno nombra sus gastos como los entiende
+--
+-- Las categorías venían fijas: doce para una persona, nueve para un comercio,
+-- y listo. Funciona para el 80% de los casos y falla justo en el que hace que
+-- alguien deje de usar el sistema.
+--
+-- Alguien tiene un perro y gasta en veterinaria, comida y baño todos los
+-- meses. Hoy eso cae en «Otros». Al tercer mes su presupuesto tiene una
+-- bolsa llamada «Otros» con la mitad de su plata adentro, que es exactamente
+-- lo que vino a evitar. Otro paga la cuota del club, otro manda plata a la
+-- familia, otro tiene un auto y quiere separar nafta de mantenimiento.
+--
+-- Cada persona entiende su plata a su manera, y un sistema que la obliga a
+-- usar los casilleros de otro deja de ser suyo.
+--
+-- LO QUE HACE QUE ESTO SIRVA DE VERDAD
+--
+-- Que la categoría propia también la conozca la IA. Si alguien crea
+-- «Mascotas» pero al dictar «compré comida para el perro» el modelo sigue
+-- clasificando en «Otros», la categoría nueva es un adorno: nunca se llena
+-- sola y hay que corregir a mano cada vez. Por eso se guardan PISTAS, igual
+-- que las categorías fijas, y por eso todo pasa por una sola función que
+-- devuelve las fijas y las propias juntas.
+
+create table if not exists public.categorias_propias (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  nombre     text not null check (char_length(trim(nombre)) between 1 and 40),
+  -- Las de gasto y las de ingreso son listas distintas: «Sueldo» no es un
+  -- lugar donde gastar, y «Mascotas» no es de dónde viene la plata.
+  clase      text not null default 'gasto' check (clase in ('gasto', 'ingreso')),
+  -- Palabras que hacen que la IA sepa cuándo usarla. Sin esto la categoría
+  -- existe pero nunca se llena sola.
+  pistas     text not null default '',
+  activo     boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists categorias_propias_unica
+  on public.categorias_propias (empresa_id, clase, lower(trim(nombre)))
+  where activo;
+
+alter table public.categorias_propias enable row level security;
+
+-- Se LEEN con es_miembro y no con es_admin: un vendedor carga gastos, y para
+-- clasificarlos necesita ver los nombres. Son etiquetas, no plata.
+drop policy if exists categorias_propias_select on public.categorias_propias;
+create policy categorias_propias_select on public.categorias_propias
+  for select to authenticated using (public.es_miembro(empresa_id));
+
+revoke all on public.categorias_propias from anon, authenticated;
+grant select on public.categorias_propias to authenticated;
+
+do $$ begin
+  execute 'drop trigger if exists cuenta_activa_categorias_propias on public.categorias_propias';
+  execute 'create trigger cuenta_activa_categorias_propias before insert or update '
+       || 'on public.categorias_propias for each row execute function public.exigir_cuenta_activa()';
+end $$;
+
+-- ------------------------------------------------------------
+-- LA LISTA COMPLETA, EN UN SOLO LUGAR
+--
+-- Las fijas de esta cuenta más las propias. Todo lo que ofrece una pantalla
+-- y todo lo que conoce la IA sale de acá. Que fueran dos fuentes distintas
+-- es cómo se llegó a que el prompt clasificara en «Salidas» mientras el
+-- presupuesto ofrecía «Ocio», y el gasto quedara fuera de la cuenta que la
+-- persona había hecho.
+-- ------------------------------------------------------------
+create or replace function public.categorias_de_empresa(
+  p_empresa uuid,
+  p_clase   text default 'gasto'
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_rubro  text;
+  v_tipo   text;
+  v_fijas  jsonb;
+  v_mias   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select rubro, tipo_cuenta into v_rubro, v_tipo
+  from public.empresas where id = p_empresa;
+
+  v_fijas := case
+    when p_clase = 'ingreso' then public.categorias_de_ingreso(v_tipo)
+    else public.categorias_de_rubro(v_rubro, v_tipo) end;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'nombre', c.nombre, 'pistas', c.pistas, 'propia', true
+         ) order by c.nombre), '[]'::jsonb)
+  into v_mias
+  from public.categorias_propias c
+  where c.empresa_id = p_empresa and c.activo
+    and c.clase = case when p_clase = 'ingreso' then 'ingreso' else 'gasto' end;
+
+  -- Las propias van ANTES de «Otros», que siempre cierra la lista: una
+  -- categoría nueva escondida debajo del cajón de sastre no se usa nunca.
+  return (
+    select coalesce(jsonb_agg(x order by orden, i), '[]'::jsonb)
+    from (
+      select value as x,
+             case when value->>'nombre' ilike 'otro%' then 2 else 0 end as orden,
+             ordinality as i
+      from jsonb_array_elements(v_fijas) with ordinality
+      union all
+      select value, 1, 0 from jsonb_array_elements(v_mias)
+    ) t
+  );
+end $fn$;
+
+revoke all on function public.categorias_de_empresa(uuid, text) from public, anon;
+grant execute on function public.categorias_de_empresa(uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- CREARLAS Y BORRARLAS
+--
+-- Solo la administración. Un vendedor que pudiera inventar categorías estaría
+-- reescribiendo el presupuesto del dueño sin querer.
+-- ------------------------------------------------------------
+create or replace function public.guardar_categoria_propia(
+  p_empresa uuid,
+  p_nombre  text,
+  p_clase   text default 'gasto',
+  p_pistas  text default '',
+  p_id      uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id     uuid;
+  v_clase  text;
+  v_nombre text;
+  v_rubro  text;
+  v_tipo   text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  v_nombre := trim(coalesce(p_nombre, ''));
+  if char_length(v_nombre) = 0 then
+    raise exception 'Escribí un nombre para la categoría.' using errcode = '22023';
+  end if;
+  if char_length(v_nombre) > 40 then
+    raise exception 'Ese nombre es muy largo. Con 40 letras alcanza.' using errcode = '22023';
+  end if;
+
+  v_clase := case when p_clase = 'ingreso' then 'ingreso' else 'gasto' end;
+
+  select rubro, tipo_cuenta into v_rubro, v_tipo from public.empresas where id = p_empresa;
+
+  -- Que no repita una que ya viene de fábrica: quedarían dos renglones con
+  -- el mismo nombre en el mismo menú y ninguno sabría cuál es cuál.
+  if exists (
+    select 1 from jsonb_array_elements(
+      case when v_clase = 'ingreso'
+        then public.categorias_de_ingreso(v_tipo)
+        else public.categorias_de_rubro(v_rubro, v_tipo) end) f
+    where lower(trim(f.value->>'nombre')) = lower(v_nombre)
+  ) then
+    raise exception 'Esa categoría ya existe.' using errcode = '22023';
+  end if;
+
+  if p_id is null then
+    insert into public.categorias_propias (empresa_id, nombre, clase, pistas)
+    values (p_empresa, v_nombre, v_clase, left(coalesce(p_pistas, ''), 200))
+    returning id into v_id;
+  else
+    update public.categorias_propias
+    set nombre = v_nombre, clase = v_clase,
+        pistas = left(coalesce(p_pistas, ''), 200), updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Esa categoría no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+exception
+  when unique_violation then
+    raise exception 'Esa categoría ya existe.' using errcode = '22023';
+end $fn$;
+
+revoke all on function public.guardar_categoria_propia(uuid, text, text, text, uuid) from public, anon;
+grant execute on function public.guardar_categoria_propia(uuid, text, text, text, uuid) to authenticated;
+
+-- Borrar la categoría NO toca los movimientos que ya la usaron. Quedan con
+-- su nombre escrito, que es lo correcto: el gasto de marzo fue en Mascotas
+-- aunque hoy esa categoría ya no se ofrezca.
+create or replace function public.borrar_categoria_propia(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_nombre text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  delete from public.categorias_propias
+  where id = p_id and empresa_id = p_empresa
+  returning nombre into v_nombre;
+
+  if v_nombre is null then
+    raise exception 'Esa categoría no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Si tenía presupuesto asignado, se va con ella: un límite para una
+  -- categoría que ya no existe es un renglón que no se puede tocar.
+  delete from public.presupuesto
+  where empresa_id = p_empresa and categoria = v_nombre;
+
+  return jsonb_build_object('borrada', true, 'nombre', v_nombre);
+end $fn$;
+
+revoke all on function public.borrar_categoria_propia(uuid, uuid) from public, anon;
+grant execute on function public.borrar_categoria_propia(uuid, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  028_ingresos_por_categoria.sql
+-- ############################################################
+
+-- ORDEN · Migración 028 · De dónde vino la plata, en el período que elijas
+--
+-- `gastos_por_categoria` existe desde la 005 y contesta «en qué se me fue».
+-- Para un comercio con eso alcanza: casi todo lo que entra es una venta, y el
+-- desglose de ingresos no dice nada.
+--
+-- Para una persona con sueldo es al revés. Saber que este mes entraron
+-- 2.350.000 no sirve de mucho; saber que 1.850.000 fue el sueldo y 500.000
+-- fueron horas extra y una changa sí, porque una parte se repite el mes que
+-- viene y la otra no. Es la diferencia entre gano bien y este mes zafé.
+--
+-- Espejo exacto de `gastos_por_categoria`: misma forma de respuesta, mismos
+-- controles, mismo orden. Solo cambia el tipo de movimiento que mira.
+
+create or replace function public.ingresos_por_categoria(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date
+)
+returns setof jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  return query
+  with porCategoria as (
+    select
+      trim(coalesce(nullif(trim(m.categoria), ''), 'General')) as nombre,
+      sum(m.monto)::numeric as monto,
+      count(*)::bigint      as operaciones
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      and m.estado = 'activo'
+      -- Ventas e ingresos juntos: para quien mira esto, todo lo que entró es
+      -- lo que entró. La distinción venta/ingreso es interna.
+      and m.tipo in ('venta', 'ingreso')
+    group by 1
+  ),
+  con_total as (
+    select c.*, sum(c.monto) over () as total from porCategoria c
+  )
+  select jsonb_build_object(
+    'nombre',        c.nombre,
+    'monto',         c.monto,
+    'operaciones',   c.operaciones,
+    'participacion', case when c.total > 0 then (c.monto / c.total) * 100 else 0 end
+  )
+  from con_total c
+  order by c.monto desc;
+end $$;
+
+revoke all on function public.ingresos_por_categoria(uuid, date, date) from public, anon;
+grant execute on function public.ingresos_por_categoria(uuid, date, date) to authenticated;
+
+
+-- ############################################################
+-- ##  029_meta_con_fecha.sql
+-- ############################################################
+
+-- ORDEN · Migración 029 · El ahorro con fecha
+--
+-- La 026 le puso META a los fondos: cuánto quiere juntar. Faltaba la mitad
+-- de la pregunta, y es la mitad que hace que alguien ahorre de verdad.
+--
+-- «Quiero juntar 5.000.000» no le dice a nadie qué hacer este mes. «Quiero
+-- juntar 5.000.000 para el viaje de fin de año» sí: son once meses, faltan
+-- 3.800.000, o sea 345.000 por mes. Ese número —cuánto tengo que guardar
+-- ahora— es el único que cambia una conducta. Una meta sin fecha es un deseo;
+-- con fecha es un plan.
+--
+-- POR QUÉ LA FECHA ES OPCIONAL, IGUAL QUE LA META
+--
+-- Mucha gente ahorra sin fecha —el fondo de emergencia no vence nunca— y
+-- exigirle una la obligaría a inventar un dato falso para poder empezar. Los
+-- dos campos son independientes: se puede tener meta sin fecha (junto hasta
+-- llegar), fecha sin meta (guardo para diciembre, lo que pueda), las dos, o
+-- ninguna.
+--
+-- EL RITMO LO CALCULA LA BASE, NO LA PANTALLA
+--
+-- `por_mes` sale de acá y no del navegador por el mismo motivo que todo lo
+-- demás: es un número sobre la plata de alguien. Si lo calculara la pantalla,
+-- el día que ese cálculo aparezca también en un email o en un aviso habría
+-- dos fórmulas para la misma respuesta, y tarde o temprano dirían cosas
+-- distintas.
+
+-- ============================================================
+-- 1. LA COLUMNA
+-- ============================================================
+alter table public.ahorros add column if not exists fecha_limite date;
+
+comment on column public.ahorros.fecha_limite is
+  'Para cuándo quiere tener juntada la meta. Null = sin fecha, se junta hasta llegar.';
+
+-- ============================================================
+-- 2. GUARDAR
+--
+--    Se REEMPLAZA la función de cuatro argumentos en vez de dejar las dos
+--    conviviendo: dos versiones de la misma puerta es cómo se llega a que la
+--    pantalla guarde la fecha y otra cosa la pise con null.
+-- ============================================================
+drop function if exists public.guardar_ahorro(uuid, text, numeric, uuid);
+
+create or replace function public.guardar_ahorro(
+  p_empresa      uuid,
+  p_nombre       text,
+  p_meta         numeric default null,
+  p_fecha_limite date    default null,
+  p_id           uuid    default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id       uuid;
+  v_zona     text;
+  v_hoy      date;
+  v_anterior date;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber para qué estás juntando.' using errcode = '22023';
+  end if;
+
+  if p_meta is not null and p_meta <= 0 then
+    raise exception 'La meta tiene que ser mayor que cero, o dejala vacía.' using errcode = '22023';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  -- Una fecha que ya pasó casi siempre es un año mal tipeado. Se rechaza al
+  -- ponerla, pero NO se rechaza guardar un fondo cuya fecha venció mientras
+  -- tanto: si no, el día después del viaje la persona no podría ni corregirle
+  -- el nombre a su propio fondo.
+  if p_id is not null then
+    select fecha_limite into v_anterior
+    from public.ahorros where id = p_id and empresa_id = p_empresa;
+  end if;
+
+  if p_fecha_limite is not null
+     and p_fecha_limite < v_hoy
+     and p_fecha_limite is distinct from v_anterior then
+    raise exception 'Esa fecha ya pasó. Poné para cuándo lo querés juntar.' using errcode = '22007';
+  end if;
+
+  if p_id is null then
+    insert into public.ahorros (empresa_id, nombre, meta, fecha_limite)
+    values (p_empresa, trim(p_nombre), p_meta, p_fecha_limite)
+    returning id into v_id;
+  else
+    update public.ahorros
+    set nombre = trim(p_nombre), meta = p_meta, fecha_limite = p_fecha_limite,
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese fondo no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_ahorro(uuid, text, numeric, date, uuid) from public, anon;
+grant execute on function public.guardar_ahorro(uuid, text, numeric, date, uuid) to authenticated;
+
+-- ============================================================
+-- 3. EL RESUMEN, CON EL RITMO DE CADA FONDO
+--
+--    Se reescribe entera (la última versión venía de la 026) porque en
+--    PostgreSQL no se puede parchear el cuerpo de una función: o se
+--    reemplaza completa o queda la vieja.
+-- ============================================================
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_c            record;
+  v_zona         text;
+  v_hoy          date;
+  v_entro        numeric := 0;
+  v_salio        numeric := 0;
+  v_cuotas       numeric := 0;
+  v_fijos_falta  numeric := 0;
+  v_ahorro_ciclo numeric := 0;
+  v_ahorro_total numeric := 0;
+  v_dias         integer;
+  v_plan         jsonb;
+  v_sin_planear  numeric := 0;
+  v_entradas     jsonb;
+  v_salidas      jsonb;
+  v_fondos       jsonb;
+  v_de_donde     jsonb;
+  v_esperado     numeric := 0;
+  v_fijo_mes     numeric := 0;
+  v_hubo_ingreso boolean := false;
+  v_disponible   numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  select * into v_c from public.ciclo_personal(p_empresa);
+
+  select
+    coalesce(sum(m.monto) filter (where m.tipo in ('ingreso', 'venta')), 0),
+    coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+    bool_or(m.tipo in ('ingreso', 'venta'))
+  into v_entro, v_salio, v_hubo_ingreso
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(d.monto_cuota), 0) into v_cuotas
+  from public.deudas d
+  where d.empresa_id = p_empresa
+    and d.activa and d.saldo > 0
+    and d.monto_cuota is not null
+    and d.vence_el between v_hoy and v_c.hasta;
+
+  select coalesce(sum(greatest(0, f.total - coalesce(g.gastado, 0))), 0)
+  into v_fijos_falta
+  from (
+    select categoria, sum(importe) as total
+    from public.gastos_fijos
+    where empresa_id = p_empresa and activo
+    group by categoria
+  ) f
+  left join lateral (
+    select sum(m.monto) as gastado
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = f.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true;
+
+  -- Lo guardado en ESTE ciclo, neto de retiros.
+  select coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0)
+  into v_ahorro_ciclo
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa and ma.fecha between v_c.desde and v_c.hasta;
+
+  -- Y lo acumulado de siempre, que es el número del que la gente se
+  -- enorgullece.
+  select coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0)
+  into v_ahorro_total
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa;
+
+  v_dias := greatest(1, (v_c.hasta - v_hoy) + 1);
+  v_disponible := v_entro - v_salio - v_cuotas - v_fijos_falta - v_ahorro_ciclo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'categoria', p.categoria,
+      'planeado',  p.importe,
+      'gastado',   coalesce(g.total, 0),
+      'resta',     p.importe - coalesce(g.total, 0)
+    ) order by p.categoria), '[]'::jsonb)
+  into v_plan
+  from public.presupuesto p
+  left join lateral (
+    select sum(m.monto) as total
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = p.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true
+  where p.empresa_id = p_empresa;
+
+  select coalesce(sum(m.monto), 0) into v_sin_planear
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+    and m.fecha between v_c.desde and v_c.hasta
+    and not exists (
+      select 1 from public.presupuesto p
+      where p.empresa_id = p_empresa and p.categoria = m.categoria);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', i.id, 'nombre', i.nombre, 'importe', i.importe,
+      'dia_del_mes', i.dia_del_mes, 'principal', i.principal
+    ) order by i.principal desc, i.importe desc), '[]'::jsonb),
+    coalesce(sum(i.importe), 0)
+  into v_entradas, v_esperado
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', g.id, 'nombre', g.nombre, 'importe', g.importe,
+      'categoria', g.categoria, 'dia_del_mes', g.dia_del_mes, 'notas', g.notas
+    ) order by g.dia_del_mes nulls last, g.importe desc), '[]'::jsonb),
+    coalesce(sum(g.importe), 0)
+  into v_salidas, v_fijo_mes
+  from public.gastos_fijos g
+  where g.empresa_id = p_empresa and g.activo;
+
+  -- Cada fondo con su ritmo: cuánto falta y cuánto habría que guardar por
+  -- mes para llegar a tiempo. `por_mes` en null significa que no hay ritmo
+  -- que calcular, y son tres casos distintos que la pantalla distingue por
+  -- los otros campos: sin meta, sin fecha, o con la fecha ya vencida.
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', a.id, 'nombre', a.nombre, 'meta', a.meta,
+    'fecha_limite', a.fecha_limite,
+    'saldo', s.saldo,
+    'falta', case when a.meta is null then null
+                  else greatest(0, a.meta - s.saldo) end,
+    'dias_para_limite', case when a.fecha_limite is null then null
+                             else (a.fecha_limite - v_hoy) end,
+    'por_mes', case
+                 when a.meta is null or a.fecha_limite is null then null
+                 when a.meta - s.saldo <= 0 then 0
+                 when a.fecha_limite < v_hoy then null
+                 -- Los meses se redondean para arriba y nunca bajan de uno:
+                 -- si faltan diez días, el ritmo es todo lo que falta.
+                 else round((a.meta - s.saldo)
+                            / greatest(1, ceil((a.fecha_limite - v_hoy)::numeric / 30)), 2)
+               end
+  ) order by a.created_at), '[]'::jsonb)
+  into v_fondos
+  from public.ahorros a
+  cross join lateral (select public.saldo_ahorro(a.id) as saldo) s
+  where a.empresa_id = p_empresa and a.activo;
+
+  -- De dónde vino lo que entró en el ciclo.
+  select coalesce(jsonb_agg(x order by (x->>'monto')::numeric desc), '[]'::jsonb)
+  into v_de_donde
+  from (
+    select jsonb_build_object('categoria', m.categoria, 'monto', sum(m.monto)) as x
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo'
+      and m.tipo in ('ingreso', 'venta')
+      and m.fecha between v_c.desde and v_c.hasta
+    group by m.categoria
+  ) t;
+
+  return jsonb_build_object(
+    'desde', v_c.desde,
+    'hasta', v_c.hasta,
+    'dia_cobro', v_c.dia_cobro,
+    'dias_restantes', v_dias,
+    'entro', v_entro,
+    'salio', v_salio,
+    'cuotas_por_vencer', v_cuotas,
+    'fijos_por_pagar', v_fijos_falta,
+    'ahorrado_en_el_ciclo', v_ahorro_ciclo,
+    'ahorro_total', v_ahorro_total,
+    'disponible', v_disponible,
+    'por_dia', round(v_disponible / v_dias, 2),
+    'plan', v_plan,
+    'gastado_sin_planear', v_sin_planear,
+    'ingresos_fijos', v_entradas,
+    'gastos_fijos', v_salidas,
+    'ahorros', v_fondos,
+    'de_donde_vino', v_de_donde,
+    'esperado', v_esperado,
+    'fijo_mensual', v_fijo_mes,
+    'cobro_pendiente', v_esperado > 0 and not coalesce(v_hubo_ingreso, false)
+  );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  030_ahorro_del_periodo.sql
+-- ############################################################
+
+-- ORDEN · Migración 030 · El ahorro dentro de un período elegido
+--
+-- `resumen_personal` ya cuenta el ahorro, pero siempre del CICLO en curso: de
+-- cobro a cobro. El reporte y el Excel trabajan con otro recorte —el rango de
+-- fechas que la persona elige— y ahí ese número no sirve.
+--
+-- Mezclar los dos sería el peor error posible en una planilla: mostrar «entró
+-- y salió» de enero a marzo junto a un ahorro que en realidad es el de los
+-- últimos veinte días. Dos períodos distintos en la misma hoja, sin que nada
+-- lo diga.
+--
+-- POR QUÉ ES UNA FUNCIÓN Y NO UNA CONSULTA DESDE EL SERVIDOR
+--
+-- Por lo mismo que los otros agregados: sumar en el servidor obliga a traerse
+-- las filas, y una lista traída puede venir recortada por el tope de la Data
+-- API sin avisar. Un total que se calcula sobre una lista incompleta no se
+-- ve mal: se ve como un total más chico. Sumar acá adentro no puede recortar.
+
+create or replace function public.resumen_ahorro_periodo(
+  p_empresa uuid,
+  p_desde   date,
+  p_hasta   date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_aportado numeric := 0;
+  v_retirado numeric := 0;
+  v_fondos   jsonb;
+begin
+  -- Se lee con `es_admin` y no con `es_miembro`, igual que las tablas de
+  -- ahorro desde la 026: cuánto guarda alguien no lo ve un vendedor.
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  select
+    coalesce(sum(ma.monto) filter (where ma.tipo = 'aporte'), 0),
+    coalesce(sum(ma.monto) filter (where ma.tipo = 'retiro'), 0)
+  into v_aportado, v_retirado
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa
+    and ma.fecha between p_desde and p_hasta;
+
+  -- Solo los fondos que se movieron en el período. Listar los quietos en cero
+  -- alargaría la hoja sin decir nada: que un fondo no se haya tocado en marzo
+  -- no es información, es ruido.
+  select coalesce(jsonb_agg(x order by (x->>'neto')::numeric desc), '[]'::jsonb)
+  into v_fondos
+  from (
+    select jsonb_build_object(
+      'nombre',   a.nombre,
+      'aportado', coalesce(sum(ma.monto) filter (where ma.tipo = 'aporte'), 0),
+      'retirado', coalesce(sum(ma.monto) filter (where ma.tipo = 'retiro'), 0),
+      'neto',     coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0),
+      -- El saldo del fondo a hoy, que es de otro recorte y por eso va con su
+      -- propio nombre: la hoja lo rotula aparte para que nadie lo sume con
+      -- las columnas del período.
+      'saldo_hoy', public.saldo_ahorro(a.id)
+    ) as x
+    from public.movimientos_ahorro ma
+    join public.ahorros a on a.id = ma.ahorro_id
+    where ma.empresa_id = p_empresa
+      and ma.fecha between p_desde and p_hasta
+    group by a.id, a.nombre
+  ) t;
+
+  return jsonb_build_object(
+    'aportado', v_aportado,
+    'retirado', v_retirado,
+    'neto',     v_aportado - v_retirado,
+    'por_fondo', v_fondos
+  );
+end $fn$;
+
+revoke all on function public.resumen_ahorro_periodo(uuid, date, date) from public, anon;
+grant execute on function public.resumen_ahorro_periodo(uuid, date, date) to authenticated;
+
+
+-- ############################################################
+-- ##  031_aviso_para_personas.sql
+-- ############################################################
+
+-- ORDEN · Migración 031 · El recordatorio también es para una persona
+--
+-- La 024 sacó a las cuentas personales del recordatorio de la noche, y el
+-- motivo era bueno: una persona con sueldo no cierra el día. Su ciclo va de
+-- cobro a cobro, y decirle «cerrá el día» era hablarle en el idioma de un
+-- almacén.
+--
+-- Pero la conclusión se pasó de largo. Que no cierre el día no quiere decir
+-- que no necesite que le recuerden cargar. Es al revés: el gasto de una
+-- persona es el que más fácil se olvida —son montos chicos, muchos por día, y
+-- ninguno tiene factura que lo recuerde— y si no los carga, en dos semanas la
+-- app le miente sobre cuánto le queda. Una cuenta sin datos no es una cuenta
+-- prolija: es una cuenta que no sirve.
+--
+-- Así que vuelve al recordatorio, pero con las mismas dos condiciones que
+-- protegen a todos los demás:
+--
+--   · SOLO A QUIEN YA TIENE EL HÁBITO. Hacen falta dos días seguidos de
+--     carga. A quien todavía no lo tiene, un aviso no se lo crea: lo único
+--     que logra es enseñarle a ignorar nuestras notificaciones.
+--
+--   · UNO POR DÍA COMO MÁXIMO. Lo garantiza la tabla `envios`, que no se
+--     toca acá.
+--
+-- Lo que cambia en la respuesta es que ahora dice QUÉ TIPO DE CUENTA es cada
+-- una, porque el aviso de una persona no puede llevarla a la pantalla de
+-- cierre del día: esa pantalla no existe en su cuenta.
+--
+-- OJO CON `rubro_cierra_el_dia`: NO SE TOCA
+--
+-- Esa función contesta otra pregunta —¿esta cuenta ve la pantalla de cierre?—
+-- y la respuesta para una persona sigue siendo que no. Meter acá el cambio
+-- habría sido más corto y habría hecho aparecer «Cierre del día» en el menú
+-- de todas las cuentas personales. Dos preguntas distintas, dos funciones.
+
+create or replace function public.empresas_sin_cargar_hoy(p_racha_minima integer default 2)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',  e.id,
+      'nombre',      e.nombre,
+      'zona',        e.zona_horaria,
+      'racha',       r.largo,
+      -- Para que quien manda el aviso sepa a qué pantalla mandarlo y en qué
+      -- idioma hablarle. Sin esto habría que volver a consultar la empresa
+      -- una por una desde el servidor.
+      'tipo_cuenta', coalesce(e.tipo_cuenta, 'emprendedor')
+    ) as x
+    from public.empresas e
+    join lateral (
+      with dias as (
+        select distinct m.fecha from public.movimientos m
+        where m.empresa_id = e.id and m.estado = 'activo'
+          and m.fecha <= (now() at time zone e.zona_horaria)::date
+      ),
+      numeradas as (
+        select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+      ),
+      rachas as (
+        select count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+      )
+      select largo, hasta from rachas order by hasta desc limit 1
+    ) r on true
+    where (
+        -- Una persona: siempre, porque su ciclo no depende del rubro.
+        coalesce(e.tipo_cuenta, 'emprendedor') = 'personal'
+        -- Un negocio: solo los de ciclo diario. A un ganadero no se le
+        -- recuerda cargar todos los días porque su ciclo es el novillo.
+        or public.rubro_cierra_el_dia(e.rubro, e.tipo_cuenta)
+      )
+      and r.hasta = (now() at time zone e.zona_horaria)::date - 1
+      and r.largo >= greatest(p_racha_minima, 1)
+  ) s;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.empresas_sin_cargar_hoy(integer) from public, anon, authenticated;
+grant execute on function public.empresas_sin_cargar_hoy(integer) to service_role;

@@ -1,4 +1,4 @@
-import type { Rubro } from './tipos';
+import type { Rubro, TipoCuenta } from './tipos';
 
 /**
  * QUÉ CAMBIA SEGÚN EL RUBRO.
@@ -107,8 +107,49 @@ export const LISTA_RUBROS: FichaRubro[] = [
   RUBROS.comercio, RUBROS.servicios, RUBROS.ganaderia, RUBROS.agricultura,
 ];
 
-/** Nunca devuelve undefined: un rubro desconocido cae en comercio. */
-export function fichaDe(rubro: string | null | undefined): FichaRubro {
+/**
+ * LA CUENTA PERSONAL NO ES UN RUBRO, PERO ES UNA PUERTA.
+ *
+ * No está en RUBROS ni en LISTA_RUBROS a propósito: nadie la elige de la
+ * lista, se llega por el tipo de cuenta. Pero necesita lo mismo que un rubro
+ * —qué pantallas existen, qué palabras se usan— así que tiene su ficha.
+ *
+ * Sin esto pasaba lo que estuvo pasando en producción: como a toda cuenta
+ * personal se le guarda rubro 'comercio' (una persona no tiene rubro), la
+ * ficha que le tocaba era la de un almacén, y por eso seguía viendo el
+ * cierre del día. El bug no estaba en la pantalla del cierre: estaba acá,
+ * en que se preguntaba por el rubro cuando había que preguntar por el tipo
+ * de cuenta.
+ *
+ * Sin `/cierre` por el mismo motivo que la ganadería: el día no es el ciclo.
+ * El de un ganadero es el novillo; el de alguien con sueldo va de cobro a
+ * cobro. Y sin `/reto`, que es una meta de ventas.
+ */
+export const PERSONAL: FichaRubro = {
+  clave: 'comercio',
+  nombre: 'Personal',
+  ejemplo: 'Tu sueldo, tus gastos y tus deudas',
+  sinSecciones: ['/cierre', '/reto', '/vender', '/productos'],
+  palabras: {},
+  ciclosLargos: false,
+  cierraElDia: false,
+};
+
+/**
+ * Qué puerta le toca a esta cuenta.
+ *
+ * El tipo de cuenta es OBLIGATORIO y va primero en importancia: manda sobre
+ * el rubro. Es a propósito que no tenga valor por defecto — el día que se
+ * agregue una pantalla nueva, el compilador obliga a contestar la pregunta
+ * en cada lugar en vez de dejar que alguien se olvide en silencio.
+ *
+ * Nunca devuelve undefined: un rubro desconocido cae en comercio.
+ */
+export function fichaDe(
+  rubro: string | null | undefined,
+  tipoCuenta: TipoCuenta,
+): FichaRubro {
+  if (tipoCuenta === 'personal') return PERSONAL;
   return RUBROS[(rubro ?? 'comercio') as Rubro] ?? RUBROS.comercio;
 }
 
@@ -121,10 +162,11 @@ export function fichaDe(rubro: string | null | undefined): FichaRubro {
  */
 export function palabra(
   rubro: string | null | undefined,
+  tipoCuenta: TipoCuenta,
   clave: keyof FichaRubro['palabras'],
   porDefecto: string,
   idioma: string,
 ): string {
   if (idioma !== 'es') return porDefecto;
-  return fichaDe(rubro).palabras[clave] ?? porDefecto;
+  return fichaDe(rubro, tipoCuenta).palabras[clave] ?? porDefecto;
 }

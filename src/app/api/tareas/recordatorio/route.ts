@@ -40,6 +40,7 @@ export async function GET(request: Request) {
 
   const lista = (Array.isArray(candidatas) ? candidatas : []) as {
     empresa_id: string; nombre: string; zona: string; racha: number;
+    tipo_cuenta: 'personal' | 'emprendedor';
   }[];
 
   let enviados = 0;
@@ -91,10 +92,14 @@ export async function GET(request: Request) {
       if (!reservado) { salteados += 1; continue; }
 
       const t = diccionario(idioma);
+      // El texto sirve para los dos —habla de la racha, no de cerrar el día—
+      // pero el destino no: una cuenta personal no tiene pantalla de cierre.
+      // Mandarla ahí sería un aviso que lleva a una puerta que no existe.
+      const esPersonal = empresa.tipo_cuenta === 'personal';
       const llegaron = await avisar(miembro.user_id, {
         titulo: empresa.nombre,
         cuerpo: t.racha.enRiesgo(empresa.racha),
-        url: '/cierre',
+        url: esPersonal ? '/organizacion' : '/cierre',
         tag: `cierre-${empresa.empresa_id}`,
         idioma,
       });

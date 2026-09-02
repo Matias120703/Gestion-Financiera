@@ -1,5 +1,8 @@
 import ExcelJS from 'exceljs';
-import { esValido, type FilaCategoria, type FilaDia, type FilaProducto, type Resumen } from './calculos';
+import {
+  esValido,
+  type AhorroDelPeriodo, type FilaCategoria, type FilaDia, type FilaProducto, type Resumen,
+} from './calculos';
 import { decimalesDe, simboloDe, fechaLegible } from './formato';
 import type { Movimiento, Producto } from './tipos';
 
@@ -89,7 +92,16 @@ export interface DatosReporte {
    */
   resumen: Resumen;
   ranking: FilaProducto[];
+  /** Gastos agrupados por categoría: en qué se fue la plata. */
   categorias: FilaCategoria[];
+  /**
+   * Ingresos agrupados por categoría: de dónde vino. Para un comercio casi
+   * todo es una venta y este desglose no dice nada; para una persona es el
+   * número que separa el sueldo de lo que entró una sola vez.
+   */
+  ingresos: FilaCategoria[];
+  /** Lo que se guardó y se sacó de los fondos DENTRO del período pedido. */
+  ahorro: AhorroDelPeriodo;
   serie: FilaDia[];
   /**
    * Detalle completo del periodo, recorrido página por página desde el
@@ -100,13 +112,18 @@ export interface DatosReporte {
 }
 
 /** Arma el libro de Excel completo. Función pura: no toca red ni base de datos. */
-export function construirLibro({
+export function construirLibro(datos: DatosReporte): ExcelJS.Workbook {
+  // Una persona y un comercio no comparten casi ninguna hoja, así que cada
+  // uno tiene su función. Ver el comentario de `libroPersonal` al final.
+  if (datos.empresa.tipo_cuenta === 'personal') return libroPersonal(datos);
+  return libroDeNegocio(datos);
+}
+
+function libroDeNegocio({
   empresa, desde, hasta, resumen, ranking, categorias, serie, movimientos, productosBd,
 }: DatosReporte): ExcelJS.Workbook {
   const moneda = empresa.moneda;
-  const esPersonal = empresa.tipo_cuenta === 'personal';
-  const cicloLargo = !esPersonal
-    && (empresa.rubro === 'ganaderia' || empresa.rubro === 'agricultura');
+  const cicloLargo = empresa.rubro === 'ganaderia' || empresa.rubro === 'agricultura';
   const fmt = formatoMoneda(moneda);
   const fmtPorc = '0.0"%"';
   const fmtNum = '#,##0.##';
@@ -237,28 +254,11 @@ export function construirLibro({
       nota(`Se anularon ${r.movimientosAnulados} movimiento(s), de los cuales ${r.ventasAnuladas} son ventas. `
         + 'Figuran en el detalle pero no suman en ningún total.');
     }
-    /**
-     * Cuando no hay nada que destacar, el Excel dice algo útil en vez de
-     * señalar un vacío.
-     *
-     * «No se registraron ventas en este periodo» está bien para un comercio:
-     * es un dato, y probablemente un problema que hay que mirar. Pero en una
-     * cuenta personal no hay ventas NUNCA —no se vende nada— así que era una
-     * frase que acusaba a la persona de no hacer algo que el sistema ni
-     * siquiera le ofrece.
-     *
-     * Y un reporte que solo señala lo que falta no invita a volver a
-     * abrirlo. Si no hay nada que destacar, conviene que empuje.
-     */
-    if (esPersonal) {
-      if (r.ingresosTotales === 0 && r.gastos === 0) {
-        nota('Todavía no cargaste nada en este periodo. Contale al sistema un gasto por voz y en diez segundos ya tenés tu primer número.');
-      } else if (r.gastos > 0 && r.ingresosTotales === 0) {
-        nota('Cargaste gastos pero ningún ingreso. Anotá tu sueldo y vas a ver de verdad cuánto te queda cada mes.');
-      } else if (r.gananciaNeta > 0) {
-        nota(`Te quedó ${simboloDe(moneda)} ${Math.round(r.gananciaNeta).toLocaleString('es-PY')} en el periodo. Seguí cargando todos los días y en un mes vas a saber exactamente a dónde se te va la plata.`);
-      }
-    } else if (productos.length === 0) {
+    // Para un comercio, no haber vendido nada es un dato —y probablemente un
+    // problema que mirar—, así que se dice. La versión de esta frase para una
+    // cuenta personal está en `libroPersonal`: ahí no hay ventas nunca, y
+    // señalarlo sería acusar a alguien de no hacer algo que ni se le ofrece.
+    if (productos.length === 0) {
       nota('No se registraron ventas en este periodo.');
     }
   }
@@ -534,6 +534,500 @@ export function construirLibro({
   }
 
   return libro;
+}
+
+
+/**
+ * ============================================================
+ * EL LIBRO DE UNA CUENTA PERSONAL
+ * ============================================================
+ *
+ * POR QUÉ ES OTRA FUNCIÓN Y NO UN PUÑADO DE `if` ADENTRO DE LA DE ARRIBA
+ *
+ * Hasta acá el Excel de una persona era el de un comercio con un texto
+ * distinto al final. Eso quiere decir que alguien que lleva su sueldo abría
+ * la planilla y leía «Ventas a precio de lista», «Costo de la mercadería
+ * vendida», «Ticket promedio», «Productos distintos vendidos» y una hoja
+ * entera de productos vacía. Todos ceros, porque no vende nada.
+ *
+ * Un reporte que le habla a alguien de cosas que no hace no es solo feo: le
+ * enseña que ese archivo no es para él, y no lo vuelve a abrir.
+ *
+ * Se separó en dos funciones en vez de ramificar la de arriba porque las dos
+ * planillas no comparten casi nada: distintas hojas, distintas columnas,
+ * distintos totales. Mezclarlas dejaría una función llena de condicionales
+ * donde tocar la del comercio rompería la de la persona. Acá, el camino del
+ * negocio no se toca.
+ *
+ * LO QUE UNA PERSONA SÍ QUIERE VER
+ *
+ *   · cuánto entró y de dónde  —qué parte es sueldo y qué parte fue extra—;
+ *   · cuánto salió y en qué;
+ *   · cuánto le quedó;
+ *   · cuánto guardó, que no es ni un gasto ni un ingreso;
+ *   · el detalle completo, para poder buscar «¿cuándo pagué esto?».
+ */
+function libroPersonal({
+  empresa, desde, hasta, resumen, categorias, ingresos, ahorro, serie, movimientos,
+}: DatosReporte): ExcelJS.Workbook {
+  const moneda = empresa.moneda;
+  const fmt = formatoMoneda(moneda);
+  const fmtPorc = '0.0"%"';
+  const r = resumen;
+
+  const entro = r.ingresosTotales;
+  const salio = r.gastos;
+  const teQuedo = entro - salio;
+
+  const periodo = desde === hasta
+    ? `Periodo: ${fechaLegible(desde)}`
+    : `Periodo: ${fechaLegible(desde)} al ${fechaLegible(hasta)}`;
+
+  // Días del calendario, no días con movimientos: para el promedio diario lo
+  // que importa es cuánto duró el período, no en cuántos días cargó algo.
+  const dias = Math.max(1, Math.round(
+    (Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86400000,
+  ) + 1);
+
+  const huboAhorro = ahorro.aportado > 0 || ahorro.retirado > 0;
+
+  const libro = new ExcelJS.Workbook();
+  libro.creator = 'Orden';
+  libro.created = new Date();
+
+  // ==========================================================
+  // HOJA 1 · RESUMEN
+  // ==========================================================
+  {
+    const h = libro.addWorksheet('Resumen', {
+      views: [{ showGridLines: false }],
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
+    });
+    h.columns = [{ width: 4 }, { width: 34 }, { width: 20 }, { width: 20 }, { width: 4 }];
+    encabezado(h, empresa.nombre, 'TUS NÚMEROS DEL PERIODO', periodo, 5);
+
+    let f = 6;
+
+    const bloque = (titulo: string) => {
+      h.mergeCells(`B${f}:D${f}`);
+      const c = h.getCell(`B${f}`);
+      c.value = titulo;
+      c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+      c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+      h.getRow(f).height = 22;
+      f += 1;
+    };
+
+    const linea = (
+      etiqueta: string,
+      valor: number,
+      opciones?: { fuerte?: boolean; color?: string; nota?: string; formato?: string },
+    ) => {
+      const fila = h.getRow(f);
+      const a = fila.getCell(2);
+      const b = fila.getCell(3);
+      const c = fila.getCell(4);
+      a.value = etiqueta;
+      a.font = { name: 'Calibri', size: 10.5, bold: opciones?.fuerte, color: { argb: TINTA } };
+      a.alignment = { vertical: 'middle', indent: 1 };
+      b.value = valor;
+      b.numFmt = opciones?.formato ?? fmt;
+      b.font = {
+        name: 'Calibri', size: 10.5, bold: opciones?.fuerte,
+        color: { argb: opciones?.color ?? TINTA },
+      };
+      b.alignment = { vertical: 'middle', horizontal: 'right' };
+      if (opciones?.nota) {
+        c.value = opciones.nota;
+        c.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF8A968F' } };
+        c.alignment = { vertical: 'middle', horizontal: 'right' };
+      }
+      a.border = bordeFino; b.border = bordeFino; c.border = bordeFino;
+      fila.height = 20;
+      f += 1;
+    };
+
+    // ---- de dónde vino ----
+    bloque('Lo que entró');
+    if (ingresos.length === 0) {
+      linea('Todavía no cargaste ningún ingreso', 0);
+    } else {
+      ingresos.forEach((i) => {
+        linea(i.nombre, i.monto, {
+          nota: i.operaciones === 1 ? '1 vez' : `${i.operaciones} veces`,
+        });
+      });
+    }
+    linea('Total que entró', entro, { fuerte: true, color: VERDE });
+    f += 1;
+
+    // ---- en qué se fue ----
+    bloque('Lo que salió');
+    if (categorias.length === 0) {
+      linea('Todavía no cargaste ningún gasto', 0);
+    } else {
+      // Las cinco más caras. El detalle completo tiene su propia hoja: acá
+      // repetir veinte categorías taparía el número que importa.
+      categorias.slice(0, 5).forEach((c) => {
+        linea(c.nombre, c.monto, { color: ROJO, nota: `${c.participacion.toFixed(1)}% de tus gastos` });
+      });
+      if (categorias.length > 5) {
+        const resto = categorias.slice(5).reduce((s, c) => s + c.monto, 0);
+        linea(`Otras ${categorias.length - 5} categorías`, resto, { color: ROJO });
+      }
+    }
+    linea('Total que salió', salio, { fuerte: true, color: ROJO });
+    f += 1;
+
+    // ---- el ahorro, que no es ninguna de las dos cosas ----
+    if (huboAhorro) {
+      bloque('Lo que guardaste');
+      linea('Depositado en tus fondos', ahorro.aportado, { color: VERDE });
+      if (ahorro.retirado > 0) linea('Retirado de tus fondos', -ahorro.retirado, { color: ROJO });
+      linea('Guardado en el periodo', ahorro.neto, { fuerte: true });
+      f += 1;
+    }
+
+    // ---- el número ----
+    bloque('Resultado');
+    linea('Te quedó', teQuedo, {
+      fuerte: true,
+      color: teQuedo >= 0 ? VERDE : ROJO,
+      nota: 'lo que entró menos lo que salió',
+    });
+    if (huboAhorro && ahorro.neto > 0) {
+      linea('De eso, ya está guardado', ahorro.neto, {
+        nota: 'sigue siendo tuyo, no es un gasto',
+      });
+    }
+    f += 1;
+
+    bloque('Para mirarlo de cerca');
+    linea('Gasto promedio por día', salio / dias, { nota: `${dias} días del periodo` });
+    linea('Días en que cargaste algo', serie.length, { formato: '#,##0' });
+    if (entro > 0) {
+      linea('Del total que entró, gastaste', (salio / entro) * 100, { formato: fmtPorc });
+    }
+    if (r.movimientosAnulados > 0) {
+      linea('Movimientos anulados', r.movimientosAnulados, {
+        formato: '#,##0', nota: 'no suman en ningún total',
+      });
+    }
+    f += 2;
+
+    // ---- para tener en cuenta ----
+    h.mergeCells(`B${f}:D${f}`);
+    const dc = h.getCell(`B${f}`);
+    dc.value = 'PARA TENER EN CUENTA';
+    dc.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF6B7C75' } };
+    f += 1;
+
+    const nota = (texto: string) => {
+      h.mergeCells(`B${f}:D${f}`);
+      const c = h.getCell(`B${f}`);
+      c.value = texto;
+      c.font = { name: 'Calibri', size: 10, color: { argb: TINTA } };
+      c.alignment = { vertical: 'middle', wrapText: true };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VERDE_SUAVE } };
+      h.getRow(f).height = 20;
+      f += 1;
+    };
+
+    const simbolo = simboloDe(moneda);
+    const enPlata = (n: number) => `${simbolo} ${Math.round(n).toLocaleString('es-PY')}`;
+
+    const mayorGasto = movimientos
+      .filter((m) => m.tipo === 'gasto' && esValido(m))
+      .sort((a, b) => Number(b.monto) - Number(a.monto))[0];
+
+    if (categorias[0]) {
+      nota(`Donde más se te fue: ${categorias[0].nombre} — ${enPlata(categorias[0].monto)}, `
+        + `el ${categorias[0].participacion.toFixed(1)}% de todo lo que gastaste.`);
+    }
+    if (mayorGasto) {
+      nota(`El gasto más grande: ${mayorGasto.descripcion || 'sin descripción'} — ${enPlata(Number(mayorGasto.monto))}.`);
+    }
+    if (huboAhorro && ahorro.neto > 0) {
+      nota(`Guardaste ${enPlata(ahorro.neto)} en el periodo. Esa plata no figura como gasto en ninguna hoja: la seguís teniendo.`);
+    }
+
+    // Cuando no hay nada que destacar, el archivo dice algo útil en vez de
+    // señalar un vacío. Un reporte que solo marca lo que falta no invita a
+    // volver a abrirlo.
+    if (entro === 0 && salio === 0) {
+      nota('Todavía no cargaste nada en este periodo. Contale un gasto por voz y en diez segundos ya tenés tu primer número.');
+    } else if (salio > 0 && entro === 0) {
+      nota('Cargaste gastos pero ningún ingreso. Anotá tu sueldo y vas a ver de verdad cuánto te queda cada mes.');
+    } else if (teQuedo < 0) {
+      nota(`En este periodo gastaste ${enPlata(Math.abs(teQuedo))} más de lo que entró.`);
+    } else if (teQuedo > 0 && !huboAhorro) {
+      nota(`Te quedaron ${enPlata(teQuedo)} sin gastar. Si creás un fondo de ahorro, esa plata deja de estar suelta y le ponés un destino.`);
+    }
+  }
+
+  // ==========================================================
+  // HOJA 2 · EN QUÉ SE FUE
+  // ==========================================================
+  {
+    const h = libro.addWorksheet('En qué se fue', {
+      views: [{ showGridLines: false }],
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
+    });
+    h.columns = [{ width: 5 }, { width: 32 }, { width: 20 }, { width: 16 }, { width: 16 }, { width: 5 }];
+    encabezado(h, empresa.nombre, 'EN QUÉ SE FUE LA PLATA', periodo, 6);
+
+    filaEncabezadoTabla(h, 6, ['#', 'Categoría', 'Total gastado', 'Movimientos', 'Del total']);
+    tablaDeCategorias(h, categorias, salio, fmt, fmtPorc, 'Nada gastado en este periodo.');
+  }
+
+  // ==========================================================
+  // HOJA 3 · DE DÓNDE VINO
+  //
+  // El espejo de la anterior, y para una persona con sueldo es la que
+  // contesta la pregunta de fondo: qué parte de lo que entra se repite el mes
+  // que viene y qué parte fue de una sola vez.
+  // ==========================================================
+  {
+    const h = libro.addWorksheet('De dónde vino', {
+      views: [{ showGridLines: false }],
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
+    });
+    h.columns = [{ width: 5 }, { width: 32 }, { width: 20 }, { width: 16 }, { width: 16 }, { width: 5 }];
+    encabezado(h, empresa.nombre, 'DE DÓNDE VINO LA PLATA', periodo, 6);
+
+    filaEncabezadoTabla(h, 6, ['#', 'Categoría', 'Total que entró', 'Veces', 'Del total']);
+    tablaDeCategorias(h, ingresos, entro, fmt, fmtPorc, 'Nada cargado en este periodo.');
+  }
+
+  // ==========================================================
+  // HOJA 4 · AHORRO
+  //
+  // Solo si hubo movimiento. Una hoja de ahorro vacía para alguien que no
+  // usa fondos es exactamente el problema que esta planilla vino a corregir.
+  // ==========================================================
+  if (huboAhorro) {
+    const h = libro.addWorksheet('Ahorro', {
+      views: [{ showGridLines: false }],
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
+    });
+    h.columns = [
+      { width: 5 }, { width: 30 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 20 }, { width: 5 },
+    ];
+    encabezado(h, empresa.nombre, 'TUS FONDOS DE AHORRO', periodo, 7);
+
+    filaEncabezadoTabla(h, 6, ['#', 'Fondo', 'Depositado', 'Retirado', 'Guardado', 'Saldo a hoy']);
+
+    ahorro.porFondo.forEach((fondo, i) => {
+      const fila = h.getRow(7 + i);
+      fila.values = [i + 1, fondo.nombre, fondo.aportado, -fondo.retirado, fondo.neto, fondo.saldo_hoy];
+      fila.height = 18;
+      fila.eachCell((c, n) => {
+        c.font = { name: 'Calibri', size: 10 };
+        c.border = bordeFino;
+        c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : n === 1 ? 'center' : 'right' };
+        if (n >= 3) c.numFmt = fmt;
+        if (i % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
+      });
+      fila.getCell(5).font = {
+        name: 'Calibri', size: 10, bold: true,
+        color: { argb: fondo.neto >= 0 ? VERDE : ROJO },
+      };
+    });
+
+    const fTotal = 7 + ahorro.porFondo.length;
+    const total = h.getRow(fTotal);
+    total.values = ['', 'TOTAL', ahorro.aportado, -ahorro.retirado, ahorro.neto, ''];
+    total.height = 22;
+    total.eachCell((c, n) => {
+      c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+      c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : 'right' };
+      if (n >= 3 && n <= 5) c.numFmt = fmt;
+    });
+
+    const aviso = h.getRow(fTotal + 2);
+    h.mergeCells(`B${fTotal + 2}:F${fTotal + 2}`);
+    const c = aviso.getCell(2);
+    c.value = 'La columna «Saldo a hoy» es el total acumulado de cada fondo, de siempre: '
+      + 'no pertenece al periodo de esta planilla y por eso no se suma en la fila del total.';
+    c.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: 'FF8A968F' } };
+    c.alignment = { vertical: 'middle', wrapText: true };
+    aviso.height = 28;
+  }
+
+  // ==========================================================
+  // HOJA 5 · MOVIMIENTOS
+  //
+  // Sin subtotal, sin descuento, sin costo y sin ganancia. Esas cinco
+  // columnas son de una venta; en la vida de una persona no significan nada
+  // y lo único que hacían era empujar el monto —la única columna que le
+  // importa— hacia la derecha de la pantalla.
+  // ==========================================================
+  {
+    const h = libro.addWorksheet('Movimientos', {
+      views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
+    });
+    h.columns = [
+      { width: 13 }, { width: 11 }, { width: 42 }, { width: 20 }, { width: 16 }, { width: 18 }, { width: 20 },
+    ];
+    encabezado(h, empresa.nombre, 'TODO LO QUE CARGASTE', periodo, 7);
+
+    filaEncabezadoTabla(h, 6, ['Fecha', 'Tipo', 'Descripción', 'Categoría', 'Cómo', 'Monto', 'Estado']);
+
+    const ordenados = [...movimientos].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+
+    ordenados.forEach((mv, i) => {
+      const fila = h.getRow(7 + i);
+      const esGasto = mv.tipo === 'gasto';
+      const anulado = !esValido(mv);
+
+      fila.values = [
+        fechaLegible(mv.fecha),
+        esGasto ? 'Gasto' : 'Ingreso',
+        mv.descripcion || '—',
+        mv.categoria,
+        mv.metodo_pago,
+        (esGasto ? -1 : 1) * Number(mv.monto),
+        anulado ? `ANULADO${mv.motivo_anulacion ? ` · ${mv.motivo_anulacion}` : ''}` : 'Válido',
+      ];
+      fila.height = 18;
+      fila.eachCell((c, n) => {
+        c.font = { name: 'Calibri', size: 10 };
+        c.border = bordeFino;
+        c.alignment = { vertical: 'middle', horizontal: n === 6 ? 'right' : n === 3 || n === 7 ? 'left' : 'center' };
+        if (n === 6) c.numFmt = fmt;
+        if (i % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
+      });
+      fila.getCell(2).font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: esGasto ? ROJO : VERDE } };
+      fila.getCell(6).font = { name: 'Calibri', size: 10, bold: true, color: { argb: esGasto ? ROJO : VERDE } };
+
+      if (anulado) {
+        fila.eachCell((c) => {
+          c.font = { ...(c.font ?? {}), strike: true, color: { argb: 'FF9AA5A0' }, italic: true };
+        });
+        fila.getCell(7).font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: ROJO } };
+      }
+    });
+
+    const fTotal = 7 + ordenados.length;
+    const total = h.getRow(fTotal);
+    // El total sale del resumen, que ya deja afuera las anuladas.
+    total.values = ['', '', 'TOTAL DEL PERIODO (sin anulados)', '', '', teQuedo, ''];
+    total.height = 22;
+    total.eachCell((c, n) => {
+      c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+      c.alignment = { vertical: 'middle', horizontal: n === 6 ? 'right' : 'left' };
+      if (n === 6) c.numFmt = fmt;
+    });
+
+    if (ordenados.length > 0) {
+      h.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + ordenados.length, column: 7 } };
+    }
+  }
+
+  // ==========================================================
+  // HOJA 6 · DÍA POR DÍA
+  // ==========================================================
+  {
+    const h = libro.addWorksheet('Día por día', {
+      views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
+    });
+    h.columns = [{ width: 5 }, { width: 20 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 5 }];
+    encabezado(h, empresa.nombre, 'CÓMO VINO CADA DÍA', periodo, 6);
+
+    filaEncabezadoTabla(h, 6, ['', 'Fecha', 'Entró', 'Salió', 'Diferencia']);
+
+    serie.forEach((d, i) => {
+      // Para una persona no hay ventas: lo que entró es todo junto.
+      const entroDia = d.ventas + d.otrosIngresos;
+      const diferencia = entroDia - d.gastos;
+      const fila = h.getRow(7 + i);
+      fila.values = ['', fechaLegible(d.fecha), entroDia, d.gastos, diferencia];
+      fila.height = 18;
+      fila.eachCell((c, n) => {
+        c.font = { name: 'Calibri', size: 10 };
+        c.border = bordeFino;
+        c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : 'right' };
+        if (n >= 3) c.numFmt = fmt;
+        if (i % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
+      });
+      fila.getCell(5).font = {
+        name: 'Calibri', size: 10, bold: true,
+        color: { argb: diferencia >= 0 ? VERDE : ROJO },
+      };
+    });
+
+    const fTotal = 7 + serie.length;
+    const total = h.getRow(fTotal);
+    total.values = ['', 'TOTAL', entro, salio, teQuedo];
+    total.height = 22;
+    total.eachCell((c, n) => {
+      c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+      c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : 'right' };
+      if (n >= 3) c.numFmt = fmt;
+    });
+  }
+
+  return libro;
+}
+
+/**
+ * La tabla de categorías, que las dos hojas de desglose comparten.
+ *
+ * Son idénticas salvo los títulos: escribirlas dos veces garantizaba que el
+ * día que se ajuste una, la otra quede distinta.
+ */
+function tablaDeCategorias(
+  h: ExcelJS.Worksheet,
+  filas: FilaCategoria[],
+  total: number,
+  fmt: string,
+  fmtPorc: string,
+  siNoHay: string,
+) {
+  filas.forEach((c, i) => {
+    const fila = h.getRow(7 + i);
+    fila.values = [i + 1, c.nombre, c.monto, c.operaciones, c.participacion];
+    fila.height = 18;
+    fila.eachCell((cell, n) => {
+      cell.font = { name: 'Calibri', size: 10 };
+      cell.border = bordeFino;
+      cell.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : n === 1 ? 'center' : 'right' };
+      if (n === 3) cell.numFmt = fmt;
+      if (n === 4) cell.numFmt = '#,##0';
+      if (n === 5) cell.numFmt = fmtPorc;
+      if (i % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
+    });
+  });
+
+  if (filas.length === 0) {
+    const fila = h.getRow(7);
+    h.mergeCells('B7:E7');
+    const c = fila.getCell(2);
+    c.value = siNoHay;
+    c.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF8A968F' } };
+    c.alignment = { vertical: 'middle', horizontal: 'left' };
+    fila.height = 20;
+    return;
+  }
+
+  const fTotal = 7 + filas.length;
+  const fila = h.getRow(fTotal);
+  fila.values = ['', 'TOTAL', total, filas.reduce((s, c) => s + c.operaciones, 0), 100];
+  fila.height = 22;
+  fila.eachCell((c, n) => {
+    c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+    c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : 'right' };
+    if (n === 3) c.numFmt = fmt;
+    if (n === 4) c.numFmt = '#,##0';
+    if (n === 5) c.numFmt = fmtPorc;
+  });
 }
 
 export function nombreArchivo(empresa: string, desde: string, hasta: string): string {

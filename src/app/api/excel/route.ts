@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { traerProductos } from '@/lib/datos';
 import {
-  traerResumen, traerRanking, traerGastosPorCategoria, traerSerieDiaria,
+  traerResumen, traerRanking, traerGastosPorCategoria, traerIngresosPorCategoria,
+  traerSerieDiaria, traerAhorroDelPeriodo,
   recorrerTodosLosMovimientos, contarMovimientos,
 } from '@/lib/agregados';
 import { construirLibro, nombreArchivo } from '@/lib/reporte';
@@ -49,11 +50,17 @@ export async function GET(request: Request) {
     // ---- Los números: agregados en PostgreSQL sobre TODO el periodo ----
     // Cada una de estas llamadas devuelve pocas filas, así que ningún tope
     // de la Data API puede recortarlas.
-    const [resumen, ranking, categorias, serie, productos, total] = await Promise.all([
+    // El desglose de ingresos y el ahorro solo los usa la planilla de una
+    // cuenta personal. Se piden igual en las dos: son dos llamadas baratas, y
+    // ramificar acá para ahorrárselas dejaría la ruta con dos caminos que
+    // mantener por una diferencia de milisegundos.
+    const [resumen, ranking, categorias, ingresos, serie, ahorro, productos, total] = await Promise.all([
       traerResumen(empresa.id, desde, hasta),
       traerRanking(empresa.id, desde, hasta),
       traerGastosPorCategoria(empresa.id, desde, hasta),
+      traerIngresosPorCategoria(empresa.id, desde, hasta),
       traerSerieDiaria(empresa.id, desde, hasta),
+      traerAhorroDelPeriodo(empresa.id, desde, hasta),
       traerProductos(empresa.id),
       contarMovimientos(empresa.id, desde, hasta),
     ]);
@@ -82,6 +89,8 @@ export async function GET(request: Request) {
       resumen,
       ranking,
       categorias,
+      ingresos,
+      ahorro,
       serie,
       movimientos,
       productosBd: productos as Producto[],

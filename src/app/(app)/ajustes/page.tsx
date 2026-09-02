@@ -171,7 +171,7 @@ export default async function PaginaAjustes() {
 
         <Seccion titulo={t.ajustes.avisos}>
           <div className="px-4 pb-5 pt-3">
-            <AjustesDeAvisos inicial={prefs} />
+            <AjustesDeAvisos inicial={prefs} esPersonal={esPersonal} />
           </div>
         </Seccion>
       </div>

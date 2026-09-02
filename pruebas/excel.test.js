@@ -1,5 +1,5 @@
 const { construirLibro, nombreArchivo } = require('../.compilado/reporte.js');
-const { resumir, rankingProductos, gastosPorCategoria, serieDiaria } = require('../.compilado/calculos.js');
+const { resumir, rankingProductos, gastosPorCategoria, ingresosPorCategoria, serieDiaria } = require('../.compilado/calculos.js');
 const { diasDelRango } = require('../.compilado/fechas.js');
 
 /**
@@ -7,13 +7,17 @@ const { diasDelRango } = require('../.compilado/fechas.js');
  * PostgreSQL). Acá los calculamos con calculos.ts, que la prueba de
  * reconciliación garantiza equivalente.
  */
-function libroDe({ empresa, desde, hasta, movimientos, productosBd = [] }) {
+const SIN_AHORRO = { aportado: 0, retirado: 0, neto: 0, porFondo: [] };
+
+function libroDe({ empresa, desde, hasta, movimientos, productosBd = [], ahorro = SIN_AHORRO }) {
   const dias = diasDelRango(desde, hasta, 400);
   return construirLibro({
     empresa, desde, hasta,
     resumen: resumir(movimientos),
     ranking: rankingProductos(movimientos),
     categorias: gastosPorCategoria(movimientos),
+    ingresos: ingresosPorCategoria(movimientos),
+    ahorro,
     serie: serieDiaria(movimientos, dias),
     movimientos,
     productosBd,
@@ -205,6 +209,116 @@ const productosBd = [
   const hojasTienda = await hojasDe(
     { nombre:'Almacen', moneda:'PYG', rubro:'comercio' }, 'comercio-hojas.xlsx');
   ok('un comercio si la trae', hojasTienda.includes('Día por día'), true);
+
+  // ---- La planilla de una persona no es la de un comercio ----
+  //
+  // Hasta la 030, alguien que llevaba su sueldo abria el Excel y leia
+  // <<Ventas a precio de lista>>, <<Costo de la mercaderia vendida>>,
+  // <<Ticket promedio>> y una hoja entera de productos vacia. Un reporte que
+  // le habla a alguien de cosas que no hace le ensena que ese archivo no es
+  // para el, y no lo vuelve a abrir.
+  const movsPersona = [
+    { ...base, id:'pp1', tipo:'ingreso', fecha:'2026-08-01', descripcion:'Sueldo de julio',
+      categoria:'Sueldo', subtotal:3500000, monto:3500000, metodo_pago:'transferencia' },
+    { ...base, id:'pp2', tipo:'ingreso', fecha:'2026-08-14', descripcion:'Changa',
+      categoria:'Extras', subtotal:400000, monto:400000, metodo_pago:'efectivo' },
+    { ...base, id:'pp3', tipo:'gasto', fecha:'2026-08-02', descripcion:'Supermercado',
+      categoria:'Comida', subtotal:600000, monto:600000, metodo_pago:'efectivo' },
+    { ...base, id:'pp4', tipo:'gasto', fecha:'2026-08-05', descripcion:'Alquiler',
+      categoria:'Alquiler', subtotal:1500000, monto:1500000, metodo_pago:'transferencia' },
+  ];
+  const cuentaPersonal = { nombre:'Mis finanzas', moneda:'PYG', tipo_cuenta:'personal' };
+
+  const libroP = libroDe({
+    empresa: cuentaPersonal, desde:'2026-08-01', hasta:'2026-08-31', movimientos: movsPersona,
+  });
+  const rutaP = path.join(__dirname, '..', '.compilado', 'personal-completo.xlsx');
+  await libroP.xlsx.writeFile(rutaP);
+  const leidoP = new ExcelJS.Workbook();
+  await leidoP.xlsx.readFile(rutaP);
+  const hojasP = leidoP.worksheets.map((h) => h.name);
+  console.log('hojas personales:', hojasP.join(' | '));
+
+  ok('la cuenta personal no trae hoja de Productos', hojasP.includes('Productos'), false);
+  ok('trae en que se fue y de donde vino',
+    hojasP.includes('En qué se fue') && hojasP.includes('De dónde vino'), true);
+  ok('sin movimientos de ahorro no aparece la hoja Ahorro', hojasP.includes('Ahorro'), false);
+
+  // Ni una sola palabra de comercio en toda la planilla.
+  let textoP = '';
+  leidoP.worksheets.forEach((h) => {
+    h.eachRow((fila) => {
+      fila.eachCell((c) => { if (typeof c.value === 'string') textoP += c.value + ' '; });
+    });
+  });
+  ok('no habla de ventas a precio de lista', /precio de lista/i.test(textoP), false);
+  ok('ni de mercaderia', /mercader/i.test(textoP), false);
+  ok('ni de ticket promedio', /ticket/i.test(textoP), false);
+  ok('ni de ganancia bruta', /ganancia bruta/i.test(textoP), false);
+  ok('ni de margen', /margen/i.test(textoP), false);
+
+  // Los numeros, que son el punto.
+  const resP = leidoP.getWorksheet('Resumen');
+  const buscar = (hoja, etiqueta) => {
+    let valor = null;
+    hoja.eachRow((f) => { if (f.getCell(2).value === etiqueta) valor = f.getCell(3).value; });
+    return valor;
+  };
+  ok('total que entro', buscar(resP, 'Total que entró'), 3900000);
+  ok('total que salio', buscar(resP, 'Total que salió'), 2100000);
+  ok('te quedo', buscar(resP, 'Te quedó'), 1800000);
+  ok('el sueldo aparece desglosado', buscar(resP, 'Sueldo'), 3500000);
+
+  const vino = leidoP.getWorksheet('De dónde vino');
+  ok('la categoria mas grande primero', vino.getCell('B7').value, 'Sueldo');
+  ok('con su monto', vino.getCell('C7').value, 3500000);
+  ok('y el total coincide con el resumen', vino.getCell('B9').value, 'TOTAL');
+  ok('total de ingresos', vino.getCell('C9').value, 3900000);
+
+  const movP = leidoP.getWorksheet('Movimientos');
+  ok('la columna del monto es la sexta', movP.getCell('F6').value, 'Monto');
+  ok('y no hay columna de descuento ni de costo',
+    ['A6','B6','C6','D6','E6','F6','G6'].map((c) => movP.getCell(c).value).join('|'),
+    'Fecha|Tipo|Descripción|Categoría|Cómo|Monto|Estado');
+  ok('el gasto va en negativo', movP.getCell('F9').value, -1500000);
+
+  const diaP = leidoP.getWorksheet('Día por día');
+  ok('el dia por dia habla de entro y salio',
+    [diaP.getCell('C6').value, diaP.getCell('D6').value, diaP.getCell('E6').value].join('|'),
+    'Entró|Salió|Diferencia');
+
+  // ---- Con ahorro aparece la hoja, y no se mezcla con los gastos ----
+  //
+  // El ahorro no es un gasto: la plata sigue siendo suya. Si figurara como
+  // gasto, su mejor mes se veria como el peor.
+  const conAhorro = libroDe({
+    empresa: cuentaPersonal, desde:'2026-08-01', hasta:'2026-08-31', movimientos: movsPersona,
+    ahorro: {
+      aportado: 500000, retirado: 100000, neto: 400000,
+      porFondo: [
+        { nombre:'Viaje de fin de año', aportado:500000, retirado:0, neto:500000, saldo_hoy:1200000 },
+        { nombre:'Emergencias', aportado:0, retirado:100000, neto:-100000, saldo_hoy:300000 },
+      ],
+    },
+  });
+  const rutaA = path.join(__dirname, '..', '.compilado', 'personal-ahorro.xlsx');
+  await conAhorro.xlsx.writeFile(rutaA);
+  const leidoA = new ExcelJS.Workbook();
+  await leidoA.xlsx.readFile(rutaA);
+
+  ok('con movimientos de ahorro si aparece la hoja',
+    leidoA.worksheets.map((h) => h.name).includes('Ahorro'), true);
+
+  const ahP = leidoA.getWorksheet('Ahorro');
+  ok('el fondo que mas crecio va primero', ahP.getCell('B7').value, 'Viaje de fin de año');
+  ok('lo retirado va en negativo', ahP.getCell('D8').value, -100000);
+  ok('el saldo a hoy figura aparte', ahP.getCell('F7').value, 1200000);
+  ok('y el total del periodo no lo suma', ahP.getCell('F9').value, '');
+
+  const resA = leidoA.getWorksheet('Resumen');
+  ok('el ahorro no cambia lo que salio', buscar(resA, 'Total que salió'), 2100000);
+  ok('ni lo que quedo', buscar(resA, 'Te quedó'), 1800000);
+  ok('pero se informa aparte', buscar(resA, 'Guardado en el periodo'), 400000);
   console.log(fallos===0 ? '>>> EXCEL OK' : `>>> ${fallos} FALLAS`);
   process.exit(fallos?1:0);
 })();
