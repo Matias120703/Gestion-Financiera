@@ -21,7 +21,7 @@ export default async function PaginaReportes({
 }) {
   const ctx = await contextoObligatorio();
   const t = textos();
-  const rango = rangoDesdeParams(searchParams);
+  const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
 
   /**
    * UNA CUENTA PERSONAL TIENE SU PROPIO REPORTE.

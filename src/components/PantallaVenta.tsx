@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, numero } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
+import { useZona } from '@/lib/zona';
 import type { Producto } from '@/lib/tipos';
 import { Vacio } from '@/components/Piezas';
 import { mensajeDeError } from '@/lib/errores';
@@ -63,6 +64,7 @@ export function PantallaVenta({
   frecuentes?: string[];
 }) {
   const t = useTextos();
+  const zona = useZona();
   const router = useRouter();
   const dec = decimalesDe(moneda);
 
@@ -73,7 +75,7 @@ export function PantallaVenta({
   const [carrito, setCarrito] = useState<LineaCarrito[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [metodo, setMetodo] = useState('efectivo');
-  const [fecha, setFecha] = useState(hoyISO());
+  const [fecha, setFecha] = useState(hoyISO(zona));
   const [cliente, setCliente] = useState('');
   const [descuento, setDescuento] = useState(0);
   const [guardando, setGuardando] = useState(false);

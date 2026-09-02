@@ -22,7 +22,7 @@ export default async function PaginaVender() {
 
   // Lo que más vendiste en los últimos 30 días manda el orden de la grilla:
   // los productos que usás todo el día quedan arriba, sin buscarlos.
-  const hoy = hoyISO();
+  const hoy = hoyISO(ctx.zonaHoraria);
   const [productos, ranking] = await Promise.all([
     traerProductos(ctx.empresa.id),
     traerRanking(ctx.empresa.id, sumarDias(hoy, -29), hoy),

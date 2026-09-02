@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
+import { useZona } from '@/lib/zona';
 import type { Movimiento, Rol } from '@/lib/tipos';
 import { Vacio, Seccion } from '@/components/Piezas';
 import { puedeAnular } from '@/lib/permisos';
@@ -36,6 +37,7 @@ export function PantallaGastos({
   hayMas?: boolean;
 }) {
   const t = useTextos();
+  const zona = useZona();
   const router = useRouter();
   const dec = decimalesDe(moneda);
 
@@ -43,7 +45,7 @@ export function PantallaGastos({
   const [descripcion, setDescripcion] = useState('');
   const [monto, setMonto] = useState<number>(0);
   const [categoria, setCategoria] = useState('Mercadería');
-  const [fecha, setFecha] = useState(hoyISO());
+  const [fecha, setFecha] = useState(hoyISO(zona));
   const [metodo, setMetodo] = useState('efectivo');
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);

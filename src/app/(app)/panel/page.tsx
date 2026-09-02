@@ -87,7 +87,7 @@ export default async function PaginaPanel({
   // negocio. El corte de arriba se lo llevó.
   const cicloLargo = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).ciclosLargos;
 
-  const rango = rangoDesdeParams(searchParams);
+  const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   const previo = rangoAnterior(rango);
 
   // Todos los números salen agregados de PostgreSQL. Ninguna de estas
@@ -120,10 +120,10 @@ export default async function PaginaPanel({
    * del que dependa una decisión — para eso está la pantalla de Deudas, que
    * sí lanza si no puede leer.
    */
-  const desdeAnio = `${hoyISO().slice(0, 4)}-01-01`;
+  const desdeAnio = `${hoyISO(ctx.zonaHoraria).slice(0, 4)}-01-01`;
   const [delAnio, deudas] = cicloLargo
     ? await Promise.all([
-        traerResumen(ctx.empresa.id, desdeAnio, hoyISO()),
+        traerResumen(ctx.empresa.id, desdeAnio, hoyISO(ctx.zonaHoraria)),
         traerResumenDeudas(ctx.empresa.id).catch(() => null),
       ])
     : [null, null];
@@ -137,7 +137,7 @@ export default async function PaginaPanel({
   const mayorGasto = categorias[0] ?? null;
 
   // Progreso del reto activo
-  const hoy = hoyISO();
+  const hoy = hoyISO(ctx.zonaHoraria);
   let retoInfo: {
     medible: boolean; logrado: number; falta: number;
     avance: number; diasRestantes: number; ritmo: number;

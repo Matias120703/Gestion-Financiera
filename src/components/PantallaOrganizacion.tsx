@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
+import { useZona } from '@/lib/zona';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
@@ -516,13 +517,14 @@ function FormularioIngreso({
   alRegistrar: (d: DatosIngreso) => void;
 }) {
   const t = useTextos();
+  const zona = useZona();
   const [concepto, setConcepto] = useState('');
   const [monto, setMonto] = useState('');
   // El mismo día que mira la base para decidir si acepta la fila. Un ingreso
   // futuro no es un ingreso: es plata que todavía no está, y mostrarla sería
   // la única mentira que Orden no se puede permitir. La base ya lo rechaza;
   // acá se frena antes, para que la persona lea el motivo y no un error crudo.
-  const hoy = hoyISO();
+  const hoy = hoyISO(zona);
   const [fecha, setFecha] = useState(hoy);
   const [categoria, setCategoria] = useState(categorias[0]?.nombre ?? 'Otros ingresos');
 
@@ -1028,6 +1030,7 @@ function FormularioFondo({
   alGuardar: (d: DatosFondo) => void;
 }) {
   const t = useTextos();
+  const zona = useZona();
   const [nombre, setNombre] = useState(fondo?.nombre ?? '');
   const [meta, setMeta] = useState(fondo?.meta ? String(fondo.meta) : '');
   const [fecha, setFecha] = useState(fondo?.fecha_limite ?? '');
@@ -1035,7 +1038,7 @@ function FormularioFondo({
   // La base rechaza una fecha ya vencida, salvo que sea la que el fondo ya
   // tenía guardada. El tope de abajo dice exactamente eso, para que el
   // calendario no ofrezca algo que después va a fallar.
-  const hoy = hoyISO();
+  const hoy = hoyISO(zona);
   const minimo = fondo?.fecha_limite && fondo.fecha_limite < hoy ? fondo.fecha_limite : hoy;
 
   return (

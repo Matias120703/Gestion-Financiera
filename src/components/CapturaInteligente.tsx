@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
+import { useZona } from '@/lib/zona';
 import type { CapturaInterpretada, DeudaInterpretada, ItemInterpretado, Origen, TipoCaptura, TipoCuenta } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
 import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
@@ -49,6 +50,7 @@ export function BotonCaptura({
   const router = useRouter();
   const ruta = usePathname();
   const t = useTextos();
+  const zona = useZona();
 
   /**
    * En Vender no aparece. Dos motivos:
@@ -148,7 +150,7 @@ export function BotonCaptura({
     return {
       ...c,
       items,
-      fecha: c.fecha || hoyISO(),
+      fecha: c.fecha || hoyISO(zona),
       monto: Number(c.monto) || sumaItems,
       categoria: c.categoria || (c.tipo === 'venta' ? 'Ventas' : 'General'),
       metodo_pago: c.metodo_pago || 'efectivo',

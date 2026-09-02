@@ -2,6 +2,7 @@ import { contextoObligatorio } from '@/lib/sesion';
 import { BarraSuperior, NavInferior, NavLateral } from '@/components/Navegacion';
 import { BotonCaptura } from '@/components/CapturaInteligente';
 import { AvisoCuenta } from '@/components/AvisoCuenta';
+import { ProveedorZona } from '@/lib/zona';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,9 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   const ctx = await contextoObligatorio();
 
   return (
+    // La zona envuelve TODO el layout y no solo `children`: el botón de
+    // captura vive acá afuera y también necesita saber qué día es hoy.
+    <ProveedorZona zona={ctx.zonaHoraria}>
     <div className="flex min-h-screen">
       <NavLateral empresa={ctx.empresa} />
 
@@ -46,5 +50,6 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} />
       </div>
     </div>
+    </ProveedorZona>
   );
 }

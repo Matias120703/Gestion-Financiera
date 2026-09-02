@@ -99,7 +99,7 @@ export default async function PaginaReto() {
   const falta = Math.max(0, meta - logrado);
   const avance = meta > 0 ? (logrado / meta) * 100 : 0;
 
-  const hoy = hoyISO();
+  const hoy = hoyISO(ctx.zonaHoraria);
   const totalDias = diffDias(activo.fecha_inicio, activo.fecha_fin) + 1;
   const yaEmpezó = hoy >= activo.fecha_inicio;
   const terminó = hoy > activo.fecha_fin;

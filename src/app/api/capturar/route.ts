@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   // RLS se encarga: si no es miembro, no devuelve nada.
   const { data: empresa } = await supabase
     .from('empresas')
-    .select('id, moneda, tipo_cuenta, rubro')
+    .select('id, moneda, tipo_cuenta, rubro, zona_horaria')
     .eq('id', empresaId)
     .maybeSingle();
   if (!empresa) return respuestaVacia('No tenés acceso a esta empresa.', 403);
@@ -224,7 +224,10 @@ export async function POST(request: Request) {
       }))
     : [];
 
-  const hoy = hoyISO();
+  // El día que se le cuenta a la IA es el del negocio. Si le pasáramos el
+  // de Asunción, «cargá esto de hoy» escribiría una fecha equivocada en
+  // cualquier cuenta que no esté en Paraguay.
+  const hoy = hoyISO(empresa.zona_horaria);
   const sistema = instrucciones(
     hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos);
 

@@ -727,6 +727,90 @@ async function principal() {
   }
 
   // =====================================================================
+  grupo('17b · Cada cuenta decide su propio día');
+  // =====================================================================
+  //
+  // Hasta la 032, media docena de lugares centrales preguntaban qué día es
+  // en Asunción, sin importar dónde estuviera el negocio. Mientras todos los
+  // clientes estuvieron en Paraguay no se notó — que es la forma más
+  // peligrosa de un error.
+  //
+  // Las dos zonas de acá son los extremos del planeta: Kiritimati va +14 y
+  // Midway −11. Veinticinco horas de diferencia, así que sus fechas locales
+  // NUNCA coinciden, a ninguna hora del día. Eso hace que esta prueba no
+  // dependa del momento en que se corra.
+  {
+    const lejos = await H.montarEmpresa(db, { email: 'lejos@a.com', nombre: 'Adelantada' });
+    const atras = await H.montarEmpresa(db, { email: 'atras@a.com', nombre: 'Atrasada' });
+
+    await db.query("update public.empresas set zona_horaria = 'Pacific/Kiritimati' where id = $1", [lejos.empresaId]);
+    await db.query("update public.empresas set zona_horaria = 'Pacific/Midway' where id = $1", [atras.empresaId]);
+
+    const hoyDe = async (id) =>
+      (await db.query('select public.hoy_empresa($1) as d', [id])).rows[0].d;
+
+    const dLejos = await hoyDe(lejos.empresaId);
+    const dAtras = await hoyDe(atras.empresaId);
+
+    ok('dos negocios en extremos opuestos no están en el mismo día',
+      String(dLejos) > String(dAtras), true);
+
+    // El corazón del arreglo: la policy compara contra el día de LA EMPRESA.
+    // Con la versión vieja, el «mañana» de Kiritimati era pasado mañana en
+    // Asunción y esto se rechazaba.
+    aceptado('la cuenta adelantada carga con su propio mañana',
+      await H.intentar(db, lejos.uid, () => db.query(
+        `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+         values ($1, 'gasto', public.hoy_empresa($1) + 1, 'Gasto de mañana', 'Varios', 1000, 1000)`,
+        [lejos.empresaId])));
+
+    aceptado('y la atrasada también, con el suyo',
+      await H.intentar(db, atras.uid, () => db.query(
+        `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+         values ($1, 'gasto', public.hoy_empresa($1) + 1, 'Gasto de mañana', 'Varios', 1000, 1000)`,
+        [atras.empresaId])));
+
+    // El borde sigue siendo un borde: un día más ya no.
+    rechazado('pero ninguna puede saltar dos días',
+      await H.intentar(db, lejos.uid, () => db.query(
+        `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+         values ($1, 'gasto', public.hoy_empresa($1) + 2, 'Pasado mañana', 'Varios', 1000, 1000)`,
+        [lejos.empresaId])),
+      'policy|denied|fecha');
+
+    // La fecha por defecto ya no la pone Asunción: la pone el trigger de la
+    // 032, con la zona de la empresa. Un `default` de columna no puede mirar
+    // `empresa_id`, por eso hizo falta un trigger.
+    await H.intentar(db, lejos.uid, () => db.query(
+      `insert into public.movimientos (empresa_id, tipo, descripcion, categoria, subtotal, monto)
+       values ($1, 'gasto', 'Sin fecha', 'Varios', 1000, 1000)`,
+      [lejos.empresaId]));
+
+    const sinFecha = (await db.query(
+      "select fecha from public.movimientos where empresa_id = $1 and descripcion = 'Sin fecha'",
+      [lejos.empresaId])).rows[0].fecha;
+
+    ok('sin fecha, se completa con el día de la empresa',
+      String(sinFecha), String(dLejos));
+
+    // Y una venta, que pasa por otra puerta: registrar_venta valida el rango
+    // por su cuenta, así que tenía el mismo error por duplicado.
+    const prodLejos = await H.crearProducto(db, lejos.empresaId, lejos.uid,
+      { nombre: 'Producto lejano', costo: 100, precio: 200, stock: 10 });
+
+    aceptado('una venta también se fecha con el día de su empresa',
+      await H.intentar(db, lejos.uid, () => db.query(
+        `select public.registrar_venta($1, $2::jsonb, public.hoy_empresa($1) + 1) as id`,
+        [lejos.empresaId, JSON.stringify([{ producto_id: prodLejos, cantidad: 1, precio_unitario: 200 }])])));
+
+    rechazado('y tampoco puede irse dos días',
+      await H.intentar(db, lejos.uid, () => db.query(
+        `select public.registrar_venta($1, $2::jsonb, public.hoy_empresa($1) + 2) as id`,
+        [lejos.empresaId, JSON.stringify([{ producto_id: prodLejos, cantidad: 1, precio_unitario: 200 }])])),
+      'fecha');
+  }
+
+  // =====================================================================
   grupo('18 · Invariante global: nada quedó descuadrado');
   // =====================================================================
   {

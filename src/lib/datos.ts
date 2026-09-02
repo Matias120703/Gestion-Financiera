@@ -5,8 +5,18 @@ import type { Movimiento, Producto, Reto } from './tipos';
 
 const CLAVES: ClaveRango[] = ['hoy', 'ayer', 'semana', 'semana_pasada', 'mes', 'mes_pasado', 'anio', 'siempre', 'personalizado'];
 
-/** Lee ?rango=&desde=&hasta= de la URL y lo convierte en un rango concreto. */
-export function rangoDesdeParams(params: Record<string, string | string[] | undefined>): Rango {
+/**
+ * Lee ?rango=&desde=&hasta= de la URL y lo convierte en un rango concreto.
+ *
+ * `zona` es la del NEGOCIO, no la del servidor. Sin ella, «hoy» sería el día
+ * en Asunción para todo el mundo y un negocio en otra franja vería el rango
+ * corrido: es el mismo error que la migración 032 sacó de la base.
+ */
+export function rangoDesdeParams(
+  params: Record<string, string | string[] | undefined>,
+  zona?: string,
+): Rango {
+  const hoy = hoyISO(zona);
   const bruto = typeof params.rango === 'string' ? params.rango : 'hoy';
   const clave: ClaveRango = (CLAVES as string[]).includes(bruto) ? (bruto as ClaveRango) : 'hoy';
   const desde = typeof params.desde === 'string' ? params.desde : undefined;
@@ -14,11 +24,11 @@ export function rangoDesdeParams(params: Record<string, string | string[] | unde
   const valida = (f?: string) => (f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : undefined);
 
   if (clave === 'personalizado') {
-    const d = valida(desde) ?? hoyISO();
-    const h = valida(hasta) ?? hoyISO();
-    return resolverRango('personalizado', hoyISO(), { desde: d <= h ? d : h, hasta: h >= d ? h : d });
+    const d = valida(desde) ?? hoy;
+    const h = valida(hasta) ?? hoy;
+    return resolverRango('personalizado', hoy, { desde: d <= h ? d : h, hasta: h >= d ? h : d });
   }
-  return resolverRango(clave);
+  return resolverRango(clave, hoy);
 }
 
 /**

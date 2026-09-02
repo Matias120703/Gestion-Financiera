@@ -17,7 +17,7 @@ export default async function PaginaGastos({
 }) {
   const ctx = await contextoObligatorio();
   const t = textos();
-  const rango = rangoDesdeParams(searchParams);
+  const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Los totales salen agregados; la lista es solo la primera página.
   const [r, categorias, paginaGastos, paginaIngresos] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
@@ -58,7 +58,7 @@ export default async function PaginaGastos({
         categoriasUsadas={categorias.map((c) => c.nombre)}
         rol={ctx.miembro.rol}
         userId={ctx.userId}
-        hoy={hoyISO()}
+        hoy={hoyISO(ctx.zonaHoraria)}
       />
     </div>
   );

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO, sumarDias, diffDias } from '@/lib/fechas';
+import { useZona } from '@/lib/zona';
 import type { Medida, Reto } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
 
@@ -36,6 +37,7 @@ function FormularioReto({
   reto?: Reto;
 }) {
   const t = useTextos();
+  const zona = useZona();
   const router = useRouter();
   const dec = decimalesDe(moneda);
   const [abierto, setAbierto] = useState(!reto);
@@ -43,8 +45,8 @@ function FormularioReto({
   const [nombre, setNombre] = useState(reto?.nombre ?? '10 millones en una semana');
   const [meta, setMeta] = useState<number>(Number(reto?.meta ?? (moneda === 'PYG' ? 10_000_000 : 1000)));
   const [medida, setMedida] = useState<Medida>(reto?.medida ?? 'ventas');
-  const [inicio, setInicio] = useState(reto?.fecha_inicio ?? hoyISO());
-  const [fin, setFin] = useState(reto?.fecha_fin ?? sumarDias(hoyISO(), 6));
+  const [inicio, setInicio] = useState(reto?.fecha_inicio ?? hoyISO(zona));
+  const [fin, setFin] = useState(reto?.fecha_fin ?? sumarDias(hoyISO(zona), 6));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
 

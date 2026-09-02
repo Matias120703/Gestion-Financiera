@@ -19,7 +19,7 @@ export default async function PaginaMovimientos({
 }) {
   const ctx = await contextoObligatorio();
   const t = textos();
-  const rango = rangoDesdeParams(searchParams);
+  const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Los totales salen agregados de la base; la lista es solo la primera página.
   const [r, pagina, total] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
@@ -65,7 +65,7 @@ export default async function PaginaMovimientos({
         guardaComprobantes={ctx.limites?.adjuntos ?? false}
         rol={ctx.miembro.rol}
         userId={ctx.userId}
-        hoy={hoyISO()}
+        hoy={hoyISO(ctx.zonaHoraria)}
         cargarPagina={cargarPagina}
       />
     </div>
