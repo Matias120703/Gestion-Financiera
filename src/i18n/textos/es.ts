@@ -1055,6 +1055,11 @@ export const es = {
     atendido: 'Cobrado',
     noVino: 'No vino',
     confirmarNoVino: (nombre: string) => `¿Marcar que ${nombre} no vino?`,
+    mover: 'Mover',
+    confirmarCancelar: (nombre: string) =>
+      `¿Cancelar el turno de ${nombre}? El horario queda libre para otro.`,
+    moverDetalle: 'Elegí el horario nuevo. Si cambiás con quién, el turno pasa a su agenda. El enlace que le mandaste al cliente sigue funcionando igual.',
+    confirmarMover: 'Mover el turno',
 
     queSeReserva: 'Qué se puede reservar',
     queSeReservaDetalle: 'Cuánto dura cada servicio y cuáles aparecen en tu link. De la duración salen los horarios que se ofrecen.',

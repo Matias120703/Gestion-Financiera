@@ -411,6 +411,125 @@ function aceptado(nombre, resultado) {
     despues.some((h) => h.inicia === tomado), false);
   ok('los demás siguen libres', despues.length, delDueno.length - 1);
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('11 · Mover y cancelar desde el local');
+  //
+  // Hasta la 041 la única forma de liberar un turno era que el cliente lo
+  // cancelara desde su enlace. Adentro del local lo único a mano era «no
+  // vino», que es una acusación y no una cancelación: se la come el cliente
+  // que sí avisó.
+  // ═══════════════════════════════════════════════════════════
+
+  const libres = async (fecha, prod = corte, prof = pedro) =>
+    (await valor(local.uid, 'select public.huecos_local($1,$2,$3,$4) j',
+      [local.empresaId, prof, prod, fecha])).j.map((h) => h.inicia);
+
+  const estadoDe = async (id) =>
+    (await crudo('select estado from public.turnos_reserva where id=$1', [id])).estado;
+
+  const disponibles = await libres(lunes);
+  const horaA = disponibles[0];
+  const horaB = disponibles[1];
+
+  const turnoA = (await valor(uidPedro, 'select public.reservar($1,$2,$3,$4,$5,$6) j',
+    [local.empresaId, pedro, corte, horaA, 'Marta', '0983333333'])).j;
+  const turnoB = (await valor(uidPedro, 'select public.reservar($1,$2,$3,$4,$5,$6) j',
+    [local.empresaId, pedro, corte, horaB, 'Rosa', '0984444444'])).j;
+
+  // ---- cancelar ----
+
+  rechazado('un extraño no puede cancelar un turno ajeno',
+    await llamar(otra.uid, 'select public.cancelar_turno($1)', [turnoA.reserva]),
+    'No pertenecés');
+
+  ok('el hueco de Marta está tomado antes de cancelar',
+    (await libres(lunes)).includes(horaA), false);
+
+  aceptado('el empleado que atiende el teléfono cancela el turno de Marta',
+    await llamar(uidPedro, 'select public.cancelar_turno($1)', [turnoA.reserva]));
+
+  ok('quedó cancelado, no marcado como que no vino', await estadoDe(turnoA.reserva), 'cancelada');
+  ok('y el hueco volvió a estar libre para otro',
+    (await libres(lunes)).includes(horaA), true);
+
+  ok('cancelar dos veces no rompe nada, avisa que ya estaba',
+    (await valor(local.uid, 'select public.cancelar_turno($1) j', [turnoA.reserva])).j.ya_estaba, true);
+
+  // ---- mover ----
+
+  rechazado('un extraño tampoco puede mover un turno ajeno',
+    await llamar(otra.uid, 'select public.mover_turno($1,$2,$3)', [turnoB.reserva, pedro, horaA]),
+    'No pertenecés');
+
+  rechazado('no se mueve a una hora en la que el local no atiende',
+    await llamar(local.uid, 'select public.mover_turno($1,$2,$3)',
+      [turnoB.reserva, pedro, await alas('03:00')]),
+    'no está disponible');
+
+  rechazado('ni al mismo horario que ya tiene',
+    await llamar(local.uid, 'select public.mover_turno($1,$2,$3)', [turnoB.reserva, pedro, horaB]),
+    'no está disponible');
+
+  const tokenAntes = (await crudo(
+    'select token from public.turnos_reserva where id=$1', [turnoB.reserva])).token;
+
+  aceptado('Rosa llama y lo pasa al hueco que dejó Marta',
+    await llamar(uidPedro, 'select public.mover_turno($1,$2,$3)', [turnoB.reserva, pedro, horaA]));
+
+  ok('el turno quedó en el horario nuevo',
+    (await crudo('select inicia from public.turnos_reserva where id=$1',
+      [turnoB.reserva])).inicia.toISOString(), new Date(horaA).toISOString());
+  ok('el horario viejo volvió a estar libre', (await libres(lunes)).includes(horaB), true);
+  ok('y el nuevo quedó tomado', (await libres(lunes)).includes(horaA), false);
+  ok('el enlace que tiene el cliente sigue siendo el mismo',
+    (await crudo('select token from public.turnos_reserva where id=$1', [turnoB.reserva])).token,
+    tokenAntes);
+
+  // ---- mover de profesional ----
+
+  const juan = (await valor(local.uid,
+    "select public.guardar_profesional($1,$2,'comision',40) as id",
+    [local.empresaId, 'Juan'])).id;
+  aceptado('Juan también trabaja los lunes',
+    await llamar(local.uid, 'select public.guardar_horario($1,$2,1,$3,$4)',
+      [local.empresaId, juan, '08:00', '12:00']));
+
+  const deJuan = await libres(lunes, corte, juan);
+
+  rechazado('no se puede pasar el turno a alguien de otro negocio',
+    await llamar(local.uid, 'select public.mover_turno($1,$2,$3)',
+      [turnoB.reserva, profAjeno, deJuan[0]]),
+    'no está en el equipo');
+
+  aceptado('Pedro se enfermó: el turno pasa a Juan',
+    await llamar(local.uid, 'select public.mover_turno($1,$2,$3)',
+      [turnoB.reserva, juan, deJuan[0]]));
+
+  ok('el turno ahora es de Juan',
+    (await crudo('select profesional_id from public.turnos_reserva where id=$1',
+      [turnoB.reserva])).profesional_id, juan);
+  ok('y la agenda de Pedro quedó libre a esa hora',
+    (await libres(lunes)).includes(horaA), true);
+
+  // ---- lo que ya se cerró no se toca ----
+
+  const turnoC = (await valor(local.uid, 'select public.reservar($1,$2,$3,$4,$5) j',
+    [local.empresaId, pedro, corte, horaB, 'Elena'])).j;
+  aceptado('se atiende y se cobra a Elena',
+    await llamar(local.uid, 'select public.atender_reserva($1)', [turnoC.reserva]));
+
+  rechazado('un turno ya cobrado no se cancela: eso es anular una venta',
+    await llamar(local.uid, 'select public.cancelar_turno($1)', [turnoC.reserva]),
+    'ya se cerró');
+  rechazado('ni se mueve',
+    await llamar(local.uid, 'select public.mover_turno($1,$2,$3)',
+      [turnoC.reserva, pedro, horaA]),
+    'ya se cerró');
+  rechazado('y uno cancelado tampoco se mueve',
+    await llamar(local.uid, 'select public.mover_turno($1,$2,$3)',
+      [turnoA.reserva, pedro, horaA]),
+    'ya se cerró');
+
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA AGENDA FALLARON`);

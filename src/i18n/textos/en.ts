@@ -979,6 +979,11 @@ export const en: Textos = {
     atendido: 'Charged',
     noVino: 'No-show',
     confirmarNoVino: (nombre: string) => `Mark ${nombre} as a no-show?`,
+    mover: 'Reschedule',
+    confirmarCancelar: (nombre: string) =>
+      `Cancel ${nombre}'s appointment? The slot goes back up for anyone.`,
+    moverDetalle: 'Pick the new time. If you change who, the appointment moves to their agenda. The link you sent the client keeps working.',
+    confirmarMover: 'Move the appointment',
 
     queSeReserva: 'What can be booked',
     queSeReservaDetalle: 'How long each service takes and which ones appear on your link. The slots offered come from the duration.',

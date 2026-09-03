@@ -681,6 +681,7 @@ export interface TurnoDelDia {
   profesional: string;
   profesional_id: string;
   servicio: string;
+  producto_id: string;
   cliente: string;
   telefono: string;
   estado: 'pendiente' | 'confirmada' | 'atendida' | 'no_vino';
