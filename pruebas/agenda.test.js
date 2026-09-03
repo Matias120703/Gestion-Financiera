@@ -349,6 +349,68 @@ function aceptado(nombre, resultado) {
     (await db.query('select count(*)::int n from public.turnos_reserva')).rows[0].n > 0
       && (await valor(otra.uid, 'select count(*)::int n from public.turnos_reserva')).n === 0, true);
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('10 · Los huecos desde el mostrador');
+  //
+  // La agenda no se llena sola por el link: el turno que más entra es el del
+  // que llama por teléfono. Para ofrecerle horarios hay que leer los huecos,
+  // y el motor que los calcula no pregunta de quién es la agenda. Por eso la
+  // 040 lo cierra y abre una puerta que sí pregunta.
+  // ═══════════════════════════════════════════════════════════
+
+  rechazado('el motor ya no se puede llamar de afuera',
+    await llamar(local.uid, 'select * from public.huecos_del_dia($1,$2,$3)', [pedro, lunes, corte]),
+    'permission denied|permiso');
+
+  const librePorElMotor = await huecos(lunes);
+  const localHuecos = async (uid, emp, prof, prod, fecha) =>
+    (await valor(uid, 'select public.huecos_local($1,$2,$3,$4) j', [emp, prof, prod, fecha])).j;
+
+  const delDueno = await localHuecos(local.uid, local.empresaId, pedro, corte, lunes);
+  ok('el dueño ve por la puerta nueva exactamente lo que calcula el motor',
+    delDueno.length, librePorElMotor);
+  ok('y hay huecos de verdad para ofrecer', delDueno.length > 0, true);
+  ok('cada uno viene con su hora de fin, para leer «de tal a tal»',
+    Object.keys(delDueno[0]).sort(), ['inicia', 'termina']);
+
+  ok('el empleado que atiende el teléfono también los ve',
+    (await localHuecos(uidPedro, local.empresaId, pedro, corte, lunes)).length, delDueno.length);
+
+  rechazado('un extraño no ve los horarios libres del local',
+    await llamar(otra.uid, 'select public.huecos_local($1,$2,$3,$4)',
+      [local.empresaId, pedro, corte, lunes]),
+    'No pertenecés');
+
+  const profAjeno = (await valor(otra.uid,
+    "select public.guardar_profesional($1,$2,'sueldo',0) as id",
+    [otra.empresaId, 'Ajeno'])).id;
+
+  ok('pertenecer a un negocio no sirve para espiar al profesional de otro',
+    await localHuecos(otra.uid, otra.empresaId, pedro, corte, lunes), []);
+  ok('ni al revés: un profesional que no es de esta cuenta no devuelve nada',
+    await localHuecos(local.uid, local.empresaId, profAjeno, corte, lunes), []);
+
+  ok('un día que ya pasó no ofrece nada',
+    await localHuecos(local.uid, local.empresaId, pedro, corte, '2020-01-06'), []);
+  ok('ni una fecha absurda a dos años vista',
+    await localHuecos(local.uid, local.empresaId, pedro, corte,
+      (await crudo("select (public.hoy_empresa($1) + 400)::date d", [local.empresaId])).d), []);
+
+  ok('un servicio que no se reserva no ofrece horarios',
+    await localHuecos(local.uid, local.empresaId, pedro, cera, lunes), []);
+
+  // Y el círculo se cierra: se reserva uno de los huecos que ofreció la
+  // puerta, y esa misma puerta deja de ofrecerlo.
+  const tomado = delDueno[0].inicia;
+  aceptado('se anota por teléfono a quien llamó, en un hueco que ofreció la puerta',
+    await llamar(uidPedro, 'select public.reservar($1,$2,$3,$4,$5,$6)',
+      [local.empresaId, pedro, corte, tomado, 'Llamó por teléfono', '0982222222']));
+
+  const despues = await localHuecos(local.uid, local.empresaId, pedro, corte, lunes);
+  ok('y ese horario ya no se le ofrece a nadie más',
+    despues.some((h) => h.inicia === tomado), false);
+  ok('los demás siguen libres', despues.length, delDueno.length - 1);
+
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA AGENDA FALLARON`);

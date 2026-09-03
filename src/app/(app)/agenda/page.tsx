@@ -61,7 +61,8 @@ export default async function PaginaAgenda({
       servicios={servicios}
       catalogo={soloServicios(productos as Producto[])}
       esAdmin={ctx.esAdmin}
-      hoy={dia}
+      dia={dia}
+      hoy={hoyISO(ctx.zonaHoraria)}
       origen={origen}
     />
   );

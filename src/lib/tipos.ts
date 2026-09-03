@@ -703,6 +703,16 @@ export interface ServicioAgenda {
   reservable: boolean;
 }
 
+/**
+ * Un horario libre, para ofrecer en el mostrador. Sale de `huecos_local`,
+ * que es la puerta de adentro: la de afuera —la del link— devuelve solo el
+ * instante de inicio porque el cliente no necesita saber cuándo termina.
+ */
+export interface HuecoLibre {
+  inicia: string;
+  termina: string;
+}
+
 /** El link público del negocio. */
 export interface LinkPublico {
   slug: string;

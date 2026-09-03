@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { dinero, fechaLegible } from '@/lib/formato';
+import { dinero, fechaLarga } from '@/lib/formato';
+import { sumarDias } from '@/lib/fechas';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
-  Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto,
+  Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
 } from '@/lib/tipos';
 
 /**
@@ -22,7 +23,7 @@ import type {
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export function PantallaAgenda({
-  empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, hoy, origen,
+  empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy, origen,
 }: {
   empresaId: string;
   moneda: string;
@@ -33,6 +34,9 @@ export function PantallaAgenda({
   servicios: ServicioAgenda[];
   catalogo: Producto[];
   esAdmin: boolean;
+  /** El día que se está mirando. Sale de la URL, así que puede no ser hoy. */
+  dia: string;
+  /** Hoy de verdad, en la zona de la cuenta. Para el botón de volver. */
   hoy: string;
   origen: string;
 }) {
@@ -46,7 +50,10 @@ export function PantallaAgenda({
   const ocupado = trabajando !== '';
   const sb = () => clienteNavegador();
 
-  async function correr(marca: string, fn: () => Promise<{ error: unknown } | void>) {
+  async function correr(
+    marca: string,
+    fn: () => Promise<{ error: unknown } | void>,
+  ): Promise<boolean> {
     setTrabajando(marca);
     setError('');
     try {
@@ -54,9 +61,11 @@ export function PantallaAgenda({
       const fallo = r && typeof r === 'object' && 'error' in r ? r.error : null;
       if (fallo) throw fallo;
       router.refresh();
+      return true;
     } catch (e: unknown) {
       setError(e && typeof e === 'object' && 'message' in e
         ? String((e as { message: unknown }).message) : t.comun.error);
+      return false;
     } finally {
       setTrabajando('');
     }
@@ -89,8 +98,29 @@ export function PantallaAgenda({
         />
       )}
 
-      {/* ---------- los turnos de hoy ---------- */}
-      <Seccion titulo={`${t.agenda.turnosDe} ${fechaLegible(hoy, false, locale)}`}>
+      {/* ---------- los turnos del día ---------- */}
+      <Seccion
+        titulo={`${t.agenda.turnosDe} ${fechaLarga(dia, locale)}`}
+        accion={<NavegadorDia dia={dia} hoy={hoy} alIr={(d) => router.push(`/agenda?dia=${d}`)} />}
+      >
+        <NuevoTurno
+          empresaId={empresaId}
+          dia={dia}
+          hoy={hoy}
+          profesionales={profesionales.filter((p) => p.activo)}
+          servicios={servicios}
+          catalogo={catalogo}
+          ocupado={ocupado}
+          alReservar={(d) => correr('turno', async () => sb().rpc('reservar', {
+            p_empresa: empresaId,
+            p_profesional: d.profesional,
+            p_producto: d.producto,
+            p_inicia: d.inicia,
+            p_nombre: d.nombre,
+            p_telefono: d.telefono,
+          }))}
+        />
+
         {turnos.length === 0 ? (
           <div className="px-4 pb-4">
             <Vacio titulo={t.agenda.sinTurnos} detalle={t.agenda.sinTurnosDetalle} />
@@ -180,6 +210,234 @@ export function PantallaAgenda({
         alQuitar={(id) => correr('horario', async () =>
           sb().rpc('borrar_horario', { p_empresa: empresaId, p_id: id }))}
       />
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// MOVERSE DE DÍA
+//
+// La pregunta de todas las mañanas no es solo «¿qué tengo hoy?»: es «¿qué
+// tengo mañana?». Sin esto había que escribir la fecha en la barra del
+// navegador, que es lo mismo que no tenerlo.
+// ════════════════════════════════════════════════════════════
+function NavegadorDia({
+  dia, hoy, alIr,
+}: {
+  dia: string;
+  hoy: string;
+  alIr: (dia: string) => void;
+}) {
+  const t = useTextos();
+  const flecha = 'rounded-lg border border-borde px-2.5 py-1 text-[15px] font-bold leading-none '
+    + 'text-tinta/50 transition hover:border-verde/40 hover:text-verde-fuerte';
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button type="button" className={flecha} aria-label={t.agenda.diaAnterior}
+        onClick={() => alIr(sumarDias(dia, -1))}>‹</button>
+      {dia !== hoy && (
+        <button type="button" className="boton-texto text-[12.5px]" onClick={() => alIr(hoy)}>
+          {t.comun.hoy}
+        </button>
+      )}
+      <button type="button" className={flecha} aria-label={t.agenda.diaSiguiente}
+        onClick={() => alIr(sumarDias(dia, 1))}>›</button>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// ANOTAR UN TURNO DESDE EL MOSTRADOR
+//
+// El link público trae a los que ya lo usan. El resto —que hoy son casi
+// todos— llama por teléfono o escribe por WhatsApp, y ese turno lo anota el
+// que atiende. Por eso el formulario no es solo de administración: quien
+// contesta el teléfono un sábado a la mañana suele ser el empleado.
+//
+// Los horarios no se escriben a mano, se eligen de los que la agenda tiene
+// libres. Un campo de hora suelto deja anotar a las tres de la mañana o
+// encima de otro turno, y el que después queda mal parado es el local.
+// ════════════════════════════════════════════════════════════
+function NuevoTurno({
+  empresaId, dia, hoy, profesionales, servicios, catalogo, ocupado, alReservar,
+}: {
+  empresaId: string;
+  dia: string;
+  hoy: string;
+  profesionales: Profesional[];
+  servicios: ServicioAgenda[];
+  catalogo: Producto[];
+  ocupado: boolean;
+  alReservar: (d: {
+    profesional: string; producto: string; inicia: string; nombre: string; telefono: string;
+  }) => Promise<boolean>;
+}) {
+  const t = useTextos();
+  const locale = useLocale();
+
+  // Solo lo que está marcado para reservarse. Si un servicio no se agenda, la
+  // base no le calcula huecos y el formulario quedaría mudo sin decir por qué.
+  const agendables = catalogo.filter((p) =>
+    servicios.some((s) => s.producto_id === p.id && s.reservable));
+
+  const [abierto, setAbierto] = useState(false);
+  const [profesional, setProfesional] = useState(profesionales.length === 1 ? profesionales[0].id : '');
+  const [producto, setProducto] = useState(agendables.length === 1 ? agendables[0].id : '');
+  const [fecha, setFecha] = useState(dia);
+  const [huecos, setHuecos] = useState<HuecoLibre[] | null>(null);
+  const [elegido, setElegido] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [telefono, setTelefono] = useState('');
+
+  // Si se cambia de día en la agenda, el formulario acompaña: lo más probable
+  // es que quien lo abra ahí quiera anotar para ese día.
+  useEffect(() => { setFecha(dia); }, [dia]);
+
+  // Cada vez que cambia con quién, qué o cuándo, los horarios de antes dejan
+  // de valer. Se piden de nuevo y se olvida el que estaba elegido, para que no
+  // quede seleccionada una hora que ya no existe.
+  useEffect(() => {
+    if (!abierto || !profesional || !producto || !fecha) { setHuecos(null); return; }
+    let vigente = true;
+    setHuecos(null);
+    setElegido('');
+    (async () => {
+      const { data } = await clienteNavegador().rpc('huecos_local', {
+        p_empresa: empresaId,
+        p_profesional: profesional,
+        p_producto: producto,
+        p_fecha: fecha,
+      });
+      if (vigente) setHuecos(Array.isArray(data) ? (data as HuecoLibre[]) : []);
+    })();
+    return () => { vigente = false; };
+  }, [abierto, profesional, producto, fecha, empresaId]);
+
+  const hora = (iso: string) =>
+    new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  // Sin nadie en el equipo no hay agenda posible, y la sección de horarios que
+  // está más abajo ya explica qué hacer. Acá sobraría un botón que no lleva a
+  // ningún lado.
+  if (profesionales.length === 0) return null;
+
+  if (!abierto) {
+    return (
+      <div className="px-4 pb-3">
+        <button type="button" className="boton-suave w-full py-2 text-[13.5px]"
+          onClick={() => setAbierto(true)}>
+          {t.agenda.anotarTurno}
+        </button>
+      </div>
+    );
+  }
+
+  if (agendables.length === 0) {
+    return (
+      <div className="px-4 pb-4">
+        <div className="rounded-xl bg-arena px-3 py-3 text-[13px] leading-relaxed text-tinta/60">
+          {t.agenda.sinReservablesDetalle}
+        </div>
+        <button type="button" className="boton-texto mt-2 text-[13px]" onClick={() => setAbierto(false)}>
+          {t.comun.cancelar}
+        </button>
+      </div>
+    );
+  }
+
+  const listoParaAnotar = elegido !== '' && nombre.trim() !== '' && !ocupado;
+
+  async function anotar() {
+    const hecho = await alReservar({ profesional, producto, inicia: elegido, nombre, telefono });
+    if (!hecho) return;
+    setAbierto(false);
+    setElegido('');
+    setNombre('');
+    setTelefono('');
+    setHuecos(null);
+  }
+
+  return (
+    <div className="mx-4 mb-3 rounded-xl border border-borde bg-arena/40 p-3">
+      <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/55">{t.agenda.anotarDetalle}</p>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="etiqueta" htmlFor="turno-prof">{t.agenda.conQuien}</label>
+          <select id="turno-prof" className="campo" value={profesional} disabled={ocupado}
+            onChange={(e) => setProfesional(e.target.value)}>
+            <option value="">{t.agenda.elegir}</option>
+            {profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="etiqueta" htmlFor="turno-serv">{t.agenda.queServicio}</label>
+          <select id="turno-serv" className="campo" value={producto} disabled={ocupado}
+            onChange={(e) => setProducto(e.target.value)}>
+            <option value="">{t.agenda.elegir}</option>
+            {agendables.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="etiqueta" htmlFor="turno-fecha">{t.agenda.queDia}</label>
+          <input id="turno-fecha" type="date" className="campo" value={fecha} min={hoy} disabled={ocupado}
+            onChange={(e) => setFecha(e.target.value)} />
+        </div>
+      </div>
+
+      {profesional && producto && (
+        <div className="mt-3">
+          <span className="etiqueta">{t.agenda.horariosLibres}</span>
+          {huecos === null ? (
+            <p className="py-3 text-center text-[13px] text-tinta/45">{t.comun.cargando}</p>
+          ) : huecos.length === 0 ? (
+            <p className="rounded-xl bg-white px-3 py-3 text-center text-[13px] leading-relaxed text-tinta/55">
+              {t.agenda.sinHuecos}
+            </p>
+          ) : (
+            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+              {huecos.map((h) => (
+                <button
+                  key={h.inicia} type="button" disabled={ocupado}
+                  onClick={() => setElegido(h.inicia)}
+                  className={elegido === h.inicia
+                    ? 'rounded-lg border border-verde bg-verde py-2 text-center text-[13.5px] font-semibold tabular-nums text-white'
+                    : 'rounded-lg border border-borde bg-white py-2 text-center text-[13.5px] font-semibold tabular-nums transition hover:border-verde/50'}
+                >
+                  {hora(h.inicia)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {elegido && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="etiqueta" htmlFor="turno-nombre">{t.agenda.nombreCliente}</label>
+            <input id="turno-nombre" className="campo" maxLength={80} value={nombre} disabled={ocupado}
+              onChange={(e) => setNombre(e.target.value)} />
+          </div>
+          <div>
+            <label className="etiqueta" htmlFor="turno-tel">{t.agenda.telefonoCliente}</label>
+            <input id="turno-tel" className="campo" inputMode="tel" maxLength={40} value={telefono}
+              disabled={ocupado} onChange={(e) => setTelefono(e.target.value)} />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-2">
+        <button type="button" className="boton-principal px-4 py-2 text-[13.5px]"
+          disabled={!listoParaAnotar} onClick={anotar}>
+          {t.agenda.confirmarTurno}
+        </button>
+        <button type="button" className="boton-texto text-[13px]" disabled={ocupado}
+          onClick={() => setAbierto(false)}>
+          {t.comun.cancelar}
+        </button>
+      </div>
     </div>
   );
 }
