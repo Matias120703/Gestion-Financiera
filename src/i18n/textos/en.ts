@@ -479,6 +479,7 @@ export const en: Textos = {
     ganasPorUnidad: 'Profit per unit',
     controlarStock: 'Track stock',
     controlarStockDetalle: 'Every sale deducts units automatically',
+    sinCostoServicio: 'A service has no purchase cost: what the person who does it keeps is set under Team and split.',
     stockActual: 'Current stock',
     avisarCuandoQuede: 'Warn me when there are',
   },

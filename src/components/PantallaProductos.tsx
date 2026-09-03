@@ -148,12 +148,14 @@ export function PantallaProductos({
                         </span>
                       </td>
                       {verCostos && (
-                        <td className="num tabular-nums text-tinta/60">{dinero(Number(p.costo ?? 0), moneda, false)}</td>
+                        <td className="num tabular-nums text-tinta/60">
+                          {p.controla_stock ? dinero(Number(p.costo ?? 0), moneda, false) : <span className="text-tinta/30">—</span>}
+                        </td>
                       )}
                       <td className="num font-semibold tabular-nums">{dinero(Number(p.precio), moneda, false)}</td>
                       {verCostos && (
-                        <td className={`num font-semibold tabular-nums ${margen >= 25 ? 'text-verde-fuerte' : margen > 0 ? 'text-ambar' : 'text-rojo'}`}>
-                          {porcentaje(margen, 0)}
+                        <td className={`num font-semibold tabular-nums ${!p.controla_stock ? 'text-tinta/30' : margen >= 25 ? 'text-verde-fuerte' : margen > 0 ? 'text-ambar' : 'text-rojo'}`}>
+                          {p.controla_stock ? porcentaje(margen, 0) : '—'}
                         </td>
                       )}
                       <td className="num">
@@ -225,8 +227,8 @@ function DialogoProducto({
 
   const margen = b.precio > 0 ? ((b.precio - b.costo) / b.precio) * 100 : 0;
 
-  function set<K extends keyof Borrador>(k: K, v: Borrador[K]) {
-    setB((prev) => ({ ...prev, [k]: v }));
+  function set<K extends keyof Borrador>(k: K, v: Borrador[K], extra: Partial<Borrador> = {}) {
+    setB((prev) => ({ ...prev, [k]: v, ...extra }));
   }
 
   async function guardar(e: React.FormEvent) {
@@ -283,37 +285,56 @@ function DialogoProducto({
             </datalist>
           </label>
 
-          <div className="grid grid-cols-2 gap-2.5">
-            <label className="block">
-              <span className="etiqueta">{t.productos.teCuesta}</span>
-              <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                value={b.costo || ''} placeholder="0" onChange={(e) => set('costo', Math.max(0, Number(e.target.value) || 0))} />
-            </label>
-            <label className="block">
-              <span className="etiqueta">{t.productos.loVendesA}</span>
-              <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                value={b.precio || ''} placeholder="0" onChange={(e) => set('precio', Math.max(0, Number(e.target.value) || 0))} />
-            </label>
-          </div>
-
-          <div className="rounded-xl bg-arena p-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold text-tinta/60">{t.productos.ganasPorUnidad}</span>
-              <span className={`text-[16px] font-bold tabular-nums ${b.precio - b.costo >= 0 ? 'text-verde-fuerte' : 'text-rojo'}`}>
-                {dinero(b.precio - b.costo, moneda)}
-              </span>
-            </div>
-            <p className="mt-0.5 text-right text-[12px] font-semibold text-tinta/45">margen {porcentaje(margen, 0)}</p>
-          </div>
-
+          {/* El control de stock va ANTES del precio a propósito: es la
+              pregunta que decide todo lo demás. Un producto que se compra
+              para revender tiene costo y margen; un servicio —un corte, una
+              sesión— no tiene «costo de compra», y pedirlo ahí sería inventar
+              un número. Lo que le queda al negocio en un servicio se calcula
+              en Equipo y reparto (comisión, alquiler, sueldo), no acá. */}
           <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-borde p-3">
             <input type="checkbox" className="h-4 w-4 accent-[#17795a]" checked={b.controla_stock}
-              onChange={(e) => set('controla_stock', e.target.checked)} />
+              onChange={(e) => set('controla_stock', e.target.checked, e.target.checked ? {} : { costo: 0 })} />
             <span>
               <span className="block text-[14px] font-semibold">{t.productos.controlarStock}</span>
               <span className="block text-[12.5px] text-tinta/50">{t.productos.controlarStockDetalle}</span>
             </span>
           </label>
+
+          {b.controla_stock ? (
+            <>
+              <div className="grid grid-cols-2 gap-2.5">
+                <label className="block">
+                  <span className="etiqueta">{t.productos.teCuesta}</span>
+                  <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
+                    value={b.costo || ''} placeholder="0" onChange={(e) => set('costo', Math.max(0, Number(e.target.value) || 0))} />
+                </label>
+                <label className="block">
+                  <span className="etiqueta">{t.productos.loVendesA}</span>
+                  <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
+                    value={b.precio || ''} placeholder="0" onChange={(e) => set('precio', Math.max(0, Number(e.target.value) || 0))} />
+                </label>
+              </div>
+
+              <div className="rounded-xl bg-arena p-3">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[13px] font-semibold text-tinta/60">{t.productos.ganasPorUnidad}</span>
+                  <span className={`text-[16px] font-bold tabular-nums ${b.precio - b.costo >= 0 ? 'text-verde-fuerte' : 'text-rojo'}`}>
+                    {dinero(b.precio - b.costo, moneda)}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-right text-[12px] font-semibold text-tinta/45">margen {porcentaje(margen, 0)}</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="block">
+                <span className="etiqueta">{t.productos.colPrecio}</span>
+                <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
+                  value={b.precio || ''} placeholder="0" onChange={(e) => set('precio', Math.max(0, Number(e.target.value) || 0))} />
+              </label>
+              <p className="text-[12.5px] leading-relaxed text-tinta/50">{t.productos.sinCostoServicio}</p>
+            </>
+          )}
 
           {b.controla_stock && (
             <div className="grid grid-cols-2 gap-2.5">

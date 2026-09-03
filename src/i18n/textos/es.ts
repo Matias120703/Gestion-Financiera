@@ -532,6 +532,11 @@ export const es = {
     ganasPorUnidad: 'Ganás por unidad',
     controlarStock: 'Controlar stock',
     controlarStockDetalle: 'Cada venta descuenta unidades automáticamente',
+    // Un corte no tiene «costo de compra»: lo que se lleva quien lo hace
+    // se define en Equipo y reparto —comisión, alquiler, sueldo— y cambia
+    // según quién atienda. Ponerle acá un costo fijo sería inventar un
+    // número que ni siquiera es el mismo todos los días.
+    sinCostoServicio: 'Un servicio no tiene costo de compra: lo que se lleva quien lo hace se define en Equipo y reparto.',
     stockActual: 'Stock actual',
     avisarCuandoQuede: 'Avisar cuando quede',
   },
