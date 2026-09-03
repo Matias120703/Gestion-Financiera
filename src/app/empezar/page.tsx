@@ -42,6 +42,13 @@ export default function PaginaEmpezar() {
   useEffect(() => {
     const guardado = leerPendiente();
     if (guardado) setDatos(guardado);
+
+    // Quien viene de registrarse como invitado ya dijo a qué vino: se abre
+    // directo en la pestaña del código. Se lee de la URL y no con
+    // useSearchParams para no obligar a envolver la página en un Suspense.
+    if (new URLSearchParams(window.location.search).get('unirme')) {
+      setPestania('unirme');
+    }
   }, []);
 
   const cambiar = (parcial: Partial<DatosRegistro>) =>

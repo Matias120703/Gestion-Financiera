@@ -36,6 +36,19 @@ export default function PaginaCrear() {
   const router = useRouter();
   const t = useTextos();
 
+  /**
+   * EL CAMINO DEL INVITADO
+   *
+   * Sin esto, registrarse SIEMPRE creaba un negocio. Un barbero al que su
+   * jefe le pasó un código tenía que inventarse una peluquería propia —con
+   * nombre, rubro y teléfono— para poder llegar a la pantalla donde está el
+   * campo del código. La mitad no lo iba a hacer, y la otra mitad iba a
+   * terminar con una empresa fantasma en la base.
+   *
+   * Con `invitado` en verdadero no se pregunta nada del negocio y no se crea
+   * ninguna empresa: se crea el acceso y se va derecho a poner el código.
+   */
+  const [invitado, setInvitado] = useState(false);
   const [paso, setPaso] = useState<1 | 2>(1);
   const [datos, setDatos] = useState<DatosRegistro>(DATOS_VACIOS);
   const [email, setEmail] = useState('');
@@ -95,6 +108,21 @@ export default function PaginaCrear() {
       });
       if (errorAlta) throw errorAlta;
 
+      // Quien viene por un código no crea nada: va derecho a pegarlo. Crear
+      // una empresa para él y después meterlo en otra lo dejaría con un
+      // negocio vacío colgando para siempre.
+      if (invitado) {
+        limpiarPendiente();
+        if (data.session) {
+          router.push('/empezar?unirme=1');
+          router.refresh();
+        } else {
+          setAviso(t.acceso.confirmaTuCorreo);
+          setCargando(false);
+        }
+        return;
+      }
+
       // Sin confirmación de correo, la sesión viene en el acto y se puede
       // crear la empresa acá mismo. Es el camino de casi todos.
       if (data.session) {
@@ -147,14 +175,16 @@ export default function PaginaCrear() {
           <div className="h-1 bg-arena">
             <div
               className="h-full bg-verde transition-all duration-300"
-              style={{ width: paso === 1 ? '50%' : '100%' }}
+              style={{ width: invitado || paso === 2 ? '100%' : '50%' }}
             />
           </div>
 
           <div className="p-6">
-            <p className="titulo-seccion">{t.registro.paso(paso, 2)}</p>
+            <p className="titulo-seccion">
+              {invitado ? t.registro.sumarteAlEquipo : t.registro.paso(paso, 2)}
+            </p>
 
-            {paso === 1 ? (
+            {paso === 1 && !invitado ? (
               <>
                 <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
                   {t.registro.contanos}
@@ -176,19 +206,46 @@ export default function PaginaCrear() {
                     {t.comun.seguir}
                   </button>
                 </form>
+
+                {/* Para quien no viene a abrir un negocio sino a sumarse al de
+                    otro. Va acá abajo y no arriba a propósito: la mayoría
+                    crea su propia cuenta, y este camino es la excepción. */}
+                <div className="mt-5 border-t border-borde pt-4 text-center">
+                  <p className="text-[13.5px] text-tinta/55">{t.registro.teInvitaron}</p>
+                  <button
+                    type="button"
+                    className="boton-texto mt-1"
+                    onClick={() => { setInvitado(true); setPaso(2); setError(''); }}
+                  >
+                    {t.registro.entrarConCodigo}
+                  </button>
+                </div>
               </>
             ) : (
               <>
                 <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
-                  {t.registro.tuAcceso}
+                  {invitado ? t.registro.sumateAlEquipo : t.registro.tuAcceso}
                 </h1>
                 <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">
-                  {t.registro.tuAccesoBajada}
+                  {invitado ? t.registro.sumateAlEquipoBajada : t.registro.tuAccesoBajada}
                 </p>
 
-                {/* Lo que ya contestó, a la vista. Que la persona vea que no
-                    se perdió nada de lo del paso anterior. */}
-                <div className="mt-5 rounded-xl bg-arena p-3.5">
+                {invitado ? (
+                  <div className="mt-5 rounded-xl bg-verde-claro p-3.5">
+                    <p className="text-[13px] leading-relaxed text-verde-fuerte">
+                      {t.registro.despuesElCodigo}
+                    </p>
+                    <button
+                      type="button" className="boton-texto mt-1.5"
+                      onClick={() => { setInvitado(false); setPaso(1); setError(''); setAviso(''); }}
+                    >
+                      {t.registro.prefieroCrearNegocio}
+                    </button>
+                  </div>
+                ) : (
+                  /* Lo que ya contestó, a la vista: que vea que no se perdió
+                     nada de lo del paso anterior. */
+                  <div className="mt-5 rounded-xl bg-arena p-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="titulo-seccion">{t.registro.revisaDatos}</p>
@@ -209,6 +266,7 @@ export default function PaginaCrear() {
                     </button>
                   </div>
                 </div>
+                )}
 
                 <form onSubmit={crear} className="mt-5 space-y-4" noValidate>
                   <div>
