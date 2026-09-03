@@ -43,6 +43,9 @@
 --   · 030_ahorro_del_periodo.sql
 --   · 031_aviso_para_personas.sql
 --   · 032_cada_cuenta_su_dia.sql
+--   · 033_reparto_a_tablas.sql
+--   · 034_reparto_b_escritura.sql
+--   · 035_reparto_c_liquidacion.sql
 -- ============================================================
 
 -- ############################################################
@@ -10331,3 +10334,883 @@ begin
 
   return v_mov.id;
 end $$;
+
+
+-- ############################################################
+-- ##  033_reparto_a_tablas.sql
+-- ############################################################
+
+-- ORDEN · Migración 033 · El reparto con los profesionales
+--
+-- El primer módulo de un rubro. Se llama «reparto» y no «barbería» a
+-- propósito: el problema es el mismo en una peluquería, un centro de estética,
+-- un consultorio con dos kinesiólogos o una escuela con profesores. El rubro
+-- decide si el módulo se enciende y con qué palabras; el módulo no sabe de
+-- rubros.
+--
+-- QUÉ RESUELVE
+--
+-- En una peluquería real la plata del corte casi nunca es toda del local ni
+-- toda del profesional. Conviven cuatro arreglos:
+--
+--   · LOCAL     el dueño se corta a sí mismo. Todo es del local.
+--   · COMISION  el barbero cobra 30.000 y el local se queda el 50%.
+--   · ALQUILER  el barbero se queda con el 100% y le paga una mensualidad.
+--   · SUELDO    el barbero cobra para el local, que le paga un sueldo aparte.
+--
+-- DÓNDE VA LA PARTE DEL PROFESIONAL
+--
+-- En `costo_total` de la venta. No es una analogía forzada: para un almacén
+-- ese campo es lo que costó la mercadería, y acá es lo que costó el servicio.
+-- En los dos casos es plata que entró por la venta y que el local NO se queda.
+--
+-- Eso hace que todo lo demás salga solo, sin escribir una fórmula nueva:
+-- `ganancia_bruta = ventas − costo_mercaderia` pasa a ser, sin tocarla, lo
+-- que de verdad le queda al dueño. El panel, los reportes y el Excel ya
+-- calculan sobre esa resta. Y desde la migración 005 esos dos campos vuelven
+-- en NULL para quien no es admin, así que un barbero no ve el margen del
+-- local: eso ya estaba resuelto en la base y no hubo que construirlo.
+--
+-- EL ALQUILER ES EL QUE ROMPE ALGO
+--
+-- Si el barbero se queda con el 100%, esa plata NUNCA fue del local.
+-- Registrarla como venta del negocio inflaría la facturación por el monto
+-- entero: un local con tres sillas alquiladas mostraría cuatro veces la plata
+-- que maneja. Por eso ese corte se registra en la atribución —queda el
+-- historial de quién atendió a quién— pero no genera ningún movimiento. Lo
+-- que el local factura es la mensualidad, que se carga como cualquier ingreso.
+--
+-- Es la regla de siempre un paso más allá: además de no mostrar plata que
+-- todavía no está, tampoco mostrar plata que nunca fue tuya.
+
+-- ============================================================
+-- 1. LOS PROFESIONALES
+--
+--    `user_id` es opcional a propósito. Un barbero puede estar en la lista y
+--    en el reparto sin tener cuenta en Orden: el dueño le carga los cortes.
+--    Atarlo a un miembro obligaría a pagar una silla del plan por cada
+--    persona que solo necesita aparecer en una lista, y el dueño terminaría
+--    llevando a la mitad de su equipo en un cuaderno aparte.
+-- ============================================================
+create table if not exists public.turnos_profesional (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  nombre     text not null check (char_length(trim(nombre)) between 1 and 60),
+  -- Si tiene cuenta, es quien puede cargar sus propios cortes y ver lo suyo.
+  user_id    uuid references auth.users (id) on delete set null,
+  reparto    text not null default 'local'
+             check (reparto in ('local', 'comision', 'alquiler', 'sueldo')),
+  -- Qué porcentaje se lleva el PROFESIONAL. Solo tiene sentido con comisión.
+  porcentaje numeric(5,2) check (porcentaje is null or (porcentaje > 0 and porcentaje <= 100)),
+  activo     boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  -- Una comisión sin porcentaje es un reparto que nadie puede calcular, y el
+  -- día que se intente cobrar un corte va a fallar en el peor momento.
+  constraint comision_con_porcentaje
+    check (reparto <> 'comision' or porcentaje is not null)
+);
+
+create index if not exists turnos_profesional_empresa_idx
+  on public.turnos_profesional (empresa_id) where activo;
+
+-- Una persona no puede estar dos veces en el mismo equipo.
+create unique index if not exists turnos_profesional_una_cuenta
+  on public.turnos_profesional (empresa_id, user_id) where user_id is not null;
+
+-- ============================================================
+-- 2. EL PRECIO DE CADA UNO
+--
+--    El mismo «Corte» vale 50.000 con el dueño, 35.000 con uno y 30.000 con
+--    otro. Sin fila acá, vale el precio del catálogo del local.
+-- ============================================================
+create table if not exists public.turnos_precio (
+  empresa_id     uuid not null references public.empresas (id) on delete cascade,
+  profesional_id uuid not null references public.turnos_profesional (id) on delete cascade,
+  producto_id    uuid not null references public.productos (id) on delete cascade,
+  precio         numeric(14,2) not null check (precio >= 0),
+  updated_at     timestamptz not null default now(),
+  primary key (profesional_id, producto_id)
+);
+
+-- ============================================================
+-- 3. DE QUIÉN FUE CADA CORTE
+--
+--    Tabla propia y no una columna en `movimientos` a propósito. Si cada
+--    módulo le agrega la suya, dentro de cuatro rubros la tabla más
+--    importante del sistema tiene cuarenta columnas de las que treinta están
+--    siempre vacías.
+--
+--    `movimiento_id` es NULO cuando el reparto es alquiler: ahí hubo un corte
+--    y hay que dejar constancia, pero no hubo una venta del local.
+--
+--    Las dos partes se guardan CONGELADAS, igual que el costo de un producto
+--    en el momento de la venta: si el mes que viene cambia el porcentaje, los
+--    cortes viejos siguen diciendo lo que se repartió ese día.
+-- ============================================================
+create table if not exists public.turnos_atribucion (
+  id                uuid primary key default gen_random_uuid(),
+  empresa_id        uuid not null references public.empresas (id) on delete cascade,
+  profesional_id    uuid not null references public.turnos_profesional (id) on delete restrict,
+  movimiento_id     uuid references public.movimientos (id) on delete cascade,
+  producto_id       uuid references public.productos (id) on delete set null,
+  servicio          text not null default '',
+  fecha             date not null,
+  monto_cobrado     numeric(14,2) not null check (monto_cobrado >= 0),
+  parte_profesional numeric(14,2) not null check (parte_profesional >= 0),
+  parte_local       numeric(14,2) not null,
+  reparto           text not null,
+  creado_por        uuid references auth.users (id) on delete set null,
+  created_at        timestamptz not null default now(),
+
+  -- Las dos partes tienen que sumar exactamente lo cobrado. Sin esto, un
+  -- redondeo mal hecho hace aparecer o desaparecer plata, y el desglose del
+  -- panel deja de cerrar con el total.
+  constraint partes_suman_el_total
+    check (parte_profesional + parte_local = monto_cobrado)
+);
+
+create index if not exists turnos_atribucion_empresa_idx
+  on public.turnos_atribucion (empresa_id, fecha desc);
+create index if not exists turnos_atribucion_profesional_idx
+  on public.turnos_atribucion (profesional_id, fecha desc);
+create unique index if not exists turnos_atribucion_un_movimiento
+  on public.turnos_atribucion (movimiento_id) where movimiento_id is not null;
+
+-- ============================================================
+-- 4. PERMISOS
+--
+--    `turnos_atribucion` se lee SOLO con es_admin, y no es un detalle: la
+--    columna `parte_local` es el margen del dueño. Un barbero que la viera
+--    sabría cuánto gana el local con cada corte suyo — y con los de sus
+--    compañeros. Lo suyo lo lee por una función que le devuelve solo su parte.
+--
+--    Es la misma división que ya existe: un vendedor carga ventas, pero
+--    costo_mercaderia y ganancia_bruta le vuelven vacías desde la 005.
+-- ============================================================
+alter table public.turnos_profesional enable row level security;
+alter table public.turnos_precio      enable row level security;
+alter table public.turnos_atribucion  enable row level security;
+
+drop policy if exists turnos_profesional_select on public.turnos_profesional;
+create policy turnos_profesional_select on public.turnos_profesional
+  for select to authenticated using (public.es_miembro(empresa_id));
+
+drop policy if exists turnos_precio_select on public.turnos_precio;
+create policy turnos_precio_select on public.turnos_precio
+  for select to authenticated using (public.es_miembro(empresa_id));
+
+drop policy if exists turnos_atribucion_select on public.turnos_atribucion;
+create policy turnos_atribucion_select on public.turnos_atribucion
+  for select to authenticated using (public.es_admin(empresa_id));
+
+revoke all on public.turnos_profesional from anon, authenticated;
+revoke all on public.turnos_precio      from anon, authenticated;
+revoke all on public.turnos_atribucion  from anon, authenticated;
+
+grant select on public.turnos_profesional to authenticated;
+grant select on public.turnos_precio      to authenticated;
+grant select on public.turnos_atribucion  to authenticated;
+
+-- La cuenta vencida queda en solo lectura, igual que todo lo demás.
+do $$
+declare v_tabla text;
+begin
+  foreach v_tabla in array array['turnos_profesional', 'turnos_precio', 'turnos_atribucion'] loop
+    execute format('drop trigger if exists %I on public.%I',
+                   'cuenta_activa_' || v_tabla, v_tabla);
+    execute format(
+      'create trigger %I before insert or update on public.%I '
+      || 'for each row execute function public.exigir_cuenta_activa()',
+      'cuenta_activa_' || v_tabla, v_tabla);
+  end loop;
+end $$;
+
+-- ============================================================
+-- 5. CUÁNTOS DECIMALES TIENE UNA MONEDA
+--
+--    El guaraní no tiene centavos. Repartir 33.333 al 50% sin saberlo deja
+--    medio guaraní colgando, y medio guaraní que no existe es exactamente el
+--    tipo de número que hace que alguien deje de creerle al sistema.
+-- ============================================================
+create or replace function public.decimales_de(p_moneda text)
+returns integer language sql immutable set search_path = public as $fn$
+  select case upper(coalesce(p_moneda, 'PYG')) when 'PYG' then 0 else 2 end;
+$fn$;
+
+grant execute on function public.decimales_de(text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  034_reparto_b_escritura.sql
+-- ############################################################
+
+-- ORDEN · Migración 034 · El reparto · las puertas para escribir
+--
+-- Todo lo que escribe pasa por acá. Las tablas de la 033 solo tienen policy
+-- de lectura: nadie inserta ni actualiza desde el cliente, igual que con las
+-- ventas y los ahorros.
+
+-- ============================================================
+-- 1. EL EQUIPO
+--
+--    Solo el propietario o un administrador toca esto, y el motivo no es
+--    jerárquico: el PORCENTAJE del reparto se define acá. Si un barbero
+--    pudiera editarlo, se pone el 100% y el local se entera cuando cuadra la
+--    semana.
+-- ============================================================
+create or replace function public.guardar_profesional(
+  p_empresa    uuid,
+  p_nombre     text,
+  p_reparto    text    default 'local',
+  p_porcentaje numeric default null,
+  p_user       uuid    default null,
+  p_id         uuid    default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare v_id uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar el equipo.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber de quién es cada corte.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_reparto, '') not in ('local', 'comision', 'alquiler', 'sueldo') then
+    raise exception 'Ese tipo de arreglo no existe.' using errcode = '22023';
+  end if;
+
+  if p_reparto = 'comision'
+     and (p_porcentaje is null or p_porcentaje <= 0 or p_porcentaje > 100) then
+    raise exception 'Con comisión hace falta un porcentaje entre 1 y 100.' using errcode = '22023';
+  end if;
+
+  -- Si tiene cuenta, tiene que ser de este negocio: si no, se le estaría
+  -- dando acceso a los cortes de una empresa a la que no pertenece.
+  if p_user is not null
+     and not exists (select 1 from public.miembros m
+                     where m.empresa_id = p_empresa and m.user_id = p_user) then
+    raise exception 'Esa persona no es parte de este negocio.' using errcode = '42501';
+  end if;
+
+  -- El porcentaje solo se guarda donde significa algo. Dejarlo escrito en un
+  -- profesional a sueldo haría dudar el día que alguien lea la tabla.
+  if p_id is null then
+    insert into public.turnos_profesional (empresa_id, nombre, user_id, reparto, porcentaje)
+    values (p_empresa, trim(p_nombre), p_user, p_reparto,
+            case when p_reparto = 'comision' then p_porcentaje else null end)
+    returning id into v_id;
+  else
+    update public.turnos_profesional
+    set nombre = trim(p_nombre),
+        user_id = p_user,
+        reparto = p_reparto,
+        porcentaje = case when p_reparto = 'comision' then p_porcentaje else null end,
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_profesional(uuid, text, text, numeric, uuid, uuid) from public, anon;
+grant execute on function public.guardar_profesional(uuid, text, text, numeric, uuid, uuid) to authenticated;
+
+-- Con cortes cargados no se borra: se desactiva. Borrarlo haría desaparecer
+-- de quién fue cada corte, y la liquidación del mes pasado dejaría de cerrar.
+create or replace function public.borrar_profesional(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_cortes integer;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar el equipo.' using errcode = '42501';
+  end if;
+
+  select count(*)::int into v_cortes
+  from public.turnos_atribucion where profesional_id = p_id and empresa_id = p_empresa;
+
+  if v_cortes > 0 then
+    update public.turnos_profesional set activo = false, updated_at = now()
+    where id = p_id and empresa_id = p_empresa;
+    if not found then
+      raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+    end if;
+    return jsonb_build_object('desactivado', true, 'cortes', v_cortes);
+  end if;
+
+  delete from public.turnos_profesional where id = p_id and empresa_id = p_empresa;
+  if not found then
+    raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+  end if;
+  return jsonb_build_object('borrado', true);
+end $fn$;
+
+revoke all on function public.borrar_profesional(uuid, uuid) from public, anon;
+grant execute on function public.borrar_profesional(uuid, uuid) to authenticated;
+
+-- ============================================================
+-- 2. EL PRECIO DE CADA UNO
+--
+--    Acá la regla se invierte: el precio de sus cortes lo maneja el propio
+--    profesional. Es lo que cobra él, y obligarlo a pedirle al dueño que se
+--    lo cambie es la forma más rápida de que vuelva a anotar en un cuaderno.
+--    El dueño también puede, porque muchos barberos no van a tener cuenta.
+-- ============================================================
+create or replace function public.guardar_precio_profesional(
+  p_empresa     uuid,
+  p_profesional uuid,
+  p_producto    uuid,
+  p_precio      numeric
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_suyo boolean;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select (user_id is not null and user_id = auth.uid()) into v_suyo
+  from public.turnos_profesional
+  where id = p_profesional and empresa_id = p_empresa;
+
+  if v_suyo is null then
+    raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_admin(p_empresa) and not v_suyo then
+    raise exception 'Solo podés cambiar el precio de tus propios servicios.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.productos
+                 where id = p_producto and empresa_id = p_empresa) then
+    raise exception 'Ese servicio no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Poner el precio en cero es volver al del local: sin fila, manda el
+  -- catálogo. Sin esto haría falta un segundo botón para algo que la persona
+  -- piensa como «cobro lo mismo que la casa».
+  if coalesce(p_precio, 0) <= 0 then
+    delete from public.turnos_precio
+    where profesional_id = p_profesional and producto_id = p_producto;
+    return jsonb_build_object('quitado', true);
+  end if;
+
+  insert into public.turnos_precio (empresa_id, profesional_id, producto_id, precio)
+  values (p_empresa, p_profesional, p_producto, p_precio)
+  on conflict (profesional_id, producto_id) do update
+    set precio = excluded.precio, updated_at = now();
+
+  return jsonb_build_object('guardado', true);
+end $fn$;
+
+revoke all on function public.guardar_precio_profesional(uuid, uuid, uuid, numeric) from public, anon;
+grant execute on function public.guardar_precio_profesional(uuid, uuid, uuid, numeric) to authenticated;
+
+-- Qué cobra este profesional por este servicio. Sin fila propia, el catálogo.
+create or replace function public.precio_de_servicio(p_profesional uuid, p_producto uuid)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select coalesce(
+    (select p.precio from public.turnos_precio p
+      where p.profesional_id = p_profesional and p.producto_id = p_producto),
+    (select pr.precio from public.productos pr where pr.id = p_producto),
+    0);
+$fn$;
+
+revoke all on function public.precio_de_servicio(uuid, uuid) from public, anon;
+grant execute on function public.precio_de_servicio(uuid, uuid) to authenticated;
+
+-- ============================================================
+-- 3. COBRAR UN SERVICIO
+--
+--    La puerta principal del módulo. Calcula el reparto, crea la venta y deja
+--    la atribución, todo en una transacción: o queda todo o no queda nada.
+--
+--    La venta se registra con el servicio como línea suelta y no como
+--    producto del catálogo. Es a propósito: `registrar_venta` descarta el
+--    costo que le manden para un producto de catálogo —y hace bien, es lo que
+--    impide que un cliente invente su margen— así que la única forma honesta
+--    de que el costo sea la parte del barbero es no pasar por ahí. Qué
+--    servicio fue queda guardado en la atribución, que es de donde sale el
+--    ranking de servicios del módulo.
+-- ============================================================
+create or replace function public.registrar_servicio(
+  p_empresa     uuid,
+  p_profesional uuid,
+  p_producto    uuid,
+  p_precio      numeric default null,
+  p_fecha       date    default null,
+  p_metodo_pago text    default 'efectivo',
+  p_cliente     text    default '',
+  p_notas       text    default '',
+  p_origen      origen_captura default 'manual'
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_prof     public.turnos_profesional%rowtype;
+  v_prod     public.productos%rowtype;
+  v_moneda   text;
+  v_dec      integer;
+  v_monto    numeric(14,2);
+  v_prof_par numeric(14,2);
+  v_local    numeric(14,2);
+  v_mov      uuid;
+  v_fecha    date;
+  v_id       uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_prof from public.turnos_profesional
+  where id = p_profesional and empresa_id = p_empresa and activo;
+  if not found then
+    raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Un profesional carga lo suyo; el dueño carga el de cualquiera. Sin esto,
+  -- un barbero podría anotarle cortes a un compañero y ensuciarle la
+  -- liquidación.
+  if not public.es_admin(p_empresa)
+     and not (v_prof.user_id is not null and v_prof.user_id = auth.uid()) then
+    raise exception 'Solo podés cargar tus propios servicios.' using errcode = '42501';
+  end if;
+
+  select * into v_prod from public.productos
+  where id = p_producto and empresa_id = p_empresa and activo;
+  if not found then
+    raise exception 'Ese servicio no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Un servicio no lleva stock. Lo que sí lo lleva —cera, shampoo— es una
+  -- venta de mercadería y va por la puerta de siempre: tiene su propio costo
+  -- y su propio renglón en el panel.
+  if v_prod.controla_stock then
+    raise exception 'Eso es un producto con stock: cobralo como una venta normal.' using errcode = '22023';
+  end if;
+
+  v_monto := coalesce(nullif(p_precio, 0), public.precio_de_servicio(p_profesional, p_producto));
+  if v_monto is null or v_monto <= 0 then
+    raise exception 'Falta el precio del servicio.' using errcode = '22023';
+  end if;
+
+  select moneda into v_moneda from public.empresas where id = p_empresa;
+  v_dec := public.decimales_de(v_moneda);
+
+  -- El redondeo va sobre la parte del PROFESIONAL y el resto queda para el
+  -- local. Nunca las dos por separado: ahí las partes dejan de sumar el total
+  -- y aparece —o desaparece— plata que nadie cobró.
+  v_prof_par := case v_prof.reparto
+    when 'comision' then round(v_monto * v_prof.porcentaje / 100, v_dec)
+    when 'alquiler' then v_monto
+    else 0::numeric
+  end;
+  v_local := v_monto - v_prof_par;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  -- Con alquiler de silla la plata nunca fue del local: queda el registro del
+  -- corte, pero no se crea ninguna venta. Lo que el local factura es la
+  -- mensualidad, que se carga como cualquier otro ingreso.
+  if v_prof.reparto <> 'alquiler' then
+    v_mov := public.registrar_venta(
+      p_empresa,
+      jsonb_build_array(jsonb_build_object(
+        'nombre',          v_prod.nombre,
+        'cantidad',        1,
+        'precio_unitario', v_monto,
+        'costo_unitario',  v_prof_par
+      )),
+      v_fecha,
+      trim(v_prod.nombre || case when coalesce(trim(p_cliente), '') <> ''
+                                 then ' · ' || trim(p_cliente) else '' end),
+      p_metodo_pago,
+      left(coalesce(trim(p_cliente), ''), 80),
+      p_notas,
+      coalesce(p_origen, 'manual'),
+      0
+    );
+  end if;
+
+  insert into public.turnos_atribucion (
+    empresa_id, profesional_id, movimiento_id, producto_id, servicio,
+    fecha, monto_cobrado, parte_profesional, parte_local, reparto, creado_por
+  )
+  values (
+    p_empresa, p_profesional, v_mov, p_producto, v_prod.nombre,
+    v_fecha, v_monto, v_prof_par, v_local, v_prof.reparto, auth.uid()
+  )
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'atribucion',        v_id,
+    'movimiento',        v_mov,
+    'monto',             v_monto,
+    'parte_profesional', v_prof_par,
+    'parte_local',       v_local,
+    'reparto',           v_prof.reparto
+  );
+end $fn$;
+
+revoke all on function public.registrar_servicio(uuid, uuid, uuid, numeric, date, text, text, text, origen_captura)
+  from public, anon;
+grant execute on function public.registrar_servicio(uuid, uuid, uuid, numeric, date, text, text, text, origen_captura)
+  to authenticated;
+
+
+-- ############################################################
+-- ##  035_reparto_c_liquidacion.sql
+-- ############################################################
+
+-- ORDEN · Migración 035 · El reparto · pagar y mirar
+--
+-- Lo que el dueño quiere el viernes: cuánto produjo cada uno, cuánto le toca,
+-- cuánto ya le pagó y cuánto falta. Y lo que quiere el barbero: lo suyo, sin
+-- ver el margen del local ni lo que producen los demás.
+
+-- ============================================================
+-- 1. LOS PAGOS AL PROFESIONAL
+--
+--    Entre el corte y el pago, la parte del barbero está en la caja pero no
+--    es del local. El saldo sale de restar —lo que le corresponde menos lo
+--    que ya cobró— y por eso no se guarda: un saldo calculado nunca se
+--    desincroniza. Lo que sí hay que guardar es cada pago, y que ese pago sea
+--    un gasto de verdad, porque ahí la plata sale de la caja.
+-- ============================================================
+create table if not exists public.turnos_pago (
+  id             uuid primary key default gen_random_uuid(),
+  empresa_id     uuid not null references public.empresas (id) on delete cascade,
+  profesional_id uuid not null references public.turnos_profesional (id) on delete restrict,
+  movimiento_id  uuid references public.movimientos (id) on delete set null,
+  monto          numeric(14,2) not null check (monto > 0),
+  fecha          date not null,
+  notas          text not null default '',
+  creado_por     uuid references auth.users (id) on delete set null,
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists turnos_pago_idx
+  on public.turnos_pago (empresa_id, profesional_id, fecha desc);
+
+alter table public.turnos_pago enable row level security;
+
+drop policy if exists turnos_pago_select on public.turnos_pago;
+create policy turnos_pago_select on public.turnos_pago
+  for select to authenticated using (public.es_admin(empresa_id));
+
+revoke all on public.turnos_pago from anon, authenticated;
+grant select on public.turnos_pago to authenticated;
+
+drop trigger if exists cuenta_activa_turnos_pago on public.turnos_pago;
+create trigger cuenta_activa_turnos_pago
+  before insert or update on public.turnos_pago
+  for each row execute function public.exigir_cuenta_activa();
+
+create or replace function public.pagar_profesional(
+  p_empresa     uuid,
+  p_profesional uuid,
+  p_monto       numeric,
+  p_fecha       date default null,
+  p_notas       text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_nombre text;
+  v_fecha  date;
+  v_mov    uuid;
+  v_id     uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede pagar al equipo.' using errcode = '42501';
+  end if;
+
+  select nombre into v_nombre from public.turnos_profesional
+  where id = p_profesional and empresa_id = p_empresa;
+  if v_nombre is null then
+    raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El pago tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  -- El pago es un gasto de verdad, con el nombre de la persona en la
+  -- descripción. No es contabilidad paralela: sale en el panel, en los
+  -- reportes y en el Excel como cualquier otro gasto.
+  insert into public.movimientos (
+    empresa_id, tipo, estado, fecha, descripcion, categoria,
+    subtotal, descuento, monto, costo_total, metodo_pago, contraparte, origen, creado_por
+  )
+  values (
+    p_empresa, 'gasto', 'activo', v_fecha,
+    'Pago a ' || v_nombre, 'Sueldos',
+    p_monto, 0, p_monto, 0, 'efectivo', v_nombre, 'manual', auth.uid()
+  )
+  returning id into v_mov;
+
+  insert into public.turnos_pago (empresa_id, profesional_id, movimiento_id, monto, fecha, notas, creado_por)
+  values (p_empresa, p_profesional, v_mov, p_monto, v_fecha, left(coalesce(p_notas, ''), 200), auth.uid())
+  returning id into v_id;
+
+  return jsonb_build_object('pago', v_id, 'movimiento', v_mov);
+end $fn$;
+
+revoke all on function public.pagar_profesional(uuid, uuid, numeric, date, text) from public, anon;
+grant execute on function public.pagar_profesional(uuid, uuid, numeric, date, text) to authenticated;
+
+-- ============================================================
+-- 2. EL PANEL DEL PROPIETARIO
+--
+--    Un solo número —«te quedaron 650.000»— esconde justo lo que necesita
+--    saber. Un peso que entró por sus propias manos y uno que entró por la
+--    comisión de un empleado son plata de naturaleza distinta.
+--
+--    LOS TRES PRIMEROS RENGLONES SUMAN EXACTAMENTE `ventas − costo_total`,
+--    que es la ganancia bruta que el panel ya calcula. No es casualidad: cada
+--    venta cae en uno y solo uno de los tres, y aporta su propia ganancia
+--    bruta. Un desglose que no cierra con el total es peor que no tener
+--    desglose, porque obliga a elegir a cuál de los dos creerle.
+-- ============================================================
+create or replace function public.resumen_reparto(
+  p_empresa uuid,
+  p_desde   date,
+  p_hasta   date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_mios       numeric := 0;
+  v_equipo     numeric := 0;
+  v_mercaderia numeric := 0;
+  v_ingresos   numeric := 0;
+  v_detalle    jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a estos números.' using errcode = '42501';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  -- Renglones 1 y 2: lo que le queda al local de cada corte, separando los
+  -- que hizo con sus propias manos de los que hizo su equipo.
+  select
+    coalesce(sum(a.parte_local) filter (where p.user_id is not null and p.user_id = auth.uid()), 0),
+    coalesce(sum(a.parte_local) filter (where p.user_id is null or p.user_id <> auth.uid()), 0)
+  into v_mios, v_equipo
+  from public.turnos_atribucion a
+  join public.turnos_profesional p on p.id = a.profesional_id
+  where a.empresa_id = p_empresa
+    and a.fecha between p_desde and p_hasta
+    and a.movimiento_id is not null
+    and exists (select 1 from public.movimientos m
+                where m.id = a.movimiento_id and m.estado = 'activo');
+
+  -- Renglón 3: todo lo demás que se vendió. Cera, shampoo, peines: precio
+  -- menos lo que costó. Son las ventas SIN atribución, así que ningún corte
+  -- se cuenta dos veces.
+  select coalesce(sum(m.monto - m.costo_total), 0) into v_mercaderia
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.tipo = 'venta' and m.estado = 'activo'
+    and m.fecha between p_desde and p_hasta
+    and not exists (select 1 from public.turnos_atribucion a where a.movimiento_id = m.id);
+
+  -- Renglón 4: lo que entró sin ser una venta. Acá cae el alquiler de las
+  -- sillas de quien se queda con el 100% de sus cortes.
+  select coalesce(sum(m.monto), 0) into v_ingresos
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.tipo = 'ingreso' and m.estado = 'activo'
+    and m.fecha between p_desde and p_hasta;
+
+  -- El detalle de cada corte, para que el número se pueda verificar. A un
+  -- número sobre su propia plata que no puede verificar, nadie le cree.
+  select coalesce(jsonb_agg(x order by (x->>'fecha') desc, (x->>'creado') desc), '[]'::jsonb)
+  into v_detalle
+  from (
+    select jsonb_build_object(
+      'id',                a.id,
+      'profesional',       p.nombre,
+      'servicio',          a.servicio,
+      'fecha',             a.fecha,
+      'creado',            a.created_at,
+      'monto',             a.monto_cobrado,
+      'parte_profesional', a.parte_profesional,
+      'parte_local',       a.parte_local,
+      'reparto',           a.reparto,
+      'anulado',           a.movimiento_id is not null and not exists (
+                             select 1 from public.movimientos m
+                             where m.id = a.movimiento_id and m.estado = 'activo')
+    ) as x
+    from public.turnos_atribucion a
+    join public.turnos_profesional p on p.id = a.profesional_id
+    where a.empresa_id = p_empresa and a.fecha between p_desde and p_hasta
+  ) t;
+
+  return jsonb_build_object(
+    'mis_cortes',      v_mios,
+    'de_mi_equipo',    v_equipo,
+    'mercaderia',      v_mercaderia,
+    'otros_ingresos',  v_ingresos,
+    -- Los tres primeros son la ganancia bruta; el cuarto se suma aparte
+    -- porque no viene de una venta.
+    'ganancia_bruta',  v_mios + v_equipo + v_mercaderia,
+    'total',           v_mios + v_equipo + v_mercaderia + v_ingresos,
+    'cortes',          v_detalle
+  );
+end $fn$;
+
+revoke all on function public.resumen_reparto(uuid, date, date) from public, anon;
+grant execute on function public.resumen_reparto(uuid, date, date) to authenticated;
+
+-- ============================================================
+-- 3. LA LIQUIDACIÓN
+--
+--    Por profesional y por período: cuántos cortes, cuánto cobró, cuánto le
+--    toca, cuánto ya se le pagó y cuánto falta. Es un reporte sobre datos que
+--    ya están guardados, no plata nueva.
+-- ============================================================
+create or replace function public.liquidacion(
+  p_empresa uuid,
+  p_desde   date,
+  p_hasta   date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a estos números.' using errcode = '42501';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  select coalesce(jsonb_agg(x order by (x->>'le_toca')::numeric desc), '[]'::jsonb)
+  into v_res
+  from (
+    select jsonb_build_object(
+      'id',         p.id,
+      'nombre',     p.nombre,
+      'reparto',    p.reparto,
+      'porcentaje', p.porcentaje,
+      'activo',     p.activo,
+      'cortes',     coalesce(c.cortes, 0),
+      'cobrado',    coalesce(c.cobrado, 0),
+      'le_toca',    coalesce(c.suyo, 0),
+      'del_local',  coalesce(c.local, 0),
+      'pagado',     coalesce(g.pagado, 0),
+      -- Lo que todavía está en la caja del local pero es de él.
+      'le_debe',    coalesce(c.suyo, 0) - coalesce(g.pagado, 0)
+    ) as x
+    from public.turnos_profesional p
+    left join lateral (
+      select count(*)::int              as cortes,
+             sum(a.monto_cobrado)       as cobrado,
+             sum(a.parte_profesional)   as suyo,
+             sum(a.parte_local)         as local
+      from public.turnos_atribucion a
+      where a.profesional_id = p.id
+        and a.fecha between p_desde and p_hasta
+        -- Un corte anulado no se le paga a nadie.
+        and (a.movimiento_id is null
+             or exists (select 1 from public.movimientos m
+                        where m.id = a.movimiento_id and m.estado = 'activo'))
+    ) c on true
+    left join lateral (
+      select sum(t.monto) as pagado
+      from public.turnos_pago t
+      where t.profesional_id = p.id and t.fecha between p_desde and p_hasta
+    ) g on true
+    where p.empresa_id = p_empresa
+      -- Los desactivados solo aparecen si tuvieron movimiento en el período:
+      -- si no, la lista se llena de gente que ya no trabaja ahí.
+      and (p.activo or coalesce(c.cortes, 0) > 0 or coalesce(g.pagado, 0) > 0)
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.liquidacion(uuid, date, date) from public, anon;
+grant execute on function public.liquidacion(uuid, date, date) to authenticated;
+
+-- ============================================================
+-- 4. LO QUE VE EL PROFESIONAL
+--
+--    Sus cortes y su parte. Nada del margen del local, nada de los demás.
+--    Es una función y no una policy porque lo que hay que esconder es una
+--    COLUMNA —`parte_local`— y RLS filtra filas, no columnas.
+-- ============================================================
+create or replace function public.mis_servicios(
+  p_empresa uuid,
+  p_desde   date,
+  p_hasta   date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_prof   uuid;
+  v_cortes jsonb;
+  v_total  numeric := 0;
+  v_pagado numeric := 0;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  select id into v_prof from public.turnos_profesional
+  where empresa_id = p_empresa and user_id = auth.uid();
+
+  if v_prof is null then
+    return jsonb_build_object('es_profesional', false, 'cortes', '[]'::jsonb,
+                              'le_toca', 0, 'pagado', 0, 'le_deben', 0);
+  end if;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'fecha',    a.fecha,
+      'servicio', a.servicio,
+      'monto',    a.monto_cobrado,
+      'tuyo',     a.parte_profesional
+    ) order by a.fecha desc, a.created_at desc), '[]'::jsonb),
+    coalesce(sum(a.parte_profesional), 0)
+  into v_cortes, v_total
+  from public.turnos_atribucion a
+  where a.profesional_id = v_prof
+    and a.fecha between p_desde and p_hasta
+    and (a.movimiento_id is null
+         or exists (select 1 from public.movimientos m
+                    where m.id = a.movimiento_id and m.estado = 'activo'));
+
+  select coalesce(sum(t.monto), 0) into v_pagado
+  from public.turnos_pago t
+  where t.profesional_id = v_prof and t.fecha between p_desde and p_hasta;
+
+  return jsonb_build_object(
+    'es_profesional', true,
+    'cortes',   v_cortes,
+    'le_toca',  v_total,
+    'pagado',   v_pagado,
+    'le_deben', v_total - v_pagado
+  );
+end $fn$;
+
+revoke all on function public.mis_servicios(uuid, date, date) from public, anon;
+grant execute on function public.mis_servicios(uuid, date, date) to authenticated;

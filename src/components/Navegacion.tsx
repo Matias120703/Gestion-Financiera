@@ -79,6 +79,14 @@ const Ico = {
       <path d="M3.5 11.5h17M7 15.5h3" /><path d="M6.5 8.5V6.8A1.3 1.3 0 0 1 7.8 5.5h8.4a1.3 1.3 0 0 1 1.3 1.3v1.7" />
     </svg>
   ),
+  equipo: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.2 19.5c0-3.1 2.6-5.3 5.8-5.3s5.8 2.2 5.8 5.3" />
+      <path d="M16.4 5.2a3.2 3.2 0 0 1 0 5.6" />
+      <path d="M17.6 14.6c1.9.6 3.2 2.3 3.2 4.9" />
+    </svg>
+  ),
   ajustes: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <circle cx="12" cy="12" r="3" />
@@ -115,6 +123,7 @@ export function itemsDe(
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
     { href: '/organizacion', texto: t.nav.organizacion, icono: Ico.organizacion },
+    { href: '/reparto',     texto: t.nav.reparto,     icono: Ico.equipo },
     { href: '/reportes',    texto: t.nav.reportes,    icono: Ico.reportes },
     { href: '/ajustes',     texto: t.nav.ajustes,     icono: Ico.ajustes },
   ];

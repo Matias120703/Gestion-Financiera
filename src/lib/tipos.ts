@@ -550,6 +550,73 @@ export interface ResumenPersonal {
   cobro_pendiente: boolean;
 }
 
+/** Cómo se reparte lo que cobra un profesional. */
+export type Reparto = 'local' | 'comision' | 'alquiler' | 'sueldo';
+
+export interface Profesional {
+  id: string;
+  nombre: string;
+  /** Null si no tiene cuenta en Orden: el dueño le carga los cortes. */
+  user_id: string | null;
+  reparto: Reparto;
+  /** Qué porcentaje se lleva ÉL. Solo con comisión. */
+  porcentaje: number | null;
+  activo: boolean;
+}
+
+export interface CorteAtribuido {
+  id: string;
+  profesional: string;
+  servicio: string;
+  fecha: string;
+  monto: number;
+  parte_profesional: number;
+  parte_local: number;
+  reparto: Reparto;
+  anulado: boolean;
+}
+
+/**
+ * El desglose del propietario. Los tres primeros suman exactamente
+ * `ganancia_bruta`, que es la misma que ya calcula el panel.
+ */
+export interface ResumenReparto {
+  /** Lo que le quedó de los cortes que hizo con sus propias manos. */
+  mis_cortes: number;
+  /** Lo que le quedó de los cortes que hizo su equipo. */
+  de_mi_equipo: number;
+  /** Margen de lo que vendió y no es un servicio: cera, shampoo, peines. */
+  mercaderia: number;
+  /** Lo que entró sin ser una venta. Acá cae el alquiler de las sillas. */
+  otros_ingresos: number;
+  ganancia_bruta: number;
+  total: number;
+  cortes: CorteAtribuido[];
+}
+
+export interface FilaLiquidacion {
+  id: string;
+  nombre: string;
+  reparto: Reparto;
+  porcentaje: number | null;
+  activo: boolean;
+  cortes: number;
+  cobrado: number;
+  le_toca: number;
+  del_local: number;
+  pagado: number;
+  /** Lo que está en la caja del local pero es de él. */
+  le_debe: number;
+}
+
+export interface MisServicios {
+  es_profesional: boolean;
+  cortes: { fecha: string; servicio: string; monto: number; tuyo: number }[];
+  le_toca: number;
+  pagado: number;
+  le_deben: number;
+}
+
 export interface PagoDeuda {
   id: string;
   monto: number;
