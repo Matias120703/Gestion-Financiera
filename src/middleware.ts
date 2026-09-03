@@ -17,6 +17,15 @@ const PUBLICAS = [
   // dos no fueran públicas, el enlace del correo lo rebotaría al login y el
   // circuito no cerraría nunca.
   '/recuperar', '/clave-nueva',
+  // La página de reservas y el enlace del turno. Quien entra ahí es un
+  // cliente del barbero, no un usuario de Orden: mandarlo a un login sería
+  // pedirle que se registre en un sistema del que no tiene por qué enterarse,
+  // y ahí se pierde la reserva.
+  //
+  // Van con la barra final a propósito. '/r' a secas también sería prefijo de
+  // '/reportes' y de '/reparto', y abriría dos pantallas del negocio a
+  // cualquiera que no haya iniciado sesión.
+  '/r/', '/turno/',
 ];
 
 export async function middleware(request: NextRequest) {

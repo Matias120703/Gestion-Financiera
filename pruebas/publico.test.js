@@ -1,0 +1,353 @@
+/**
+ * Pruebas de la puerta pública de reservas (migración 038).
+ *
+ * Es la primera superficie de Orden que toca alguien SIN CUENTA, así que es
+ * la que más se puede romper. La migración 012 cerró `anon` a propósito, con
+ * el argumento de que el permiso no debería depender de que nadie se
+ * equivoque nunca dentro de una función. Este archivo existe para comprobar
+ * que la puerta quedó del ancho exacto:
+ *
+ *   · que lo público no diga QUIÉN ocupa un horario tomado —si lo dijera, el
+ *     barbero habría publicado la agenda de sus clientes en internet—;
+ *   · que el link de un negocio no sirva para espiar la agenda de otro;
+ *   · que un formulario abierto en internet no se pueda llenar cien veces;
+ *   · y que `anon` no pueda ejecutar NADA que no sean las cuatro funciones
+ *     que se le abrieron.
+ */
+const H = require('./ayuda-db.js');
+
+let fallos = 0;
+let corridas = 0;
+
+function grupo(nombre) {
+  console.log(`\n── ${nombre} ${'─'.repeat(Math.max(0, 58 - nombre.length))}`);
+}
+
+function ok(nombre, real, esperado) {
+  corridas++;
+  const a = JSON.stringify(real);
+  const b = JSON.stringify(esperado);
+  if (a !== b) {
+    fallos++;
+    console.log(`  ✗ ${nombre}\n      obtenido: ${a}\n      esperado: ${b}`);
+  } else {
+    console.log(`  ✓ ${nombre} → ${a}`);
+  }
+}
+
+function rechazado(nombre, resultado, fragmento) {
+  corridas++;
+  if (resultado.ok) {
+    fallos++;
+    console.log(`  ✗ ${nombre}\n      NO fue rechazada`);
+    return;
+  }
+  if (fragmento && !new RegExp(fragmento, 'i').test(resultado.error)) {
+    fallos++;
+    console.log(`  ✗ ${nombre}\n      rechazada por otro motivo: ${resultado.error}`);
+    return;
+  }
+  console.log(`  ✓ ${nombre} → rechazada`);
+}
+
+function aceptado(nombre, resultado) {
+  corridas++;
+  if (!resultado.ok) {
+    fallos++;
+    console.log(`  ✗ ${nombre}\n      fue rechazada: ${resultado.error}`);
+    return;
+  }
+  console.log(`  ✓ ${nombre}`);
+}
+
+(async () => {
+  const db = await H.crearBase();
+
+  const local = await H.montarEmpresa(db, { email: 'dueno@barberia.com', nombre: 'Barbería Ñandutí' });
+  const otro = await H.montarEmpresa(db, { email: 'otro@barberia.com', nombre: 'Barbería Ñandutí' });
+
+  const llamar = (uid, sql, args) => H.intentar(db, uid, () => db.query(sql, args));
+  const valor = async (uid, sql, args) => {
+    const r = await llamar(uid, sql, args);
+    if (!r.ok) throw new Error(r.error);
+    return r.valor.rows[0];
+  };
+  const crudo = async (sql, args) => (await db.query(sql, args)).rows[0];
+
+  // Sin sesión: exactamente lo que hace un cliente que entra por el link.
+  const comoNadie = (sql, args) =>
+    H.intentarComo(db, 'anon', null, () => db.query(sql, args));
+  const valorPublico = async (sql, args) => {
+    const r = await comoNadie(sql, args);
+    if (!r.ok) throw new Error(r.error);
+    return r.valor.rows[0];
+  };
+
+  const corte = await H.crearProducto(db, local.empresaId, local.uid,
+    { nombre: 'Corte', costo: 12000, precio: 50000, controla_stock: false });
+  const cera = await H.crearProducto(db, local.empresaId, local.uid,
+    { nombre: 'Cera', costo: 20000, precio: 35000, stock: 5, controla_stock: true });
+
+  const pedro = (await valor(local.uid,
+    "select public.guardar_profesional($1,$2,'comision',50) as id",
+    [local.empresaId, 'Pedro'])).id;
+  const ana = (await valor(local.uid,
+    "select public.guardar_profesional($1,$2,'local') as id",
+    [local.empresaId, 'Ana sin horario'])).id;
+  const ajeno = (await valor(otro.uid,
+    "select public.guardar_profesional($1,$2,'local') as id",
+    [otro.empresaId, 'De la otra cuadra'])).id;
+
+  await llamar(local.uid, 'select public.guardar_servicio_agenda($1,$2,$3)', [local.empresaId, corte, 30]);
+
+  const lunes = (await crudo(
+    "select to_char(date_trunc('week', (now() at time zone 'America/Asuncion')::date + 14), 'YYYY-MM-DD') as d")).d;
+
+  await llamar(local.uid, 'select public.guardar_horario($1,$2,1,$3,$4)',
+    [local.empresaId, pedro, '09:00', '12:00']);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('1 · El link se arma solo, y es para siempre');
+  // ═══════════════════════════════════════════════════════════
+
+  ok('los acentos y la ñ se limpian',
+    (await crudo("select public.slug_de('Barbería Ñandutí del Sur') as s")).s, 'barberia-nanduti-del-sur');
+  ok('y los símbolos también',
+    (await crudo("select public.slug_de('  Kiosco #1 / SRL  ') as s")).s, 'kiosco-1-srl');
+
+  const link1 = (await valor(local.uid, 'select public.guardar_link_publico($1) j', [local.empresaId])).j;
+  ok('se genera del nombre del negocio', link1.slug, 'barberia-nanduti');
+
+  // Dos negocios con el mismo nombre no pueden compartir dirección.
+  const link2 = (await valor(otro.uid, 'select public.guardar_link_publico($1) j', [otro.empresaId])).j;
+  ok('el segundo con el mismo nombre recibe otro', link2.slug, 'barberia-nanduti-2');
+
+  const cambio = (await valor(local.uid, "select public.guardar_link_publico($1,'pedro-cortes') j",
+    [local.empresaId])).j;
+  ok('el dueño puede cambiarlo', cambio.slug, 'pedro-cortes');
+
+  // LA REGLA QUE NO SE NEGOCIA: el viejo queda quemado. Si se reasignara, un
+  // cliente que entra por un posteo de hace un año terminaría reservando con
+  // otro barbero.
+  ok('el link viejo queda quemado para siempre',
+    (await crudo("select public.slug_disponible('barberia-nanduti') as d")).d, false);
+
+  rechazado('y nadie más lo puede tomar',
+    await llamar(otro.uid, "select public.guardar_link_publico($1,'barberia-nanduti')", [otro.empresaId]),
+    'ya está tomado');
+
+  rechazado('un vendedor no toca el link',
+    await llamar(otro.uid, "select public.guardar_link_publico($1,'lo-que-sea')", [local.empresaId]),
+    'dueño de la cuenta');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('2 · Lo que ve un desconocido');
+  // ═══════════════════════════════════════════════════════════
+
+  const publica = (await valorPublico("select public.agenda_publica('pedro-cortes') j")).j;
+
+  ok('la página existe', publica.existe, true);
+  ok('con el nombre del negocio', publica.negocio, 'Barbería Ñandutí');
+  ok('y quien atiende', publica.profesionales.map((p) => p.nombre), ['Pedro']);
+  ok('Ana no aparece: no tiene horario cargado',
+    publica.profesionales.some((p) => p.nombre.startsWith('Ana')), false);
+  ok('el corte se ofrece con su precio',
+    publica.profesionales[0].servicios.map((s) => [s.nombre, Number(s.precio)]), [['Corte', 50000]]);
+
+  // Lo que NO puede salir de acá.
+  const texto = JSON.stringify(publica);
+  ok('no se filtra el costo del servicio', texto.includes('12000'), false);
+  ok('ni un producto con stock', texto.includes('Cera'), false);
+  ok('ni el id de la empresa', texto.includes(local.empresaId), false);
+
+  const apagada = (await valorPublico("select public.agenda_publica('no-existe-esto') j")).j;
+  ok('un link inexistente no existe', apagada.existe, false);
+
+  await llamar(local.uid, 'select public.guardar_link_publico($1,null,false)', [local.empresaId]);
+  ok('y uno apagado contesta lo mismo, para no delatar quién usa Orden',
+    (await valorPublico("select public.agenda_publica('pedro-cortes') j")).j.existe, false);
+  await llamar(local.uid, 'select public.guardar_link_publico($1,null,true)', [local.empresaId]);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('3 · Los huecos, sin decir de quién');
+  // ═══════════════════════════════════════════════════════════
+
+  const huecosPub = async (slug, prof, fecha) =>
+    (await valorPublico('select public.huecos_publicos($1,$2,$3,$4) j', [slug, prof, corte, fecha])).j;
+
+  const libres = await huecosPub('pedro-cortes', pedro, lunes);
+  ok('se ofrecen los seis turnos de la mañana', libres.length, 6);
+  ok('y son solo horarios, sin nombres',
+    libres.every((h) => typeof h === 'string'), true);
+
+  ok('con el link de otro negocio no se ve nada',
+    (await huecosPub('barberia-nanduti-2', pedro, lunes)).length, 0);
+  ok('ni con un profesional que no es del local',
+    (await huecosPub('pedro-cortes', ajeno, lunes)).length, 0);
+
+  const ayer = (await crudo("select to_char((now() at time zone 'America/Asuncion')::date - 1, 'YYYY-MM-DD') as d")).d;
+  ok('ni para ayer', (await huecosPub('pedro-cortes', pedro, ayer)).length, 0);
+
+  const lejano = (await crudo("select to_char((now() at time zone 'America/Asuncion')::date + 200, 'YYYY-MM-DD') as d")).d;
+  ok('ni para dentro de siete meses', (await huecosPub('pedro-cortes', pedro, lejano)).length, 0);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('4 · Reservar sin cuenta');
+  // ═══════════════════════════════════════════════════════════
+
+  const reservar = (slug, prof, hora, nombre, tel) =>
+    comoNadie('select public.reservar_publico($1,$2,$3,$4,$5,$6) j',
+      [slug, prof, corte, hora, nombre, tel]);
+
+  const r = await valorPublico(
+    'select public.reservar_publico($1,$2,$3,$4,$5,$6) j',
+    ['pedro-cortes', pedro, corte, libres[0], 'Juan Cliente', '0981222333']);
+
+  ok('el turno queda tomado', Boolean(r.j.reserva), true);
+  ok('y se lleva su enlace para cancelar', Boolean(r.j.token), true);
+  ok('ese hueco ya no se ofrece', (await huecosPub('pedro-cortes', pedro, lunes)).length, 5);
+
+  ok('la reserva queda marcada como pública',
+    (await crudo('select origen from public.turnos_reserva where id=$1', [r.j.reserva])).origen, 'publico');
+
+  rechazado('sin nombre no se reserva',
+    await reservar('pedro-cortes', pedro, libres[1], '  ', '0981222333'), 'nombre');
+  rechazado('ni sin un teléfono de verdad',
+    await reservar('pedro-cortes', pedro, libres[1], 'Juan', '12'), 'teléfono');
+  rechazado('ni a una hora que no está libre',
+    await reservar('pedro-cortes', pedro, libres[0], 'Otro', '0982000000'),
+    'ya no está disponible');
+
+  // El link de un negocio no sirve para escribir en la agenda de otro.
+  rechazado('el link de una barbería no reserva con el barbero de otra',
+    await reservar('barberia-nanduti-2', pedro, libres[1], 'Colado', '0983000000'),
+    'no atiende en este local');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('5 · El freno de abuso');
+  // ═══════════════════════════════════════════════════════════
+
+  // El mismo número, uno atrás de otro: el cooldown lo corta.
+  rechazado('no se pueden encadenar reservas desde el mismo número',
+    await reservar('pedro-cortes', pedro, libres[1], 'Juan', '0981222333'),
+    'Esperá un momento');
+
+  // Se simula que pasó el minuto, para poder probar el tope de pendientes.
+  await db.query("update public.turnos_reserva set created_at = now() - interval '5 minutes'");
+  await valorPublico('select public.reservar_publico($1,$2,$3,$4,$5,$6) j',
+    ['pedro-cortes', pedro, corte, libres[1], 'Juan', '0981222333']);
+  await db.query("update public.turnos_reserva set created_at = now() - interval '5 minutes'");
+  await valorPublico('select public.reservar_publico($1,$2,$3,$4,$5,$6) j',
+    ['pedro-cortes', pedro, corte, libres[2], 'Juan', '0981222333']);
+  await db.query("update public.turnos_reserva set created_at = now() - interval '5 minutes'");
+
+  rechazado('con tres turnos abiertos, el cuarto no entra',
+    await reservar('pedro-cortes', pedro, libres[3], 'Juan', '0981222333'),
+    'varios turnos reservados');
+
+  aceptado('pero otro número reserva sin problema',
+    await reservar('pedro-cortes', pedro, libres[3], 'Otra persona', '0984111222'));
+
+  aceptado('el dueño puede bloquear un número',
+    await llamar(local.uid, "select public.bloquear_telefono($1,$2,'Nunca viene')",
+      [local.empresaId, '0984111222']));
+
+  await db.query("update public.turnos_reserva set created_at = now() - interval '5 minutes'");
+  rechazado('y ese número deja de poder reservar',
+    await reservar('pedro-cortes', pedro, libres[4], 'Otra persona', '0984111222'),
+    'Comunicate con el local');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('6 · Cancelar con el enlace');
+  // ═══════════════════════════════════════════════════════════
+
+  const vista = (await valorPublico('select public.reserva_por_token($1) j', [r.j.token])).j;
+  ok('con el token se ve la reserva', vista.existe, true);
+  ok('con el servicio y con quién', [vista.servicio, vista.con], ['Corte', 'Pedro']);
+  ok('pero no trae el teléfono de nadie', JSON.stringify(vista).includes('0981222333'), false);
+
+  const antes = (await huecosPub('pedro-cortes', pedro, lunes)).length;
+  aceptado('el cliente cancela sin tener cuenta',
+    await comoNadie('select public.cancelar_reserva($1)', [r.j.token]));
+  ok('y el hueco vuelve a ofrecerse', (await huecosPub('pedro-cortes', pedro, lunes)).length, antes + 1);
+
+  ok('un token inventado no revela nada',
+    (await valorPublico('select public.reserva_por_token($1) j',
+      ['00000000-0000-0000-0000-000000000000'])).j.existe, false);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('7 · La puerta quedó del ancho exacto');
+  // ═══════════════════════════════════════════════════════════
+
+  // Lo que `anon` puede ejecutar de todo el módulo de turnos y reparto.
+  const abiertas = (await db.query(
+    `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and has_function_privilege('anon', p.oid, 'execute')
+        and (p.proname like 'turnos%' or p.proname in
+             ('registrar_servicio','guardar_profesional','borrar_profesional',
+              'guardar_precio_profesional','precio_de_servicio','pagar_profesional',
+              'resumen_reparto','liquidacion','mis_servicios','reservar','atender_reserva',
+              'marcar_no_vino','agenda_del_dia','huecos_del_dia','guardar_horario',
+              'guardar_excepcion','borrar_horario','borrar_excepcion','puede_agendar',
+              'guardar_servicio_agenda','guardar_link_publico','bloquear_telefono',
+              'slug_disponible','agenda_publica','huecos_publicos','reservar_publico',
+              'reserva_por_token','cancelar_reserva','slug_de'))
+      order by 1`)).rows.map((x) => x.proname);
+
+  ok('anon solo ejecuta las de la puerta pública', abiertas,
+    ['agenda_publica', 'cancelar_reserva', 'huecos_publicos', 'reserva_por_token',
+      'reservar_publico', 'slug_de']);
+
+  // Y ninguna tabla del módulo se lee sin sesión.
+  const tablas = ['turnos_profesional', 'turnos_reserva', 'turnos_atribucion',
+    'turnos_publico', 'turnos_pago', 'turnos_bloqueo'];
+  let leidas = 0;
+  for (const t of tablas) {
+    const r2 = await H.intentarComo(db, 'anon', null, () => db.query(`select 1 from public.${t} limit 1`));
+    if (r2.ok) leidas += 1;
+  }
+  ok('ninguna tabla del módulo se lee sin sesión', leidas, 0);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('8 · El middleware deja pasar lo público y nada más');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Sin esto la página no funcionaba para NADIE: el middleware mandaba a
+  // /ingresar a cualquiera sin sesión, o sea a todos los clientes.
+  //
+  // Y la forma de arreglarlo tiene su propia trampa: '/r' a secas es prefijo
+  // de '/reportes' y de '/reparto', así que abrir la puerta sin la barra
+  // final publicaría dos pantallas del negocio. Por eso se comprueba acá y
+  // no se confía en haberlo mirado una vez.
+  {
+    const fuente = require('fs').readFileSync('src/middleware.ts', 'utf8');
+    const bloque = fuente.slice(fuente.indexOf('const PUBLICAS'), fuente.indexOf('];', fuente.indexOf('const PUBLICAS')));
+    // Sin las líneas de comentario: adentro del bloque se explica por qué no
+    // alcanza con '/r', y esas comillas no son rutas.
+    const PUBLICAS = [...bloque
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//'))
+      .join('\n')
+      .matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+    ok('se leyeron las rutas y no los comentarios', PUBLICAS.includes('/r/'), true);
+    const esPublica = (ruta) => ruta === '/' || PUBLICAS.some((p) => ruta.startsWith(p));
+
+    ok('la página de reservas se abre sin sesión', esPublica('/r/barberia-juan'), true);
+    ok('y el enlace del turno también', esPublica('/turno/abc-123'), true);
+
+    const privadas = ['/panel', '/reportes', '/reparto', '/reto', '/productos',
+      '/organizacion', '/ajustes', '/vender', '/movimientos', '/deudas', '/cierre'];
+    ok('ninguna pantalla del negocio quedó abierta de paso',
+      privadas.filter((r) => esPublica(r)), []);
+  }
+
+  console.log('\n══════════════════════════════════════════════════════════════');
+  if (fallos > 0) {
+    console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA PUERTA PÚBLICA FALLARON`);
+    process.exit(1);
+  }
+  console.log(`>>> ${corridas} COMPROBACIONES DE LA PUERTA PÚBLICA PASARON`);
+  process.exit(0);
+})().catch((e) => { console.error('error inesperado:', e); process.exit(2); });

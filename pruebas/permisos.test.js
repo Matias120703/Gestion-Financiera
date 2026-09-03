@@ -594,7 +594,31 @@ async function principal() {
     // Las funciones igual se defienden solas (`if auth.uid() is null then
     // raise`), pero esa defensa está a una línea de distancia de que alguien
     // la borre editando el cuerpo. El permiso es la segunda pared.
-    const permitidasParaAnon = ['lista_precios'];
+    // Esta lista se agranda a mano y con motivo. Cada nombre acá es una
+    // puerta a internet, y agregar uno sin pensarlo es exactamente el error
+    // que esta comprobación existe para evitar.
+    const permitidasParaAnon = [
+      // La pantalla de planes muestra los precios antes de registrarse.
+      'lista_precios',
+
+      // LA PÁGINA PÚBLICA DE RESERVAS (migración 038). Un cliente sin cuenta
+      // tiene que poder ver los horarios libres y tomar uno. Son cuatro, y
+      // cada una devuelve lo mínimo:
+      //
+      //   · `agenda_publica`     el negocio, quiénes atienden y qué servicios.
+      //   · `huecos_publicos`    horarios libres. NUNCA de quién son los tomados.
+      //   · `reservar_publico`   la única que escribe, con freno de abuso.
+      //   · `reserva_por_token`  la reserva propia, con el enlace que guardó.
+      //   · `cancelar_reserva`   cancelar con ese mismo enlace.
+      //
+      // Lo que estas funciones pueden y no pueden ver se comprueba una por
+      // una en pruebas/publico.test.js.
+      'agenda_publica',
+      'huecos_publicos',
+      'reservar_publico',
+      'reserva_por_token',
+      'cancelar_reserva',
+    ];
 
     const expuestas = (await db.query(`
       select p.proname

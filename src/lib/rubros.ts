@@ -59,7 +59,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     clave: 'comercio',
     nombre: 'Comercio',
     ejemplo: 'Almacén, tienda de ropa, perfumería, delivery',
-    sinSecciones: ['/reparto'],
+    sinSecciones: ['/reparto', '/agenda'],
     palabras: {},
     ciclosLargos: false,
     cierraElDia: true,
@@ -73,7 +73,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // día, y una meta de ventas diaria no significa nada cuando vendés tres
     // veces al año. Un sistema que todas las noches te dice que no cargaste
     // nada, cuando no había nada que cargar, se desinstala.
-    sinSecciones: ['/cierre', '/reto', '/reparto'],
+    sinSecciones: ['/cierre', '/reto', '/reparto', '/agenda'],
     palabras: { vender: 'Vender', productos: 'Hacienda', ventas: 'Ventas' },
     ciclosLargos: true,
     cierraElDia: false,
@@ -83,7 +83,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     clave: 'agricultura',
     nombre: 'Agricultura',
     ejemplo: 'Soja, maíz, huerta, frutales',
-    sinSecciones: ['/cierre', '/reto', '/reparto'],
+    sinSecciones: ['/cierre', '/reto', '/reparto', '/agenda'],
     palabras: { vender: 'Vender', productos: 'Cultivos', ventas: 'Ventas' },
     ciclosLargos: true,
     cierraElDia: false,
@@ -129,7 +129,7 @@ export const PERSONAL: FichaRubro = {
   clave: 'comercio',
   nombre: 'Personal',
   ejemplo: 'Tu sueldo, tus gastos y tus deudas',
-  sinSecciones: ['/cierre', '/reto', '/vender', '/productos', '/reparto'],
+  sinSecciones: ['/cierre', '/reto', '/vender', '/productos', '/reparto', '/agenda'],
   palabras: {},
   ciclosLargos: false,
   cierraElDia: false,

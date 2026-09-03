@@ -123,6 +123,7 @@ export function itemsDe(
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
     { href: '/organizacion', texto: t.nav.organizacion, icono: Ico.organizacion },
+    { href: '/agenda',      texto: t.nav.agenda,      icono: Ico.cierre },
     { href: '/reparto',     texto: t.nav.reparto,     icono: Ico.equipo },
     { href: '/reportes',    texto: t.nav.reportes,    icono: Ico.reportes },
     { href: '/ajustes',     texto: t.nav.ajustes,     icono: Ico.ajustes },

@@ -617,6 +617,86 @@ export interface MisServicios {
   le_deben: number;
 }
 
+// ---- La agenda pública: lo único que sale al mundo sin sesión ----
+
+export interface ServicioPublico {
+  id: string;
+  nombre: string;
+  /** Minutos. De acá salen los huecos. */
+  duracion: number;
+  precio: number;
+}
+
+export interface ProfesionalPublico {
+  id: string;
+  nombre: string;
+  servicios: ServicioPublico[];
+}
+
+/**
+ * Lo que devuelve `agenda_publica`. No trae el id de la empresa, ni costos,
+ * ni productos con stock: si algo de eso hiciera falta acá, sería que la
+ * función de la base está devolviendo de más.
+ */
+export interface AgendaPublica {
+  existe: boolean;
+  negocio?: string;
+  direccion?: string;
+  mensaje?: string;
+  moneda: string;
+  profesionales: ProfesionalPublico[];
+}
+
+/** La reserva vista con el token. Nunca trae teléfonos. */
+export interface ReservaPorToken {
+  existe: boolean;
+  inicia?: string;
+  termina?: string;
+  estado?: string;
+  servicio?: string;
+  con?: string;
+  negocio?: string;
+  cliente?: string;
+}
+
+export interface TurnoDelDia {
+  id: string;
+  inicia: string;
+  termina: string;
+  profesional: string;
+  profesional_id: string;
+  servicio: string;
+  cliente: string;
+  telefono: string;
+  estado: 'pendiente' | 'confirmada' | 'atendida' | 'no_vino';
+  origen: 'local' | 'publico';
+}
+
+export interface HorarioSemanal {
+  id: string;
+  profesional_id: string;
+  /** 0 = domingo, igual que `extract(dow)`. */
+  dia_semana: number;
+  desde: string;
+  hasta: string;
+  activo: boolean;
+}
+
+export interface ServicioAgenda {
+  producto_id: string;
+  duracion_min: number;
+  reservable: boolean;
+}
+
+/** El link público del negocio. */
+export interface LinkPublico {
+  slug: string;
+  activo: boolean;
+  titulo: string;
+  mensaje: string;
+  direccion: string;
+}
+
 export interface PagoDeuda {
   id: string;
   monto: number;
