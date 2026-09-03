@@ -1,6 +1,6 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir, exigirLista } from './lectura';
-import type { LinkPublico, TurnoDelDia, HorarioSemanal, ServicioAgenda } from './tipos';
+import type { LinkPublico, TurnoDelDia, HorarioSemanal, ServicioAgenda, Excepcion } from './tipos';
 
 /** Lecturas de la agenda de turnos. */
 
@@ -37,6 +37,23 @@ export async function traerHorarios(empresaId: string): Promise<HorarioSemanal[]
     .order('dia_semana')
     .order('desde');
   return exigirLista<HorarioSemanal>(respuesta, 'los horarios');
+}
+
+/**
+ * Los feriados, vacaciones y horarios especiales de hoy en adelante.
+ *
+ * Los de antes de hoy no se traen: ya no cambian nada y una lista que
+ * arrastra todos los feriados del año pasado no se lee.
+ */
+export async function traerExcepciones(empresaId: string, desde: string): Promise<Excepcion[]> {
+  const supabase = clienteServidor();
+  const respuesta = await supabase
+    .from('turnos_excepcion')
+    .select('id, profesional_id, fecha, cerrado, desde, hasta, motivo')
+    .eq('empresa_id', empresaId)
+    .gte('fecha', desde)
+    .order('fecha');
+  return exigirLista<Excepcion>(respuesta, 'los feriados y días libres');
 }
 
 /** Qué servicios se pueden reservar y cuánto duran. */

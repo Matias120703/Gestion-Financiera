@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { dinero, fechaLarga } from '@/lib/formato';
+import { dinero, fechaLarga, fechaLegible } from '@/lib/formato';
 import { sumarDias } from '@/lib/fechas';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
   Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
+  Excepcion,
 } from '@/lib/tipos';
 
 /**
@@ -23,7 +24,8 @@ import type {
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export function PantallaAgenda({
-  empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy, origen,
+  empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy,
+  excepciones, origen,
 }: {
   empresaId: string;
   moneda: string;
@@ -38,6 +40,8 @@ export function PantallaAgenda({
   dia: string;
   /** Hoy de verdad, en la zona de la cuenta. Para el botón de volver. */
   hoy: string;
+  /** Feriados, vacaciones y horarios especiales, de hoy en adelante. */
+  excepciones: Excepcion[];
   origen: string;
 }) {
   const t = useTextos();
@@ -249,6 +253,38 @@ export function PantallaAgenda({
           }))}
         alQuitar={(id) => correr('horario', async () =>
           sb().rpc('borrar_horario', { p_empresa: empresaId, p_id: id }))}
+      />
+
+      {/* ---------- feriados, vacaciones y horarios especiales ---------- */}
+      <DiasEspeciales
+        excepciones={excepciones}
+        profesionales={profesionales.filter((p) => p.activo)}
+        esAdmin={esAdmin}
+        hoy={hoy}
+        ocupado={ocupado}
+        alCerrar={(d, h, prof, mot) => correr('especial', async () => sb().rpc('cerrar_dias', {
+          p_empresa: empresaId,
+          p_desde: d,
+          p_hasta: h,
+          p_profesional: prof || null,
+          p_motivo: mot,
+        }))}
+        alAbrir={(d, h, prof) => correr('especial', async () => sb().rpc('abrir_dias', {
+          p_empresa: empresaId,
+          p_desde: d,
+          p_hasta: h,
+          p_profesional: prof || null,
+        }))}
+        alHorarioEspecial={(f, prof, d, h, mot) => correr('especial', async () =>
+          sb().rpc('guardar_excepcion', {
+            p_empresa: empresaId,
+            p_fecha: f,
+            p_cerrado: false,
+            p_profesional: prof || null,
+            p_desde: d,
+            p_hasta: h,
+            p_motivo: mot,
+          }))}
       />
     </div>
   );
@@ -866,3 +902,214 @@ function Horarios({
     </Seccion>
   );
 }
+
+// ════════════════════════════════════════════════════════════
+// FERIADOS Y DÍAS LIBRES
+//
+// El horario semanal dice cómo es una semana normal. Esto dice cuáles no lo
+// son: el feriado, las vacaciones de alguien, el sábado que se abre medio
+// día. Sin esta pantalla la tabla existía desde la 036 y no la podía tocar
+// nadie, así que el link público seguía ofreciendo turnos los días que el
+// local cerraba — que es la peor forma de fallar: el cliente llega igual.
+//
+// Los días cerrados seguidos se muestran juntos («del 10 al 24») aunque
+// abajo sean una fila por día. Una lista de catorce renglones idénticos no
+// se lee, y lo que la persona cargó fue una vacación, no catorce feriados.
+// ════════════════════════════════════════════════════════════
+type GrupoDeDias = {
+  desde: string;
+  hasta: string;
+  dias: number;
+  excepcion: Excepcion;
+};
+
+function agruparDias(lista: Excepcion[]): GrupoDeDias[] {
+  const orden = [...lista].sort((a, b) =>
+    `${a.profesional_id ?? ''}|${a.fecha}`.localeCompare(`${b.profesional_id ?? ''}|${b.fecha}`));
+
+  const grupos: GrupoDeDias[] = [];
+  for (const e of orden) {
+    const ultimo = grupos[grupos.length - 1];
+    const sigue = ultimo
+      && e.cerrado && ultimo.excepcion.cerrado
+      && ultimo.excepcion.profesional_id === e.profesional_id
+      && ultimo.excepcion.motivo === e.motivo
+      && sumarDias(ultimo.hasta, 1) === e.fecha;
+
+    if (sigue) {
+      ultimo.hasta = e.fecha;
+      ultimo.dias += 1;
+    } else {
+      grupos.push({ desde: e.fecha, hasta: e.fecha, dias: 1, excepcion: e });
+    }
+  }
+  return grupos.sort((a, b) => a.desde.localeCompare(b.desde));
+}
+
+function DiasEspeciales({
+  excepciones, profesionales, esAdmin, hoy, ocupado, alCerrar, alAbrir, alHorarioEspecial,
+}: {
+  excepciones: Excepcion[];
+  profesionales: Profesional[];
+  esAdmin: boolean;
+  hoy: string;
+  ocupado: boolean;
+  alCerrar: (desde: string, hasta: string, profesional: string, motivo: string) => Promise<boolean>;
+  alAbrir: (desde: string, hasta: string, profesional: string) => void;
+  alHorarioEspecial: (
+    fecha: string, profesional: string, desde: string, hasta: string, motivo: string,
+  ) => Promise<boolean>;
+}) {
+  const t = useTextos();
+  const locale = useLocale();
+  const [abierto, setAbierto] = useState(false);
+  const [cerrado, setCerrado] = useState(true);
+  // Vacío es el local entero. Un vendedor no lo puede elegir: la base
+  // rechaza el feriado del local si no sos el dueño, y acá ni se ofrece.
+  const [quien, setQuien] = useState(esAdmin ? '' : (profesionales[0]?.id ?? ''));
+  const [desde, setDesde] = useState(hoy);
+  const [hasta, setHasta] = useState(hoy);
+  const [horaDesde, setHoraDesde] = useState('09:00');
+  const [horaHasta, setHoraHasta] = useState('12:00');
+  const [motivo, setMotivo] = useState('');
+
+  const grupos = agruparDias(excepciones);
+  const nombreDe = (id: string | null) =>
+    id === null ? t.agenda.todoElLocal : (profesionales.find((p) => p.id === id)?.nombre ?? '—');
+
+  async function guardar() {
+    const hecho = cerrado
+      ? await alCerrar(desde, hasta < desde ? desde : hasta, quien, motivo)
+      : await alHorarioEspecial(desde, quien, horaDesde, horaHasta, motivo);
+    if (!hecho) return;
+    setAbierto(false);
+    setMotivo('');
+  }
+
+  return (
+    <Seccion
+      titulo={t.agenda.diasEspeciales}
+      accion={
+        <button type="button" className="boton-texto text-[12.5px]" disabled={ocupado}
+          onClick={() => setAbierto((v) => !v)}>
+          {abierto ? t.comun.cancelar : t.agenda.agregarDiaEspecial}
+        </button>
+      }
+    >
+      <p className="px-4 pb-3 text-[12.5px] leading-relaxed text-tinta/50">
+        {t.agenda.diasEspecialesDetalle}
+      </p>
+
+      {abierto && (
+        <div className="mx-4 mb-3 rounded-xl border border-borde bg-arena/40 p-3">
+          <div className="mb-3 flex gap-2">
+            <button type="button" disabled={ocupado} onClick={() => setCerrado(true)}
+              className={cerrado
+                ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-white'
+                : 'rounded-lg border border-borde bg-white px-3 py-1.5 text-[13px] font-semibold'}>
+              {t.agenda.cerradoTodoElDia}
+            </button>
+            <button type="button" disabled={ocupado} onClick={() => setCerrado(false)}
+              className={!cerrado
+                ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-white'
+                : 'rounded-lg border border-borde bg-white px-3 py-1.5 text-[13px] font-semibold'}>
+              {t.agenda.abroEnOtroHorario}
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="etiqueta" htmlFor="esp-quien">{t.agenda.quienCierra}</label>
+              <select id="esp-quien" className="campo" value={quien} disabled={ocupado}
+                onChange={(e) => setQuien(e.target.value)}>
+                {esAdmin && <option value="">{t.agenda.todoElLocal}</option>}
+                {profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="etiqueta" htmlFor="esp-desde">
+                {cerrado ? t.agenda.primerDia : t.agenda.queDia}
+              </label>
+              <input id="esp-desde" type="date" className="campo" value={desde} min={hoy} disabled={ocupado}
+                onChange={(e) => {
+                  setDesde(e.target.value);
+                  if (hasta < e.target.value) setHasta(e.target.value);
+                }} />
+            </div>
+            {cerrado ? (
+              <div>
+                <label className="etiqueta" htmlFor="esp-hasta">{t.agenda.ultimoDia}</label>
+                <input id="esp-hasta" type="date" className="campo" value={hasta} min={desde}
+                  disabled={ocupado} onChange={(e) => setHasta(e.target.value)} />
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="etiqueta" htmlFor="esp-h1">{t.agenda.desde}</label>
+                  <input id="esp-h1" type="time" className="campo" value={horaDesde} disabled={ocupado}
+                    onChange={(e) => setHoraDesde(e.target.value)} />
+                </div>
+                <div className="flex-1">
+                  <label className="etiqueta" htmlFor="esp-h2">{t.agenda.hasta}</label>
+                  <input id="esp-h2" type="time" className="campo" value={horaHasta} disabled={ocupado}
+                    onChange={(e) => setHoraHasta(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3">
+            <label className="etiqueta" htmlFor="esp-motivo">{t.agenda.motivo}</label>
+            <input id="esp-motivo" className="campo" maxLength={100} value={motivo} disabled={ocupado}
+              placeholder={t.agenda.motivoEjemplo}
+              onChange={(e) => setMotivo(e.target.value)} />
+          </div>
+
+          <p className="mt-3 rounded-xl bg-white px-3 py-2.5 text-[12px] leading-relaxed text-tinta/55">
+            {t.agenda.avisoTurnosYaTomados}
+          </p>
+
+          <button type="button" className="boton-principal mt-3 px-4 py-2 text-[13.5px]"
+            disabled={ocupado} onClick={guardar}>
+            {t.comun.guardar}
+          </button>
+        </div>
+      )}
+
+      {grupos.length === 0 ? (
+        <div className="px-4 pb-4">
+          <Vacio titulo={t.agenda.sinDiasEspeciales} detalle={t.agenda.sinDiasEspecialesDetalle} />
+        </div>
+      ) : (
+        <ul className="divide-y divide-borde border-t border-borde">
+          {grupos.map((g) => (
+            <li key={g.excepcion.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+              <span className="min-w-0">
+                <span className="block text-[14px] font-semibold">
+                  {g.dias === 1
+                    ? fechaLarga(g.desde, locale)
+                    : t.agenda.rangoDeDias(fechaLegible(g.desde, false, locale), fechaLegible(g.hasta, false, locale))}
+                </span>
+                <span className="mt-0.5 block text-[12.5px] text-tinta/50">
+                  {nombreDe(g.excepcion.profesional_id)}
+                  {' · '}
+                  {g.excepcion.cerrado
+                    ? t.agenda.cerradoTodoElDia
+                    : t.agenda.abreDe(g.excepcion.desde ?? '', g.excepcion.hasta ?? '')}
+                  {g.excepcion.motivo && ` · ${g.excepcion.motivo}`}
+                </span>
+              </span>
+              <button
+                type="button" className="boton-texto shrink-0 text-[13px]" disabled={ocupado}
+                onClick={() => alAbrir(g.desde, g.hasta, g.excepcion.profesional_id ?? '')}
+              >
+                {t.agenda.volverAAbrir}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Seccion>
+  );
+}
+

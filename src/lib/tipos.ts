@@ -698,6 +698,25 @@ export interface HorarioSemanal {
   activo: boolean;
 }
 
+/**
+ * Un día que no es como los demás: el feriado del local, las vacaciones de
+ * alguien, o un sábado que se abre en otro horario.
+ *
+ * `profesional_id` en null es TODO EL LOCAL. Esa distinción es la que hace
+ * que el día libre de una persona le gane al feriado del local sin que haya
+ * que borrar el feriado (ver el orden de prioridad en `huecos_del_dia`).
+ */
+export interface Excepcion {
+  id: string;
+  profesional_id: string | null;
+  fecha: string;
+  cerrado: boolean;
+  /** Solo si ese día se abre: de cuándo a cuándo. */
+  desde: string | null;
+  hasta: string | null;
+  motivo: string;
+}
+
 export interface ServicioAgenda {
   producto_id: string;
   duracion_min: number;

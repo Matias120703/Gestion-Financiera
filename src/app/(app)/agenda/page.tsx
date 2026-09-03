@@ -4,7 +4,7 @@ import { contextoObligatorio } from '@/lib/sesion';
 import { traerProductos } from '@/lib/datos';
 import { traerProfesionales, soloServicios } from '@/lib/reparto';
 import {
-  traerLinkPublico, traerAgendaDelDia, traerHorarios, traerServiciosAgenda,
+  traerLinkPublico, traerAgendaDelDia, traerHorarios, traerServiciosAgenda, traerExcepciones,
 } from '@/lib/agenda';
 import { fichaDe } from '@/lib/rubros';
 import { hoyISO } from '@/lib/fechas';
@@ -37,17 +37,19 @@ export default async function PaginaAgenda({
   const protocolo = cabeceras.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
   const origen = host ? `${protocolo}://${host}` : '';
 
+  const hoy = hoyISO(ctx.zonaHoraria);
   const dia = typeof searchParams.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.dia)
     ? searchParams.dia
-    : hoyISO(ctx.zonaHoraria);
+    : hoy;
 
-  const [link, turnos, profesionales, horarios, servicios, productos] = await Promise.all([
+  const [link, turnos, profesionales, horarios, servicios, productos, excepciones] = await Promise.all([
     ctx.esAdmin ? traerLinkPublico(ctx.empresa.id) : Promise.resolve(null),
     traerAgendaDelDia(ctx.empresa.id, dia),
     traerProfesionales(ctx.empresa.id),
     traerHorarios(ctx.empresa.id),
     traerServiciosAgenda(ctx.empresa.id),
     traerProductos(ctx.empresa.id),
+    traerExcepciones(ctx.empresa.id, hoy),
   ]);
 
   return (
@@ -62,7 +64,8 @@ export default async function PaginaAgenda({
       catalogo={soloServicios(productos as Producto[])}
       esAdmin={ctx.esAdmin}
       dia={dia}
-      hoy={hoyISO(ctx.zonaHoraria)}
+      hoy={hoy}
+      excepciones={excepciones}
       origen={origen}
     />
   );

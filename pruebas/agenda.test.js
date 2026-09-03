@@ -530,6 +530,77 @@ function aceptado(nombre, resultado) {
       [turnoA.reserva, pedro, horaA]),
     'ya se cerró');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('12 · Vacaciones: cerrar y reabrir varios días de una');
+  //
+  // `turnos_excepcion` guarda un día por fila, pero nadie se toma vacaciones
+  // de un día. Sin esto, «me voy del 10 al 24» eran catorce llamadas sueltas
+  // desde el navegador: si fallaba la séptima, quedaba media vacación
+  // cerrada y el link seguía ofreciendo turnos en la otra mitad.
+  // ═══════════════════════════════════════════════════════════
+
+  const masDias = async (n) => new Date((await crudo(
+    'select ($1::date + $2::int)::date d', [lunes, n])).d).toISOString().slice(0, 10);
+
+  const lunesA = await masDias(28);
+  const lunesB = await masDias(35);
+
+  ok('antes de cerrar, ese lunes tiene su día completo de turnos',
+    await huecos(lunesA), 14);
+
+  rechazado('un vendedor no manda al local de vacaciones',
+    await llamar(uidPedro, 'select public.cerrar_dias($1,$2,$3)', [local.empresaId, lunesA, lunesB]),
+    'dueño de la cuenta');
+
+  rechazado('ni se pueden dar vuelta las fechas',
+    await llamar(local.uid, 'select public.cerrar_dias($1,$2,$3)', [local.empresaId, lunesB, lunesA]),
+    'anterior al primero');
+
+  rechazado('ni cerrar diez años por un error de tipeo',
+    await llamar(local.uid, 'select public.cerrar_dias($1,$2,$3)',
+      [local.empresaId, lunesA, await masDias(3000)]),
+    'más de un año');
+
+  ok('el dueño cierra las dos semanas de una sola vez',
+    Number((await valor(local.uid, 'select public.cerrar_dias($1,$2,$3,null,$4) j',
+      [local.empresaId, lunesA, lunesB, 'Vacaciones'])).j.dias), 8);
+
+  ok('el primer lunes de las vacaciones no ofrece nada', await huecos(lunesA), 0);
+  ok('y el último tampoco', await huecos(lunesB), 0);
+  ok('quedó escrito por qué', (await crudo(
+    'select motivo from public.turnos_excepcion where empresa_id=$1 and fecha=$2 and profesional_id is null',
+    [local.empresaId, lunesA])).motivo, 'Vacaciones');
+
+  aceptado('cerrar el mismo rango dos veces no duplica nada',
+    await llamar(local.uid, 'select public.cerrar_dias($1,$2,$3,null,$4)',
+      [local.empresaId, lunesA, lunesB, 'Vacaciones']));
+  ok('sigue habiendo un solo día por fecha', (await crudo(
+    'select count(*)::int n from public.turnos_excepcion where empresa_id=$1 and profesional_id is null',
+    [local.empresaId])).n, 8);
+
+  // ---- el día libre de uno no es el feriado del local ----
+
+  aceptado('Pedro se toma un día suyo dentro de esas semanas',
+    await llamar(uidPedro, 'select public.cerrar_dias($1,$2,$3,$4,$5)',
+      [local.empresaId, lunesA, lunesA, pedro, 'Médico']));
+
+  ok('el dueño reabre el local',
+    Number((await valor(local.uid, 'select public.abrir_dias($1,$2,$3) j',
+      [local.empresaId, lunesA, lunesB])).j.dias), 8);
+
+  ok('el último lunes volvió a la normalidad', await huecos(lunesB), 14);
+  ok('pero el día que Pedro se tomó sigue siendo suyo y sigue cerrado',
+    await huecos(lunesA), 0);
+
+  aceptado('y él mismo lo levanta cuando quiere',
+    await llamar(uidPedro, 'select public.abrir_dias($1,$2,$3,$4)',
+      [local.empresaId, lunesA, lunesA, pedro]));
+  ok('ahí sí vuelve a haber turnos', await huecos(lunesA), 14);
+
+  rechazado('un extraño no cierra el local ajeno',
+    await llamar(otra.uid, 'select public.cerrar_dias($1,$2,$3)', [local.empresaId, lunesA, lunesB]),
+    'dueño de la cuenta');
+
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA AGENDA FALLARON`);
