@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos, idiomaActual, FICHA } from '@/i18n';
 import { ReportePersonal } from '@/components/ReportePersonal';
@@ -20,6 +21,9 @@ export default async function PaginaReportes({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+  // Reportes trae la ganancia y el detalle financiero del negocio entero:
+  // es la vista del dueño en cualquiera de las dos cuentas, personal o no.
+  if (!ctx.esAdmin) redirect('/panel');
   const t = textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
 

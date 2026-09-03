@@ -108,10 +108,23 @@ const Ico = {
  */
 const SOLO_PERSONAL = ['/organizacion'];
 
+/**
+ * Lo que es de LA EMPRESA y no del trabajo de todos los días.
+ *
+ * Un vendedor vende, carga gastos, gestiona productos y ve su agenda y su
+ * parte del reparto. Cuánto debe el negocio, si hoy cerró bien, la meta del
+ * mes y los reportes financieros son la vista del dueño, no la suya — y no
+ * es solo prolijidad: ocultarlo evita que alguien piense que ese número lo
+ * describe a él. La protección real está en cada página (`ctx.esAdmin`);
+ * esto es que el menú no lo ofrezca.
+ */
+const SOLO_ADMIN = ['/deudas', '/cierre', '/movimientos', '/reto', '/reportes'];
+
 export function itemsDe(
   t: Textos,
   tipo: TipoCuenta = 'emprendedor',
   rubro: Rubro = 'comercio',
+  esAdmin: boolean = true,
 ): ItemNav[] {
   const todos: ItemNav[] = [
     { href: '/panel',       texto: t.nav.panel,       icono: Ico.panel },
@@ -134,9 +147,12 @@ export function itemsDe(
   // rubro le daba la ficha de un almacén y le dejaba el cierre del día. La
   // ficha ahora contesta las dos cosas junto; ver src/lib/rubros.ts.
   const ficha = fichaDe(rubro, tipo);
-  const visibles = todos.filter((i) => !ficha.sinSecciones.includes(i.href));
-  if (tipo === 'personal') return visibles;
-  return visibles.filter((i) => !SOLO_PERSONAL.includes(i.href));
+  let visibles = todos.filter((i) => !ficha.sinSecciones.includes(i.href));
+  visibles = tipo === 'personal' ? visibles : visibles.filter((i) => !SOLO_PERSONAL.includes(i.href));
+  // Una cuenta personal es de una sola persona (la 019 impide sumar gente),
+  // así que este filtro nunca la afecta: solo achica el menú de un vendedor
+  // dentro de un negocio.
+  return esAdmin ? visibles : visibles.filter((i) => !SOLO_ADMIN.includes(i.href));
 }
 
 /**
@@ -153,6 +169,7 @@ export function itemsDe(
  * cuando y casi siempre sentado.
  */
 const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre'];
+const EN_BARRA_INFERIOR_VENDEDOR = ['/panel', '/vender', '/gastos', '/agenda'];
 
 /**
  * En una cuenta personal, el lugar de Vender lo ocupa Deudas.
@@ -163,8 +180,10 @@ const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre'];
  */
 const EN_BARRA_INFERIOR_PERSONAL = ['/panel', '/deudas', '/gastos', '/organizacion'];
 
-function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio') {
-  const base = tipo === 'personal' ? EN_BARRA_INFERIOR_PERSONAL : EN_BARRA_INFERIOR;
+function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: boolean = true) {
+  const base = tipo === 'personal'
+    ? EN_BARRA_INFERIOR_PERSONAL
+    : esAdmin ? EN_BARRA_INFERIOR : EN_BARRA_INFERIOR_VENDEDOR;
   // Si la cuenta no tiene alguna de las cuatro, se cae sola: la barra queda
   // de tres y el resto sigue a un toque desde «Más».
   const ficha = fichaDe(rubro, tipo);
@@ -175,10 +194,10 @@ function activo(ruta: string, href: string) {
   return ruta === href || ruta.startsWith(`${href}/`);
 }
 
-export function NavLateral({ empresa }: { empresa: Empresa }) {
+export function NavLateral({ empresa, esAdmin = true }: { empresa: Empresa; esAdmin?: boolean }) {
   const ruta = usePathname();
   const t = useTextos();
-  const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro);
+  const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, esAdmin);
   return (
     <aside className="hidden w-[232px] shrink-0 flex-col border-r border-borde bg-white lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -207,14 +226,14 @@ export function NavLateral({ empresa }: { empresa: Empresa }) {
 }
 
 export function NavInferior({
-  tipo = 'emprendedor', rubro = 'comercio',
-}: { tipo?: TipoCuenta; rubro?: Rubro }) {
+  tipo = 'emprendedor', rubro = 'comercio', esAdmin = true,
+}: { tipo?: TipoCuenta; rubro?: Rubro; esAdmin?: boolean }) {
   const ruta = usePathname();
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
 
-  const enBarra = barraDe(tipo, rubro);
-  const todos = itemsDe(t, tipo, rubro);
+  const enBarra = barraDe(tipo, rubro, esAdmin);
+  const todos = itemsDe(t, tipo, rubro, esAdmin);
   // El orden de la barra manda sobre el orden del menú: en personal, Deudas
   // tiene que quedar donde estaba Vender y no al final.
   const fijos = enBarra

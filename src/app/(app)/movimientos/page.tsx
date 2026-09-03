@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos } from '@/i18n';
 import { rangoDesdeParams } from '@/lib/datos';
@@ -18,6 +19,10 @@ export default async function PaginaMovimientos({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+  // El historial completo del negocio es la vista del dueño. Un vendedor
+  // igual queda con su propio recibo de cada venta —se lo confirma el
+  // sistema al cargarla— pero no con el archivo entero de la empresa.
+  if (!ctx.esAdmin) redirect('/panel');
   const t = textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Los totales salen agregados de la base; la lista es solo la primera página.

@@ -14,7 +14,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     // captura vive acá afuera y también necesita saber qué día es hoy.
     <ProveedorZona zona={ctx.zonaHoraria}>
     <div className="flex min-h-screen">
-      <NavLateral empresa={ctx.empresa} />
+      <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <BarraSuperior
@@ -47,7 +47,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
           guardaComprobantes={ctx.limites?.adjuntos ?? false}
           tipoCuenta={ctx.empresa.tipo_cuenta}
         />
-        <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} />
+        <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin} />
       </div>
     </div>
     </ProveedorZona>

@@ -28,6 +28,8 @@ export default async function PaginaReto() {
   if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).sinSecciones.includes('/reto')) redirect('/panel');
 
   if (ctx.empresa.tipo_cuenta === 'personal') redirect('/panel');
+  // La meta del mes la define y la mira el dueño.
+  if (!ctx.esAdmin) redirect('/panel');
 
   const supabase = clienteServidor();
   const m = ctx.empresa.moneda;
