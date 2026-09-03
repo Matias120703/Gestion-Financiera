@@ -389,10 +389,11 @@ export function BarraSuperior({
                   <p className="mt-0.5 text-[12px] capitalize text-tinta/50">{rol}</p>
                 </div>
 
-                {empresas.length > 1 && (
-                  <div className="border-b border-borde py-1.5">
-                    <p className="px-4 py-1 text-[10.5px] font-bold uppercase tracking-wider text-tinta/40">{t.nav.cambiarEmpresa}</p>
-                    {empresas.map(({ empresa: e }) => (
+                <div className="border-b border-borde py-1.5">
+                  {empresas.length > 1 && (
+                    <>
+                      <p className="px-4 py-1 text-[10.5px] font-bold uppercase tracking-wider text-tinta/40">{t.nav.cambiarEmpresa}</p>
+                      {empresas.map(({ empresa: e }) => (
                       <button
                         key={e.id} onClick={() => cambiar(e.id)}
                         className={`flex w-full items-center justify-between px-4 py-2 text-left text-[13.5px] font-semibold hover:bg-arena ${
@@ -402,9 +403,23 @@ export function BarraSuperior({
                         <span className="truncate">{e.nombre}</span>
                         {e.id === empresa.id && <span className="text-[11px]">{t.nav.activa}</span>}
                       </button>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </>
+                  )}
+
+                  {/* La puerta para sumarse a otro negocio con un código.
+                      Antes solo existía para quien no tenía NINGUNA empresa:
+                      a quien ya usaba Orden —el barbero que lleva sus
+                      finanzas personales y cuyo jefe le pasa el código— no le
+                      quedaba ningún lugar donde escribirlo. El código
+                      funcionaba; lo que faltaba era la puerta. */}
+                  <Link
+                    href="/empezar"
+                    className="block w-full px-4 py-2.5 text-left text-[13.5px] font-semibold text-verde-fuerte hover:bg-arena"
+                  >
+                    {t.nav.sumarmeAOtro}
+                  </Link>
+                </div>
 
                 <button onClick={salir} className="w-full px-4 py-2.5 text-left text-[13.5px] font-semibold text-rojo hover:bg-rojo-claro">
                   {t.nav.salir}

@@ -750,10 +750,13 @@ async function principal() {
       (await db.query('select public.hoy_empresa($1) as d', [id])).rows[0].d;
 
     const dLejos = await hoyDe(lejos.empresaId);
-    const dAtras = await hoyDe(atras.empresaId);
 
+    // La comparación se hace EN SQL a propósito. Hacerla en JavaScript sobre
+    // el texto de las fechas ordena por el nombre del día —«Wed» contra
+    // «Tue»— y da verdadero o falso según la semana, no según el dato.
     ok('dos negocios en extremos opuestos no están en el mismo día',
-      String(dLejos) > String(dAtras), true);
+      (await db.query('select public.hoy_empresa($1) > public.hoy_empresa($2) as distinto',
+        [lejos.empresaId, atras.empresaId])).rows[0].distinto, true);
 
     // El corazón del arreglo: la policy compara contra el día de LA EMPRESA.
     // Con la versión vieja, el «mañana» de Kiritimati era pasado mañana en

@@ -63,6 +63,7 @@ export const en: Textos = {
 
     plan: 'My plan',
     miCuenta: 'My account',
+    sumarmeAOtro: 'Join another business',
     cambiarEmpresa: 'Switch business',
     activa: 'active',
     mas: 'More',

@@ -69,6 +69,7 @@ export const es = {
 
     plan: 'Mi plan',
     miCuenta: 'Mi cuenta',
+    sumarmeAOtro: 'Sumarme a otro negocio',
     cambiarEmpresa: 'Cambiar de empresa',
     activa: 'activa',
     mas: 'Más',
