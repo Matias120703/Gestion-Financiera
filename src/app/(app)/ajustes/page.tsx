@@ -13,6 +13,7 @@ import { TarjetaPlan } from '@/components/TarjetaPlan';
 import { ZonaPeligro } from '@/components/ZonaPeligro';
 import { Soporte } from '@/components/Soporte';
 import { esSuperadmin } from '@/lib/admin';
+import { fichaDe } from '@/lib/rubros';
 import Link from 'next/link';
 import type { Preferencias } from '@/lib/tipos';
 
@@ -41,6 +42,9 @@ export default async function PaginaAjustes() {
    * ofrecer algo que va a fallar. Ver migración 019.
    */
   const esPersonal = ctx.empresa.tipo_cuenta === 'personal';
+  // El aviso de los turnos de mañana solo existe donde hay agenda.
+  const tieneAgenda = !fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta)
+    .sinSecciones.includes('/agenda');
   const t = textos();
   const locale = FICHA[ctx.idioma].locale;
 
@@ -171,7 +175,11 @@ export default async function PaginaAjustes() {
 
         <Seccion titulo={t.ajustes.avisos}>
           <div className="px-4 pb-5 pt-3">
-            <AjustesDeAvisos inicial={prefs} esPersonal={esPersonal} />
+            <AjustesDeAvisos
+              inicial={prefs}
+              esPersonal={esPersonal}
+              tieneAgenda={tieneAgenda}
+            />
           </div>
         </Seccion>
       </div>

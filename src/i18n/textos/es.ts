@@ -854,6 +854,8 @@ export const es = {
     avisoCargaDetalle: 'Solo si a esa hora todavía no cargaste nada, y solo si venís cargando.',
     avisoSemanal: 'Resumen de la semana por email',
     avisoSemanalDetalle: 'Los lunes, con lo que pasó los últimos siete días.',
+    avisoTurnos: 'Los turnos de mañana',
+    avisoTurnosDetalle: 'Un aviso a la tarde con cuántos turnos tenés al día siguiente y a cuántos todavía no les avisaste.',
     horaCierre: 'A qué hora recordarte',
     activarPush: 'Activar avisos en este dispositivo',
     pushActivo: 'Avisos activados acá',
@@ -1056,6 +1058,27 @@ export const es = {
     noVino: 'No vino',
     confirmarNoVino: (nombre: string) => `¿Marcar que ${nombre} no vino?`,
     mover: 'Mover',
+    avisar: 'Avisar',
+    yaAvisado: 'Avisado ✓',
+    sinAvisar: (n: number) => (n === 1
+      ? 'A 1 todavía no le avisaste.'
+      : `A ${n} todavía no les avisaste.`),
+    /** Lo que se le manda por WhatsApp. Va con el enlace para cancelar:
+        recordarle sin darle cómo avisar convierte al que no puede venir en
+        un plantón, en vez de en un hueco libre para otro. */
+    mensajeRecordatorio: (d: {
+      cliente: string; negocio: string; fecha: string; hora: string;
+      servicio: string; enlace: string;
+    }) => `¡Hola ${d.cliente}! Te recordamos tu turno en ${d.negocio}: ${d.fecha} a las `
+      + `${d.hora} (${d.servicio}). Si no podés venir, avisanos`
+      + (d.enlace ? ` o cancelalo acá: ${d.enlace}` : '') + '.',
+    mananaTenes: (turnos: number, sinAvisar: number) => {
+      const cuantos = turnos === 1 ? 'Mañana tenés 1 turno' : `Mañana tenés ${turnos} turnos`;
+      if (sinAvisar === 0) return `${cuantos}. Ya les avisaste a todos.`;
+      return sinAvisar === 1
+        ? `${cuantos}. A 1 todavía no le avisaste.`
+        : `${cuantos}. A ${sinAvisar} todavía no les avisaste.`;
+    },
     confirmarCancelar: (nombre: string) =>
       `¿Cancelar el turno de ${nombre}? El horario queda libre para otro.`,
     moverDetalle: 'Elegí el horario nuevo. Si cambiás con quién, el turno pasa a su agenda. El enlace que le mandaste al cliente sigue funcionando igual.',

@@ -68,6 +68,9 @@ function aceptado(nombre, resultado) {
   console.log(`  ✓ ${nombre}`);
 }
 
+/** Postgres devuelve los enteros grandes como texto; acá se comparan números. */
+const num = (v) => Number(v);
+
 (async () => {
   const db = await H.crearBase();
 
@@ -600,6 +603,95 @@ function aceptado(nombre, resultado) {
   rechazado('un extraño no cierra el local ajeno',
     await llamar(otra.uid, 'select public.cerrar_dias($1,$2,$3)', [local.empresaId, lunesA, lunesB]),
     'dueño de la cuenta');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('13 · Avisarle al cliente que mañana tiene turno');
+  //
+  // El plantón casi nunca es mala fe: la persona reservó hace diez días y se
+  // olvidó. Orden no puede mandarle el mensaje solo —un cliente nunca se
+  // registra, así que el push no le llega— pero sí puede dejar constancia de
+  // a quién ya se le escribió, y contarle al dueño cuántos le faltan.
+  // ═══════════════════════════════════════════════════════════
+
+  // Un turno para mañana, puesto directo: lo que se prueba acá no es reservar
+  // —eso ya tiene su grupo— sino qué se sabe de un turno que ya existe.
+  const manana = (await db.query(
+    `insert into public.turnos_reserva
+       (empresa_id, profesional_id, producto_id, inicia, termina,
+        cliente_nombre, cliente_telefono, estado)
+     values ($1, $2, $3,
+       (public.hoy_empresa($1) + 1)::date + time '15:00',
+       (public.hoy_empresa($1) + 1)::date + time '15:30',
+       'Mañanera', '0981999999', 'pendiente')
+     returning id, token`,
+    [local.empresaId, pedro, corte])).rows[0];
+
+  const paraManana = async () =>
+    (await H.intentarComo(db, 'service_role', null,
+      () => db.query('select public.turnos_de_manana() j'))).valor.rows[0].j;
+
+  const delLocal = (lista) => lista.find((x) => x.empresa_id === local.empresaId);
+
+  rechazado('un usuario común no puede preguntar por todas las cuentas a la vez',
+    await llamar(local.uid, 'select public.turnos_de_manana()', []),
+    'permission denied|permiso');
+
+  ok('la tarea de la noche ve el turno de mañana', num(delLocal(await paraManana()).turnos), 1);
+  ok('y que todavía no se le avisó', num(delLocal(await paraManana()).sin_avisar), 1);
+
+  // ---- marcar que ya se le escribió ----
+
+  rechazado('un extraño no marca avisado un turno ajeno',
+    await llamar(otra.uid, 'select public.marcar_avisado($1)', [manana.id]),
+    'No pertenecés');
+
+  aceptado('el empleado le escribe por WhatsApp y lo marca',
+    await llamar(uidPedro, 'select public.marcar_avisado($1)', [manana.id]));
+
+  ok('la tarea de la noche ya no lo cuenta como pendiente',
+    num(delLocal(await paraManana()).sin_avisar), 0);
+  ok('pero el turno sigue estando', num(delLocal(await paraManana()).turnos), 1);
+
+  aceptado('y se puede desmarcar si se tocó por error',
+    await llamar(local.uid, 'select public.marcar_avisado($1,false)', [manana.id]));
+  ok('vuelve a figurar como sin avisar', num(delLocal(await paraManana()).sin_avisar), 1);
+
+  // ---- lo que la agenda le da a la pantalla ----
+
+  const mananaISO = new Date((await crudo(
+    'select (public.hoy_empresa($1) + 1)::date d', [local.empresaId])).d).toISOString().slice(0, 10);
+  const agendaManana = (await valor(uidPedro, 'select public.agenda_del_dia($1,$2) j',
+    [local.empresaId, mananaISO])).j;
+
+  ok('la agenda del día trae el turno de mañana', agendaManana.length, 1);
+  ok('con el teléfono para poder escribirle', agendaManana[0].telefono, '0981999999');
+  ok('diciendo que todavía no se le avisó', agendaManana[0].avisado, false);
+  ok('y con su enlace para cancelar, que va dentro del mensaje',
+    agendaManana[0].token, manana.token);
+
+  await llamar(local.uid, 'select public.marcar_avisado($1)', [manana.id]);
+  ok('marcado, la agenda lo dice',
+    (await valor(uidPedro, 'select public.agenda_del_dia($1,$2) j',
+      [local.empresaId, mananaISO])).j[0].avisado, true);
+
+  // ---- una cancelada no se le avisa a nadie ----
+
+  await llamar(local.uid, 'select public.cancelar_turno($1)', [manana.id]);
+  ok('un turno cancelado desaparece de lo que hay para mañana',
+    delLocal(await paraManana()), undefined);
+
+  // ---- poder apagar el aviso ----
+
+  ok('el aviso viene prendido de fábrica',
+    (await valor(local.uid, 'select public.mis_preferencias() j', [])).j.aviso_turnos, true);
+
+  aceptado('se puede apagar',
+    await llamar(local.uid, 'select public.guardar_preferencias(null,null,null,null,false)', []));
+  ok('y queda apagado',
+    (await valor(local.uid, 'select public.mis_preferencias() j', [])).j.aviso_turnos, false);
+
+  ok('cambiar solo el idioma no lo vuelve a prender',
+    (await valor(local.uid, "select public.guardar_preferencias('es') j", [])).j.aviso_turnos, false);
 
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {

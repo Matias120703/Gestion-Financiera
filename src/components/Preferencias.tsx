@@ -69,8 +69,8 @@ export function SelectorIdioma() {
  * existe en su cuenta y ese recorte del tiempo no es el suyo.
  */
 export function AjustesDeAvisos({
-  inicial, esPersonal = false,
-}: { inicial: Prefs; esPersonal?: boolean }) {
+  inicial, esPersonal = false, tieneAgenda = false,
+}: { inicial: Prefs; esPersonal?: boolean; tieneAgenda?: boolean }) {
   const t = useTextos();
   const router = useRouter();
   const [prefs, setPrefs] = useState<Prefs>(inicial);
@@ -87,6 +87,7 @@ export function AjustesDeAvisos({
         p_aviso_cierre: siguiente.aviso_cierre,
         p_aviso_semanal: siguiente.aviso_semanal,
         p_hora_cierre: siguiente.hora_cierre,
+        p_aviso_turnos: siguiente.aviso_turnos,
       });
       if (e) throw e;
       setMensaje(t.ajustes.guardado);
@@ -128,6 +129,17 @@ export function AjustesDeAvisos({
         encendido={prefs.aviso_semanal}
         alCambiar={(v) => guardar({ aviso_semanal: v })}
       />
+
+      {/* Solo donde hay agenda: ofrecerle apagar un aviso que nunca le va
+          a llegar es ruido en la pantalla de ajustes. */}
+      {tieneAgenda && (
+        <Interruptor
+          titulo={t.ajustes.avisoTurnos}
+          detalle={t.ajustes.avisoTurnosDetalle}
+          encendido={prefs.aviso_turnos}
+          alCambiar={(v) => guardar({ aviso_turnos: v })}
+        />
+      )}
 
       <BotonPush />
 

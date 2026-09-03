@@ -337,6 +337,8 @@ export interface Adjunto {
 
 /** Preferencias de la PERSONA, no del negocio. Ver migración 010. */
 export interface Preferencias {
+  /** El aviso de la tarde con los turnos del día siguiente. */
+  aviso_turnos: boolean;
   idioma: string;
   aviso_cierre: boolean;
   aviso_semanal: boolean;
@@ -686,6 +688,10 @@ export interface TurnoDelDia {
   telefono: string;
   estado: 'pendiente' | 'confirmada' | 'atendida' | 'no_vino';
   origen: 'local' | 'publico';
+  /** El secreto del enlace con el que el cliente puede cancelar solo. */
+  token: string;
+  /** Si ya se le escribió para recordarle. */
+  avisado: boolean;
 }
 
 export interface HorarioSemanal {

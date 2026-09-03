@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, fechaLarga, fechaLegible } from '@/lib/formato';
 import { sumarDias } from '@/lib/fechas';
+import { enlaceWhatsApp } from '@/lib/telefono';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
@@ -25,7 +26,7 @@ const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', '
 
 export function PantallaAgenda({
   empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy,
-  excepciones, origen,
+  excepciones, negocio, zona, origen,
 }: {
   empresaId: string;
   moneda: string;
@@ -42,6 +43,10 @@ export function PantallaAgenda({
   hoy: string;
   /** Feriados, vacaciones y horarios especiales, de hoy en adelante. */
   excepciones: Excepcion[];
+  /** El nombre del negocio, para el mensaje que se le manda al cliente. */
+  negocio: string;
+  /** La zona de la cuenta: de ahí sale el prefijo del país del teléfono. */
+  zona: string;
   origen: string;
 }) {
   const t = useTextos();
@@ -80,6 +85,37 @@ export function PantallaAgenda({
 
   const hora = (iso: string) =>
     new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  /**
+   * El enlace de WhatsApp de un turno, o '' si el teléfono no alcanza para
+   * armarlo. El mensaje incluye el enlace para cancelar: recordarle sin
+   * darle cómo avisar convierte al que no puede venir en un plantón, en
+   * vez de en un hueco libre para otro.
+   */
+  const enlaceDe = (r: TurnoDelDia) => enlaceWhatsApp(r.telefono, zona, t.agenda.mensajeRecordatorio({
+    cliente: r.cliente,
+    negocio,
+    fecha: fechaLarga(dia, locale),
+    hora: hora(r.inicia),
+    servicio: r.servicio,
+    enlace: origen ? `${origen}/turno/${r.token}` : '',
+  }));
+
+  /**
+   * WhatsApp se abre PRIMERO y la marca se guarda después. Al revés, entre
+   * el await y el open el navegador ya perdió el gesto del dedo y trata la
+   * ventana como un pop-up: la bloquea, y el mensaje no se manda nunca.
+   */
+  function avisarPorWhatsApp(r: TurnoDelDia) {
+    const enlace = enlaceDe(r);
+    if (!enlace) return;
+    window.open(enlace, '_blank', 'noopener,noreferrer');
+    correr('avisar', async () => sb().rpc('marcar_avisado', { p_reserva: r.id }));
+  }
+
+  // Cuántos de este día tienen teléfono utilizable y siguen sin aviso.
+  const sinAvisar = turnos.filter((r) =>
+    !r.avisado && (r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r)).length;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -128,6 +164,10 @@ export function PantallaAgenda({
           }))}
         />
 
+        {sinAvisar > 0 && (
+          <p className="px-4 pb-2 text-[12.5px] text-tinta/50">{t.agenda.sinAvisar(sinAvisar)}</p>
+        )}
+
         {turnos.length === 0 ? (
           <div className="px-4 pb-4">
             <Vacio titulo={t.agenda.sinTurnos} detalle={t.agenda.sinTurnosDetalle} />
@@ -149,6 +189,17 @@ export function PantallaAgenda({
                   )}
                   {r.estado === 'no_vino' && (
                     <span className="pastilla bg-rojo-claro text-rojo">{t.agenda.noVino}</span>
+                  )}
+                  {(r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r) && (
+                    <button
+                      type="button" disabled={ocupado}
+                      onClick={() => avisarPorWhatsApp(r)}
+                      className={r.avisado
+                        ? 'rounded-lg px-2 py-1 text-[12px] font-semibold text-tinta/45 hover:text-verde-fuerte'
+                        : 'rounded-lg border border-verde bg-verde-claro px-2.5 py-1 text-[12px] font-bold text-verde-fuerte'}
+                    >
+                      {r.avisado ? t.agenda.yaAvisado : t.agenda.avisar}
+                    </button>
                   )}
                 </div>
 

@@ -783,6 +783,8 @@ export const en: Textos = {
     avisoCierreDetalle: "Only if you still haven't recorded anything by then.",
     avisoSemanal: 'Weekly summary by email',
     avisoSemanalDetalle: 'On Mondays, with what happened over the last seven days.',
+    avisoTurnos: 'Tomorrow\u0027s appointments',
+    avisoTurnosDetalle: 'An afternoon heads-up with how many appointments you have the next day, and how many clients you have not reminded yet.',
     horaCierre: 'What time to remind you',
     activarPush: 'Turn on notifications on this device',
     pushActivo: 'Notifications on here',
@@ -980,6 +982,26 @@ export const en: Textos = {
     noVino: 'No-show',
     confirmarNoVino: (nombre: string) => `Mark ${nombre} as a no-show?`,
     mover: 'Reschedule',
+    avisar: 'Remind',
+    yaAvisado: 'Reminded ✓',
+    sinAvisar: (n: number) => (n === 1
+      ? '1 client not reminded yet.'
+      : `${n} clients not reminded yet.`),
+    mensajeRecordatorio: (d: {
+      cliente: string; negocio: string; fecha: string; hora: string;
+      servicio: string; enlace: string;
+    }) => `Hi ${d.cliente}! A reminder of your appointment at ${d.negocio}: ${d.fecha} at `
+      + `${d.hora} (${d.servicio}). If you cannot make it, let us know`
+      + (d.enlace ? ` or cancel here: ${d.enlace}` : '') + '.',
+    mananaTenes: (turnos: number, sinAvisar: number) => {
+      const cuantos = turnos === 1
+        ? 'You have 1 appointment tomorrow'
+        : `You have ${turnos} appointments tomorrow`;
+      if (sinAvisar === 0) return `${cuantos}. Everyone has been reminded.`;
+      return sinAvisar === 1
+        ? `${cuantos}. 1 client has not been reminded.`
+        : `${cuantos}. ${sinAvisar} clients have not been reminded.`;
+    },
     confirmarCancelar: (nombre: string) =>
       `Cancel ${nombre}'s appointment? The slot goes back up for anyone.`,
     moverDetalle: 'Pick the new time. If you change who, the appointment moves to their agenda. The link you sent the client keeps working.',

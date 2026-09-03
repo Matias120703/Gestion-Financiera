@@ -66,6 +66,8 @@ export default async function PaginaAgenda({
       dia={dia}
       hoy={hoy}
       excepciones={excepciones}
+      negocio={ctx.empresa.nombre}
+      zona={ctx.zonaHoraria}
       origen={origen}
     />
   );
