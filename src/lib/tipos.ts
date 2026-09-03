@@ -517,6 +517,21 @@ export interface LineaPlan {
   resta: number;
 }
 
+/**
+ * Un negocio donde trabajás, con lo que te pagaron y todavía no trajiste a
+ * esta cuenta. Sale de `turnos_profesional.user_id`: la conexión ya existe
+ * desde que te agregaron en Equipo y reparto, no hace falta activarla.
+ */
+export interface TrabajoPendiente {
+  empresa_id: string;
+  negocio: string;
+  moneda: string;
+  /** Ya pagado por el negocio, todavía no cargado en tu cuenta. */
+  pendiente: number;
+  /** Cuántos pagos separados componen ese total. */
+  pagos: number;
+}
+
 export interface ResumenPersonal {
   desde: string;
   hasta: string;

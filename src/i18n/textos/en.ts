@@ -345,6 +345,11 @@ export const en: Textos = {
     confirmarQuitarSalida: (nombre: string) =>
       `Delete "${nombre}"? Your recorded entries are not affected.`,
 
+    cobrasteTrabajando: 'What you earned working',
+    cobrasteTrabajandoDetalle:
+      'You were already paid this at another business you work for. One tap logs it here, with the real date you were paid.',
+    pagosSueltos: (n: number) => (n === 1 ? '1 payment not logged yet' : `${n} payments not logged yet`),
+    traerAMiCuenta: 'Bring to my account',
     ahorros: 'Savings',
     ahorrosDetalle:
       'Savings are not spending: the money is still yours, so it never shows up as an expense in any report. It does come off your available balance, because you no longer have it to spend.',

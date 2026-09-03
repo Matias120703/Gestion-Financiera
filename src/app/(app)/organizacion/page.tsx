@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
-import { traerResumenPersonal, traerCategoriasPersonales } from '@/lib/personal';
+import { traerResumenPersonal, traerCategoriasPersonales, traerTrabajosPendientes } from '@/lib/personal';
 import { textos } from '@/i18n';
 import { PantallaOrganizacion } from '@/components/PantallaOrganizacion';
 import { Vacio } from '@/components/Piezas';
@@ -37,9 +37,12 @@ export default async function PaginaOrganizacion() {
     );
   }
 
-  const [resumen, categorias] = await Promise.all([
+  const [resumen, categorias, trabajos] = await Promise.all([
     traerResumenPersonal(ctx.empresa.id),
     traerCategoriasPersonales(ctx.empresa.id),
+    // Busca por quién sos, no por esta cuenta: puede haber trabajo pendiente
+    // de traer en un negocio que no tiene nada que ver con esta empresa.
+    traerTrabajosPendientes(),
   ]);
 
   return (
@@ -48,6 +51,7 @@ export default async function PaginaOrganizacion() {
       moneda={ctx.empresa.moneda}
       resumen={resumen}
       categorias={categorias}
+      trabajos={trabajos}
     />
   );
 }

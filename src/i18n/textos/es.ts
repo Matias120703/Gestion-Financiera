@@ -387,6 +387,11 @@ export const es = {
       `¿Eliminar «${nombre}»? Tus movimientos registrados no se modifican.`,
 
     // ---- ahorro ----
+    cobrasteTrabajando: 'Lo que cobraste trabajando',
+    cobrasteTrabajandoDetalle:
+      'Ya te pagaron esto en otro negocio donde trabajás. Un toque y queda cargado acá, con la fecha real en que lo cobraste.',
+    pagosSueltos: (n: number) => (n === 1 ? '1 pago sin traer' : `${n} pagos sin traer`),
+    traerAMiCuenta: 'Traer a mi cuenta',
     ahorros: 'Ahorro',
     ahorrosDetalle:
       'El ahorro no es un gasto: la plata sigue siendo tuya, así que no figura como gasto en ningún reporte. Sí se descuenta del disponible, porque dejaste de tenerla para gastar.',

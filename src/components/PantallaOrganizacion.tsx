@@ -9,7 +9,7 @@ import { useZona } from '@/lib/zona';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
-  ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta,
+  ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta, TrabajoPendiente,
 } from '@/lib/tipos';
 
 /**
@@ -38,12 +38,14 @@ import type {
  * única mentira que un sistema de plata no se puede permitir.
  */
 export function PantallaOrganizacion({
-  empresaId, moneda, resumen, categorias,
+  empresaId, moneda, resumen, categorias, trabajos,
 }: {
   empresaId: string;
   moneda: string;
   resumen: ResumenPersonal;
   categorias: CategoriaDeCuenta[];
+  /** En qué negocios trabajás y cuánto te pagaron que todavía no cargaste. */
+  trabajos: TrabajoPendiente[];
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -183,6 +185,22 @@ export function PantallaOrganizacion({
         <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">
           {error}
         </p>
+      )}
+
+      {/* ---------- lo que cobraste trabajando en otro lado ----------
+          Solo aparece si hay algo: la mayoría de las cuentas personales no
+          trabajan a comisión en otro negocio, y una tarjeta vacía todos los
+          días sería ruido. */}
+      {trabajos.length > 0 && (
+        <TrabajosPendientes
+          trabajos={trabajos}
+          locale={locale}
+          ocupado={ocupado}
+          alTraer={(empresaNegocio) => correr('trabajo', async () => sb().rpc('traer_ingreso_de_trabajo', {
+            p_negocio: empresaNegocio,
+            p_personal: empresaId,
+          }))}
+        />
       )}
 
       {/* ---------- gastos fijos ---------- */}
@@ -603,6 +621,57 @@ function FormularioIngreso({
         </button>
       </div>
     </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// LO QUE COBRASTE TRABAJANDO
+//
+// La conexión con el negocio no la activa esta pantalla: ya existe desde
+// que te agregaron en Equipo y reparto con tu cuenta de Orden. Acá solo se
+// LEE lo que ya te pagaron —nunca lo que todavía te deben— y un toque lo
+// convierte en un ingreso con la fecha real en que cobraste, no la de hoy.
+// ════════════════════════════════════════════════════════════
+function TrabajosPendientes({
+  trabajos, locale, ocupado, alTraer,
+}: {
+  trabajos: TrabajoPendiente[];
+  locale: string;
+  ocupado: boolean;
+  alTraer: (empresaNegocio: string) => void;
+}) {
+  const t = useTextos();
+
+  return (
+    <Seccion titulo={t.organizacion.cobrasteTrabajando}>
+      <p className="px-4 pb-2 text-[12.5px] leading-relaxed text-tinta/50">
+        {t.organizacion.cobrasteTrabajandoDetalle}
+      </p>
+      <ul className="divide-y divide-borde border-t border-borde">
+        {trabajos.map((tr) => (
+          <li key={tr.empresa_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block truncate text-[14.5px] font-semibold">{tr.negocio}</span>
+              <span className="mt-0.5 block text-[12.5px] text-tinta/50">
+                {t.organizacion.pagosSueltos(tr.pagos)}
+              </span>
+            </span>
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="text-[15px] font-bold tabular-nums text-verde-fuerte">
+                {dinero(tr.pendiente, tr.moneda, true, locale)}
+              </span>
+              <button
+                type="button" className="boton-principal px-3 py-1.5 text-[13px]"
+                disabled={ocupado}
+                onClick={() => alTraer(tr.empresa_id)}
+              >
+                {t.organizacion.traerAMiCuenta}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Seccion>
   );
 }
 

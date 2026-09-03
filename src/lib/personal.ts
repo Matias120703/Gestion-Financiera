@@ -1,6 +1,6 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
-import type { ResumenPersonal, CategoriaDeCuenta } from './tipos';
+import type { ResumenPersonal, CategoriaDeCuenta, TrabajoPendiente } from './tipos';
 
 /**
  * Lecturas de la cuenta personal.
@@ -13,6 +13,22 @@ export async function traerResumenPersonal(empresaId: string): Promise<ResumenPe
   const supabase = clienteServidor();
   const respuesta = await supabase.rpc('resumen_personal', { p_empresa: empresaId });
   return exigir(respuesta, 'resumen personal') as ResumenPersonal;
+}
+
+/**
+ * En qué negocios trabajás y cuánto te pagaron que todavía no cargaste acá.
+ *
+ * No recibe `empresaId`: busca por identidad (quién sos), no por la cuenta
+ * que tenés abierta. Es la única lectura de este archivo que mira fuera de
+ * la cuenta personal —hacia el negocio donde trabajás— y solo puede
+ * devolver lo que es tuyo: la función de la base filtra por tu propio
+ * usuario, nunca por pertenecer a esa empresa.
+ */
+export async function traerTrabajosPendientes(): Promise<TrabajoPendiente[]> {
+  const supabase = clienteServidor();
+  const respuesta = await supabase.rpc('trabajos_pendientes');
+  const lista = exigir(respuesta, 'lo que cobraste trabajando');
+  return Array.isArray(lista) ? (lista as TrabajoPendiente[]) : [];
 }
 
 /**
