@@ -338,9 +338,58 @@ function aceptado(nombre, resultado) {
     ok('y el enlace del turno también', esPublica('/turno/abc-123'), true);
 
     const privadas = ['/panel', '/reportes', '/reparto', '/reto', '/productos',
-      '/organizacion', '/ajustes', '/vender', '/movimientos', '/deudas', '/cierre'];
+      '/organizacion', '/ajustes', '/vender', '/movimientos', '/deudas', '/cierre', '/lotes'];
     ok('ninguna pantalla del negocio quedó abierta de paso',
       privadas.filter((r) => esPublica(r)), []);
+
+    // ---- las tareas programadas ----
+    //
+    // Vercel Cron llama con un Bearer y sin cookie de sesión. Si estas rutas
+    // no son públicas para el middleware, las manda a /ingresar y la tarea no
+    // corre NUNCA: no falla ruidosamente, simplemente no pasa nada. Así
+    // estuvieron el recordatorio de la noche y el resumen semanal desde que
+    // se escribieron, con la tabla `envios` vacía como única señal.
+    ok('la tarea de la noche puede ser llamada por el cron',
+      esPublica('/api/tareas/recordatorio'), true);
+    ok('el resumen semanal también', esPublica('/api/tareas/resumen-semanal'), true);
+    ok('y la de los turnos de mañana', esPublica('/api/tareas/turnos-manana'), true);
+
+    ok('pero eso no abre el resto de la API',
+      ['/api/pagos/checkout', '/api/pagos/webhook', '/api/capturar']
+        .filter((r) => esPublica(r)), []);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('9 · Lo que protege de verdad a las tareas programadas');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Abrirlas en el middleware es seguro por UNA razón: cada ruta comprueba el
+  // secreto por su cuenta. Si alguien agrega una tarea nueva y se olvida de
+  // esa línea, queda una ruta con la clave de servicio abierta a quien
+  // adivine la URL. El middleware ya no la va a tapar, así que lo tapa esto.
+  {
+    const fs = require('fs');
+    const dir = 'src/app/api/tareas';
+    const tareas = fs.readdirSync(dir);
+
+    ok('hay tareas para revisar', tareas.length > 0, true);
+
+    const sinGuarda = tareas.filter((t) => {
+      const ruta = `${dir}/${t}/route.ts`;
+      if (!fs.existsSync(ruta)) return true;
+      return !fs.readFileSync(ruta, 'utf8').includes('cronAutorizado(request)');
+    });
+    ok('todas exigen el secreto antes de hacer nada', sinGuarda, []);
+
+    // Y al revés: que cada cron declarado en vercel.json tenga su ruta. Un
+    // cron apuntando a una ruta que no existe se ejecuta igual, sin avisar,
+    // y no hace nada — que es exactamente lo difícil de notar.
+    const crons = JSON.parse(fs.readFileSync('vercel.json', 'utf8')).crons ?? [];
+    ok('vercel.json declara las tres tareas', crons.length, 3);
+    const huerfanos = crons
+      .map((c) => c.path)
+      .filter((p) => !fs.existsSync(`src/app${p}/route.ts`));
+    ok('ningún cron apunta a una ruta que no existe', huerfanos, []);
   }
 
   console.log('\n══════════════════════════════════════════════════════════════');

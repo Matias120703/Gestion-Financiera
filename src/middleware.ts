@@ -26,6 +26,20 @@ const PUBLICAS = [
   // '/reportes' y de '/reparto', y abriría dos pantallas del negocio a
   // cualquiera que no haya iniciado sesión.
   '/r/', '/turno/',
+  // Las tareas programadas. Vercel Cron las llama con un Bearer y SIN cookie
+  // de sesión, así que para este middleware eran un desconocido más: las
+  // redirigía a /ingresar y la tarea no corría nunca. La tabla `envios`
+  // —que reserva una fila antes de mandar nada— estaba vacía desde el día
+  // uno, y ahí se ve que el recordatorio de la noche y el resumen semanal
+  // jamás se ejecutaron en producción.
+  //
+  // Que estén acá NO las deja abiertas. La guarda de estas rutas nunca fue
+  // este middleware, que solo sabe mirar cookies: es `cronAutorizado()`, que
+  // exige el Bearer, lo compara en tiempo constante y falla cerrado si el
+  // secreto no está configurado. Hay una prueba que comprueba que TODAS las
+  // rutas de esta carpeta la llamen, porque de eso depende que abrirlas acá
+  // siga siendo seguro.
+  '/api/tareas/',
 ];
 
 export async function middleware(request: NextRequest) {
