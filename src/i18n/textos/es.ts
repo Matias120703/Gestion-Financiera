@@ -66,6 +66,7 @@ export const es = {
     organizacion: 'Presupuesto',
     reparto: 'Equipo y reparto',
     agenda: 'Agenda',
+    lotes: 'Lotes',
     repartoCorto: 'Equipo',
 
     plan: 'Mi plan',
@@ -1117,6 +1118,47 @@ export const es = {
     sinDiasEspecialesDetalle: 'Todo funciona con el horario de siempre.',
     rangoDeDias: (desde: string, hasta: string) => `Del ${desde} al ${hasta}`,
     abreDe: (desde: string, hasta: string) => `Abre de ${desde} a ${hasta}`,
+  },
+
+  lotes: {
+    enCurso: 'Lotes en curso',
+    detalle: 'Para lo que tarda meses en dar ganancia. Los gastos y las ventas se cargan donde siempre: acá se dice a qué ciclo pertenece cada uno y se ve cómo viene.',
+    nuevo: 'Abrir un lote',
+    sinLotes: 'No tenés ningún lote abierto',
+    sinLotesDetalle: 'Un lote es un ciclo: los novillos de este corral, la soja de esta campaña, la obra de un cliente. Abrí uno y empezá a cargarle lo que le vas poniendo.',
+    cerrados: 'Ya cerrados',
+    cerradosDetalle: 'Quedan para comparar: cómo te fue esta zafra contra la anterior.',
+
+    resultado: 'resultado',
+    puesto: 'Puesto',
+    cobrado: 'Cobrado',
+    porUnidad: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')}`,
+    llevaDias: (n: number) => (n === 1 ? 'lleva 1 día' : `lleva ${n} días`),
+    duroDias: (n: number) => (n === 1 ? 'duró 1 día' : `duró ${n} días`),
+    cuantosMovimientos: (n: number) => (n === 1 ? '1 movimiento' : `${n} movimientos`),
+    todaviaSinNada: 'Todavía no le cargaste nada.',
+
+    sacar: 'Sacar',
+    sumar: 'Sumar',
+    sumarAlgo: 'Sumarle algo que ya cargaste',
+    sumarAlgoDetalle: 'Gastos e ingresos de los últimos dos meses que todavía no son de ningún lote.',
+    haySueltos: (n: number) => (n === 1
+      ? 'Hay 1 movimiento que todavía no es de ningún lote. Abrí uno para sumárselo.'
+      : `Hay ${n} movimientos que todavía no son de ningún lote. Abrí uno para sumárselos.`),
+
+    cerrar: 'Cerrar el lote',
+    reabrir: 'Volver a abrirlo',
+    confirmarCerrar: (nombre: string) =>
+      `¿Cerrar ${nombre}? Sale de la lista de lo que está en curso. Si después aparece un gasto que faltaba, el resultado se corrige igual.`,
+
+    nombre: 'Nombre del lote',
+    nombreEjemplo: 'Novillos corral 3, Soja campaña 26, Casa de Pérez',
+    cantidad: 'Cuántos',
+    unidad: 'De qué',
+    unidadEjemplo: 'cabezas, hectáreas…',
+    abiertoEl: 'Desde cuándo',
+    notas: 'Notas',
+    abrir: 'Abrir el lote',
   },
 
   zonaPeligro: {

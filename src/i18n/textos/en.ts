@@ -60,6 +60,7 @@ export const en: Textos = {
     organizacion: 'Budget',
     reparto: 'Team and split',
     agenda: 'Schedule',
+    lotes: 'Batches',
     repartoCorto: 'Team',
 
     plan: 'My plan',
@@ -1040,6 +1041,47 @@ export const en: Textos = {
     sinDiasEspecialesDetalle: 'Everything runs on the usual hours.',
     rangoDeDias: (desde: string, hasta: string) => `${desde} to ${hasta}`,
     abreDe: (desde: string, hasta: string) => `Open ${desde} to ${hasta}`,
+  },
+
+  lotes: {
+    enCurso: 'Open batches',
+    detalle: 'For what takes months to pay off. Expenses and sales are logged where they always were: here you say which cycle each one belongs to, and see how it is going.',
+    nuevo: 'Open a batch',
+    sinLotes: 'You have no open batches',
+    sinLotesDetalle: 'A batch is a cycle: the steers in this pen, this season\u0027s soy, one client\u0027s job. Open one and start logging what you put into it.',
+    cerrados: 'Closed',
+    cerradosDetalle: 'They stay for comparison: how this season went against the last one.',
+
+    resultado: 'result',
+    puesto: 'Put in',
+    cobrado: 'Taken out',
+    porUnidad: (monto: string, unidad: string) => `${monto} per ${unidad.replace(/s$/, '')}`,
+    llevaDias: (n: number) => (n === 1 ? 'open 1 day' : `open ${n} days`),
+    duroDias: (n: number) => (n === 1 ? 'lasted 1 day' : `lasted ${n} days`),
+    cuantosMovimientos: (n: number) => (n === 1 ? '1 entry' : `${n} entries`),
+    todaviaSinNada: 'Nothing logged to it yet.',
+
+    sacar: 'Remove',
+    sumar: 'Add',
+    sumarAlgo: 'Add something you already logged',
+    sumarAlgoDetalle: 'Expenses and income from the last two months that do not belong to any batch yet.',
+    haySueltos: (n: number) => (n === 1
+      ? '1 entry does not belong to any batch yet. Open one to add it.'
+      : `${n} entries do not belong to any batch yet. Open one to add them.`),
+
+    cerrar: 'Close the batch',
+    reabrir: 'Open it again',
+    confirmarCerrar: (nombre: string) =>
+      `Close ${nombre}? It leaves the list of what is running. If an expense turns up later, the result still corrects itself.`,
+
+    nombre: 'Batch name',
+    nombreEjemplo: 'Pen 3 steers, Soy season 26, The Perez job',
+    cantidad: 'How many',
+    unidad: 'Of what',
+    unidadEjemplo: 'head, hectares…',
+    abiertoEl: 'Open since',
+    notas: 'Notes',
+    abrir: 'Open the batch',
   },
 
   zonaPeligro: {

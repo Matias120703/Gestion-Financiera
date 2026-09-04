@@ -36,6 +36,12 @@ const Ico = {
       <path d="M12 3 4 7v10l8 4 8-4V7z" /><path d="m4 7 8 4 8-4M12 11v10" />
     </svg>
   ),
+  lotes: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="m12 3 8 4.5-8 4.5-8-4.5z" /><path d="m4 12 8 4.5 8-4.5" />
+      <path d="m4 16.5 8 4.5 8-4.5" />
+    </svg>
+  ),
   movimientos: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <path d="M4 6h16M4 12h16M4 18h10" />
@@ -133,6 +139,7 @@ export function itemsDe(
     { href: '/deudas',      texto: t.nav.deudas,      icono: Ico.deudas },
     { href: '/cierre',      texto: t.nav.cierre,      icono: Ico.cierre },
     { href: '/productos',   texto: t.nav.productos,   icono: Ico.productos },
+    { href: '/lotes',       texto: t.nav.lotes,       icono: Ico.lotes },
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
     { href: '/organizacion', texto: t.nav.organizacion, icono: Ico.organizacion },

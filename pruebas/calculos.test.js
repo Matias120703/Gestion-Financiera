@@ -1,6 +1,7 @@
 const { resumir, rankingProductos, gastosPorCategoria, serieDiaria, variacion, factorDescuento, esValido, tieneCostos, logradoEnReto } = require('../.compilado/calculos.js');
 const { resolverRango, rangoAnterior, diasDelRango, inicioDeSemana, sumarDias, diffDias, finDeMes } = require('../.compilado/fechas.js');
 const { dinero, dineroCorto, fechaLegible, decimalesDe } = require('../.compilado/formato.js');
+const { fichaDe } = require('../.compilado/rubros.js');
 
 let fallos = 0;
 function ok(nombre, real, esperado) {
@@ -248,6 +249,30 @@ ok('corto en inglés usa sus abreviaturas',
   dineroCorto(10000000, 'PYG', 'en-US', { mil: 'k', millon: 'M', milMillones: 'B' }), 'Gs. 10.0 M');
 ok('variacion', Math.round(variacion(150,100)), 50);
 ok('variacion desde cero', variacion(100,0), null);
+
+// --- Qué pantallas existen según el rubro ---
+//
+// Vive en TypeScript y no en PostgreSQL porque no protege nada: que a un
+// almacén le sobre la pantalla de lotes no le filtra un dato a nadie. Pero
+// equivocarse acá sí rompe algo — fue exactamente el bug que le dejó el
+// cierre del día a las cuentas personales durante meses — así que se
+// comprueba.
+const tiene = (rubro, tipo, ruta) => !fichaDe(rubro, tipo).sinSecciones.includes(ruta);
+
+ok('un almacén no tiene lotes: vende hoy lo que compró ayer',
+  tiene('comercio', 'emprendedor', '/lotes'), false);
+ok('una cuenta personal tampoco', tiene('comercio', 'personal', '/lotes'), false);
+ok('un ganadero sí', tiene('ganaderia', 'emprendedor', '/lotes'), true);
+ok('un agricultor también', tiene('agricultura', 'emprendedor', '/lotes'), true);
+ok('y el taller o la obra, que es el mismo problema',
+  tiene('servicios', 'emprendedor', '/lotes'), true);
+ok('los tres que tienen lotes son los de ciclo largo',
+  ['ganaderia', 'agricultura', 'servicios'].every(
+    (r) => fichaDe(r, 'emprendedor').ciclosLargos), true);
+ok('y el que no los tiene, no lo es',
+  fichaDe('comercio', 'emprendedor').ciclosLargos, false);
+ok('un rubro desconocido no rompe: cae en comercio',
+  fichaDe('marciano', 'emprendedor').clave, 'comercio');
 
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);

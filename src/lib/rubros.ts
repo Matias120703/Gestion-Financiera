@@ -59,7 +59,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     clave: 'comercio',
     nombre: 'Comercio',
     ejemplo: 'Almacén, tienda de ropa, perfumería, delivery',
-    sinSecciones: ['/reparto', '/agenda'],
+    // Sin lotes: un almacén vende hoy lo que compró ayer, y el ciclo que le
+    // sirve es el día. Ver `ciclosLargos` más abajo.
+    sinSecciones: ['/reparto', '/agenda', '/lotes'],
     palabras: {},
     ciclosLargos: false,
     cierraElDia: true,
@@ -129,7 +131,7 @@ export const PERSONAL: FichaRubro = {
   clave: 'comercio',
   nombre: 'Personal',
   ejemplo: 'Tu sueldo, tus gastos y tus deudas',
-  sinSecciones: ['/cierre', '/reto', '/vender', '/productos', '/reparto', '/agenda'],
+  sinSecciones: ['/cierre', '/reto', '/vender', '/productos', '/reparto', '/agenda', '/lotes'],
   palabras: {},
   ciclosLargos: false,
   cierraElDia: false,

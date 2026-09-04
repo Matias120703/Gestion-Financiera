@@ -336,6 +336,68 @@ export interface Adjunto {
 }
 
 /** Preferencias de la PERSONA, no del negocio. Ver migración 010. */
+/**
+ * Un ciclo largo: cuarenta novillos, una hectárea de soja, la obra de una
+ * casa. El lote no guarda plata — los totales de acá salen calculados de
+ * los mismos movimientos que alimentan el panel.
+ */
+export interface Lote {
+  id: string;
+  nombre: string;
+  /** Cabezas, hectáreas, bolsas… o vacío: una obra no se mide así. */
+  unidad: string;
+  cantidad: number;
+  estado: 'abierto' | 'cerrado';
+  abierto_el: string;
+  cerrado_el: string | null;
+  notas: string;
+  /** Cuántos lleva en curso, o cuántos duró si ya cerró. */
+  dias: number;
+  movimientos: number;
+  /** Plata que le pusiste. */
+  puesto: number;
+  /** Plata que te dio. */
+  cobrado: number;
+  /** Cobrado menos puesto. Arranca en rojo, y es correcto que arranque así. */
+  resultado: number;
+  /** El resultado dividido la cantidad. Null si el lote no se cuenta. */
+  por_unidad: number | null;
+}
+
+export interface MovimientoDeLote {
+  id: string;
+  tipo: 'venta' | 'gasto' | 'ingreso';
+  estado: 'activo' | 'anulado';
+  fecha: string;
+  descripcion: string;
+  categoria: string;
+  monto: number;
+}
+
+/** Un lote con todo lo que tiene adentro. */
+export interface LoteDetalle {
+  id: string;
+  nombre: string;
+  unidad: string;
+  cantidad: number;
+  estado: 'abierto' | 'cerrado';
+  abierto_el: string;
+  cerrado_el: string | null;
+  notas: string;
+  dias: number;
+  movimientos: MovimientoDeLote[];
+}
+
+/** Un gasto o ingreso que todavía no es de ningún lote. */
+export interface MovimientoSuelto {
+  id: string;
+  tipo: 'gasto' | 'ingreso';
+  fecha: string;
+  descripcion: string;
+  categoria: string;
+  monto: number;
+}
+
 export interface Preferencias {
   /** El aviso de la tarde con los turnos del día siguiente. */
   aviso_turnos: boolean;
