@@ -24,7 +24,7 @@ export default async function PaginaLotes() {
 
   // Un almacén no tiene ciclos largos: vende hoy lo que compró ayer.
   const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
-  if (ficha.sinSecciones.includes('/lotes')) redirect('/panel');
+  if (!ficha.secciones['/lotes']) redirect('/panel');
 
   const hoy = hoyISO(ctx.zonaHoraria);
 

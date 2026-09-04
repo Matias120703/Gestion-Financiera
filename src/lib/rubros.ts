@@ -28,6 +28,18 @@ import type { Rubro, TipoCuenta } from './tipos';
  * diccionario, que se entiende igual. Cuando haya clientes de un rubro
  * hablando otro idioma, se traduce ese caso y no antes.
  */
+
+/**
+ * Todas las pantallas que el rubro puede prender o apagar.
+ *
+ * Es una unión y no `string` a propósito: escribir `'/lote'` por error deja
+ * de compilar, en vez de apagar una pantalla en silencio.
+ */
+export type Seccion =
+  | '/panel' | '/vender' | '/gastos' | '/deudas' | '/cierre' | '/productos'
+  | '/movimientos' | '/reto' | '/organizacion' | '/agenda' | '/reparto'
+  | '/lotes' | '/reportes' | '/ajustes';
+
 export interface FichaRubro {
   clave: Rubro;
   /** Cómo se llama al elegirlo. */
@@ -35,10 +47,24 @@ export interface FichaRubro {
   /** Ejemplos concretos, para que la persona se reconozca. */
   ejemplo: string;
   /**
-   * Rutas que NO existen para este rubro. No se muestran en gris ni con un
-   * candado: no están, y la página redirige si alguien escribe la URL.
+   * QUÉ PANTALLAS EXISTEN PARA ESTE RUBRO.
+   *
+   * Es una lista de lo que HAY, no de lo que falta, y ese detalle es toda la
+   * diferencia. Antes era al revés —`sinSecciones`, lo que se esconde— y eso
+   * significaba que una pantalla nueva aparecía en TODOS los rubros hasta que
+   * alguien se acordara de apagarla en cada uno. Fue exactamente lo que pasó
+   * con los lotes: se construyeron para el ganadero y aparecieron también en
+   * la barbería, donde no significan nada.
+   *
+   * Al revés falla del lado seguro: una pantalla nueva no aparece en ningún
+   * lado hasta que alguien diga dónde va. Y como es `Record<Seccion, …>`, el
+   * compilador no deja sumar una sección a la unión sin contestar la pregunta
+   * en los cinco lugares. Nadie se puede olvidar en silencio.
+   *
+   * Lo que está en `false` no se muestra en gris ni con un candado: no está,
+   * y la página redirige si alguien escribe la URL a mano.
    */
-  sinSecciones: string[];
+  secciones: Record<Seccion, boolean>;
   /**
    * Reemplazos de vocabulario, solo en español. Lo que no esté acá usa la
    * palabra del diccionario.
@@ -46,23 +72,71 @@ export interface FichaRubro {
   palabras: Partial<Record<'vender' | 'productos' | 'ventas', string>>;
   /**
    * Si el negocio tiene ciclos largos —un novillo que se engorda dieciocho
-   * meses, una campaña de soja, una obra— la ganancia no se mide por día.
-   * De acá va a colgar la pantalla de lotes.
+   * meses, una campaña de soja— la ganancia no se mide por día.
+   *
+   * Cambia dos cosas en el panel: esconde la racha (contarle días seguidos a
+   * quien vende tres veces al año es contarle su fracaso) y en su lugar
+   * muestra el acumulado del año.
    */
   ciclosLargos: boolean;
   /** Espejo de `rubro_cierra_el_dia()`. La autoridad es la base. */
   cierraElDia: boolean;
 }
 
+/**
+ * Lo que tiene cualquier negocio, sea del rubro que sea.
+ *
+ * Existe para que la tabla de abajo se lea: cada rubro escribe SOLO lo suyo,
+ * y lo suyo se ve de un vistazo. Un rubro puede apagar algo de acá igual —la
+ * ganadería apaga el cierre del día— porque lo de abajo pisa a lo de acá.
+ */
+const NUCLEO = {
+  '/panel': true,
+  '/vender': true,
+  '/gastos': true,
+  '/deudas': true,
+  '/cierre': true,
+  '/productos': true,
+  '/movimientos': true,
+  '/reto': true,
+  '/reportes': true,
+  '/ajustes': true,
+  // Lo que NO es de un negocio común. Cada rubro prende lo suyo.
+  '/organizacion': false,
+  '/agenda': false,
+  '/reparto': false,
+  '/lotes': false,
+} as const satisfies Record<Seccion, boolean>;
+
 export const RUBROS: Record<Rubro, FichaRubro> = {
   comercio: {
     clave: 'comercio',
     nombre: 'Comercio',
     ejemplo: 'Almacén, tienda de ropa, perfumería, delivery',
-    // Sin lotes: un almacén vende hoy lo que compró ayer, y el ciclo que le
-    // sirve es el día. Ver `ciclosLargos` más abajo.
-    sinSecciones: ['/reparto', '/agenda', '/lotes'],
+    // El núcleo tal cual. Un almacén compra hoy y vende mañana: el día le
+    // sirve como unidad y no necesita nada de los otros rubros.
+    secciones: { ...NUCLEO },
     palabras: {},
+    ciclosLargos: false,
+    cierraElDia: true,
+  },
+
+  servicios: {
+    clave: 'servicios',
+    nombre: 'Servicios y oficios',
+    ejemplo: 'Peluquería, barbería, taller, plomería, freelance',
+    secciones: {
+      ...NUCLEO,
+      // Lo suyo: los turnos, y cómo se reparte lo que cobra cada uno.
+      '/agenda': true,
+      '/reparto': true,
+    },
+    palabras: { vender: 'Cobrar', productos: 'Servicios', ventas: 'Cobrado' },
+    // El día SÍ es su unidad: un peluquero cobra hoy lo que hizo hoy, cierra
+    // su día y tiene racha como cualquier comercio. Estuvo en `true` un
+    // tiempo, arrastrado de cuando los lotes iban a servir también acá, y el
+    // efecto era que a una barbería se le escondía la racha y en su lugar se
+    // le mostraba un acumulado anual que no mira nadie.
     ciclosLargos: false,
     cierraElDia: true,
   },
@@ -71,11 +145,17 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     clave: 'ganaderia',
     nombre: 'Ganadería',
     ejemplo: 'Cría, engorde, tambo',
-    // Sin cierre del día ni reto: la ganancia de un novillo no se mide por
-    // día, y una meta de ventas diaria no significa nada cuando vendés tres
-    // veces al año. Un sistema que todas las noches te dice que no cargaste
-    // nada, cuando no había nada que cargar, se desinstala.
-    sinSecciones: ['/cierre', '/reto', '/reparto', '/agenda'],
+    secciones: {
+      ...NUCLEO,
+      // Lo suyo: el ciclo del negocio es el novillo, no el día.
+      '/lotes': true,
+      // Sin cierre del día ni reto: la ganancia de un novillo no se mide por
+      // día, y una meta de ventas diaria no significa nada cuando vendés tres
+      // veces al año. Un sistema que todas las noches te dice que no cargaste
+      // nada, cuando no había nada que cargar, se desinstala.
+      '/cierre': false,
+      '/reto': false,
+    },
     palabras: { vender: 'Vender', productos: 'Hacienda', ventas: 'Ventas' },
     ciclosLargos: true,
     cierraElDia: false,
@@ -85,23 +165,18 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     clave: 'agricultura',
     nombre: 'Agricultura',
     ejemplo: 'Soja, maíz, huerta, frutales',
-    sinSecciones: ['/cierre', '/reto', '/reparto', '/agenda'],
+    secciones: {
+      ...NUCLEO,
+      // Los lotes le van a servir igual que al ganadero —la campaña es el
+      // ciclo— pero el rubro todavía no se trabajó. Se prende cuando se haga
+      // y no antes: una pantalla a medio pensar es peor que ninguna.
+      '/lotes': false,
+      '/cierre': false,
+      '/reto': false,
+    },
     palabras: { vender: 'Vender', productos: 'Cultivos', ventas: 'Ventas' },
     ciclosLargos: true,
     cierraElDia: false,
-  },
-
-  servicios: {
-    clave: 'servicios',
-    nombre: 'Servicios y oficios',
-    ejemplo: 'Taller, obra, plomería, peluquería, freelance',
-    // El cierre del día sí aplica: un taller trabaja todos los días. Pero
-    // además tiene trabajos que duran —la obra de una casa— así que también
-    // le van a servir los lotes.
-    sinSecciones: [],
-    palabras: { vender: 'Cobrar', productos: 'Servicios', ventas: 'Cobrado' },
-    ciclosLargos: true,
-    cierraElDia: true,
   },
 };
 
@@ -122,16 +197,24 @@ export const LISTA_RUBROS: FichaRubro[] = [
  * cierre del día. El bug no estaba en la pantalla del cierre: estaba acá,
  * en que se preguntaba por el rubro cuando había que preguntar por el tipo
  * de cuenta.
- *
- * Sin `/cierre` por el mismo motivo que la ganadería: el día no es el ciclo.
- * El de un ganadero es el novillo; el de alguien con sueldo va de cobro a
- * cobro. Y sin `/reto`, que es una meta de ventas.
  */
 export const PERSONAL: FichaRubro = {
   clave: 'comercio',
   nombre: 'Personal',
   ejemplo: 'Tu sueldo, tus gastos y tus deudas',
-  sinSecciones: ['/cierre', '/reto', '/vender', '/productos', '/reparto', '/agenda', '/lotes'],
+  secciones: {
+    ...NUCLEO,
+    // Lo suyo: el presupuesto, que va de cobro a cobro y no del 1 al 30.
+    '/organizacion': true,
+    // Una persona no vende ni lleva stock.
+    '/vender': false,
+    '/productos': false,
+    // Sin cierre por el mismo motivo que la ganadería: el día no es el ciclo.
+    // El de un ganadero es el novillo; el de alguien con sueldo va de cobro a
+    // cobro. Y sin reto, que es una meta de ventas.
+    '/cierre': false,
+    '/reto': false,
+  },
   palabras: {},
   ciclosLargos: false,
   cierraElDia: false,
@@ -153,6 +236,22 @@ export function fichaDe(
 ): FichaRubro {
   if (tipoCuenta === 'personal') return PERSONAL;
   return RUBROS[(rubro ?? 'comercio') as Rubro] ?? RUBROS.comercio;
+}
+
+/**
+ * ¿Esta cuenta tiene esta pantalla?
+ *
+ * Una sola pregunta para toda la aplicación: la usan el menú, la barra de
+ * abajo y el guardia de cada página. Antes cada lugar escribía su propio
+ * `.includes(...)` sobre la lista, y ahí es donde se cuelan las diferencias
+ * entre lo que el menú esconde y lo que la URL igual abre.
+ */
+export function tieneSeccion(
+  rubro: string | null | undefined,
+  tipoCuenta: TipoCuenta,
+  seccion: Seccion,
+): boolean {
+  return fichaDe(rubro, tipoCuenta).secciones[seccion];
 }
 
 /**

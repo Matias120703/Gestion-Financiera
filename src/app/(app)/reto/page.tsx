@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { textos } from '@/i18n';
 import { contextoObligatorio } from '@/lib/sesion';
-import { fichaDe } from '@/lib/rubros';
+import { tieneSeccion } from '@/lib/rubros';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { traerResumen, traerRanking, traerSerieDiaria } from '@/lib/agregados';
 import { diasDelRango, diffDias, hoyISO } from '@/lib/fechas';
@@ -25,7 +25,7 @@ export default async function PaginaReto() {
   const ctx = await contextoObligatorio();
   const t = textos();
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
-  if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).sinSecciones.includes('/reto')) redirect('/panel');
+  if (!tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/reto')) redirect('/panel');
 
   if (ctx.empresa.tipo_cuenta === 'personal') redirect('/panel');
   // La meta del mes la define y la mira el dueño.

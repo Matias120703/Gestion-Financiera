@@ -1,7 +1,7 @@
 const { resumir, rankingProductos, gastosPorCategoria, serieDiaria, variacion, factorDescuento, esValido, tieneCostos, logradoEnReto } = require('../.compilado/calculos.js');
 const { resolverRango, rangoAnterior, diasDelRango, inicioDeSemana, sumarDias, diffDias, finDeMes } = require('../.compilado/fechas.js');
 const { dinero, dineroCorto, fechaLegible, decimalesDe } = require('../.compilado/formato.js');
-const { fichaDe } = require('../.compilado/rubros.js');
+const { fichaDe, tieneSeccion } = require('../.compilado/rubros.js');
 
 let fallos = 0;
 function ok(nombre, real, esperado) {
@@ -252,25 +252,85 @@ ok('variacion desde cero', variacion(100,0), null);
 
 // --- Qué pantallas existen según el rubro ---
 //
+// Esta tabla ES el filtro, escrito de forma que se pueda leer de un vistazo.
+// Si alguien mueve una sección de rubro, esto lo dice con nombre y apellido
+// en vez de dejarlo pasar: fue lo que falló con los lotes, que se
+// construyeron para el ganadero y aparecieron también en la barbería.
+//
 // Vive en TypeScript y no en PostgreSQL porque no protege nada: que a un
-// almacén le sobre la pantalla de lotes no le filtra un dato a nadie. Pero
-// equivocarse acá sí rompe algo — fue exactamente el bug que le dejó el
-// cierre del día a las cuentas personales durante meses — así que se
-// comprueba.
-const tiene = (rubro, tipo, ruta) => !fichaDe(rubro, tipo).sinSecciones.includes(ruta);
+// almacén le sobre una pantalla no le filtra un dato a nadie. Pero
+// equivocarse acá sí rompe algo — fue el mismo bug que le dejó el cierre del
+// día a las cuentas personales durante meses.
+const COLUMNAS = [
+  ['comercio', 'emprendedor'],
+  ['servicios', 'emprendedor'],
+  ['ganaderia', 'emprendedor'],
+  ['agricultura', 'emprendedor'],
+  ['comercio', 'personal'],
+];
 
-ok('un almacén no tiene lotes: vende hoy lo que compró ayer',
-  tiene('comercio', 'emprendedor', '/lotes'), false);
-ok('una cuenta personal tampoco', tiene('comercio', 'personal', '/lotes'), false);
-ok('un ganadero sí', tiene('ganaderia', 'emprendedor', '/lotes'), true);
-ok('un agricultor también', tiene('agricultura', 'emprendedor', '/lotes'), true);
-ok('y el taller o la obra, que es el mismo problema',
-  tiene('servicios', 'emprendedor', '/lotes'), true);
-ok('los tres que tienen lotes son los de ciclo largo',
-  ['ganaderia', 'agricultura', 'servicios'].every(
-    (r) => fichaDe(r, 'emprendedor').ciclosLargos), true);
-ok('y el que no los tiene, no lo es',
-  fichaDe('comercio', 'emprendedor').ciclosLargos, false);
+//                    comercio  servicios  ganadería  agricultura  personal
+const MATRIZ = {
+  '/panel':        [ true,     true,      true,      true,        true  ],
+  '/vender':       [ true,     true,      true,      true,        false ],
+  '/gastos':       [ true,     true,      true,      true,        true  ],
+  '/deudas':       [ true,     true,      true,      true,        true  ],
+  '/productos':    [ true,     true,      true,      true,        false ],
+  '/movimientos':  [ true,     true,      true,      true,        true  ],
+  '/reportes':     [ true,     true,      true,      true,        true  ],
+  '/ajustes':      [ true,     true,      true,      true,        true  ],
+  // El día como unidad: solo donde se cierra todos los días.
+  '/cierre':       [ true,     true,      false,     false,       false ],
+  '/reto':         [ true,     true,      false,     false,       false ],
+  // Lo propio de cada uno.
+  '/agenda':       [ false,    true,      false,     false,       false ],
+  '/reparto':      [ false,    true,      false,     false,       false ],
+  '/lotes':        [ false,    false,     true,      false,       false ],
+  '/organizacion': [ false,    false,     false,     false,       true  ],
+};
+
+for (const [ruta, esperado] of Object.entries(MATRIZ)) {
+  const real = COLUMNAS.map(([rubro, tipo]) => fichaDe(rubro, tipo).secciones[ruta]);
+  ok('secciones de ' + ruta, real, esperado);
+}
+
+// Que la tabla de arriba no se quede corta. Si mañana se suma una sección al
+// tipo `Seccion`, el compilador obliga a contestarla en los cinco rubros —
+// pero no puede obligar a nadie a comprobarla acá. Esto sí.
+const enLaFicha = Object.keys(fichaDe('comercio', 'emprendedor').secciones).sort();
+ok('la tabla cubre todas las secciones que existen',
+  Object.keys(MATRIZ).sort(), enLaFicha);
+
+// --- El ciclo del negocio ---
+//
+// `ciclosLargos` esconde la racha del panel y en su lugar muestra el
+// acumulado del año. Va con quién NO mide su ganancia por día.
+const cicloLargo = (rubro, tipo) => fichaDe(rubro, tipo).ciclosLargos;
+
+ok('el ganadero mide por ciclo, no por día', cicloLargo('ganaderia', 'emprendedor'), true);
+ok('el agricultor también', cicloLargo('agricultura', 'emprendedor'), true);
+ok('el almacén no', cicloLargo('comercio', 'emprendedor'), false);
+ok('la peluquería tampoco: cobra hoy lo que hizo hoy',
+  cicloLargo('servicios', 'emprendedor'), false);
+ok('ni una cuenta personal', cicloLargo('comercio', 'personal'), false);
+
+// Las dos cosas tienen que decir lo mismo: quien no cierra el día es
+// exactamente quien mide por ciclo largo. Cuando se contradijeron, a la
+// barbería se le escondía la racha y se le mostraba un resumen anual.
+ok('cerrar el día y medir por ciclo son la misma pregunta al revés',
+  COLUMNAS.map(([r, t]) => fichaDe(r, t).cierraElDia === !cicloLargo(r, t)),
+  [true, true, true, true, false]);
+ok('salvo la cuenta personal, que no cierra el día ni tiene ciclo largo',
+  [fichaDe('comercio', 'personal').cierraElDia, cicloLargo('comercio', 'personal')],
+  [false, false]);
+
+// Y que el guardia de cada página conteste lo mismo que el menú: si el menú
+// esconde algo pero la página lo deja abrir escribiendo la URL, no está
+// escondido.
+ok('tieneSeccion contesta igual que la ficha',
+  COLUMNAS.every(([r, t]) => Object.keys(MATRIZ)
+    .every((ruta) => tieneSeccion(r, t, ruta) === fichaDe(r, t).secciones[ruta])), true);
+
 ok('un rubro desconocido no rompe: cae en comercio',
   fichaDe('marciano', 'emprendedor').clave, 'comercio');
 

@@ -39,7 +39,7 @@ export default async function PaginaReparto({
   // El módulo existe donde hay gente cobrando por su trabajo. En los demás
   // rubros la ruta no está, igual que Cierre no está para una ganadería.
   const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
-  if (ficha.sinSecciones.includes('/reparto')) redirect('/panel');
+  if (!ficha.secciones['/reparto']) redirect('/panel');
 
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
 

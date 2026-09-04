@@ -6,11 +6,11 @@ import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
-import { fichaDe } from '@/lib/rubros';
+import { fichaDe, type Seccion } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
 import type { Textos } from '@/i18n/diccionarios';
 
-export interface ItemNav { href: string; texto: string; icono: React.ReactNode }
+export interface ItemNav { href: Seccion; texto: string; icono: React.ReactNode }
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
@@ -112,8 +112,6 @@ const Ico = {
  * Organización es la contracara del cierre del día: donde un comercio mira
  * cómo le fue hoy, una persona mira si llega a fin de mes.
  */
-const SOLO_PERSONAL = ['/organizacion'];
-
 /**
  * Lo que es de LA EMPRESA y no del trabajo de todos los días.
  *
@@ -124,7 +122,7 @@ const SOLO_PERSONAL = ['/organizacion'];
  * describe a él. La protección real está en cada página (`ctx.esAdmin`);
  * esto es que el menú no lo ofrezca.
  */
-const SOLO_ADMIN = ['/deudas', '/cierre', '/movimientos', '/reto', '/reportes'];
+const SOLO_ADMIN: Seccion[] = ['/deudas', '/cierre', '/movimientos', '/reto', '/reportes'];
 
 export function itemsDe(
   t: Textos,
@@ -154,8 +152,7 @@ export function itemsDe(
   // rubro le daba la ficha de un almacén y le dejaba el cierre del día. La
   // ficha ahora contesta las dos cosas junto; ver src/lib/rubros.ts.
   const ficha = fichaDe(rubro, tipo);
-  let visibles = todos.filter((i) => !ficha.sinSecciones.includes(i.href));
-  visibles = tipo === 'personal' ? visibles : visibles.filter((i) => !SOLO_PERSONAL.includes(i.href));
+  const visibles = todos.filter((i) => ficha.secciones[i.href]);
   // Una cuenta personal es de una sola persona (la 019 impide sumar gente),
   // así que este filtro nunca la afecta: solo achica el menú de un vendedor
   // dentro de un negocio.
@@ -175,8 +172,8 @@ export function itemsDe(
  * gasto y cerrar el día. Productos, reportes y ajustes se tocan de vez en
  * cuando y casi siempre sentado.
  */
-const EN_BARRA_INFERIOR = ['/panel', '/vender', '/gastos', '/cierre'];
-const EN_BARRA_INFERIOR_VENDEDOR = ['/panel', '/vender', '/gastos', '/agenda'];
+const EN_BARRA_INFERIOR: Seccion[] = ['/panel', '/vender', '/gastos', '/cierre'];
+const EN_BARRA_INFERIOR_VENDEDOR: Seccion[] = ['/panel', '/vender', '/gastos', '/agenda'];
 
 /**
  * En una cuenta personal, el lugar de Vender lo ocupa Deudas.
@@ -185,7 +182,7 @@ const EN_BARRA_INFERIOR_VENDEDOR = ['/panel', '/vender', '/gastos', '/agenda'];
  * cuándo vence la cuota es lo que más se mira. Es la pantalla que justifica
  * la suscripción, así que va a un toque.
  */
-const EN_BARRA_INFERIOR_PERSONAL = ['/panel', '/deudas', '/gastos', '/organizacion'];
+const EN_BARRA_INFERIOR_PERSONAL: Seccion[] = ['/panel', '/deudas', '/gastos', '/organizacion'];
 
 function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: boolean = true) {
   const base = tipo === 'personal'
@@ -194,7 +191,7 @@ function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: boolean =
   // Si la cuenta no tiene alguna de las cuatro, se cae sola: la barra queda
   // de tres y el resto sigue a un toque desde «Más».
   const ficha = fichaDe(rubro, tipo);
-  return base.filter((href) => !ficha.sinSecciones.includes(href));
+  return base.filter((href) => ficha.secciones[href]);
 }
 
 function activo(ruta: string, href: string) {

@@ -30,7 +30,7 @@ export default async function PaginaAgenda({
   const ctx = await contextoObligatorio();
 
   const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
-  if (ficha.sinSecciones.includes('/reparto')) redirect('/panel');
+  if (!ficha.secciones['/agenda']) redirect('/panel');
 
   const cabeceras = headers();
   const host = cabeceras.get('x-forwarded-host') ?? cabeceras.get('host') ?? '';

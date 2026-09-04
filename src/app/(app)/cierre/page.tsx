@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
-import { fichaDe } from '@/lib/rubros';
+import { tieneSeccion } from '@/lib/rubros';
 import { comparar, traerCierre } from '@/lib/habito';
 import { dinero, dineroCorto, fechaLarga, porcentaje } from '@/lib/formato';
 import { textos } from '@/i18n';
@@ -31,7 +31,7 @@ export default async function PaginaCierre({
 }) {
   const ctx = await contextoObligatorio();
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
-  if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).sinSecciones.includes('/cierre')) redirect('/panel');
+  if (!tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/cierre')) redirect('/panel');
   // Cómo cerró el día es la vista del dueño, no la de quien vendió hoy.
   if (!ctx.esAdmin) redirect('/panel');
 
