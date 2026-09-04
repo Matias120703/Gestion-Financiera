@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { mensajeDeError } from '@/lib/errores';
 import { dinero, fechaLarga } from '@/lib/formato';
 import { sumarDias } from '@/lib/fechas';
 import type { AgendaPublica, ProfesionalPublico, ServicioPublico } from '@/lib/tipos';
@@ -79,9 +80,13 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
       setListo({ token: (data as any).token, inicia: (data as any).inicia });
       setPaso('listo');
     } catch (e: any) {
-      // El mensaje viene de la base y está escrito para leerse: «Ese horario
-      // ya no está disponible», «Esperá un momento antes de tomar otro turno».
-      setError(e?.message ?? 'No se pudo reservar. Probá de nuevo.');
+      // Los mensajes de la base están escritos para leerse —«Ese horario ya no
+      // está disponible», «Esperá un momento antes de tomar otro turno»— y
+      // pasan tal cual. Lo que se traduce es lo otro: acá el que lee no es un
+      // usuario de Orden, es un cliente que entró por un link de Instagram, y
+      // un error de PostgreSQL en esta pantalla no dice «falló algo», dice
+      // «este local no sabe lo que hace».
+      setError(mensajeDeError(e, 'No se pudo reservar. Probá de nuevo.'));
       // Si el hueco se lo llevó otro mientras completaba, se refresca la
       // lista: mostrarle el mismo horario otra vez sería mentirle dos veces.
       setHuecos(null);

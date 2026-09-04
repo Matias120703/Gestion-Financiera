@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { mensajeDeError } from '@/lib/errores';
 import { dinero, fechaLegible } from '@/lib/formato';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
@@ -59,10 +60,13 @@ export function PantallaReparto({
       if (fallo) throw fallo;
       router.refresh();
     } catch (e: unknown) {
-      const mensaje = e && typeof e === 'object' && 'message' in e
-        ? String((e as { message: unknown }).message)
-        : t.comun.error;
-      setError(mensaje);
+      // Los mensajes de nuestras funciones ya vienen escritos para leerse y
+      // pasan tal cual. Lo que traduce esto es la jerga que sale cuando falla
+      // algo que no previmos: una policy, la sesión vencida, la red. Sin esta
+      // línea, al que atiende el local le llegaba «new row violates row-level
+      // security policy for table turnos_reserva», y con eso no desinstala la
+      // pantalla: desinstala la app.
+      setError(mensajeDeError(e, t.errores.generico));
     } finally {
       setTrabajando('');
     }

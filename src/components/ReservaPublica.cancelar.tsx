@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { mensajeDeError } from '@/lib/errores';
 import { fechaLarga } from '@/lib/formato';
 import type { ReservaPorToken } from '@/lib/tipos';
 
@@ -20,7 +21,9 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
       if (fallo) throw fallo;
       setEstado('cancelada');
     } catch (e: any) {
-      setError(e?.message ?? 'No se pudo cancelar. Probá de nuevo.');
+      // Ver el comentario de ReservaPublica.tsx: el que lee esto es el cliente
+      // del local, no alguien que tenga cuenta en Orden.
+      setError(mensajeDeError(e, 'No se pudo cancelar. Probá de nuevo.'));
     } finally {
       setCargando(false);
       setConfirmando(false);

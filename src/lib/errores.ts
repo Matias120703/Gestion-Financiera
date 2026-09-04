@@ -59,17 +59,28 @@ export function mensajeDeError(error: unknown, respaldo = 'No se pudo completar 
   const crudo = (typeof error === 'string' ? error : e.message ?? '').trim();
   if (!crudo) return respaldo;
 
-  // Nuestras propias excepciones ya vienen redactadas para el usuario.
-  // Las reconocemos porque terminan en punto y no traen jerga de Postgres.
-  const esNuestro = /^[A-ZÁÉÍÓÚÑ¡¿]/.test(crudo)
-    && !/relation|column|function|constraint|violates|denied|syntax/i.test(crudo);
-  if (esNuestro) return crudo;
-
+  // LAS REGLAS VAN PRIMERO, y el orden importa.
+  //
+  // Antes se preguntaba antes si el mensaje era nuestro, y eso dejaba pasar
+  // enteros los errores técnicos que arrancan con mayúscula y no traen
+  // ninguna de las siete palabras de abajo: la persona leía «JWT expired» o
+  // «TypeError: Failed to fetch». Son los dos casos más comunes de todos —la
+  // sesión vencida y el celular sin señal— y eran justo los que se colaban.
+  //
+  // Invertirlo es seguro porque los patrones son cadenas técnicas en inglés
+  // que no aparecen en ningún mensaje nuestro: hay una prueba que los
+  // contrasta contra los 442 que levantan las migraciones.
   for (const { patron, mensaje } of REGLAS) {
     if (patron.test(crudo) || patron.test(e.details ?? '') || patron.test(e.code ?? '')) {
       return mensaje;
     }
   }
+
+  // Nuestras propias excepciones ya vienen redactadas para el usuario.
+  // Las reconocemos porque arrancan en mayúscula y no traen jerga de Postgres.
+  const esNuestro = /^[A-ZÁÉÍÓÚÑ¡¿]/.test(crudo)
+    && !/relation|column|function|constraint|violates|denied|syntax/i.test(crudo);
+  if (esNuestro) return crudo;
 
   return respaldo;
 }
