@@ -10,7 +10,7 @@
 import { cookies, headers } from 'next/headers';
 import { diccionario, type Textos } from './diccionarios';
 import {
-  COOKIE_IDIOMA, IDIOMA_POR_DEFECTO, esIdioma, idiomaDeCabecera, type Idioma,
+  COOKIE_IDIOMA, IDIOMA_POR_DEFECTO, IDIOMA_UNICO, esIdioma, idiomaDeCabecera, type Idioma,
 } from './idiomas';
 
 export type { Textos };
@@ -29,6 +29,11 @@ export { DICCIONARIOS, diccionario } from './diccionarios';
  * (ver `sesion.ts`), así no hay que consultarla en cada página.
  */
 export function idiomaActual(): Idioma {
+  // Con un idioma único no se pregunta nada: ni la cookie de alguien que
+  // eligió inglés cuando se podía, ni el navegador de un visitante de
+  // afuera. Si no, media app quedaría en un idioma a medio traducir.
+  if (IDIOMA_UNICO) return IDIOMA_UNICO;
+
   const elegido = cookies().get(COOKIE_IDIOMA)?.value;
   if (esIdioma(elegido)) return elegido;
 

@@ -8,7 +8,7 @@
  */
 import { es, type Textos } from './textos/es';
 import { en } from './textos/en';
-import { IDIOMA_POR_DEFECTO, esIdioma, type Idioma } from './idiomas';
+import { IDIOMA_POR_DEFECTO, esIdioma, type Idioma, IDIOMA_UNICO } from './idiomas';
 
 export type { Textos };
 
@@ -22,5 +22,9 @@ export type { Textos };
 export const DICCIONARIOS: Record<Idioma, Textos> = { es, en };
 
 export function diccionario(idioma: Idioma | string | null | undefined): Textos {
+  // Con un idioma único manda ese, aunque en las preferencias de alguien
+  // haya quedado guardado 'en' de cuando se podía elegir. Si no, los avisos
+  // de la noche le llegarían en inglés a quien ve la app en español.
+  if (IDIOMA_UNICO) return DICCIONARIOS[IDIOMA_UNICO];
   return DICCIONARIOS[esIdioma(idioma) ? idioma : IDIOMA_POR_DEFECTO];
 }

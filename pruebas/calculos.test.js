@@ -1,7 +1,7 @@
 const { resumir, rankingProductos, gastosPorCategoria, serieDiaria, variacion, factorDescuento, esValido, tieneCostos, logradoEnReto } = require('../.compilado/calculos.js');
 const { resolverRango, rangoAnterior, diasDelRango, inicioDeSemana, sumarDias, diffDias, finDeMes } = require('../.compilado/fechas.js');
 const { dinero, dineroCorto, fechaLegible, decimalesDe } = require('../.compilado/formato.js');
-const { fichaDe, tieneSeccion } = require('../.compilado/rubros.js');
+const { fichaDe, tieneSeccion, palabra } = require('../.compilado/rubros.js');
 
 let fallos = 0;
 function ok(nombre, real, esperado) {
@@ -285,7 +285,7 @@ const MATRIZ = {
   // Lo propio de cada uno.
   '/agenda':       [ false,    true,      false,     false,       false ],
   '/reparto':      [ false,    true,      false,     false,       false ],
-  '/lotes':        [ false,    false,     true,      false,       false ],
+  '/lotes':        [ false,    false,     true,      true,        false ],
   '/organizacion': [ false,    false,     false,     false,       true  ],
 };
 
@@ -388,6 +388,36 @@ ok('tieneSeccion contesta igual que la ficha',
     /grid-cols-\d/.test(clases), false);
   ok('se calculan a partir de los botones que hay',
     barra.includes('gridTemplateColumns'), true);
+}
+
+// --- Las palabras de cada rubro ---
+//
+// `palabra()` existía desde que se creó el módulo de rubros y NUNCA se
+// llamaba desde ningún lado: estaba escrita, exportada y muerta. Por eso a
+// un ganadero el menú le decía «Productos» en vez de «Hacienda», y a un
+// agricultor en vez de «Cultivos».
+//
+// Un mecanismo que nadie llama no da error: simplemente no pasa nada, y eso
+// es lo difícil de notar. Por eso se comprueba las dos cosas — que la
+// función traduzca, y que el menú la use.
+ok('a un ganadero se le dice Hacienda',
+  palabra('ganaderia', 'emprendedor', 'productos', 'Productos', 'es'), 'Hacienda');
+ok('a un agricultor, Cultivos',
+  palabra('agricultura', 'emprendedor', 'productos', 'Productos', 'es'), 'Cultivos');
+ok('a una peluquería, Servicios',
+  palabra('servicios', 'emprendedor', 'productos', 'Productos', 'es'), 'Servicios');
+ok('y a un almacén no se le cambia nada',
+  palabra('comercio', 'emprendedor', 'productos', 'Productos', 'es'), 'Productos');
+ok('la peluquería cobra, no vende',
+  palabra('servicios', 'emprendedor', 'vender', 'Vender', 'es'), 'Cobrar');
+
+// Y que el menú la llame de verdad. Sin esto, la función puede volver a
+// quedar perfecta y sin usar, que es exactamente lo que pasó.
+{
+  const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
+  ok('el menú usa las palabras del rubro', nav.includes('palabra('), true);
+  ok('y se las aplica a productos',
+    /suPalabra\('productos'/.test(nav), true);
 }
 
 ok('un rubro desconocido no rompe: cae en comercio',

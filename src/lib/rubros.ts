@@ -22,9 +22,10 @@ import type { Rubro, TipoCuenta } from './tipos';
  * SOBRE LAS PALABRAS Y LOS IDIOMAS
  *
  * Los reemplazos de vocabulario están en español solamente, y es a propósito.
- * Orden habla seis idiomas: si cada rubro trajera su juego completo de
- * palabras traducidas, serían cuatro rubros × seis idiomas de texto a
- * mantener para siempre. En los demás idiomas se usa la palabra genérica del
+ * Hoy Orden habla un solo idioma (ver `IDIOMA_UNICO`), pero la regla vale
+ * igual para cuando vuelva a hablar más: si cada rubro trajera su juego
+ * completo de palabras traducidas, serían cuatro rubros por cada idioma de
+ * texto a mantener para siempre. En los demás se usa la palabra genérica del
  * diccionario, que se entiende igual. Cuando haya clientes de un rubro
  * hablando otro idioma, se traduce ese caso y no antes.
  */
@@ -167,10 +168,10 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ejemplo: 'Soja, maíz, huerta, frutales',
     secciones: {
       ...NUCLEO,
-      // Los lotes le van a servir igual que al ganadero —la campaña es el
-      // ciclo— pero el rubro todavía no se trabajó. Se prende cuando se haga
-      // y no antes: una pantalla a medio pensar es peor que ninguna.
-      '/lotes': false,
+      // Lo suyo, igual que al ganadero: el ciclo es la campaña, no el día.
+      // Una hectárea de soja se siembra, junta costos seis meses y recién
+      // ahí se cosecha y se vende.
+      '/lotes': true,
       '/cierre': false,
       '/reto': false,
     },

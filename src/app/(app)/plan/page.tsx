@@ -52,7 +52,10 @@ export default async function PaginaPlan({
   // Mientras el cobro sea por transferencia, el camino es WhatsApp. Si algún
   // día se enchufa una pasarela, con quitar el número vuelve solo el botón de
   // pago: las dos rutas conviven sin tocar nada más.
-  const whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP ?? '').replace(/D/g, '') || null;
+  // `\D` es «todo lo que no sea un dígito». Sin la barra —como estuvo— la
+  // expresión borra la letra D y deja espacios, signos y paréntesis, que
+  // rompen el enlace de WhatsApp justo en la pantalla donde se cobra.
+  const whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP ?? '').replace(/\D/g, '') || null;
 
   const regalo = mesesDeRegalo(precioDe(precios, 'pro', 'mensual'), precioDe(precios, 'pro', 'anual'));
 

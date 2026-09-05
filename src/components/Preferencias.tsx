@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useIdioma, useTextos, aplicarIdioma } from '@/i18n/cliente';
-import { FICHA, IDIOMAS, type Idioma } from '@/i18n/idiomas';
+import { FICHA, IDIOMAS, type Idioma, IDIOMA_UNICO } from '@/i18n/idiomas';
 import { mensajeDeError } from '@/lib/errores';
 import type { Preferencias as Prefs } from '@/lib/tipos';
 
@@ -20,7 +20,17 @@ import type { Preferencias as Prefs } from '@/lib/tipos';
  * lo que se ve— sería hacerla mirar una pantalla que no entiende mientras
  * carga.
  */
+/**
+ * El selector de idioma.
+ *
+ * No se muestra mientras `IDIOMA_UNICO` esté puesto: ofrecer un cambio de
+ * idioma que deja la mitad de las pantallas sin traducir es peor que no
+ * ofrecerlo. Vuelve solo cuando esa constante sea `null`.
+ */
 export function SelectorIdioma() {
+  // Los hooks van SIEMPRE antes de cualquier salida: React exige que se
+  // llamen en el mismo orden en cada dibujado, y una salida temprana arriba
+  // los saltea. Es lo que avisó el lint al escribir esto.
   const actual = useIdioma();
   const t = useTextos();
 
@@ -37,6 +47,9 @@ export function SelectorIdioma() {
     }
     aplicarIdioma(idioma);
   }
+
+  // Recién acá, con los hooks ya llamados.
+  if (IDIOMA_UNICO) return null;
 
   return (
     <div>

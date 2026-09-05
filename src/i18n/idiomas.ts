@@ -20,6 +20,21 @@
 export const IDIOMAS = ['es', 'en'] as const;
 export type Idioma = (typeof IDIOMAS)[number];
 
+/**
+ * MIENTRAS ESTO TENGA UN IDIOMA, ORDEN HABLA SOLO ESE.
+ *
+ * No se borró el inglés: los textos siguen enteros en `textos/en.ts` y el
+ * mecanismo intacto. Lo que pasaba es que la traducción NO estaba completa
+ * —quedaban pantallas a medio traducir— y media app en español y media en
+ * inglés se ve peor que una app en un solo idioma.
+ *
+ * Para volver a tener dos: poner `null` acá. Vuelve el selector en Ajustes,
+ * vuelve la detección por navegador y vuelve la cookie. Un renglón.
+ *
+ * Antes de hacerlo, terminar la traducción: es lo que faltaba.
+ */
+export const IDIOMA_UNICO: Idioma | null = 'es';
+
 export const IDIOMA_POR_DEFECTO: Idioma = 'es';
 /** Al que caen las traducciones incompletas. */
 export const IDIOMA_DE_RESPALDO: Idioma = 'en';

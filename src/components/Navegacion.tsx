@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
-import { fichaDe, type Seccion } from '@/lib/rubros';
+import { fichaDe, palabra, type Seccion } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 import type { Textos } from '@/i18n/diccionarios';
@@ -125,19 +125,36 @@ const Ico = {
  */
 const SOLO_ADMIN: Seccion[] = ['/deudas', '/cierre', '/movimientos', '/reto', '/reportes'];
 
+/**
+ * Las secciones del menú, con las palabras de cada rubro.
+ *
+ * El reemplazo de vocabulario existía en `rubros.ts` desde que se creó el
+ * módulo de rubros y NUNCA se había llamado desde ningún lado: la función
+ * estaba escrita, probada de palabra y muerta. Por eso a un ganadero le
+ * seguía diciendo «Productos» en vez de «Hacienda», y a un agricultor en
+ * vez de «Cultivos».
+ *
+ * Hay una prueba que comprueba que se siga llamando, porque un mecanismo
+ * que nadie usa no da error: simplemente no pasa nada, y eso es lo difícil
+ * de notar.
+ */
 export function itemsDe(
   t: Textos,
   tipo: TipoCuenta = 'emprendedor',
   rubro: Rubro = 'comercio',
   esAdmin: boolean = true,
+  idioma: string = 'es',
 ): ItemNav[] {
+  const suPalabra = (clave: 'vender' | 'productos' | 'ventas', porDefecto: string) =>
+    palabra(rubro, tipo, clave, porDefecto, idioma);
+
   const todos: ItemNav[] = [
     { href: '/panel',       texto: t.nav.panel,       icono: Ico.panel },
-    { href: '/vender',      texto: t.nav.vender,      icono: Ico.vender },
+    { href: '/vender',      texto: suPalabra('vender', t.nav.vender), icono: Ico.vender },
     { href: '/gastos',      texto: t.nav.gastos,      icono: Ico.gastos },
     { href: '/deudas',      texto: t.nav.deudas,      icono: Ico.deudas },
     { href: '/cierre',      texto: t.nav.cierre,      icono: Ico.cierre },
-    { href: '/productos',   texto: t.nav.productos,   icono: Ico.productos },
+    { href: '/productos',   texto: suPalabra('productos', t.nav.productos), icono: Ico.productos },
     { href: '/lotes',       texto: t.nav.lotes,       icono: Ico.lotes },
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
@@ -379,7 +396,10 @@ export function BarraSuperior({
   const ruta = usePathname();
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
-  const titulo = itemsDe(t).find((i) => activo(ruta, i.href))?.texto ?? 'Orden';
+  // Con el rubro de la cuenta: sin esto el título decía «Productos» aunque
+  // el menú de al lado dijera «Hacienda», y parecían dos pantallas distintas.
+  const titulo = itemsDe(t, empresa.tipo_cuenta, empresa.rubro)
+    .find((i) => activo(ruta, i.href))?.texto ?? 'Orden';
 
   function cambiar(id: string) {
     document.cookie = `${COOKIE_EMPRESA}=${id}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
