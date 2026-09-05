@@ -20,11 +20,17 @@
 // Subir esta versión invalida todo lo guardado. Se hace cuando cambia la
 // estrategia, no en cada despliegue.
 //
+//   v4 · Cambió el logo. Los iconos se guardan «primero la caché» y su nombre
+//        NO lleva hash —`icono-192.png` se llama siempre igual— así que un
+//        celular que ya los tenía guardados se quedaba con los viejos para
+//        siempre. Subir la versión es la única forma de empujar un cambio de
+//        ícono a los teléfonos que ya instalaron la app. Tenerlo presente el
+//        día que se vuelva a tocar el logo.
 //   v3 · En desarrollo no se cachea NADA. La v2 guardaba los archivos de
 //        `npm run dev`, que no llevan hash en el nombre, y servía código
 //        viejo para siempre. Ver EN_DESARROLLO más abajo.
 //   v2 · La navegación reintenta una vez antes de mostrar «sin conexión».
-const VERSION = 'orden-v3';
+const VERSION = 'orden-v4';
 const CACHE_ESTATICOS = `${VERSION}-estaticos`;
 const CACHE_CASCARA = `${VERSION}-cascara`;
 

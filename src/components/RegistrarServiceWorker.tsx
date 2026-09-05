@@ -18,18 +18,65 @@ export function RegistrarServiceWorker({ sinConexion }: { sinConexion: string })
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
+    /*
+     * QUE UNA VERSIÓN NUEVA LLEGUE AL CELULAR.
+     *
+     * Antes esto registraba el service worker una vez y nunca más preguntaba
+     * si había algo nuevo. En una computadora no se nota —se recarga la
+     * página y listo— pero una app INSTALADA casi nunca navega: se abre,
+     * restaura la pantalla donde estaba, y sigue con el código viejo en
+     * memoria. Puede quedarse semanas así sin que nadie entienda por qué.
+     *
+     * Pasó justamente con el logo: en la computadora salía el nuevo y en el
+     * celular seguía el viejo.
+     *
+     * Son dos piezas:
+     *
+     *   · al volver a la app se le pide al navegador que compruebe si hay un
+     *     service worker nuevo — volver a la app es el momento en que a nadie
+     *     le molesta que algo se actualice;
+     *   · y cuando uno nuevo toma el control, se recarga UNA vez, porque el
+     *     service worker nuevo no cambia por sí solo el código que la pestaña
+     *     ya tiene cargado.
+     */
+    let registro: ServiceWorkerRegistration | null = null;
+
     const registrar = () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
+      navigator.serviceWorker.register('/sw.js').then((r) => { registro = r; }).catch(() => {
         // Sin service worker la app anda igual: se pierden el modo sin
         // conexión y los avisos, nada más. No vale la pena molestar con
         // un error por esto.
       });
     };
 
+    // Si YA había un service worker al cargar, un cambio de control después
+    // significa que llegó una versión nueva. Si no lo había, el cambio es la
+    // primera instalación y recargar ahí sería recargarle la página a alguien
+    // que recién entra, sin ningún motivo.
+    const habiaUnoAntes = !!navigator.serviceWorker.controller;
+    let recargando = false;
+
+    const alCambiarDeControlador = () => {
+      if (!habiaUnoAntes || recargando) return;
+      recargando = true;
+      window.location.reload();
+    };
+
+    const alVolverALaApp = () => {
+      if (document.visibilityState === 'visible') registro?.update().catch(() => {});
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', alCambiarDeControlador);
+    document.addEventListener('visibilitychange', alVolverALaApp);
+
     if (document.readyState === 'complete') registrar();
     else window.addEventListener('load', registrar, { once: true });
 
-    return () => window.removeEventListener('load', registrar);
+    return () => {
+      window.removeEventListener('load', registrar);
+      navigator.serviceWorker.removeEventListener('controllerchange', alCambiarDeControlador);
+      document.removeEventListener('visibilitychange', alVolverALaApp);
+    };
   }, []);
 
   useEffect(() => {

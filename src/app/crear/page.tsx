@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -60,6 +60,23 @@ export default function PaginaCrear() {
 
   const cambiar = (parcial: Partial<DatosRegistro>) =>
     setDatos((d) => ({ ...d, ...parcial }));
+
+  /*
+   * DE DÓNDE VINO: `?para=personal` o `?para=negocio`.
+   *
+   * Las tarjetas de la portada dicen «Para tu negocio» y «Para vos», y quien
+   * toca una ya contestó esa pregunta. Volvérsela a hacer en el formulario le
+   * hace dudar de si el botón hizo algo.
+   *
+   * Se lee de `window.location` y no con `useSearchParams` a propósito: ese
+   * hook obliga a envolver la página en un Suspense para poder compilarla, y
+   * no vale la pena por un parámetro opcional. Si no viene, o viene
+   * cualquier otra cosa, queda el valor de siempre.
+   */
+  useEffect(() => {
+    const para = new URLSearchParams(window.location.search).get('para');
+    if (para === 'personal') cambiar({ tipoCuenta: 'personal' });
+  }, []);
 
   function seguir(e: React.FormEvent) {
     e.preventDefault();

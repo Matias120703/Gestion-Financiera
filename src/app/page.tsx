@@ -312,6 +312,8 @@ export default async function Portada() {
               para="Almacén, perfumería, delivery, taller, tienda de ropa"
               detalle="Todo lo que necesitás para saber si el mes cerró bien, y para que tus vendedores carguen sin ver lo que no tienen que ver."
               prueba="20 días de prueba"
+              boton="Crear la cuenta de mi negocio"
+              para_link="/crear?para=negocio"
               puntos={[
                 'Ventas con productos, precios y stock que se descuenta solo',
                 'La ganancia real: se calcula con el costo que tenía el producto el día que lo vendiste',
@@ -326,6 +328,8 @@ export default async function Portada() {
               para="Sueldo, gastos del día a día, tarjetas y préstamos"
               detalle="Lo mismo, sin la parte de comercio. Pensado para saber cuánto te queda y, sobre todo, cuánto debés."
               prueba="14 días de prueba"
+              boton="Crear mi cuenta personal"
+              para_link="/crear?para=personal"
               puntos={[
                 'Tu sueldo y cualquier ingreso extra',
                 'Los gastos del día a día, cargados hablando',
@@ -457,6 +461,8 @@ export default async function Portada() {
             <Plan
               destacado
               nombre="Pro"
+              llamado="Empezar los 20 días"
+              enlace="/crear?para=negocio"
               precio={importe(proMes)}
               porMes
               para="Para el negocio con hasta 2 vendedores"
@@ -472,6 +478,8 @@ export default async function Portada() {
             />
             <Plan
               nombre="Premium"
+              llamado="Empezar los 20 días"
+              enlace="/crear?para=negocio"
               precio={importe(premiumMes)}
               porMes
               desde
@@ -505,6 +513,8 @@ export default async function Portada() {
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Plan
               nombre="Personal"
+              llamado="Empezar los 14 días"
+              enlace="/crear?para=personal"
               precio={importe(personalMes)}
               porMes
               para="Un solo plan, sin versiones ni letra chica"
@@ -612,13 +622,17 @@ function Fila({
 
 /** Una de las dos formas de usar Orden. Es lo que se elige al crear la cuenta. */
 function Forma({
-  titulo, para, detalle, puntos, prueba, etiqueta, destacado = false,
+  titulo, para, detalle, puntos, prueba, boton, para_link, etiqueta, destacado = false,
 }: {
   titulo: string;
   para: string;
   detalle: string;
   puntos: string[];
   prueba: string;
+  /** Qué dice el botón. Habla de lo que va a pasar, no «Más información». */
+  boton: string;
+  /** A dónde va, con el tipo de cuenta ya elegido. */
+  para_link: string;
   etiqueta?: string;
   destacado?: boolean;
 }) {
@@ -646,7 +660,16 @@ function Forma({
         ))}
       </ul>
 
-      <p className="mt-5 border-t border-borde pt-3 text-[13px] font-semibold text-verde-fuerte">
+      <Link
+        href={para_link}
+        className={`mt-5 block rounded-xl px-4 py-3 text-center text-[14.5px] font-bold transition ${
+          destacado
+            ? 'bg-verde text-white hover:bg-verde-fuerte'
+            : 'border border-verde/40 text-verde-fuerte hover:bg-verde-claro'}`}
+      >
+        {boton}
+      </Link>
+      <p className="mt-2.5 text-center text-[12.5px] font-semibold text-verde-fuerte">
         {prueba} · sin tarjeta
       </p>
     </div>
@@ -654,13 +677,18 @@ function Forma({
 }
 
 function Plan({
-  nombre, precio, para, puntos, nota, porMes = false, desde = false, destacado = false,
+  nombre, precio, para, puntos, nota, llamado, enlace,
+  porMes = false, desde = false, destacado = false,
 }: {
   nombre: string;
   precio: string;
   para: string;
   puntos: string[];
   nota?: string;
+  /** Qué dice el botón. */
+  llamado: string;
+  /** A dónde va, con el tipo de cuenta ya elegido. */
+  enlace: string;
   porMes?: boolean;
   /** Para Premium: el precio es el primer escalón, no el final. */
   desde?: boolean;
@@ -691,6 +719,19 @@ function Plan({
       {nota && (
         <p className="mt-4 border-t border-borde pt-3 text-[13px] leading-relaxed text-tinta/55">{nota}</p>
       )}
+
+      {/* El precio y el botón juntos: quien decidió mirando el número no
+          tendría que subir de nuevo hasta arriba para encontrar por dónde
+          empezar. */}
+      <Link
+        href={enlace}
+        className={`mt-4 block rounded-xl px-4 py-2.5 text-center text-[14px] font-bold transition ${
+          destacado
+            ? 'bg-verde text-white hover:bg-verde-fuerte'
+            : 'border border-verde/40 text-verde-fuerte hover:bg-verde-claro'}`}
+      >
+        {llamado}
+      </Link>
     </div>
   );
 }
