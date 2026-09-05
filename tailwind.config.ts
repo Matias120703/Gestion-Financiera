@@ -11,6 +11,20 @@ const config: Config = {
         borde:  '#e3e7e4',
         rojo:   { DEFAULT: '#c0392b', claro: '#fdeceb' },
         ambar:  { DEFAULT: '#b7791f', claro: '#fdf5e3' },
+
+        /*
+         * Solo para la portada.
+         *
+         * `verde` (#17795a) está elegido para leerse sobre blanco, y sobre un
+         * fondo casi negro queda apagado y sin contraste. `menta` es el mismo
+         * verde llevado a donde se lee en oscuro; `noche` no es negro puro
+         * sino el mismo verde de la marca bajado hasta el fondo, para que la
+         * portada y la aplicación se sientan del mismo producto.
+         *
+         * No se usan adentro de la app: ahí todo es claro.
+         */
+        noche:  { DEFAULT: '#0a1712', hondo: '#050d0a' },
+        menta:  { DEFAULT: '#3ddc9a', suave: '#8ef0c6' },
       },
       fontFamily: {
         sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],

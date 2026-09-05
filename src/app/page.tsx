@@ -93,57 +93,209 @@ export default async function Portada() {
 
   return (
     <main className="min-h-screen bg-white">
-      {/* ---------------- Barra ---------------- */}
-      <header className="zona-segura-arriba border-b border-borde">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-verde text-base font-black text-white">o</span>
-            <span className="text-[17px] font-bold tracking-tight">orden</span>
+
+      {/* ================================================================
+          LA PRIMERA PANTALLA
+          ================================================================
+
+          Es lo único que mucha gente va a ver. Va en oscuro y el resto de la
+          página en claro, a propósito:
+
+            · el oscuro da el golpe de entrada y hace que la captura del
+              producto —que es clara— salte a la vista en vez de fundirse con
+              el fondo, como pasaba antes;
+            · y de ahí para abajo vuelve el claro, que es como se ve Orden por
+              dentro de verdad. Una portada entera en negro sobre una
+              aplicación blanca promete algo que después no aparece.
+
+          El fondo NO es negro: es el mismo verde de la marca bajado hasta el
+          fondo (`noche`), para que las dos mitades se sientan del mismo
+          producto y no de dos sitios distintos pegados. */}
+      <section className="relative overflow-hidden bg-noche text-white">
+        {/* Los resplandores. Van detrás de todo y no capturan el mouse. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <div
+            className="absolute -left-24 -top-40 h-[34rem] w-[34rem] rounded-full opacity-70 blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(23,121,90,.55) 0%, rgba(23,121,90,0) 70%)' }}
+          />
+          <div
+            className="absolute -right-32 top-24 h-[30rem] w-[30rem] rounded-full opacity-50 blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(61,220,154,.30) 0%, rgba(61,220,154,0) 70%)' }}
+          />
+          {/* Una cuadrícula apenas visible: da textura sin llamar la atención. */}
+          <div
+            className="absolute inset-0 opacity-[0.055]"
+            style={{
+              backgroundImage:
+                'linear-gradient(to right, #fff 1px, transparent 1px),'
+                + 'linear-gradient(to bottom, #fff 1px, transparent 1px)',
+              backgroundSize: '56px 56px',
+              maskImage: 'radial-gradient(ellipse 90% 60% at 50% 0%, #000 40%, transparent 100%)',
+              WebkitMaskImage: 'radial-gradient(ellipse 90% 60% at 50% 0%, #000 40%, transparent 100%)',
+            }}
+          />
+        </div>
+
+        {/* ---------------- Barra ---------------- */}
+        <header className="zona-segura-arriba relative">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-menta text-base font-black text-noche">o</span>
+              <span className="text-[17px] font-bold tracking-tight">orden</span>
+            </div>
+            <div className="flex items-center gap-5">
+              <a href="#precios" className="hidden text-[13.5px] font-semibold text-white/60 transition hover:text-white sm:block">
+                Precios
+              </a>
+              <Link
+                href="/ingresar"
+                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-[13.5px] font-semibold
+                           text-white backdrop-blur transition hover:border-white/30 hover:bg-white/10"
+              >
+                Entrar
+              </Link>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <a href="#precios" className="hidden text-[13.5px] font-semibold text-tinta/55 hover:text-tinta sm:block">
-              Precios
-            </a>
-            <Link href="/ingresar" className="boton-suave">Entrar</Link>
+        </header>
+
+        {/* ---------------- El titular y el producto ---------------- */}
+        <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-10 lg:pb-24 lg:pt-16">
+          <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
+            <div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-menta/25 bg-menta/10
+                               px-3 py-1.5 text-[11.5px] font-bold uppercase tracking-[.13em] text-menta">
+                <span className="h-1.5 w-1.5 rounded-full bg-menta" />
+                Hecho en Paraguay
+              </span>
+
+              <h1 className="mt-5 text-[38px] font-bold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
+                ¿Sabés cuánto<br />
+                ganaste{' '}
+                <span className="bg-gradient-to-r from-menta to-menta-suave bg-clip-text text-transparent">
+                  de verdad
+                </span>
+                ?
+              </h1>
+
+              <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-white/65 lg:text-[19px]">
+                No cuánto vendiste: cuánto <strong className="font-semibold text-white">te quedó</strong> después
+                de lo que pagaste por la mercadería y de todos los gastos. Orden lo calcula solo,
+                todos los días, y para cargarlo alcanza con contárselo.
+              </p>
+
+              <div className="mt-9 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/crear"
+                  className="rounded-xl bg-menta px-6 py-3.5 text-[15px] font-bold text-noche shadow-lg
+                             shadow-menta/20 transition hover:bg-menta-suave"
+                >
+                  Probar 20 días gratis
+                </Link>
+                <a
+                  href="#formas"
+                  className="rounded-xl border border-white/15 px-6 py-3.5 text-[15px] font-semibold
+                             text-white/85 transition hover:border-white/35 hover:text-white"
+                >
+                  Ver cómo funciona
+                </a>
+              </div>
+
+              <p className="mt-5 text-[13.5px] font-medium text-white/45">
+                Sin tarjeta · Cancelás cuando quieras · Tus datos siguen siendo tuyos si te vas
+              </p>
+            </div>
+
+            {/* El producto. No es una captura ni un dibujo: es la pantalla de
+                verdad, con números de ejemplo, montada dentro de un marco. Lo
+                que se ve acá es literalmente lo que se ve al entrar. */}
+            <div className="relative mx-auto w-full max-w-[320px] lg:max-w-[360px]">
+              <div
+                aria-hidden
+                className="absolute -inset-8 rounded-[3rem] opacity-60 blur-2xl"
+                style={{ background: 'radial-gradient(circle, rgba(61,220,154,.28) 0%, rgba(61,220,154,0) 70%)' }}
+              />
+              <div className="relative rounded-[2.4rem] border border-white/12 bg-white/[.06] p-2.5 shadow-2xl backdrop-blur-sm">
+                <div className="overflow-hidden rounded-[1.9rem] bg-arena">
+                  {/* barra de la app */}
+                  <div className="flex items-center justify-between bg-white px-4 py-3">
+                    <span className="flex items-center gap-2">
+                      <span className="grid h-6 w-6 place-items-center rounded-lg bg-verde text-[11px] font-black text-white">o</span>
+                      <span className="text-[13px] font-bold tracking-tight text-tinta">Perfumería Aurora</span>
+                    </span>
+                    <span className="text-[11px] font-semibold text-tinta/40">Hoy</span>
+                  </div>
+
+                  <div className="space-y-2.5 p-3.5">
+                    {/* el número que importa */}
+                    <div className="rounded-2xl border border-borde bg-white p-4">
+                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">Te quedó hoy</p>
+                      <p className="mt-1 text-[27px] font-bold tracking-tight tabular-nums text-verde-fuerte">
+                        Gs. 2.150.000
+                      </p>
+                      <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-verde-claro px-2 py-0.5
+                                    text-[11px] font-bold text-verde-fuerte">
+                        ↑ 18 % <span className="font-medium text-tinta/45">que el martes pasado</span>
+                      </p>
+                      <div className="mt-3 flex gap-4 border-t border-borde pt-2.5">
+                        <span className="text-[11.5px] font-semibold text-tinta/50">
+                          Entró <b className="ml-1 tabular-nums text-tinta">2.600.000</b>
+                        </span>
+                        <span className="text-[11.5px] font-semibold text-tinta/50">
+                          Salió <b className="ml-1 tabular-nums text-rojo">150.000</b>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* cómo se cargó: hablando */}
+                    <div className="rounded-2xl border border-borde bg-white p-3.5">
+                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">Lo cargaste así</p>
+                      <div className="mt-2 flex items-start gap-2">
+                        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-verde-claro">
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-verde-fuerte" fill="none"
+                               stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" />
+                            <path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3" />
+                          </svg>
+                        </span>
+                        <p className="text-[12.5px] leading-snug text-tinta/70">
+                          «Vendí dos perfumes a ciento cincuenta mil cada uno»
+                        </p>
+                      </div>
+                      <p className="mt-2.5 flex items-center gap-1.5 border-t border-borde pt-2 text-[11.5px] font-semibold text-verde-fuerte">
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor"
+                             strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m5 13 4 4L19 7" />
+                        </svg>
+                        Cargado · stock descontado
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </header>
 
-      {/* ---------------- Lo primero que se lee ---------------- */}
-      <section className="mx-auto max-w-5xl px-5 pb-14 pt-12 lg:pt-20">
-        <div className="max-w-2xl">
-          <p className="titulo-seccion">Para el que vende todos los días</p>
-          <h1 className="mt-3 text-[34px] font-bold leading-[1.1] tracking-tight lg:text-[52px]">
-            ¿Sabés cuánto ganaste este mes?
-          </h1>
-          <p className="mt-5 text-[17px] leading-relaxed text-tinta/65 lg:text-[19px]">
-            No cuánto vendiste: cuánto <strong className="text-tinta">te quedó</strong> después
-            de lo que pagaste por la mercadería y de todos los gastos. Orden lo calcula solo,
-            todos los días, y para cargarlo alcanza con contárselo.
-          </p>
-
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
-              Probar 20 días gratis
-            </Link>
-            <span className="text-[13.5px] font-semibold text-tinta/45">
-              Sin tarjeta · Cancelás cuando quieras
-            </span>
+        {/* ---------------- La franja de confianza ----------------
+            Cuatro cosas que son ciertas y se pueden comprobar. No hay
+            cantidad de usuarios ni testimonios: inventar un número en la
+            portada de un sistema de plata es la forma más rápida de perder
+            justamente lo que esta franja viene a dar. */}
+        <div className="relative border-t border-white/10 bg-noche-hondo/60">
+          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-5 lg:grid-cols-4">
+            <Dato valor="1.600+" texto="comprobaciones automáticas corren antes de cada cambio" />
+            <Dato valor="0" texto="datos tuyos que ve otro negocio: lo impide la base, no la pantalla" />
+            <Dato valor="Sin señal" texto="se instala como app y abre igual cuando se corta internet" />
+            <Dato valor="20 días" texto="de prueba, sin cargar una tarjeta en ningún lado" />
           </div>
-
-          <p className="mt-4 text-[14px] text-tinta/55">
-            ¿No tenés un negocio y querés ordenar lo tuyo?{' '}
-            <a href="#formas" className="font-semibold text-verde-fuerte hover:underline">
-              Orden también viene en versión personal
-            </a>.
-          </p>
         </div>
       </section>
 
+
       {/* ---------------- Los dos públicos ---------------- */}
       <section id="formas" className="border-y border-borde bg-arena scroll-mt-4">
-        <div className="mx-auto max-w-5xl px-5 py-14">
-          <h2 className="text-[22px] font-bold tracking-tight lg:text-[27px]">
+        <div className="mx-auto max-w-6xl px-5 py-14">
+          <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
             Dos formas de usar Orden. Elegís al crear la cuenta.
           </h2>
           <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
@@ -187,8 +339,8 @@ export default async function Portada() {
       </section>
 
       {/* ---------------- Cómo se carga ---------------- */}
-      <section className="mx-auto max-w-5xl px-5 py-14">
-        <h2 className="text-[22px] font-bold tracking-tight lg:text-[27px]">
+      <section className="mx-auto max-w-6xl px-5 py-14">
+        <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
           Cargar una venta te tiene que llevar menos que cobrarla.
         </h2>
 
@@ -222,8 +374,8 @@ export default async function Portada() {
           vacío deja peor parada a la página que no tener la sección. */}
       {HAY_DEMOS && (
         <section className="border-t border-borde">
-          <div className="mx-auto max-w-5xl px-5 py-14">
-            <h2 className="text-[22px] font-bold tracking-tight lg:text-[27px]">
+          <div className="mx-auto max-w-6xl px-5 py-14">
+            <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
               Así se ve por dentro.
             </h2>
             <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
@@ -237,10 +389,10 @@ export default async function Portada() {
 
       {/* ---------------- Qué te devuelve ---------------- */}
       <section className="border-y border-borde bg-arena">
-        <div className="mx-auto max-w-5xl px-5 py-14">
+        <div className="mx-auto max-w-6xl px-5 py-14">
           <div className="grid gap-10 lg:grid-cols-2">
             <div>
-              <h2 className="text-[22px] font-bold tracking-tight lg:text-[27px]">
+              <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
                 Y a la noche, en diez segundos, sabés cómo te fue.
               </h2>
               <p className="mt-4 text-[15.5px] leading-relaxed text-tinta/65">
@@ -285,8 +437,8 @@ export default async function Portada() {
       </section>
 
       {/* ---------------- Precios ---------------- */}
-      <section id="precios" className="mx-auto max-w-5xl px-5 py-14 scroll-mt-4">
-        <h2 className="text-[22px] font-bold tracking-tight lg:text-[27px]">Cuánto cuesta</h2>
+      <section id="precios" className="mx-auto max-w-6xl px-5 py-14 scroll-mt-4">
+        <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">Cuánto cuesta</h2>
         <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
           Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día
           no querés seguir, <strong className="text-tinta">no te quedás sin tus datos</strong>:
@@ -397,7 +549,7 @@ export default async function Portada() {
 
       {/* ---------------- Pie ---------------- */}
       <footer className="zona-segura-abajo border-t border-borde">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8">
           <div className="flex items-center gap-2">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-verde text-[13px] font-black text-white">o</span>
             <span className="text-[13.5px] font-semibold text-tinta/50">
@@ -412,6 +564,22 @@ export default async function Portada() {
         </div>
       </footer>
     </main>
+  );
+}
+
+/**
+ * Un dato de la franja de confianza.
+ *
+ * Todos tienen que ser comprobables. El día que uno deje de ser cierto se
+ * saca: es preferible una franja de tres que un número que no se sostiene
+ * si alguien pregunta.
+ */
+function Dato({ valor, texto }: { valor: string; texto: string }) {
+  return (
+    <div className="px-1 py-7 lg:px-5">
+      <p className="text-[24px] font-bold tracking-tight text-menta lg:text-[28px]">{valor}</p>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/45">{texto}</p>
+    </div>
   );
 }
 
