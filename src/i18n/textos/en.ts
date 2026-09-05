@@ -791,6 +791,7 @@ export const en: Textos = {
     pushActivo: 'Notifications on here',
     pushBloqueado: 'Your browser is blocking notifications. Enable them in its settings.',
     pushNoSoportado: "This browser doesn't support notifications.",
+    pushSinConfigurar: 'Notifications are not enabled on this system yet. It is not your browser: we still have to finish setting them up on our side.',
     pushIphone: 'On iPhone you need to add Orden to your home screen to get notifications.',
     guardado: 'Saved',
   },

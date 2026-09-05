@@ -158,7 +158,9 @@ export function AjustesDeAvisos({
  */
 function BotonPush() {
   const t = useTextos();
-  const [estado, setEstado] = useState<'cargando' | 'no-soportado' | 'bloqueado' | 'apagado' | 'encendido'>('cargando');
+  const [estado, setEstado] = useState<
+    'cargando' | 'sin-configurar' | 'no-soportado' | 'bloqueado' | 'apagado' | 'encendido'
+  >('cargando');
   const [trabajando, setTrabajando] = useState(false);
 
   useEffect(() => {
@@ -166,6 +168,18 @@ function BotonPush() {
 
     (async () => {
       if (typeof window === 'undefined') return;
+
+      // Primero lo nuestro. Sin la clave pública VAPID no hay push posible
+      // en ningún navegador, así que preguntar por el navegador antes que
+      // por esto haría que a TODO el mundo se le eche la culpa a su
+      // teléfono por algo que es de nuestra configuración. Y se comprueba
+      // al cargar y no al tocar el botón: enterarse antes de intentarlo
+      // ahorra el «no pasó nada» que no se entiende.
+      if (!process.env.NEXT_PUBLIC_VAPID_PUBLICA) {
+        if (vivo) setEstado('sin-configurar');
+        return;
+      }
+
       if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
         if (vivo) setEstado('no-soportado');
         return;
@@ -189,8 +203,10 @@ function BotonPush() {
       const permiso = await Notification.requestPermission();
       if (permiso !== 'granted') { setEstado(permiso === 'denied' ? 'bloqueado' : 'apagado'); return; }
 
+      // Ya se comprobó al cargar, así que acá no debería entrar nunca. Se
+      // deja igual porque el día que se cuele, tiene que decir la verdad.
       const publica = process.env.NEXT_PUBLIC_VAPID_PUBLICA;
-      if (!publica) { setEstado('no-soportado'); return; }
+      if (!publica) { setEstado('sin-configurar'); return; }
 
       const registro = await navigator.serviceWorker.ready;
       const suscripcion = await registro.pushManager.subscribe({
@@ -233,6 +249,7 @@ function BotonPush() {
 
   if (estado === 'cargando') return null;
 
+  if (estado === 'sin-configurar') return <Nota texto={t.ajustes.pushSinConfigurar} />;
   if (estado === 'no-soportado') {
     return <Nota texto={`${t.ajustes.pushNoSoportado} ${esIphoneSinInstalar() ? t.ajustes.pushIphone : ''}`.trim()} />;
   }

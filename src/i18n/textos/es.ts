@@ -862,6 +862,7 @@ export const es = {
     pushActivo: 'Avisos activados acá',
     pushBloqueado: 'El navegador tiene los avisos bloqueados. Habilitalos desde sus ajustes.',
     pushNoSoportado: 'Este navegador no admite avisos.',
+    pushSinConfigurar: 'Los avisos todavía no están habilitados en el sistema. No es tu navegador: nos falta terminar de configurarlos de este lado.',
     pushIphone: 'En iPhone hay que agregar Orden a la pantalla de inicio para recibir avisos.',
     guardado: 'Guardado',
   },
