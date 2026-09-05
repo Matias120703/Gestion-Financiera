@@ -354,6 +354,10 @@ function aceptado(nombre, resultado) {
     ok('el resumen semanal también', esPublica('/api/tareas/resumen-semanal'), true);
     ok('y la de los turnos de mañana', esPublica('/api/tareas/turnos-manana'), true);
 
+    // La dispara el navegador de quien reservó, que no tiene cuenta.
+    ok('el aviso de una reserva nueva también entra sin sesión',
+      esPublica('/api/aviso-reserva'), true);
+
     ok('pero eso no abre el resto de la API',
       ['/api/pagos/checkout', '/api/pagos/webhook', '/api/capturar']
         .filter((r) => esPublica(r)), []);
@@ -391,6 +395,81 @@ function aceptado(nombre, resultado) {
       .filter((p) => !fs.existsSync(`src/app${p}/route.ts`));
     ok('ningún cron apunta a una ruta que no existe', huerfanos, []);
   }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('10 · Avisarle al local que entró una reserva');
+  //
+  // El sentido del link es que el cliente reserve solo. Si nadie le avisa al
+  // barbero, tiene que entrar a la agenda cada rato — y con las reservas para
+  // el mismo día no se enteraba nunca, porque la tarea de la tarde solo mira
+  // las de mañana.
+  //
+  // La dispara el navegador de quien reservó, sin sesión, así que lo que se
+  // comprueba acá es que eso no se pueda abusar.
+  // ═══════════════════════════════════════════════════════════
+
+  const avisoDe = async (token, minutos) =>
+    (await H.intentarComo(db, 'service_role', null, () => db.query(
+      'select public.aviso_de_reserva($1,$2) j', [token, minutos ?? 5]))).valor.rows[0].j;
+
+  const tokenDe = async (reservaId) =>
+    (await crudo('select token from public.turnos_reserva where id=$1', [reservaId])).token;
+
+  // Una reserva NUEVA y con un teléfono nuevo: la de Juan ya la canceló el
+  // grupo 6, y los números que se usaron antes arrastran el freno de abuso.
+  const huecosAhora = await huecosPub('pedro-cortes', pedro, lunes);
+  const rAviso = await valorPublico(
+    'select public.reservar_publico($1,$2,$3,$4,$5,$6) j',
+    ['pedro-cortes', pedro, corte, huecosAhora[0], 'Marta Recién', '0985121212']);
+
+  const tokenMarta = await tokenDe(rAviso.j.reserva);
+  const aviso = await avisoDe(tokenMarta);
+
+  ok('la reserva recién hecha se puede anunciar', aviso !== null, true);
+  ok('dice quién reservó', aviso.cliente, 'Marta Recién');
+  ok('y qué se hace', aviso.servicio, 'Corte');
+  ok('con el nombre del local, que es el título del aviso', aviso.negocio, 'Barbería Ñandutí');
+  ok('y con quién', aviso.profesional, 'Pedro');
+  ok('la hora viene armada en la zona del local', /^\d{2}:\d{2}$/.test(aviso.hora), true);
+
+  // El teléfono del cliente NO viaja hasta una notificación: se lee en la
+  // agenda, no en la pantalla de bloqueo de un celular.
+  ok('el aviso no lleva el teléfono del cliente',
+    Object.keys(aviso).includes('telefono'), false);
+  ok('y sabe si es para hoy, para mañana o para otro día',
+    [typeof aviso.es_hoy, typeof aviso.es_manana], ['boolean', 'boolean']);
+
+  // ---- lo que NO puede disparar un aviso ----
+
+  ok('un token inventado no anuncia nada',
+    await avisoDe('00000000-0000-0000-0000-000000000000'), null);
+
+  // El enlace para cancelar queda en manos del cliente PARA SIEMPRE. Sin la
+  // ventana de tiempo, serviría para hacerle sonar el teléfono al barbero
+  // cuando se le antoje, meses después.
+  await db.query(
+    "update public.turnos_reserva set created_at = now() - interval '2 hours' where id=$1",
+    [rAviso.j.reserva]);
+  ok('el mismo token, un rato después, ya no anuncia nada', await avisoDe(tokenMarta), null);
+
+  // Y una cancelada tampoco se anuncia como nueva.
+  const librosAhora = await huecosPub('pedro-cortes', pedro, lunes);
+  const r2 = await valorPublico(
+    'select public.reservar_publico($1,$2,$3,$4,$5,$6) j',
+    ['pedro-cortes', pedro, corte, librosAhora[0], 'Se arrepintió', '0989777666']);
+  const token2 = await tokenDe(r2.j.reserva);
+  ok('antes de cancelar sí se anuncia', (await avisoDe(token2)) !== null, true);
+  await comoNadie('select public.cancelar_reserva($1)', [token2]);
+  ok('cancelada, ya no', await avisoDe(token2), null);
+
+  // ---- quién puede preguntarlo ----
+
+  rechazado('un desconocido no puede pedir los datos del aviso',
+    await comoNadie('select public.aviso_de_reserva($1)', [tokenMarta]),
+    'permission denied|permiso');
+  rechazado('ni alguien con sesión: para eso está la agenda',
+    await llamar(local.uid, 'select public.aviso_de_reserva($1)', [tokenMarta]),
+    'permission denied|permiso');
 
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {

@@ -40,6 +40,10 @@ const PUBLICAS = [
   // rutas de esta carpeta la llamen, porque de eso depende que abrirlas acá
   // siga siendo seguro.
   '/api/tareas/',
+  // El aviso al local de que entró una reserva. La dispara el navegador de
+  // quien reservó, que no tiene cuenta en Orden. No queda abierta: pide el
+  // token de la reserva y la base solo contesta si además es reciente.
+  '/api/aviso-reserva',
 ];
 
 export async function middleware(request: NextRequest) {

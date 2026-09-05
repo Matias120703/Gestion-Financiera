@@ -77,6 +77,18 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
         p_telefono: telefono.trim(),
       });
       if (fallo) throw fallo;
+
+      // Avisarle al local, en el momento. Sin `await` y tragándose
+      // cualquier error a propósito: el turno YA está tomado, y hacer
+      // esperar —o peor, mostrar un error— a quien acaba de reservar por
+      // algo que no es asunto suyo sería castigarlo por nuestra cocina.
+      fetch('/api/aviso-reserva', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: (data as any).token }),
+        keepalive: true,
+      }).catch(() => {});
+
       setListo({ token: (data as any).token, inicia: (data as any).inicia });
       setPaso('listo');
     } catch (e: any) {

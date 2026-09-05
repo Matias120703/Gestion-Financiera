@@ -855,8 +855,8 @@ export const es = {
     avisoCargaDetalle: 'Solo si a esa hora todavía no cargaste nada, y solo si venís cargando.',
     avisoSemanal: 'Resumen de la semana por email',
     avisoSemanalDetalle: 'Los lunes, con lo que pasó los últimos siete días.',
-    avisoTurnos: 'Los turnos de mañana',
-    avisoTurnosDetalle: 'Un aviso a la tarde con cuántos turnos tenés al día siguiente y a cuántos todavía no les avisaste.',
+    avisoTurnos: 'Avisos de la agenda',
+    avisoTurnosDetalle: 'Cuando alguien reserva por tu link, en el momento. Y a la tarde, cuántos turnos tenés al día siguiente y a cuántos todavía no les avisaste.',
     horaCierre: 'A qué hora recordarte',
     activarPush: 'Activar avisos en este dispositivo',
     pushActivo: 'Avisos activados acá',
@@ -1060,6 +1060,10 @@ export const es = {
     noVino: 'No vino',
     confirmarNoVino: (nombre: string) => `¿Marcar que ${nombre} no vino?`,
     mover: 'Mover',
+    manana: 'mañana',
+    /** Lo que le suena al local cuando alguien reserva por el link. */
+    nuevaReserva: (d: { cliente: string; servicio: string; hora: string; cuando: string }) =>
+      `Nueva reserva: ${d.cliente}, ${d.cuando.toLowerCase()} ${d.hora} · ${d.servicio}`,
     avisar: 'Avisar',
     yaAvisado: 'Avisado ✓',
     sinAvisar: (n: number) => (n === 1

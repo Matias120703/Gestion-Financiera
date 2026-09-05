@@ -784,8 +784,8 @@ export const en: Textos = {
     avisoCierreDetalle: "Only if you still haven't recorded anything by then.",
     avisoSemanal: 'Weekly summary by email',
     avisoSemanalDetalle: 'On Mondays, with what happened over the last seven days.',
-    avisoTurnos: 'Tomorrow\u0027s appointments',
-    avisoTurnosDetalle: 'An afternoon heads-up with how many appointments you have the next day, and how many clients you have not reminded yet.',
+    avisoTurnos: 'Schedule notifications',
+    avisoTurnosDetalle: 'When someone books through your link, right away. And in the afternoon, how many appointments you have the next day and how many clients you have not reminded yet.',
     horaCierre: 'What time to remind you',
     activarPush: 'Turn on notifications on this device',
     pushActivo: 'Notifications on here',
@@ -984,6 +984,9 @@ export const en: Textos = {
     noVino: 'No-show',
     confirmarNoVino: (nombre: string) => `Mark ${nombre} as a no-show?`,
     mover: 'Reschedule',
+    manana: 'tomorrow',
+    nuevaReserva: (d: { cliente: string; servicio: string; hora: string; cuando: string }) =>
+      `New booking: ${d.cliente}, ${d.cuando.toLowerCase()} ${d.hora} · ${d.servicio}`,
     avisar: 'Remind',
     yaAvisado: 'Reminded ✓',
     sinAvisar: (n: number) => (n === 1
