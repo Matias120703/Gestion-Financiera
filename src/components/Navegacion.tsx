@@ -318,7 +318,19 @@ export function NavInferior({
       )}
 
       <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 border-t border-borde bg-white/95 backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-5">
+        {/*
+          Las columnas son las que HAY, no cinco fijas.
+
+          Antes estaba escrito `grid-cols-5` a mano, y la cantidad de botones
+          depende del rubro: un ganadero no tiene cierre del dia, asi que le
+          quedaban cuatro botones repartidos en cinco columnas y una franja
+          vacia a la derecha. Lo mismo a un vendedor de comercio, que no tiene
+          agenda.
+        */}
+        <div
+          className="mx-auto grid max-w-lg"
+          style={{ gridTemplateColumns: `repeat(${fijos.length + 1}, minmax(0, 1fr))` }}
+        >
           {fijos.map((i) => {
             const on = activo(ruta, i.href);
             return (
@@ -386,7 +398,10 @@ export function BarraSuperior({
     <header className="zona-segura-arriba sticky top-0 z-30 border-b border-borde bg-white/90 backdrop-blur">
       <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-7">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-verde text-sm font-black text-white lg:hidden">o</span>
+          {/* Solo en celular: en pantalla grande el logo esta en la barra
+              lateral. Es el mismo componente, para que no se vuelva a quedar
+              uno de los dos con un dibujo viejo. */}
+          <Marca clase="h-8 w-8 shrink-0 lg:hidden" />
           <h1 className="truncate text-[17px] font-bold tracking-tight lg:text-[19px]">{titulo}</h1>
         </div>
 

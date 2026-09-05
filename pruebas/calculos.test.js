@@ -331,6 +331,65 @@ ok('tieneSeccion contesta igual que la ficha',
   COLUMNAS.every(([r, t]) => Object.keys(MATRIZ)
     .every((ruta) => tieneSeccion(r, t, ruta) === fichaDe(r, t).secciones[ruta])), true);
 
+// --- La barra de abajo del celular ---
+//
+// Tenía las columnas escritas a mano (`grid-cols-5`) y la cantidad de
+// botones depende del rubro: un ganadero no tiene cierre del día, así que
+// le quedaban cuatro botones repartidos en cinco columnas y una franja
+// vacía a la derecha. Lo mismo a un vendedor de comercio, que no tiene
+// agenda.
+{
+  const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
+
+  // Las tres barras salen del propio componente: si mañana cambian, esta
+  // prueba mide las nuevas y no una copia que quedó vieja.
+  // Se corta desde el `= [` y no desde el primer `[`: el primero es el de
+  // `Seccion[]`, el tipo, y cortar ahí devolvía una lista vacía — con lo cual
+  // todos los rubros parecían tener la misma cantidad de botones y la prueba
+  // no comprobaba nada.
+  const listaDe = (nombre) => {
+    const linea = nav.slice(nav.indexOf('const ' + nombre));
+    const desdeIgual = linea.indexOf('= [');
+    return linea.slice(desdeIgual + 3, linea.indexOf(']', desdeIgual))
+      .split(',').map((x) => x.trim().replace(/'/g, '')).filter(Boolean);
+  };
+
+  const casos = [
+    ['comercio dueño',     'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
+    ['servicios dueño',    'servicios',   'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
+    ['ganadería dueño',    'ganaderia',   'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
+    ['agricultura dueño',  'agricultura', 'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
+    ['personal',           'comercio',    'personal',    listaDe('EN_BARRA_INFERIOR_PERSONAL:')],
+    ['comercio vendedor',  'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR_VENDEDOR:')],
+  ];
+
+  // Cuántos botones tiene de verdad cada uno: los fijos que existen para
+  // ese rubro, más el de «Más», que está siempre.
+  const botones = casos.map(([nombre, rubro, tipo, base]) => [
+    nombre,
+    base.filter((h) => fichaDe(rubro, tipo).secciones[h]).length + 1,
+  ]);
+
+  ok('la barra no tiene la misma cantidad de botones en todos los rubros',
+    new Set(botones.map(([, n]) => n)).size > 1, true);
+
+  ok('y el ganadero es de los que tienen menos',
+    botones.find(([n]) => n === 'ganadería dueño')[1] < 5, true);
+
+  // Lo que se rompió: un número fijo de columnas para una cantidad de
+  // botones que varía. Mientras las columnas se calculen, no puede volver.
+  const desde = nav.indexOf("<nav className=\"zona-segura-abajo");
+  const barra = nav.slice(desde, desde + 900);
+  // Se miran solo las CLASES y no el texto crudo: el comentario que explica
+  // este arreglo nombra el problema viejo, y buscarlo a secas lo encontraría
+  // ahí y daría por rota una barra que está bien.
+  const clases = (barra.match(/className="[^"]*"/g) ?? []).join(' ');
+  ok('las columnas de la barra no están escritas a mano',
+    /grid-cols-\d/.test(clases), false);
+  ok('se calculan a partir de los botones que hay',
+    barra.includes('gridTemplateColumns'), true);
+}
+
 ok('un rubro desconocido no rompe: cae en comercio',
   fichaDe('marciano', 'emprendedor').clave, 'comercio');
 
