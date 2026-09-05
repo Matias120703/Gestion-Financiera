@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useTextos } from '@/i18n/cliente';
+import { Marca } from '@/components/Marca';
 
 /**
  * PEDIR UNA CONTRASEÑA NUEVA.
@@ -58,8 +59,8 @@ export default function PaginaRecuperar() {
     <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
       <div className="w-full max-w-[400px] aparecer">
         <div className="mb-7 flex items-center gap-2.5 text-white">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-verde text-lg font-black">o</span>
-          <span className="text-lg font-bold tracking-tight">orden</span>
+          <Marca clase="h-10 w-10" sobreOscuro />
+          <span className="text-lg font-bold tracking-tight">Orden</span>
         </div>
 
         <div className="tarjeta p-6">

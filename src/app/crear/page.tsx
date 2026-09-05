@@ -13,6 +13,7 @@ import {
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
 import { useTextos } from '@/i18n/cliente';
+import { Marca } from '@/components/Marca';
 
 /**
  * CREAR LA CUENTA, EN DOS PASOS
@@ -165,8 +166,8 @@ export default function PaginaCrear() {
     <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
       <div className="w-full max-w-[520px] aparecer">
         <Link href="/" className="mb-7 flex items-center gap-2.5 text-white">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-verde text-lg font-black">o</span>
-          <span className="text-lg font-bold tracking-tight">orden</span>
+          <Marca clase="h-10 w-10" sobreOscuro />
+          <span className="text-lg font-bold tracking-tight">Orden</span>
         </Link>
 
         <div className="tarjeta overflow-hidden">

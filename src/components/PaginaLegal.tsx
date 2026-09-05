@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { textos } from '@/i18n';
+import { Marca } from '@/components/Marca';
 
 /**
  * El marco de las páginas legales.
@@ -21,8 +22,8 @@ export function PaginaLegal({
       <header className="zona-segura-arriba border-b border-borde">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-verde text-base font-black text-white">o</span>
-            <span className="text-[17px] font-bold tracking-tight">orden</span>
+            <Marca clase="h-9 w-9" />
+            <span className="text-[17px] font-bold tracking-tight">Orden</span>
           </Link>
           <Link href="/" className="boton-texto">{t.comun.volver}</Link>
         </div>

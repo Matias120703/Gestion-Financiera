@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import CampoClave from '@/components/CampoClave';
 import { useTextos } from '@/i18n/cliente';
+import { Marca } from '@/components/Marca';
 
 /**
  * PONER LA CONTRASEÑA NUEVA.
@@ -92,8 +93,8 @@ export default function PaginaClaveNueva() {
     <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
       <div className="w-full max-w-[400px] aparecer">
         <div className="mb-7 flex items-center gap-2.5 text-white">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-verde text-lg font-black">o</span>
-          <span className="text-lg font-bold tracking-tight">orden</span>
+          <Marca clase="h-10 w-10" sobreOscuro />
+          <span className="text-lg font-bold tracking-tight">Orden</span>
         </div>
 
         <div className="tarjeta p-6">

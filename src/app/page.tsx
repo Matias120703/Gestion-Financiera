@@ -5,6 +5,7 @@ import { clienteServidor } from '@/lib/supabase/servidor';
 import { dinero } from '@/lib/formato';
 import { textos, idiomaActual } from '@/i18n';
 import Demos from '@/components/Demos';
+import { Marca } from '@/components/Marca';
 import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
@@ -140,8 +141,8 @@ export default async function Portada() {
         <header className="zona-segura-arriba relative">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
             <div className="flex items-center gap-2.5">
-              <span className="grid h-9 w-9 place-items-center rounded-xl bg-menta text-base font-black text-noche">o</span>
-              <span className="text-[17px] font-bold tracking-tight">orden</span>
+              <Marca clase="h-9 w-9" sobreOscuro />
+              <span className="text-[17px] font-bold tracking-tight">Orden</span>
             </div>
             <div className="flex items-center gap-5">
               <a href="#precios" className="hidden text-[13.5px] font-semibold text-white/60 transition hover:text-white sm:block">
@@ -219,7 +220,7 @@ export default async function Portada() {
                   {/* barra de la app */}
                   <div className="flex items-center justify-between bg-white px-4 py-3">
                     <span className="flex items-center gap-2">
-                      <span className="grid h-6 w-6 place-items-center rounded-lg bg-verde text-[11px] font-black text-white">o</span>
+                      <Marca clase="h-6 w-6" />
                       <span className="text-[13px] font-bold tracking-tight text-tinta">Perfumería Aurora</span>
                     </span>
                     <span className="text-[11px] font-semibold text-tinta/40">Hoy</span>
@@ -551,7 +552,7 @@ export default async function Portada() {
       <footer className="zona-segura-abajo border-t border-borde">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8">
           <div className="flex items-center gap-2">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-verde text-[13px] font-black text-white">o</span>
+            <Marca clase="h-7 w-7" />
             <span className="text-[13.5px] font-semibold text-tinta/50">
               Orden · {new Date().getFullYear()}
             </span>

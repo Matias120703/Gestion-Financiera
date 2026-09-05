@@ -8,6 +8,7 @@ import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
 import { fichaDe, type Seccion } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
+import { Marca } from '@/components/Marca';
 import type { Textos } from '@/i18n/diccionarios';
 
 export interface ItemNav { href: Seccion; texto: string; icono: React.ReactNode }
@@ -205,7 +206,7 @@ export function NavLateral({ empresa, esAdmin = true }: { empresa: Empresa; esAd
   return (
     <aside className="hidden w-[232px] shrink-0 flex-col border-r border-borde bg-white lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-verde text-base font-black text-white">o</span>
+        <Marca clase="h-9 w-9" />
         <div className="min-w-0">
           <p className="truncate text-[15px] font-bold leading-tight tracking-tight">{empresa.nombre}</p>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-tinta/40">{empresa.moneda}</p>
