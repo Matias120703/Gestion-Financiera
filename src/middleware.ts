@@ -91,6 +91,21 @@ export async function middleware(request: NextRequest) {
   return respuesta;
 }
 
+/*
+ * QUÉ NI SIQUIERA PASA POR ACÁ.
+ *
+ * Todo lo de `public/` que sirve para ver la página sin haber entrado. Si un
+ * archivo estático pasa por el middleware, a quien no tiene sesión se le
+ * responde una redirección al login EN LUGAR del archivo — y como es un
+ * redirect con estado 200, no falla ruidosamente: la imagen no aparece, el
+ * video no arranca, y no hay ningún error que lo explique.
+ *
+ * `videos` está en la lista por eso mismo: los .mp4 de la portada se
+ * quedaban en el login mientras sus portadas .jpg cargaban bien, porque las
+ * extensiones de imagen sí estaban contempladas y las de video no. Va como
+ * carpeta y no como extensión para que mañana un .webm no repita el
+ * problema. Hay una prueba que lo vigila.
+ */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|iconos|manifest.webmanifest|sw.js|sin-conexion|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|iconos|videos|manifest.webmanifest|sw.js|sin-conexion|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
 };

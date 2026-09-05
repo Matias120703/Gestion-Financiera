@@ -42,18 +42,36 @@ export type Demo = {
 };
 
 export const DEMOS: Demo[] = [
-  // Ejemplo — descomentalo y cambiale los datos cuando tengas el primer video:
-  //
-  // {
-  //   archivo: 'cargar-venta.mp4',
-  //   portada: 'cargar-venta.jpg',
-  //   titulo: 'Cargar una venta hablando',
-  //   detalle: 'Se lo contás como se lo contarías a alguien y queda cargado con su ganancia.',
-  //   en: {
-  //     titulo: 'Recording a sale by voice',
-  //     detalle: 'You say it out loud and it lands with its profit already calculated.',
-  //   },
-  // },
+  {
+    archivo: '2-cargar-hablando.mp4',
+    portada: '2-cargar-hablando.jpg',
+    titulo: 'Contale una venta hablando',
+    detalle: 'Decís «vendí dos perfumes a 45 mil» y sale armada: el producto de tu catálogo, la cantidad, el precio y el stock ya descontado.',
+    en: {
+      titulo: 'Log a sale by talking',
+      detalle: 'You say «I sold two perfumes at 45 thousand» and it comes back complete: the product from your catalogue, the amount, the price and the stock already deducted.',
+    },
+  },
+  {
+    archivo: '1-cargar-gasto.mp4',
+    portada: '1-cargar-gasto.jpg',
+    titulo: 'Un gasto, en siete segundos',
+    detalle: 'El monto, en qué fue, y listo. Sin formularios de veinte campos ni categorías que adivinar.',
+    en: {
+      titulo: 'An expense, in seven seconds',
+      detalle: 'The amount, what it was for, done. No twenty-field forms and no categories to guess.',
+    },
+  },
+  {
+    archivo: '3-reportes-excel.mp4',
+    portada: '3-reportes-excel.jpg',
+    titulo: 'Tu Excel, cuando lo necesites',
+    detalle: 'Cinco hojas con el resumen, los productos, los movimientos, los gastos y el día por día. Se baja al celular y se abre donde quieras.',
+    en: {
+      titulo: 'Your spreadsheet, whenever you need it',
+      detalle: 'Five sheets: summary, products, entries, expenses and a day-by-day view. It downloads to your phone and opens anywhere.',
+    },
+  },
 ];
 
 export const HAY_DEMOS = DEMOS.length > 0;

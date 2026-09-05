@@ -471,6 +471,51 @@ function aceptado(nombre, resultado) {
     await llamar(local.uid, 'select public.aviso_de_reserva($1)', [tokenMarta]),
     'permission denied|permiso');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('11 · Los archivos de la portada ni pasan por el middleware');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Un archivo estático que pasa por el middleware se convierte, para quien
+  // no tiene sesión, en una redirección al login EN LUGAR del archivo. Y no
+  // falla ruidosamente: la imagen no aparece, el video no arranca, y no hay
+  // ni un error que lo explique.
+  //
+  // Pasó de verdad: los .mp4 de la portada se quedaban en el login mientras
+  // sus portadas .jpg cargaban bien, porque el matcher contemplaba las
+  // extensiones de imagen y ninguna de video. Nadie sin cuenta —o sea, todo
+  // el que llega a la portada— habría podido ver un solo video.
+  {
+    const fuente = require('fs').readFileSync('src/middleware.ts', 'utf8');
+    // El texto entre comillas de `matcher: ['…']`. En el archivo las barras
+    // van dobles porque ahí son una cadena de TypeScript; la expresión que
+    // Next usa de verdad tiene una sola, así que hay que deshacerlas.
+    const patron = fuente.match(/matcher:\s*\['([^']+)'\]/)[1].replace(/\\\\/g, '\\');
+    const pasaPorElMiddleware = (ruta) => new RegExp('^' + patron + '$').test(ruta);
+
+    // Sin este control, un patrón mal leído haría pasar todas las
+    // comprobaciones de abajo sin comprobar nada.
+    ok('el patrón se leyó entero', patron.startsWith('/(') && patron.endsWith(')'), true);
+    ok('y una ruta cualquiera del negocio pasa por el middleware',
+      pasaPorElMiddleware('/panel'), true);
+
+    // Lo que TIENE que esquivarlo.
+    const estaticos = [
+      '/videos/cargar-venta.mp4',
+      '/videos/cargar-venta.webm',
+      '/videos/cargar-venta.jpg',
+      '/iconos/icono-512.png',
+      '/manifest.webmanifest',
+      '/sw.js',
+    ];
+    ok('ningún archivo de la portada pasa por el control de sesión',
+      estaticos.filter((r) => pasaPorElMiddleware(r)), []);
+
+    // Y lo que SÍ tiene que pasar, para que aflojar el patrón no abra la app.
+    const pantallas = ['/panel', '/reportes', '/lotes', '/agenda', '/vender', '/ajustes'];
+    ok('las pantallas del negocio siguen pasando por el control',
+      pantallas.filter((r) => !pasaPorElMiddleware(r)), []);
+  }
+
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA PUERTA PÚBLICA FALLARON`);
