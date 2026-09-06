@@ -1,7 +1,7 @@
 const { resumir, rankingProductos, gastosPorCategoria, serieDiaria, variacion, factorDescuento, esValido, tieneCostos, logradoEnReto } = require('../.compilado/calculos.js');
 const { resolverRango, rangoAnterior, diasDelRango, inicioDeSemana, sumarDias, diffDias, finDeMes } = require('../.compilado/fechas.js');
 const { dinero, dineroCorto, fechaLegible, decimalesDe } = require('../.compilado/formato.js');
-const { fichaDe, tieneSeccion, palabra } = require('../.compilado/rubros.js');
+const { fichaDe, tieneSeccion, palabra, LISTA_RUBROS } = require('../.compilado/rubros.js');
 
 let fallos = 0;
 function ok(nombre, real, esperado) {
@@ -419,6 +419,21 @@ ok('la peluquería cobra, no vende',
   ok('y se las aplica a productos',
     /suPalabra\('productos'/.test(nav), true);
 }
+
+// --- Qué rubros se ofrecen al crear la cuenta ---
+//
+// Agricultura funciona pero no se ofrece: no se probó con un agricultor de
+// verdad. Sacarla de la lista NO la rompe — la ficha sigue entera y una
+// cuenta que ya la tenga guardada sigue andando. Por eso se comprueban las
+// dos cosas: que no se ofrezca, y que igual siga funcionando.
+ok('la lista que se ofrece al registrarse',
+  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'ganaderia']);
+ok('agricultura no se ofrece',
+  LISTA_RUBROS.some((r) => r.clave === 'agricultura'), false);
+ok('pero una cuenta que ya la tenga sigue teniendo sus lotes',
+  fichaDe('agricultura', 'emprendedor').secciones['/lotes'], true);
+ok('y sus palabras',
+  palabra('agricultura', 'emprendedor', 'productos', 'Productos', 'es'), 'Cultivos');
 
 ok('un rubro desconocido no rompe: cae en comercio',
   fichaDe('marciano', 'emprendedor').clave, 'comercio');

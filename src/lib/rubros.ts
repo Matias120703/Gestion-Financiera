@@ -181,8 +181,27 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
   },
 };
 
+/**
+ * LOS RUBROS QUE SE OFRECEN AL CREAR UNA CUENTA.
+ *
+ * No es lo mismo que `RUBROS`. Acá está lo que se muestra en la lista; arriba
+ * está todo lo que el sistema sabe atender.
+ *
+ * AGRICULTURA NO SE OFRECE, Y NO ES QUE ESTÉ ROTA.
+ *
+ * Funciona: tiene sus categorías de gasto, su vocabulario y sus lotes. Lo que
+ * pasa es que no se probó con un agricultor de verdad, y salir a ofrecer un
+ * rubro que nadie uso todavía es prometer algo que no se sabe si cumple.
+ * Decisión de Matías para el lanzamiento: comercio, servicios y ganadería,
+ * más la cuenta personal.
+ *
+ * Se ofrece de nuevo agregándola a esta lista. Nada más: la ficha sigue
+ * entera, la base sigue aceptando el rubro, y una cuenta que ya lo tenga
+ * guardado sigue funcionando igual —por eso se saca de la lista y no de
+ * `RUBROS`—.
+ */
 export const LISTA_RUBROS: FichaRubro[] = [
-  RUBROS.comercio, RUBROS.servicios, RUBROS.ganaderia, RUBROS.agricultura,
+  RUBROS.comercio, RUBROS.servicios, RUBROS.ganaderia,
 ];
 
 /**

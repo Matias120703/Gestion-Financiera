@@ -163,13 +163,11 @@ export default async function Portada() {
         <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-10 lg:pb-24 lg:pt-16">
           <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
             <div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-menta/25 bg-menta/10
-                               px-3 py-1.5 text-[11.5px] font-bold uppercase tracking-[.13em] text-menta">
-                <span className="h-1.5 w-1.5 rounded-full bg-menta" />
-                Hecho en Paraguay
-              </span>
-
-              <h1 className="mt-5 text-[38px] font-bold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
+              {/* Acá iba una pastilla de «Hecho en Paraguay». Se sacó: lo
+                  primero que se lee tiene que ser la pregunta, no una
+                  credencial. Sin ella el titular arranca más arriba y pega
+                  más fuerte, que es todo lo que tiene que hacer. */}
+              <h1 className="text-[38px] font-bold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
                 ¿Sabés cuánto<br />
                 ganaste{' '}
                 <span className="bg-gradient-to-r from-menta to-menta-suave bg-clip-text text-transparent">
