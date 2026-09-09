@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Apartado, Lista, PaginaLegal } from '@/components/PaginaLegal';
+import { DIAS_DE_PRUEBA } from '@/lib/precios';
 
 export const dynamic = 'force-static';
 
@@ -17,7 +18,10 @@ export const metadata: Metadata = {
  *
  * Lo que dice acá tiene que coincidir con lo que hace el sistema:
  *   · el largo de la prueba según el tipo de cuenta → migración 016,
- *     `dias_de_prueba()`: 20 días un comercio, 14 una cuenta personal
+ *     `dias_de_prueba()`. El número no se escribe acá: sale de
+ *     `DIAS_DE_PRUEBA`, que es el mismo que lee la portada. Un documento
+ *     legal que promete una duración distinta a la que da el sistema es
+ *     peor que uno mal redactado.
  *   · caer a gratis al vencer → `plan_efectivo_calculado()`
  *   · los topes de cada plan → `limites_plan()`
  *
@@ -50,8 +54,8 @@ export default function Terminos() {
       <Apartado titulo="Prueba gratis y planes">
         <p>
           Toda cuenta nueva arranca con <strong className="text-tinta">plan Pro y sin pedir
-          tarjeta</strong>: <strong className="text-tinta">20 días</strong> si es un negocio y{' '}
-          <strong className="text-tinta">14 días</strong> si es una cuenta personal. Un comercio
+          tarjeta</strong>: <strong className="text-tinta">{DIAS_DE_PRUEBA.emprendedor} días</strong> si es un negocio y{' '}
+          <strong className="text-tinta">{DIAS_DE_PRUEBA.personal} días</strong> si es una cuenta personal. Un comercio
           necesita ver un pedazo de mes suyo antes de decidir; quien anota sus gastos lo sabe
           antes. Cuando terminan, la cuenta pasa sola al plan gratis.
         </p>

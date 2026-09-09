@@ -330,8 +330,32 @@ const leerRacha = (db, uid, empresaId) =>
     ok('y ninguno es el plan de comercio',
       soloPersonal.some((x) => x.plan === 'negocio'), false);
 
+    // El vendedor extra (migración 050). Antes era un número escrito a mano
+    // adentro de una función: cambiarlo pedía una migración y un despliegue,
+    // justo lo que la tabla `precios` existe para evitar. Ahora se lee.
     ok('cada vendedor de más tiene precio',
       Number((await db.query("select public.precio_por_vendedor('PYG') v")).rows[0].v), 60000);
+    // Este devolvía 7,99, que salía de un cambio de 7.509 Gs. por dólar
+    // cuando los planes usan 5.940. No se comprueba que el cambio del
+    // vendedor coincida con el de los planes, y es a propósito: 60.000 y 11
+    // son dos precios redondos elegidos, no una conversión.
+    ok('y también en dólares',
+      Number((await db.query("select public.precio_por_vendedor('USD') v")).rows[0].v), 11);
+
+    // Sin fila no se inventa un importe. La portada ya sabe callarse cuando
+    // esto viene vacío; devolver un número por defecto sería cobrarle a
+    // alguien un precio que nadie escribió.
+    ok('una moneda que no cobramos no devuelve un número',
+      (await db.query("select public.precio_por_vendedor('BRL') v")).rows[0].v, null);
+    ok('ni una moneda inventada',
+      (await db.query("select public.precio_por_vendedor('XXX') v")).rows[0].v, null);
+    ok('y en minúscula encuentra igual',
+      Number((await db.query("select public.precio_por_vendedor('usd') v")).rows[0].v), 11);
+
+    rechazado('nadie cambia el precio del vendedor desde el cliente',
+      await H.intentar(db, A.uid, () =>
+        db.query("update public.precios_adicionales set importe = 1")),
+      'denied|policy|permission');
 
     ok('y también están en dólares', dolares.length, 6);
     ok('la cuenta personal en dólares',

@@ -90,16 +90,17 @@ async function principal() {
       (await db.query('select count(*)::int n from public.suscripciones where empresa_id=$1', [C.empresaId])).rows[0].n, 1);
 
     // Desde la 009 la empresa nace en prueba de `pro`, no en gratis.
-    // Desde la 016 el largo depende del tipo de cuenta: 20 días para un
-    // comercio (que es lo que crea montarEmpresa) y 14 para una personal.
+    // Desde la 016 el largo depende del tipo de cuenta, y desde la 049 son
+    // 8 días para un comercio (que es lo que crea montarEmpresa) y 5 para
+    // una cuenta personal.
     const s = (await db.query('select plan, estado, prueba_fin from public.suscripciones where empresa_id=$1', [C.empresaId])).rows[0];
     ok('plan inicial', s.plan, 'pro');
     ok('estado inicial', s.estado, 'prueba');
     ok('la prueba tiene fecha de vencimiento', s.prueba_fin !== null, true);
-    ok('y un comercio vence dentro de 20 días',
+    ok('y un comercio vence dentro de 8 días',
       (await db.query(
         `select round(extract(epoch from (prueba_fin - now())) / 86400)::int d
-         from public.suscripciones where empresa_id=$1`, [C.empresaId])).rows[0].d, 20);
+         from public.suscripciones where empresa_id=$1`, [C.empresaId])).rows[0].d, 8);
     ok('y su código de acceso',
       (await db.query('select count(*)::int n from public.empresa_accesos where empresa_id=$1', [C.empresaId])).rows[0].n, 1);
     ok('plan efectivo', await planInterno(db, C.empresaId), 'pro');

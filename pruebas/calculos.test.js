@@ -438,5 +438,59 @@ ok('y sus palabras',
 ok('un rubro desconocido no rompe: cae en comercio',
   fichaDe('marciano', 'emprendedor').clave, 'comercio');
 
+// --- Los días de prueba: la web y la base tienen que decir lo mismo ---
+//
+// El número vive en dos lados que no se hablan: `dias_de_prueba()` en la
+// migración 049, que es la que escribe la fecha de vencimiento, y
+// `DIAS_DE_PRUEBA` en src/lib/precios.ts, que es lo que leen la portada y
+// los Términos del servicio.
+//
+// Si se separan, la web le promete a alguien una prueba que no va a tener, y
+// eso no da error en ningún lado: da una página linda con un número falso y
+// un reclamo dos semanas después. Por eso se comparan leyendo los archivos.
+//
+// Se lee el TEXTO y no se importa el módulo porque precios.ts arrastra el
+// cliente de Supabase, que no compila suelto en este arnés.
+{
+  const fs = require('fs');
+
+  const ts = fs.readFileSync('src/lib/precios.ts', 'utf8');
+  const bloque = ts.slice(ts.indexOf('export const DIAS_DE_PRUEBA'));
+  const delTs = {
+    emprendedor: Number((bloque.match(/emprendedor:\s*(\d+)/) ?? [])[1]),
+    personal: Number((bloque.match(/personal:\s*(\d+)/) ?? [])[1]),
+  };
+
+  const sql = fs.readFileSync('supabase/migrations/049_prueba_mas_corta.sql', 'utf8');
+  const cuerpo = sql.slice(sql.indexOf('function public.dias_de_prueba'));
+  const delSql = {
+    emprendedor: Number((cuerpo.match(/else\s+(\d+)/) ?? [])[1]),
+    personal: Number((cuerpo.match(/when 'personal' then\s+(\d+)/) ?? [])[1]),
+  };
+
+  // Antes de comparar, comprobar que se leyó algo. Una expresión que no
+  // encuentra nada devuelve NaN, y NaN !== NaN haría fallar la prueba por el
+  // motivo equivocado; peor sería que devolviera undefined en los dos lados
+  // y pasara sin haber comprobado nada.
+  ok('se leyó el número de precios.ts',
+    Number.isInteger(delTs.emprendedor) && Number.isInteger(delTs.personal), true);
+  ok('y el de la migración',
+    Number.isInteger(delSql.emprendedor) && Number.isInteger(delSql.personal), true);
+
+  ok('un negocio: la web dice lo mismo que la base', delTs.emprendedor, delSql.emprendedor);
+  ok('una cuenta personal también', delTs.personal, delSql.personal);
+
+  // Y los valores que se decidieron, para que bajarlos sea una decisión y no
+  // un descuido.
+  ok('un negocio prueba 8 días', delSql.emprendedor, 8);
+  ok('una cuenta personal, 5', delSql.personal, 5);
+
+  // Nadie tiene que volver a escribir el número a mano en la portada.
+  const portada = fs.readFileSync('src/app/page.tsx', 'utf8');
+  ok('la portada no tiene días escritos a mano',
+    /\b(?:20|14|8|5) días\b/.test(portada), false);
+  ok('y usa el módulo', portada.includes('textoPrueba('), true);
+}
+
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);

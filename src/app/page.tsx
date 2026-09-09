@@ -9,6 +9,7 @@ import { Marca } from '@/components/Marca';
 import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
+import { DIAS_DE_PRUEBA, textoPrueba } from '@/lib/precios';
 
 export const dynamic = 'force-dynamic';
 
@@ -188,7 +189,7 @@ export default async function Portada() {
                   className="rounded-xl bg-menta px-6 py-3.5 text-[15px] font-bold text-noche shadow-lg
                              shadow-menta/20 transition hover:bg-menta-suave"
                 >
-                  Probar 20 días gratis
+                  Probar {textoPrueba('emprendedor')} gratis
                 </Link>
                 <a
                   href="#formas"
@@ -285,7 +286,7 @@ export default async function Portada() {
             <Dato valor="1.600+" texto="comprobaciones automáticas corren antes de cada cambio" />
             <Dato valor="0" texto="datos tuyos que ve otro negocio: lo impide la base, no la pantalla" />
             <Dato valor="Sin señal" texto="se instala como app y abre igual cuando se corta internet" />
-            <Dato valor="20 días" texto="de prueba, sin cargar una tarjeta en ningún lado" />
+            <Dato valor={textoPrueba('emprendedor')} texto="de prueba, sin cargar una tarjeta en ningún lado" />
           </div>
         </div>
       </section>
@@ -309,7 +310,7 @@ export default async function Portada() {
               titulo="Para tu negocio"
               para="Almacén, perfumería, delivery, taller, tienda de ropa"
               detalle="Todo lo que necesitás para saber si el mes cerró bien, y para que tus vendedores carguen sin ver lo que no tienen que ver."
-              prueba="20 días de prueba"
+              prueba={`${textoPrueba('emprendedor')} de prueba`}
               boton="Crear la cuenta de mi negocio"
               para_link="/crear?para=negocio"
               puntos={[
@@ -325,7 +326,7 @@ export default async function Portada() {
               titulo="Para vos"
               para="Sueldo, gastos del día a día, tarjetas y préstamos"
               detalle="Lo mismo, sin la parte de comercio. Pensado para saber cuánto te queda y, sobre todo, cuánto debés."
-              prueba="14 días de prueba"
+              prueba={`${textoPrueba('personal')} de prueba`}
               boton="Crear mi cuenta personal"
               para_link="/crear?para=personal"
               puntos={[
@@ -452,14 +453,14 @@ export default async function Portada() {
         <div className="mt-10">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-[18px] font-bold tracking-tight">Para tu negocio</h3>
-            <span className="text-[13.5px] font-semibold text-tinta/45">20 días de prueba</span>
+            <span className="text-[13.5px] font-semibold text-tinta/45">{textoPrueba('emprendedor')} de prueba</span>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Plan
               destacado
               nombre="Pro"
-              llamado="Empezar los 20 días"
+              llamado={`Empezar los ${textoPrueba('emprendedor')}`}
               enlace="/crear?para=negocio"
               precio={importe(proMes)}
               porMes
@@ -476,7 +477,7 @@ export default async function Portada() {
             />
             <Plan
               nombre="Premium"
-              llamado="Empezar los 20 días"
+              llamado={`Empezar los ${textoPrueba('emprendedor')}`}
               enlace="/crear?para=negocio"
               precio={importe(premiumMes)}
               porMes
@@ -510,13 +511,13 @@ export default async function Portada() {
         <div className="mt-12">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-[18px] font-bold tracking-tight">Para vos</h3>
-            <span className="text-[13.5px] font-semibold text-tinta/45">14 días de prueba</span>
+            <span className="text-[13.5px] font-semibold text-tinta/45">{textoPrueba('personal')} de prueba</span>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Plan
               nombre="Personal"
-              llamado="Empezar los 14 días"
+              llamado={`Empezar los ${textoPrueba('personal')}`}
               enlace="/crear?para=personal"
               precio={importe(personalMes)}
               porMes

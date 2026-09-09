@@ -13,7 +13,7 @@ import { Marca } from '@/components/Marca';
  *
  * Esta pantalla es SOLO para quien ya tiene cuenta. Antes hacía las dos
  * cosas con un botoncito que cambiaba de modo, y eso tenía un problema
- * concreto: el botón principal de la portada —«Probar 20 días gratis»—
+ * concreto: el botón principal de la portada —«Probar N días gratis»—
  * apuntaba acá con `?crear=1`, pero el parámetro no se leía. O sea que a
  * quien nunca tuvo cuenta lo dejaba parado en un login, pidiéndole una
  * contraseña que todavía no existía. La mitad de esa gente se iba ahí.
