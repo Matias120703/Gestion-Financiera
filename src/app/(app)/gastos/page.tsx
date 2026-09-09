@@ -31,13 +31,25 @@ export default async function PaginaGastos({
   const hayMas = Boolean(paginaGastos.siguiente || paginaIngresos.siguiente);
   const m = ctx.empresa.moneda;
 
+  /**
+   * Desde la 047 un vendedor solo recibe sus propios gastos.
+   *
+   * Eso arregla la fuga, pero deja el cartel mintiendo de otra manera: el
+   * número que dice «Gastos del periodo» pasó a ser «los gastos que cargué
+   * yo», y quien lo lea va a creer que el negocio gastó eso. Un número
+   * correcto con el título equivocado sigue siendo un dato falso.
+   */
+  const esAdmin = ctx.miembro.rol === 'propietario' || ctx.miembro.rol === 'admin';
+  const tituloGastos = esAdmin ? t.pantallas.gastosDelPeriodo : 'Mis gastos del periodo';
+  const tituloIngresos = esAdmin ? t.panel.otrosIngresos : 'Mis otros ingresos';
+
   return (
     <div className="space-y-5">
       <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo={t.pantallas.gastosDelPeriodo} valor={dineroCorto(r.gastos, m)} detalle={dinero(r.gastos, m)} tono="malo" />
-        <Indicador titulo={t.panel.otrosIngresos} valor={dineroCorto(r.otrosIngresos, m)} detalle={dinero(r.otrosIngresos, m)} />
+        <Indicador titulo={tituloGastos} valor={dineroCorto(r.gastos, m)} detalle={dinero(r.gastos, m)} tono="malo" />
+        <Indicador titulo={tituloIngresos} valor={dineroCorto(r.otrosIngresos, m)} detalle={dinero(r.otrosIngresos, m)} />
         <Indicador
           titulo={t.pantallas.movimientosAnulados}
           valor={numero(r.movimientosAnulados)}

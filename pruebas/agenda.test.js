@@ -384,9 +384,12 @@ const num = (v) => Number(v);
       [local.empresaId, pedro, corte, lunes]),
     'No pertenecés');
 
+  // Desde la 048 el profesional tiene que ser miembro. Acá alcanza con el
+  // propio dueño: lo que se prueba es el aislamiento entre negocios, no
+  // quién corta el pelo.
   const profAjeno = (await valor(otra.uid,
-    "select public.guardar_profesional($1,$2,'sueldo',0) as id",
-    [otra.empresaId, 'Ajeno'])).id;
+    "select public.guardar_profesional($1,$2,'sueldo',0,$3) as id",
+    [otra.empresaId, 'Ajeno', otra.uid])).id;
 
   ok('pertenecer a un negocio no sirve para espiar al profesional de otro',
     await localHuecos(otra.uid, otra.empresaId, pedro, corte, lunes), []);
@@ -490,9 +493,10 @@ const num = (v) => Number(v);
 
   // ---- mover de profesional ----
 
+  const uidJuan = await H.sumarMiembro(db, local.empresaId, 'juan@barberia.com', 'vendedor');
   const juan = (await valor(local.uid,
-    "select public.guardar_profesional($1,$2,'comision',40) as id",
-    [local.empresaId, 'Juan'])).id;
+    "select public.guardar_profesional($1,$2,'comision',40,$3) as id",
+    [local.empresaId, 'Juan', uidJuan])).id;
   aceptado('Juan también trabaja los lunes',
     await llamar(local.uid, 'select public.guardar_horario($1,$2,1,$3,$4)',
       [local.empresaId, juan, '08:00', '12:00']));

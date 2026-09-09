@@ -258,6 +258,15 @@ export interface CuentaAdmin {
   /** Negativo = ya venció. Es el número por el que se ordena la lista. */
   dias_restantes: number | null;
   miembros: number;
+  /**
+   * Cuántos vendedores pagó este negocio, sin contar al dueño (migración 048).
+   *
+   * `null` no es cero: es «no tiene trato especial, vale lo que diga su
+   * plan». Cero sí es cero — el dueño solo.
+   */
+  tope_vendedores: number | null;
+  /** Lo anterior más el dueño: el número que cuenta la puerta de entrada. */
+  personas_permitidas: number;
   movimientos: number;
   ultima_actividad: string | null;
   ia_usada: number;

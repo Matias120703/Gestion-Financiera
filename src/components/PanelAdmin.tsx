@@ -380,6 +380,15 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
   const [plan, setPlan] = useState<PlanEfectivo>(cuenta.plan === 'gratis' ? 'pro' : cuenta.plan);
   const [meses, setMeses] = useState(1);
   const [importe, setImporte] = useState('');
+  /**
+   * Cuántos vendedores paga este negocio, sin contar al dueño.
+   *
+   * Arranca vacío y no con el valor actual, a propósito: vacío significa «no
+   * lo toques», que es lo correcto cuando alguien solo viene a renovarle el
+   * mes. Precargarlo haría que cada renovación reescribiera el tope, y un
+   * día alguien lo pisaría sin darse cuenta.
+   */
+  const [vendedores, setVendedores] = useState('');
   const [nota, setNota] = useState('');
   const [dias, setDias] = useState(7);
   const [tipo, setTipo] = useState<TipoCuenta>(cuenta.tipo_cuenta);
@@ -418,10 +427,15 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
     p_meses: meses,
     p_nota: nota,
     p_importe: Number(importe) > 0 ? Number(importe) : null,
+    // Vacío es null, y null en la base significa «dejalo como está». El cero
+    // sí viaja como cero: es un trato válido —solo el dueño— y confundirlo
+    // con vacío le regalaría vendedores a alguien que no los pagó.
+    p_vendedores: vendedores.trim() === '' ? null : Number(vendedores),
   }));
 
   const cortar = () => correr('cortando', async () => clienteNavegador().rpc('cambiar_plan_cuenta', {
-    p_empresa: cuenta.empresa_id, p_plan: 'gratis', p_meses: 1, p_nota: nota, p_importe: null,
+    p_empresa: cuenta.empresa_id, p_plan: 'gratis', p_meses: 1, p_nota: nota,
+    p_importe: null, p_vendedores: null,
   }));
 
   const estirar = () => correr('estirando', async () => clienteNavegador().rpc('extender_prueba', {
@@ -511,6 +525,16 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
               <Dato etiqueta="Última actividad" valor={fechaCorta(cuenta.ultima_actividad)} />
               <Dato etiqueta="Movimientos" valor={String(cuenta.movimientos)} />
               <Dato etiqueta="Capturas de IA" valor={`${cuenta.ia_usada} de ${cuenta.ia_tope}`} />
+              {/* Cuánta gente hay y cuánta entra. Si están al tope hay que
+                  verlo acá y no enterarse cuando el cliente reclama que no
+                  puede sumar a nadie. */}
+              <Dato
+                etiqueta="Personas"
+                valor={`${cuenta.miembros} de ${cuenta.personas_permitidas}`}
+                detalle={cuenta.tope_vendedores === null
+                  ? 'tope del plan'
+                  : `${cuenta.tope_vendedores} ${cuenta.tope_vendedores === 1 ? 'vendedor pago' : 'vendedores pagos'}`}
+              />
               {cuenta.como_nos_conocio && (
                 <Dato etiqueta="Nos conoció por" valor={cuenta.como_nos_conocio} />
               )}
@@ -608,6 +632,20 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
                   type="number" min={1} max={24} className="campo"
                   value={meses} onChange={(e) => setMeses(Math.max(1, Number(e.target.value) || 1))}
                 />
+              </div>
+              <div className="col-span-2">
+                <label className="etiqueta">Cuántos vendedores le habilitás</label>
+                <input
+                  type="number" min={0} max={200} inputMode="numeric" className="campo tabular-nums"
+                  placeholder={cuenta.tope_vendedores === null ? 'lo que diga el plan' : ''}
+                  value={vendedores} onChange={(e) => setVendedores(e.target.value)}
+                />
+                <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">
+                  Sin contar al dueño. 190.000 son 2 vendedores; cada uno de más, 60.000.
+                  {' '}Vacío deja el tope como está
+                  {cuenta.tope_vendedores === null ? ' (hoy: el del plan).' : ` (hoy: ${cuenta.tope_vendedores}).`}
+                  {' '}Escribí <strong className="text-tinta/70">-1</strong> para volver al del plan.
+                </p>
               </div>
               <div className="col-span-2">
                 <label className="etiqueta">Cuánto transfirió</label>
@@ -762,11 +800,12 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
   );
 }
 
-function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
+function Dato({ etiqueta, valor, detalle }: { etiqueta: string; valor: string; detalle?: string }) {
   return (
     <div>
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">{etiqueta}</dt>
       <dd className="mt-0.5 font-semibold">{valor}</dd>
+      {detalle && <dd className="text-[11px] font-normal text-tinta/45">{detalle}</dd>}
     </div>
   );
 }

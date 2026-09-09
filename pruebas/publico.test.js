@@ -88,15 +88,20 @@ function aceptado(nombre, resultado) {
   const cera = await H.crearProducto(db, local.empresaId, local.uid,
     { nombre: 'Cera', costo: 20000, precio: 35000, stock: 5, controla_stock: true });
 
+  // Desde la 048, para estar en el equipo hay que ser miembro del negocio.
+  // Con el dueño son tres personas: justo lo que permite Pro.
+  const uidPedro = await H.sumarMiembro(db, local.empresaId, 'pedro@local.com', 'vendedor');
+  const uidAna = await H.sumarMiembro(db, local.empresaId, 'ana@local.com', 'vendedor');
+
   const pedro = (await valor(local.uid,
-    "select public.guardar_profesional($1,$2,'comision',50) as id",
-    [local.empresaId, 'Pedro'])).id;
+    "select public.guardar_profesional($1,$2,'comision',50,$3) as id",
+    [local.empresaId, 'Pedro', uidPedro])).id;
   const ana = (await valor(local.uid,
-    "select public.guardar_profesional($1,$2,'local') as id",
-    [local.empresaId, 'Ana sin horario'])).id;
+    "select public.guardar_profesional($1,$2,'local',null,$3) as id",
+    [local.empresaId, 'Ana sin horario', uidAna])).id;
   const ajeno = (await valor(otro.uid,
-    "select public.guardar_profesional($1,$2,'local') as id",
-    [otro.empresaId, 'De la otra cuadra'])).id;
+    "select public.guardar_profesional($1,$2,'local',null,$3) as id",
+    [otro.empresaId, 'De la otra cuadra', otro.uid])).id;
 
   await llamar(local.uid, 'select public.guardar_servicio_agenda($1,$2,$3)', [local.empresaId, corte, 30]);
 

@@ -482,14 +482,19 @@ export default async function Portada() {
               porMes
               desde
               para="Para el local con más gente cargando"
+              /* Acá decía «sin tope de vendedores» y la base cortaba en 15.
+                 Desde la 048 el tope lo escribimos negocio por negocio al
+                 cobrar, así que ahora se puede decir la verdad: los que
+                 pagues. Prometer «sin tope» le reventaba en la cara al que
+                 ya había pagado, que es el peor momento para una sorpresa. */
               puntos={[
-                'Todo lo de Pro, sin tope de vendedores',
+                'Todo lo de Pro, con los vendedores que necesites',
                 'Voz, foto y texto: 3.000 cargas por mes',
                 'Roles: quién ve los costos lo decidís vos',
-                'El precio se cotiza según cuántos vendedores seas',
+                'Pagás por vendedor: sumás uno cuando entra, y listo',
               ]}
               nota={vendedorExtra
-                ? `Cada vendedor arriba de los 3 de Pro suma ${vendedorExtra} al mes. Escribinos y te pasamos el número exacto.`
+                ? `Cada vendedor arriba de los 2 de Pro suma ${vendedorExtra} al mes. Escribinos y te pasamos el número exacto.`
                 : undefined}
             />
           </div>

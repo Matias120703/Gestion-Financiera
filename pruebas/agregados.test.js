@@ -576,7 +576,11 @@ async function principal() {
     });
 
     casi('el vendedor SÍ ve las ventas', comoVendedor.ventas, esperado.ventas);
-    casi('y los gastos', comoVendedor.gastos, esperado.gastos);
+    // Hasta la 047 esta línea decía que el vendedor ve los gastos enteros,
+    // y pasaba. No era una prueba de un permiso: era el agujero escrito como
+    // si fuera la regla. Todos los gastos de este montaje los carga el dueño
+    // (A.uid), así que ahora al vendedor le tienen que dar cero.
+    ok('y NO los gastos del dueño', Number(comoVendedor.gastos), 0);
     casi('y las unidades', comoVendedor.unidades_vendidas, esperado.unidades);
     ok('pero el costo viene en null', comoVendedor.costo_mercaderia, null);
     ok('la ganancia bruta también', comoVendedor.ganancia_bruta, null);

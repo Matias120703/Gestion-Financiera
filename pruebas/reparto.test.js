@@ -67,6 +67,11 @@ const num = (v) => Number(v);
   const local = await H.montarEmpresa(db, { email: 'dueno@barberia.com', nombre: 'Barbería Aurora' });
   const uidPedro = await H.sumarMiembro(db, local.empresaId, 'pedro@barberia.com', 'vendedor');
   const uidLuis = await H.sumarMiembro(db, local.empresaId, 'luis@barberia.com', 'vendedor');
+  // Desde la 048, estar en el equipo de reparto exige tener cuenta en el
+  // negocio. Ana la necesita, y con ella son cuatro personas: más de las
+  // tres de Pro. El negocio sube de plan, que es lo que haría de verdad.
+  await db.query("update public.suscripciones set plan='negocio' where empresa_id=$1", [local.empresaId]);
+  const uidAna = await H.sumarMiembro(db, local.empresaId, 'ana@barberia.com', 'vendedor');
 
   const llamar = (uid, sql, args) => H.intentar(db, uid, () => db.query(sql, args));
   // Inspección desde afuera: `movimientos` no da select directo a nadie —se
@@ -105,6 +110,13 @@ const num = (v) => Number(v);
       [local.empresaId, 'Ambicioso']),
     'porcentaje');
 
+  // Este era el agujero de cobro: seis barberos cargados sin cuenta, con
+  // agenda y reparto andando, sin sumar un solo miembro al plan.
+  rechazado('ni alguien que no entró al negocio',
+    await llamar(local.uid, "select public.guardar_profesional($1,$2,'sueldo')",
+      [local.empresaId, 'Fantasma']),
+    'tiene que entrar antes al negocio');
+
   rechazado('ni un arreglo inventado',
     await llamar(local.uid, "select public.guardar_profesional($1,$2,'trueque')",
       [local.empresaId, 'Raro']),
@@ -123,8 +135,8 @@ const num = (v) => Number(v);
     [local.empresaId, 'Luis', uidLuis])).id;
 
   const ana = (await valor(local.uid,
-    "select public.guardar_profesional($1,$2,'sueldo') as id",
-    [local.empresaId, 'Ana (sin cuenta)'])).id;
+    "select public.guardar_profesional($1,$2,'sueldo',null,$3) as id",
+    [local.empresaId, 'Ana', uidAna])).id;
 
   ok('quedaron cuatro en el equipo',
     num((await valor(local.uid,
@@ -276,8 +288,10 @@ const num = (v) => Number(v);
   // ═══════════════════════════════════════════════════════════
 
   // 33.333 al 40% da 13.333,2. En guaraníes no hay centavos.
+  const uidImpar = await H.sumarMiembro(db, local.empresaId, 'impar@barberia.com', 'vendedor');
   const raro = (await valor(local.uid,
-    "select public.guardar_profesional($1,$2,'comision',40) as id", [local.empresaId, 'Impar'])).id;
+    "select public.guardar_profesional($1,$2,'comision',40,$3) as id",
+    [local.empresaId, 'Impar', uidImpar])).id;
 
   const rRaro = await valor(local.uid,
     'select public.registrar_servicio($1,$2,$3,33333) j', [local.empresaId, raro, corte]);
