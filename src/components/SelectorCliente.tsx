@@ -36,6 +36,7 @@ interface Sugerencia { id: string; nombre: string; telefono: string }
  */
 export function SelectorCliente({
   empresaId, valor, alElegir, pedirTelefono = false, etiqueta = 'Cliente', obligatorio = false,
+  placeholder, ayudaTelefono,
 }: {
   empresaId: string;
   valor: ClienteElegido;
@@ -43,6 +44,10 @@ export function SelectorCliente({
   pedirTelefono?: boolean;
   etiqueta?: string;
   obligatorio?: boolean;
+  /** Nació para el fiado; en la agenda el campo pide otra cosa. */
+  placeholder?: string;
+  /** Para qué se pide el teléfono. Cambia según dónde se usa. */
+  ayudaTelefono?: string;
 }) {
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([]);
   const [abierto, setAbierto] = useState(false);
@@ -87,7 +92,7 @@ export function SelectorCliente({
         <div className="relative">
           <input
             className="campo py-2.5 pr-9"
-            placeholder={obligatorio ? 'Nombre de quien se lleva fiado' : 'Opcional'}
+            placeholder={placeholder ?? (obligatorio ? 'Nombre de quien se lleva fiado' : 'Opcional')}
             value={valor.nombre}
             onFocus={() => setAbierto(true)}
             onChange={(e) => {
@@ -149,7 +154,7 @@ export function SelectorCliente({
             onChange={(e) => alElegir({ ...valor, telefono: e.target.value })}
           />
           <span className="mt-1 block text-[12px] leading-snug text-tinta/45">
-            Para poder ubicarlo cuando haya que cobrarle. Si no lo tenés, dejalo vacío.
+            {ayudaTelefono ?? 'Para poder ubicarlo cuando haya que cobrarle. Si no lo tenés, dejalo vacío.'}
           </span>
         </label>
       )}

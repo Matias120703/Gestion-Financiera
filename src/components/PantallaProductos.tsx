@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -10,6 +11,8 @@ import { Vacio, Indicador } from '@/components/Piezas';
 import { mensajeDeError, verificarAfectados } from '@/lib/errores';
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+type Tipo = 'servicios' | 'productos';
 
 interface Borrador {
   id?: string;
@@ -28,35 +31,83 @@ const VACIO: Borrador = {
   stock: 0, stock_minimo: 0, controla_stock: true, activo: true,
 };
 
+/**
+ * Qué es cada cosa. Un producto se compra para revender: tiene costo, margen
+ * y stock. Un servicio —un corte, una sesión— no tiene nada de eso.
+ *
+ * En la base sigue siendo el mismo campo de siempre (`controla_stock`), y no
+ * es casualidad: es exactamente la pregunta que separa una cosa de la otra.
+ * Lo que cambió es cómo se pregunta en la pantalla.
+ */
+const esProducto = (p: { controla_stock: boolean }) => p.controla_stock;
+
+/**
+ * SERVICIOS Y PRODUCTOS
+ *
+ * Esto estaba en el cuaderno del dueño, tal cual: «Dividir Servicios y
+ * Productos». Antes era una sola tabla y la diferencia estaba escondida en un
+ * tilde del formulario. En una barbería la sección se llamaba «Servicios»,
+ * pero el botón de nuevo arrancaba como producto: quien entraba a cargar el
+ * shampoo que vende no sabía si estaba en el lugar correcto, y quien cargaba
+ * un corte tenía que acordarse de destildar el stock.
+ *
+ * Ahora son dos pestañas, y cada una crea lo suyo. Sin pestañas —un almacén
+ * que solo vende productos— la pantalla queda igual que siempre: una pestaña
+ * de «Servicios» vacía ahí sería ruido.
+ */
 export function PantallaProductos({
   empresaId, moneda, productos, puedeGestionar,
+  conPestanas = false, pestanaInicial = 'productos', tieneAgenda = false,
 }: {
   empresaId: string;
   moneda: string;
   productos: Producto[];
   /** Solo propietario y admin. La base lo vuelve a verificar con RLS. */
   puedeGestionar: boolean;
+  conPestanas?: boolean;
+  pestanaInicial?: Tipo;
+  /** Para decir dónde se le da duración a un servicio y se vuelve reservable. */
+  tieneAgenda?: boolean;
 }) {
   const t = useTextos();
   const router = useRouter();
   const dec = decimalesDe(moneda);
   const [busqueda, setBusqueda] = useState('');
+  const [pestana, setPestana] = useState<Tipo>(pestanaInicial);
   const [editando, setEditando] = useState<Borrador | null>(null);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
+
+  const enServicios = conPestanas && pestana === 'servicios';
+
+  const deLaPestana = useMemo(() => {
+    if (!conPestanas) return productos;
+    return productos.filter((p) => (pestana === 'productos' ? esProducto(p) : !esProducto(p)));
+  }, [productos, conPestanas, pestana]);
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    if (!q) return productos;
-    return productos.filter((p) => p.nombre.toLowerCase().includes(q) || (p.categoria ?? '').toLowerCase().includes(q));
-  }, [productos, busqueda]);
+    if (!q) return deLaPestana;
+    return deLaPestana.filter((p) => p.nombre.toLowerCase().includes(q) || (p.categoria ?? '').toLowerCase().includes(q));
+  }, [deLaPestana, busqueda]);
 
-  const activos = productos.filter((p) => p.activo);
-  const valorInventario = activos.reduce((s, p) => s + Number(p.stock) * Number(p.costo ?? 0), 0);
-  const valorVenta = activos.reduce((s, p) => s + Number(p.stock) * Number(p.precio), 0);
-  const criticos = activos.filter((p) => p.controla_stock && Number(p.stock) <= Number(p.stock_minimo));
+  // Los números de stock son de productos: un corte no se «repone» ni vale
+  // nada en el depósito. Dan lo mismo que antes, porque un servicio siempre
+  // tuvo el stock en cero.
+  const productosActivos = productos.filter((p) => p.activo && esProducto(p));
+  const valorInventario = productosActivos.reduce((s, p) => s + Number(p.stock) * Number(p.costo ?? 0), 0);
+  const valorVenta = productosActivos.reduce((s, p) => s + Number(p.stock) * Number(p.precio), 0);
+  const criticos = productosActivos.filter((p) => Number(p.stock) <= Number(p.stock_minimo));
   // El costo llega en null cuando quien mira no puede verlo: la base no lo manda.
   const verCostos = productos.every((p) => p.costo !== null) && puedeGestionar;
-  const unidadesEnStock = activos.reduce((s, p) => s + (p.controla_stock ? Number(p.stock) : 0), 0);
+  const unidadesEnStock = productosActivos.reduce((s, p) => s + Number(p.stock), 0);
+
+  const activosDeLaPestana = deLaPestana.filter((p) => p.activo);
+  const precioPromedio = activosDeLaPestana.length
+    ? activosDeLaPestana.reduce((s, p) => s + Number(p.precio), 0) / activosDeLaPestana.length
+    : 0;
+  const cuantos = (tipo: Tipo) =>
+    productos.filter((p) => p.activo && (tipo === 'productos' ? esProducto(p) : !esProducto(p))).length;
 
   async function alternarActivo(p: Producto) {
     setError('');
@@ -77,21 +128,56 @@ export function PantallaProductos({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo={t.productos.activos} valor={numero(activos.length)} detalle={`${productos.length - activos.length} pausados`} />
-        {verCostos ? (
-          <>
-            <Indicador titulo={t.productos.invertido} valor={dinero(valorInventario, moneda)} detalle="a precio de costo" />
-            <Indicador titulo={t.productos.siVendesTodo} valor={dinero(valorVenta, moneda)} detalle={`ganarías ${dinero(valorVenta - valorInventario, moneda)}`} tono="bueno" />
-          </>
-        ) : (
-          <>
-            <Indicador titulo={t.productos.unidades} valor={numero(unidadesEnStock)} detalle="disponibles" />
-            <Indicador titulo={t.productos.valorVenta} valor={dinero(valorVenta, moneda)} detalle="si se vende todo" />
-          </>
-        )}
-        <Indicador titulo={t.productos.porReponer} valor={numero(criticos.length)} detalle="llegaron al mínimo" tono={criticos.length ? 'malo' : 'neutro'} />
-      </div>
+      {conPestanas && (
+        <div className="flex gap-1 rounded-xl bg-arena p-1" role="tablist">
+          {(['servicios', 'productos'] as Tipo[]).map((tp) => (
+            <button
+              key={tp}
+              type="button"
+              role="tab"
+              aria-selected={pestana === tp}
+              onClick={() => { setPestana(tp); setBusqueda(''); }}
+              className={`flex-1 rounded-lg px-3 py-2 text-[14px] font-bold transition ${
+                pestana === tp ? 'bg-white text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'
+              }`}
+            >
+              {tp === 'servicios' ? 'Servicios' : 'Productos'}
+              <span className="ml-1.5 text-[12px] font-semibold text-tinta/40">{cuantos(tp)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {enServicios ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Indicador
+            titulo="Servicios activos"
+            valor={numero(activosDeLaPestana.length)}
+            detalle={`${deLaPestana.length - activosDeLaPestana.length} pausados`}
+          />
+          <Indicador titulo="Precio promedio" valor={dinero(precioPromedio, moneda)} detalle="de lo que ofrecés" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Indicador
+            titulo={t.productos.activos}
+            valor={numero(activosDeLaPestana.length)}
+            detalle={`${deLaPestana.length - activosDeLaPestana.length} pausados`}
+          />
+          {verCostos ? (
+            <>
+              <Indicador titulo={t.productos.invertido} valor={dinero(valorInventario, moneda)} detalle="a precio de costo" />
+              <Indicador titulo={t.productos.siVendesTodo} valor={dinero(valorVenta, moneda)} detalle={`ganarías ${dinero(valorVenta - valorInventario, moneda)}`} tono="bueno" />
+            </>
+          ) : (
+            <>
+              <Indicador titulo={t.productos.unidades} valor={numero(unidadesEnStock)} detalle="disponibles" />
+              <Indicador titulo={t.productos.valorVenta} valor={dinero(valorVenta, moneda)} detalle="si se vende todo" />
+            </>
+          )}
+          <Indicador titulo={t.productos.porReponer} valor={numero(criticos.length)} detalle="llegaron al mínimo" tono={criticos.length ? 'malo' : 'neutro'} />
+        </div>
+      )}
 
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -101,11 +187,23 @@ export function PantallaProductos({
           <input className="campo pl-10" placeholder={t.productos.buscar} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         </div>
         {puedeGestionar && (
-          <button className="boton-principal shrink-0" onClick={() => setEditando({ ...VACIO })}>+ Producto</button>
+          // Cada pestaña crea lo suyo. Antes el botón arrancaba siempre como
+          // producto, también en la sección que se llamaba «Servicios».
+          <button
+            className="boton-principal shrink-0"
+            onClick={() => setEditando({ ...VACIO, controla_stock: !enServicios })}
+          >
+            {enServicios ? '+ Servicio' : '+ Producto'}
+          </button>
         )}
       </div>
 
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      {aviso && (
+        <p className="rounded-xl bg-verde-claro px-4 py-3 text-[13.5px] font-semibold leading-snug text-verde-fuerte aparecer">
+          ✓ {aviso}
+        </p>
+      )}
 
       {!puedeGestionar && (
         <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
@@ -114,24 +212,43 @@ export function PantallaProductos({
         </p>
       )}
 
+      {enServicios && tieneAgenda && puedeGestionar && (
+        <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
+          Para que un servicio se pueda reservar por el link, dale una duración en{' '}
+          <Link href="/agenda" className="font-semibold text-verde-fuerte underline">Agenda</Link>.
+        </p>
+      )}
+
       <div className="tarjeta overflow-hidden">
         {visibles.length === 0 ? (
-          <Vacio
-            titulo={productos.length === 0 ? 'Todavía no hay productos' : 'Nada coincide'}
-            detalle={productos.length === 0
-              ? 'Cargá lo que vendés con su costo y su precio. Sin costo no hay margen real.'
-              : 'Probá con otra palabra.'}
-          />
+          enServicios ? (
+            <Vacio
+              titulo={deLaPestana.length === 0 ? 'Todavía no hay servicios' : 'Nada coincide'}
+              detalle={deLaPestana.length === 0
+                ? 'Cargá lo que ofrecés —un corte, una barba, una sesión— con su precio.'
+                : 'Probá con otra palabra.'}
+            />
+          ) : (
+            <Vacio
+              titulo={deLaPestana.length === 0 ? 'Todavía no hay productos' : 'Nada coincide'}
+              detalle={deLaPestana.length === 0
+                ? 'Cargá lo que vendés con su costo y su precio. Sin costo no hay margen real.'
+                : 'Probá con otra palabra.'}
+            />
+          )
         ) : (
           <div className="overflow-x-auto">
-            <table className="tabla min-w-[640px]">
+            {/* En servicios no van costo, margen ni stock: para un corte son
+                columnas llenas de guiones, y un guion repetido veinte veces
+                deja de leerse como «no aplica» y se lee como «falta algo». */}
+            <table className={`tabla ${enServicios ? 'min-w-[360px]' : 'min-w-[640px]'}`}>
               <thead>
                 <tr>
-                  <th>{t.productos.colProducto}</th>
-                  {verCostos && <th className="num">{t.productos.colCosto}</th>}
+                  <th>{enServicios ? 'Servicio' : t.productos.colProducto}</th>
+                  {verCostos && !enServicios && <th className="num">{t.productos.colCosto}</th>}
                   <th className="num">{t.productos.colPrecio}</th>
-                  {verCostos && <th className="num">{t.productos.colMargen}</th>}
-                  <th className="num">{t.productos.colStock}</th>
+                  {verCostos && !enServicios && <th className="num">{t.productos.colMargen}</th>}
+                  {!enServicios && <th className="num">{t.productos.colStock}</th>}
                   <th />
                 </tr>
               </thead>
@@ -147,24 +264,26 @@ export function PantallaProductos({
                           {p.categoria}{!p.activo && ' · pausado'}
                         </span>
                       </td>
-                      {verCostos && (
+                      {verCostos && !enServicios && (
                         <td className="num tabular-nums text-tinta/60">
                           {p.controla_stock ? dinero(Number(p.costo ?? 0), moneda, false) : <span className="text-tinta/30">—</span>}
                         </td>
                       )}
                       <td className="num font-semibold tabular-nums">{dinero(Number(p.precio), moneda, false)}</td>
-                      {verCostos && (
+                      {verCostos && !enServicios && (
                         <td className={`num font-semibold tabular-nums ${!p.controla_stock ? 'text-tinta/30' : margen >= 25 ? 'text-verde-fuerte' : margen > 0 ? 'text-ambar' : 'text-rojo'}`}>
                           {p.controla_stock ? porcentaje(margen, 0) : '—'}
                         </td>
                       )}
-                      <td className="num">
-                        {p.controla_stock ? (
-                          <span className={`tabular-nums font-semibold ${critico ? 'text-rojo' : ''}`}>{numero(Number(p.stock))}</span>
-                        ) : (
-                          <span className="text-tinta/30">—</span>
-                        )}
-                      </td>
+                      {!enServicios && (
+                        <td className="num">
+                          {p.controla_stock ? (
+                            <span className={`tabular-nums font-semibold ${critico ? 'text-rojo' : ''}`}>{numero(Number(p.stock))}</span>
+                          ) : (
+                            <span className="text-tinta/30">—</span>
+                          )}
+                        </td>
+                      )}
                       <td className="w-[92px]">
                         <div className="flex justify-end gap-1">
                           {puedeGestionar && (
@@ -185,6 +304,9 @@ export function PantallaProductos({
                             <button
                               onClick={() => alternarActivo(p)}
                               aria-label={p.activo ? 'Pausar' : 'Reactivar'}
+                              // Las dos rayitas solas no se entendían: quien
+                              // buscaba cómo sacar algo no las encontraba.
+                              title={p.activo ? 'Pausar: deja de aparecer para vender' : 'Volver a vender'}
                               className="icono-toque text-tinta/35 hover:bg-rojo-claro hover:text-rojo"
                             >
                               <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
@@ -207,7 +329,16 @@ export function PantallaProductos({
         <DialogoProducto
           empresaId={empresaId} moneda={moneda} dec={dec} borrador={editando}
           onCerrar={() => setEditando(null)}
-          onGuardado={() => { setEditando(null); router.refresh(); }}
+          onGuardado={(mensaje) => {
+            setEditando(null);
+            router.refresh();
+            // Lo que pasó al eliminar, sobre todo cuando en vez de borrarse
+            // quedó pausado.
+            if (mensaje) {
+              setAviso(mensaje);
+              setTimeout(() => setAviso(''), 6000);
+            }
+          }}
         />
       )}
     </div>
@@ -218,14 +349,47 @@ function DialogoProducto({
   empresaId, moneda, dec, borrador, onCerrar, onGuardado,
 }: {
   empresaId: string; moneda: string; dec: number; borrador: Borrador;
-  onCerrar: () => void; onGuardado: () => void;
+  onCerrar: () => void;
+  /** Con mensaje cuando hay algo que decir después de cerrar. */
+  onGuardado: (mensaje?: string) => void;
 }) {
   const t = useTextos();
   const [b, setB] = useState<Borrador>(borrador);
   const [guardando, setGuardando] = useState(false);
+  const [confirmar, setConfirmar] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState('');
 
+  /**
+   * Eliminar del catálogo (058). Lo decide la base: lo que nunca se usó se
+   * borra; lo que ya se vendió o tiene turnos se pausa, porque borrarlo
+   * soltaría esas ventas y esos turnos de lo que fueron. Si pasa lo segundo
+   * se dice, para que no parezca que el botón no hizo lo que decía.
+   */
+  async function eliminar() {
+    if (!borrador.id || eliminando) return;
+    setEliminando(true);
+    setError('');
+    try {
+      const { data, error } = await clienteNavegador()
+        .rpc('eliminar_producto', { p_producto: borrador.id });
+      if (error) throw error;
+      onGuardado(data === 'pausado'
+        ? `«${borrador.nombre}» ya tiene ventas o turnos, así que quedó pausado: no aparece más para vender y tu historial no cambia.`
+        : `«${borrador.nombre}» se eliminó.`);
+    } catch (e: any) {
+      setError(mensajeDeError(e, 'No se pudo eliminar.'));
+      setConfirmar(false);
+    } finally {
+      setEliminando(false);
+    }
+  }
+
   const margen = b.precio > 0 ? ((b.precio - b.costo) / b.precio) * 100 : 0;
+  const que = b.controla_stock ? 'producto' : 'servicio';
+  const sugeridas = b.controla_stock
+    ? ['Perfumes', 'Tecnología', 'Hogar', 'Ropa', 'Accesorios', 'General']
+    : ['Cortes', 'Barba', 'Color', 'Tratamientos', 'Reparaciones', 'General'];
 
   function set<K extends keyof Borrador>(k: K, v: Borrador[K], extra: Partial<Borrador> = {}) {
     setB((prev) => ({ ...prev, [k]: v, ...extra }));
@@ -250,17 +414,20 @@ function DialogoProducto({
         ? await supabase.from('productos').update(fila).eq('id', b.id).select('id')
         : await supabase.from('productos').insert(fila).select('id');
       if (error) throw error;
-      verificarAfectados(data, 'No se guardó: solo un administrador puede modificar productos.');
+      verificarAfectados(data, `No se guardó: solo un administrador puede modificar ${que}s.`);
       onGuardado();
     } catch (e: any) {
       const msg: string = e?.message ?? '';
       setError(/duplicate key|unique/i.test(msg)
-        ? 'Ya tenés un producto con ese nombre.'
+        ? `Ya tenés un ${que} con ese nombre.`
         : mensajeDeError(e, 'No se pudo guardar.'));
     } finally {
       setGuardando(false);
     }
   }
+
+  const opcion = (activa: boolean) =>
+    `rounded-lg px-3 py-2 text-left transition ${activa ? 'bg-white text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
@@ -269,9 +436,34 @@ function DialogoProducto({
         className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-[19px] font-bold tracking-tight">{b.id ? 'Editar producto' : 'Nuevo producto'}</h2>
+        <h2 className="text-[19px] font-bold tracking-tight">{b.id ? `Editar ${que}` : `Nuevo ${que}`}</h2>
 
         <div className="mt-4 space-y-3">
+          {/* Qué es va PRIMERO: es la pregunta que decide todo lo demás. Un
+              producto se compra para revender, así que tiene costo, margen y
+              stock; un servicio —un corte, una sesión— no tiene «costo de
+              compra», y pedirlo ahí sería inventar un número. Lo que le queda
+              al negocio en un servicio se calcula en Equipo y reparto.
+
+              Antes era un tilde de «Controlar stock» más abajo, que había que
+              saber interpretar. Ahora se pregunta con las palabras de todos
+              los días, y viene marcado según la pestaña desde donde se abrió. */}
+          <div>
+            <span className="etiqueta">Qué es</span>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
+              <button type="button" className={opcion(!b.controla_stock)}
+                onClick={() => set('controla_stock', false, { costo: 0 })}>
+                <span className="block text-[14px] font-bold">Servicio</span>
+                <span className="block text-[11.5px] font-medium opacity-70">un corte, una sesión</span>
+              </button>
+              <button type="button" className={opcion(b.controla_stock)}
+                onClick={() => set('controla_stock', true)}>
+                <span className="block text-[14px] font-bold">Producto</span>
+                <span className="block text-[11.5px] font-medium opacity-70">se compra y se revende</span>
+              </button>
+            </div>
+          </div>
+
           <label className="block">
             <span className="etiqueta">{t.productos.nombre}</span>
             <input className="campo" autoFocus maxLength={120} value={b.nombre} onChange={(e) => set('nombre', e.target.value)} />
@@ -281,23 +473,8 @@ function DialogoProducto({
             <span className="etiqueta">{t.productos.categoria}</span>
             <input className="campo" list="cat-prod" maxLength={40} value={b.categoria} onChange={(e) => set('categoria', e.target.value)} />
             <datalist id="cat-prod">
-              {['Perfumes', 'Tecnología', 'Hogar', 'Ropa', 'Accesorios', 'General'].map((c) => <option key={c} value={c} />)}
+              {sugeridas.map((c) => <option key={c} value={c} />)}
             </datalist>
-          </label>
-
-          {/* El control de stock va ANTES del precio a propósito: es la
-              pregunta que decide todo lo demás. Un producto que se compra
-              para revender tiene costo y margen; un servicio —un corte, una
-              sesión— no tiene «costo de compra», y pedirlo ahí sería inventar
-              un número. Lo que le queda al negocio en un servicio se calcula
-              en Equipo y reparto (comisión, alquiler, sueldo), no acá. */}
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-borde p-3">
-            <input type="checkbox" className="h-4 w-4 accent-[#17795a]" checked={b.controla_stock}
-              onChange={(e) => set('controla_stock', e.target.checked, e.target.checked ? {} : { costo: 0 })} />
-            <span>
-              <span className="block text-[14px] font-semibold">{t.productos.controlarStock}</span>
-              <span className="block text-[12.5px] text-tinta/50">{t.productos.controlarStockDetalle}</span>
-            </span>
           </label>
 
           {b.controla_stock ? (
@@ -324,6 +501,19 @@ function DialogoProducto({
                 </div>
                 <p className="mt-0.5 text-right text-[12px] font-semibold text-tinta/45">margen {porcentaje(margen, 0)}</p>
               </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <label className="block">
+                  <span className="etiqueta">{t.productos.stockActual}</span>
+                  <input type="number" inputMode="decimal" step="any" className="campo tabular-nums" value={b.stock}
+                    onChange={(e) => set('stock', Number(e.target.value) || 0)} />
+                </label>
+                <label className="block">
+                  <span className="etiqueta">{t.productos.avisarCuandoQuede}</span>
+                  <input type="number" inputMode="decimal" min={0} step="any" className="campo tabular-nums" value={b.stock_minimo}
+                    onChange={(e) => set('stock_minimo', Math.max(0, Number(e.target.value) || 0))} />
+                </label>
+              </div>
             </>
           ) : (
             <>
@@ -335,21 +525,6 @@ function DialogoProducto({
               <p className="text-[12.5px] leading-relaxed text-tinta/50">{t.productos.sinCostoServicio}</p>
             </>
           )}
-
-          {b.controla_stock && (
-            <div className="grid grid-cols-2 gap-2.5">
-              <label className="block">
-                <span className="etiqueta">{t.productos.stockActual}</span>
-                <input type="number" inputMode="decimal" step="any" className="campo tabular-nums" value={b.stock}
-                  onChange={(e) => set('stock', Number(e.target.value) || 0)} />
-              </label>
-              <label className="block">
-                <span className="etiqueta">{t.productos.avisarCuandoQuede}</span>
-                <input type="number" inputMode="decimal" min={0} step="any" className="campo tabular-nums" value={b.stock_minimo}
-                  onChange={(e) => set('stock_minimo', Math.max(0, Number(e.target.value) || 0))} />
-              </label>
-            </div>
-          )}
         </div>
 
         {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
@@ -360,6 +535,35 @@ function DialogoProducto({
             {guardando ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
+
+        {/* Solo al editar: lo que todavía no existe no se elimina. */}
+        {borrador.id && (
+          confirmar ? (
+            <div className="mt-4 space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
+              <p className="text-[13.5px] font-bold text-rojo">¿Eliminar «{borrador.nombre}»?</p>
+              <p className="text-[12.5px] leading-snug text-tinta/65">
+                {borrador.controla_stock ? 'Si ya lo vendiste' : 'Si ya lo cobraste o tiene turnos'}, no se
+                borra: queda pausado, y tu historial no cambia. Si nunca se usó, se borra.
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button type="button" className="boton-suave py-2.5" onClick={() => setConfirmar(false)}>No</button>
+                <button
+                  type="button" onClick={eliminar} disabled={eliminando}
+                  className="rounded-xl bg-rojo py-2.5 text-[14px] font-bold text-white disabled:opacity-50"
+                >
+                  {eliminando ? 'Eliminando…' : 'Sí, eliminar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button" onClick={() => setConfirmar(true)}
+              className="mt-3 w-full rounded-xl py-2.5 text-[13.5px] font-semibold text-rojo/80 hover:bg-rojo-claro hover:text-rojo"
+            >
+              Eliminar {que}
+            </button>
+          )
+        )}
       </form>
     </div>
   );

@@ -408,8 +408,10 @@ ok('a un ganadero se le dice Hacienda',
   palabra('ganaderia', 'emprendedor', 'productos', 'Productos', 'es'), 'Hacienda');
 ok('a un agricultor, Cultivos',
   palabra('agricultura', 'emprendedor', 'productos', 'Productos', 'es'), 'Cultivos');
-ok('a una peluquería, Servicios',
-  palabra('servicios', 'emprendedor', 'productos', 'Productos', 'es'), 'Servicios');
+// «Servicios y productos» desde que la pantalla tiene las dos pestañas: con
+// «Servicios» solo, quien iba a cargar lo que revende dudaba del lugar.
+ok('a una peluquería, Servicios y productos',
+  palabra('servicios', 'emprendedor', 'productos', 'Productos', 'es'), 'Servicios y productos');
 ok('y a un almacén no se le cambia nada',
   palabra('comercio', 'emprendedor', 'productos', 'Productos', 'es'), 'Productos');
 ok('la peluquería cobra, no vende',
@@ -578,6 +580,37 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('Clientes muestra el historial de turnos', cli.includes("rpc('historial_cliente'"), true);
   ok('el menú tiene Fiado', nav.includes("href: '/fiado'"), true);
   ok('y Clientes', nav.includes("href: '/clientes'"), true);
+  // Servicios y productos, separados (estaba en el cuaderno del dueño).
+  const pro = fs.readFileSync('src/components/PantallaProductos.tsx', 'utf8');
+  ok('productos tiene pestañas de servicios y productos',
+    pro.includes("type Tipo = 'servicios' | 'productos'"), true);
+  ok('cada pestaña crea lo suyo',
+    pro.includes("'+ Servicio'") && pro.includes("'+ Producto'"), true);
+  ok('el formulario pregunta qué es, sin tilde escondido',
+    pro.includes('Qué es') && !pro.includes('t.productos.controlarStock}'), true);
+  const pag = fs.readFileSync('src/app/(app)/productos/page.tsx', 'utf8');
+  ok('en servicios y oficios siempre hay pestañas',
+    pag.includes("ctx.empresa.rubro === 'servicios'"), true);
+
+  // Eliminar, con lo que significa en cada lado (058).
+  ok('el cliente se elimina desde su ficha', cli.includes("rpc('eliminar_cliente'"), true);
+  ok('a quien debe se lo manda a Fiado antes',
+    cli.includes('primero cobrale o borrá su deuda'), true);
+  ok('y eliminar clientes es del administrador',
+    fs.readFileSync('src/app/(app)/clientes/page.tsx', 'utf8').includes('puedeEliminar={ctx.esAdmin}'), true);
+  ok('lo del catálogo se elimina desde el formulario', pro.includes("rpc('eliminar_producto'"), true);
+  ok('y avisa cuando en vez de borrarse quedó pausado', pro.includes("data === 'pausado'"), true);
+
+  // El cierre del día dice lo que «Entró» no dice (057).
+  const cie = fs.readFileSync('src/app/(app)/cierre/page.tsx', 'utf8');
+  ok('el cierre muestra lo fiado del día', cie.includes('cierre.fiado_vendido'), true);
+  ok('y lo cobrado de fiados', cie.includes('cierre.fiado_cobrado'), true);
+  // Y la agenda elige el cliente de la lista, y lo manda al reservar.
+  const age = fs.readFileSync('src/components/PantallaAgenda.tsx', 'utf8');
+  ok('la agenda elige el cliente de la lista', age.includes('<SelectorCliente'), true);
+  ok('y lo manda al reservar', age.includes('p_cliente: d.cliente'), true);
+  ok('con textos de agenda y no de fiado', age.includes('placeholder="Nombre de quien viene"'), true);
+
   // El panel lo pone al lado de las ventas. No lo resta: la venta existió.
   const pan = fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8');
   ok('el panel dice cuánto te deben',

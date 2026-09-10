@@ -52,7 +52,7 @@ function haceTanto(iso: string | null): string {
  * como «0981234567». La gente escribe los teléfonos de cualquier manera.
  */
 export function PantallaClientes({
-  empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda,
+  empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, puedeEliminar,
 }: {
   empresaId: string;
   moneda: string;
@@ -61,6 +61,8 @@ export function PantallaClientes({
   clientes: ClienteLista[];
   saldos: Record<string, number>;
   tieneAgenda: boolean;
+  /** Dueño y administradores. Un vendedor carga clientes pero no los saca. */
+  puedeEliminar: boolean;
 }) {
   const router = useRouter();
   const locale = useLocale();
@@ -160,6 +162,7 @@ export function PantallaClientes({
                 plata={plata}
                 locale={locale}
                 tieneAgenda={tieneAgenda}
+                puedeEliminar={puedeEliminar}
                 abierto={abierto === c.id}
                 onAbrir={() => setAbierto(abierto === c.id ? null : c.id)}
                 onListo={listo}
@@ -175,20 +178,52 @@ export function PantallaClientes({
 /** Crear o editar un cliente. Con `c`, edita. */
 function FormularioCliente({
   empresaId, c, titulo, onCerrar, onListo,
+  puedeEliminar = false, debe = 0, plata, proximo = '',
 }: {
   empresaId: string;
   c?: ClienteLista;
   titulo: string;
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
+  /** Solo dueño y administradores. La base lo vuelve a verificar (058). */
+  puedeEliminar?: boolean;
+  /** Lo que debe. A quien debe no se lo elimina: se lo manda a Fiado. */
+  debe?: number;
+  plata?: (n: number) => string;
+  /** Su próximo turno ya escrito, para avisar que no se cancela. */
+  proximo?: string;
 }) {
   const [nombre, setNombre] = useState(c?.nombre ?? '');
   const [telefono, setTelefono] = useState(c?.telefono ?? '');
   const [notas, setNotas] = useState(c?.notas ?? '');
   const [guardando, setGuardando] = useState(false);
+  const [confirmar, setConfirmar] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
   const [error, setError] = useState('');
 
   const puede = nombre.trim().length > 0 && !guardando;
+
+  /**
+   * Eliminar no es igual en todos los casos, y lo decide la base (058): sin
+   * nada atado se borra; con ventas o turnos se archiva, para que lo que ya
+   * pasó siga diciendo a quién. Para quien toca el botón es lo mismo: deja
+   * de estar en la lista.
+   */
+  async function eliminar() {
+    if (!c || eliminando) return;
+    setEliminando(true);
+    setError('');
+    try {
+      const { error: err } = await clienteNavegador().rpc('eliminar_cliente', { p_cliente: c.id });
+      if (err) throw err;
+      onListo(`${c.nombre} ya no está en tu lista.`);
+    } catch (e: any) {
+      setError(mensajeDeError(e, 'No se pudo eliminar.'));
+      setConfirmar(false);
+    } finally {
+      setEliminando(false);
+    }
+  }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -247,12 +282,51 @@ function FormularioCliente({
           {guardando ? 'Guardando…' : 'Guardar'}
         </button>
       </div>
+
+      {/* Eliminar va abajo y separado: es lo menos frecuente, y lo único de
+          acá que no se arregla con otro «Guardar». */}
+      {c && puedeEliminar && (
+        confirmar ? (
+          <div className="space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
+            <p className="text-[13.5px] font-bold text-rojo">¿Eliminar a {c.nombre}?</p>
+            <p className="text-[12.5px] leading-snug text-tinta/65">
+              Deja de aparecer en tu lista y al elegir cliente. Lo que ya pasó con {c.nombre} queda
+              en tu historial.{proximo && ` Su turno del ${proximo} no se cancela.`}
+            </p>
+            <div className="flex gap-2">
+              <button type="button" className="boton-texto px-4" onClick={() => setConfirmar(false)}>No</button>
+              <button
+                type="button" onClick={eliminar} disabled={eliminando}
+                className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
+              >
+                {eliminando ? 'Eliminando…' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        ) : debe > 0 ? (
+          // A quien te debe no se lo elimina: el libro de fiado cuelga de su
+          // ficha. La base lo frena igual (058); acá se dice qué hacer antes.
+          <p className="border-t border-borde pt-3 text-[12.5px] leading-snug text-tinta/50">
+            Para eliminar a {c.nombre}, primero cobrale o borrá su deuda de {plata ? plata(debe) : debe} en{' '}
+            <Link href="/fiado" className="font-semibold text-verde-fuerte underline">Fiado</Link>.
+          </p>
+        ) : (
+          <div className="border-t border-borde pt-3">
+            <button
+              type="button" onClick={() => setConfirmar(true)}
+              className="text-[13px] font-semibold text-rojo/80 hover:text-rojo"
+            >
+              Eliminar cliente
+            </button>
+          </div>
+        )
+      )}
     </form>
   );
 }
 
 function FilaCliente({
-  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, abierto, onAbrir, onListo,
+  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
@@ -262,6 +336,7 @@ function FilaCliente({
   plata: (n: number) => string;
   locale: string;
   tieneAgenda: boolean;
+  puedeEliminar: boolean;
   abierto: boolean;
   onAbrir: () => void;
   onListo: (mensaje: string) => void;
@@ -332,6 +407,10 @@ function FilaCliente({
               titulo="Editar cliente"
               onCerrar={() => setEditando(false)}
               onListo={(m) => { setEditando(false); onListo(m); }}
+              puedeEliminar={puedeEliminar}
+              debe={debe}
+              plata={plata}
+              proximo={proximo}
             />
           ) : (
             <>

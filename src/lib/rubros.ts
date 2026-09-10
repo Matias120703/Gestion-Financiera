@@ -137,7 +137,10 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       '/agenda': true,
       '/reparto': true,
     },
-    palabras: { vender: 'Cobrar', productos: 'Servicios', ventas: 'Cobrado' },
+    // «Servicios y productos» y no «Servicios»: la pantalla tiene las dos
+    // cosas, en dos pestañas. Con el nombre viejo, quien entraba a cargar el
+    // shampoo que vende no sabía si estaba en el lugar correcto.
+    palabras: { vender: 'Cobrar', productos: 'Servicios y productos', ventas: 'Cobrado' },
     // El día SÍ es su unidad: un peluquero cobra hoy lo que hizo hoy, cierra
     // su día y tiene racha como cualquier comercio. Estuvo en `true` un
     // tiempo, arrastrado de cuando los lotes iban a servir también acá, y el

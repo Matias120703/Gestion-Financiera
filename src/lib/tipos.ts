@@ -461,6 +461,10 @@ export interface CierreDelDia {
   misma_dia_semana_pasada: ResumenCrudo;
   promedio_semana: { ventas: number; gastos: number; ganancia_neta: number | null };
   producto_estrella: { nombre: string; unidades: number; ingresos: number } | null;
+  /** De lo vendido ese día, cuánto se fio: se vendió, pero no entró (057). */
+  fiado_vendido: number;
+  /** Lo cobrado ese día de fiados de otros días: entró sin venta de hoy (057). */
+  fiado_cobrado: number;
   racha: Racha;
   ya_cerrado: boolean;
 }

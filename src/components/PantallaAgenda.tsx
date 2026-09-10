@@ -9,6 +9,7 @@ import { sumarDias } from '@/lib/fechas';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
+import { SelectorCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import type {
   Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
   Excepcion,
@@ -167,6 +168,8 @@ export function PantallaAgenda({
             p_inicia: d.inicia,
             p_nombre: d.nombre,
             p_telefono: d.telefono,
+            // Elegido de la lista: queda atado aunque no tenga teléfono (057).
+            p_cliente: d.cliente,
           }))}
         />
 
@@ -475,6 +478,7 @@ function NuevoTurno({
   ocupado: boolean;
   alReservar: (d: {
     profesional: string; producto: string; inicia: string; nombre: string; telefono: string;
+    cliente: string | null;
   }) => Promise<boolean>;
 }) {
   const t = useTextos();
@@ -489,8 +493,9 @@ function NuevoTurno({
   const [producto, setProducto] = useState(agendables.length === 1 ? agendables[0].id : '');
   const [fecha, setFecha] = useState(dia);
   const [elegido, setElegido] = useState('');
-  const [nombre, setNombre] = useState('');
-  const [telefono, setTelefono] = useState('');
+  // A quién (057). Se elige de la lista o se escribe uno nuevo: el buscador
+  // ahorra volver a escribir nombre y teléfono de alguien que ya vino.
+  const [cliente, setCliente] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
 
   // Si se cambia de día en la agenda, el formulario acompaña: lo más probable
   // es que quien lo abra ahí quiera anotar para ese día.
@@ -525,15 +530,17 @@ function NuevoTurno({
     );
   }
 
-  const listoParaAnotar = elegido !== '' && nombre.trim() !== '' && !ocupado;
+  const listoParaAnotar = elegido !== '' && cliente.nombre.trim() !== '' && !ocupado;
 
   async function anotar() {
-    const hecho = await alReservar({ profesional, producto, inicia: elegido, nombre, telefono });
+    const hecho = await alReservar({
+      profesional, producto, inicia: elegido,
+      nombre: cliente.nombre.trim(), telefono: cliente.telefono.trim(), cliente: cliente.id,
+    });
     if (!hecho) return;
     setAbierto(false);
     setElegido('');
-    setNombre('');
-    setTelefono('');
+    setCliente({ id: null, nombre: '', telefono: '' });
   }
 
   return (
@@ -570,17 +577,20 @@ function NuevoTurno({
       />
 
       {elegido && (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="etiqueta" htmlFor="turno-nombre">{t.agenda.nombreCliente}</label>
-            <input id="turno-nombre" className="campo" maxLength={80} value={nombre} disabled={ocupado}
-              onChange={(e) => setNombre(e.target.value)} />
-          </div>
-          <div>
-            <label className="etiqueta" htmlFor="turno-tel">{t.agenda.telefonoCliente}</label>
-            <input id="turno-tel" className="campo" inputMode="tel" maxLength={40} value={telefono}
-              disabled={ocupado} onChange={(e) => setTelefono(e.target.value)} />
-          </div>
+        <div className="mt-3">
+          {/* El teléfono se pide siempre que el cliente sea nuevo: con él
+              llegan el recordatorio y el enlace para cancelar. Si ya estaba
+              cargado, se usa el suyo. */}
+          <SelectorCliente
+            empresaId={empresaId}
+            valor={cliente}
+            alElegir={setCliente}
+            etiqueta={t.agenda.nombreCliente}
+            placeholder="Nombre de quien viene"
+            ayudaTelefono="Para mandarle el recordatorio y el enlace para cancelar. Si no lo tenés, dejalo vacío."
+            pedirTelefono
+            obligatorio
+          />
         </div>
       )}
 

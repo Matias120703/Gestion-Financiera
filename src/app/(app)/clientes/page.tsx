@@ -37,6 +37,9 @@ export default async function PaginaClientes() {
       negocio={ctx.empresa.nombre}
       clientes={clientes}
       saldos={saldos}
+      // Eliminar esconde historia, y eso lo decide quien administra. La base
+      // lo vuelve a verificar (058).
+      puedeEliminar={ctx.esAdmin}
       // Visitas y turnos solo significan algo donde hay agenda. En un almacén
       // «0 visitas» al lado de cada nombre sería ruido con cara de dato.
       tieneAgenda={tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/agenda')}

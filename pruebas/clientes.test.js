@@ -424,6 +424,252 @@ async function principal() {
       'no pertenecés');
   }
 
+  // =====================================================================
+  grupo('12 · El cierre del día sabe del fiado (057)');
+  // =====================================================================
+  {
+    const C = await H.montarEmpresa(db, { email: 'cierre@local.com', nombre: 'Panadería' });
+    const pan = await H.crearProducto(db, C.empresaId, C.uid,
+      { nombre: 'Pan', precio: 10000, costo: 5000, stock: 100, controla_stock: true });
+    const rosa = (await valor(C.uid,
+      "select public.guardar_cliente($1,'Rosa','0983 444 555') id", [C.empresaId])).id;
+
+    // El día del negocio y no el del servidor: cerca de medianoche no son el
+    // mismo, y la prueba fallaría según la hora a la que se corra.
+    const diaMenos = async (n) => uno(await db.query(
+      'select (public.hoy_empresa($1) - $2::int)::text d', [C.empresaId, n])).d;
+    const hoyC = await diaMenos(0);
+    const ayer = await diaMenos(1);
+    const hace3 = await diaMenos(3);
+
+    const vender = (fecha, cantidad, metodo, cliente) => valor(C.uid,
+      `select public.registrar_venta($1,$2::jsonb,$3,'',$4,'','','manual',0,$5) id`,
+      [C.empresaId, JSON.stringify([{ producto_id: pan, cantidad, precio_unitario: 10000 }]),
+       fecha, metodo, cliente ?? null]);
+
+    // Ayer se le fiaron 50.000 a Rosa. Hoy: 20.000 en efectivo, 30.000
+    // fiado, y Rosa paga 10.000 de lo de ayer.
+    await vender(ayer, 5, 'credito', rosa);
+    await vender(hoyC, 2, 'efectivo');
+    await vender(hoyC, 3, 'credito', rosa);
+    await valor(C.uid, "select public.cobrar_fiado($1,$2,10000,'efectivo',$3::date) j",
+      [C.empresaId, rosa, hoyC]);
+
+    const cie = (await valor(C.uid, 'select public.cierre_del_dia($1,$2::date) c',
+      [C.empresaId, hoyC])).c;
+    ok('las ventas del día siguen siendo todas', Number(cie.resumen.ventas), 50000);
+    ok('de eso, lo fiado', Number(cie.fiado_vendido), 30000);
+    ok('y lo cobrado de fiados', Number(cie.fiado_cobrado), 10000);
+
+    // Un día en que solo se cobró un fiado tuvo plata que entró: no puede
+    // salir «sin actividad». (El cobro se fecha antes de la deuda solo para
+    // tener un día sin ninguna venta; lo que se prueba es el cierre.)
+    await valor(C.uid, "select public.cobrar_fiado($1,$2,5000,'efectivo',$3::date) j",
+      [C.empresaId, rosa, hace3]);
+    const soloCobro = (await valor(C.uid, 'select public.cierre_del_dia($1,$2::date) c',
+      [C.empresaId, hace3])).c;
+    ok('ese día no hubo ventas', Number(soloCobro.resumen.ventas), 0);
+    ok('pero sí un cobro', Number(soloCobro.fiado_cobrado), 5000);
+    ok('y no sale «sin actividad»', soloCobro.hubo_actividad, true);
+  }
+
+  // =====================================================================
+  grupo('13 · Agendar con un cliente elegido, aunque no tenga teléfono (057)');
+  // =====================================================================
+  {
+    const E = await H.montarEmpresa(db, { email: 'agenda@local.com', nombre: 'Barbería Elsa' });
+    const corteE = await H.crearProducto(db, E.empresaId, E.uid,
+      { nombre: 'Corte', precio: 50000, costo: 0, controla_stock: false });
+    const profE = (await valor(E.uid,
+      "select public.guardar_profesional($1,'La dueña','local',null,$2) id", [E.empresaId, E.uid])).id;
+    await valor(E.uid, 'select public.guardar_servicio_agenda($1,$2,$3) j', [E.empresaId, corteE, 30]);
+    await valor(E.uid, 'select public.guardar_horario($1,$2,1,$3,$4) j',
+      [E.empresaId, profE, '08:00', '18:00']);
+    // Un lunes futuro, para no depender de qué día se corra la prueba.
+    const lunesE = uno(await db.query(
+      `select (date_trunc('week', current_date + interval '14 days'))::date::text d`)).d;
+
+    // Una clienta cargada sin teléfono. Antes de la 057 su turno quedaba
+    // suelto: el trigger de la 053 solo sabe atar por teléfono.
+    const elsa = (await valor(E.uid,
+      "select public.guardar_cliente($1,'Doña Elsa','') id", [E.empresaId])).id;
+    const r = await valor(E.uid,
+      "select public.reservar($1,$2,$3,($4 || ' 10:00')::timestamptz,'Doña Elsa','','local',$5) j",
+      [E.empresaId, profE, corteE, lunesE, elsa]);
+    ok('el turno quedó atado a la clienta elegida',
+      uno(await db.query('select cliente_id from public.turnos_reserva where id=$1', [r.j.reserva])).cliente_id,
+      elsa);
+
+    // Sin elegir y sin teléfono sigue como antes: no se inventan clientes.
+    const r2 = await valor(E.uid,
+      "select public.reservar($1,$2,$3,($4 || ' 11:00')::timestamptz,'Alguien','') j",
+      [E.empresaId, profE, corteE, lunesE]);
+    ok('sin elegir y sin teléfono, sigue sin cliente',
+      uno(await db.query('select cliente_id from public.turnos_reserva where id=$1', [r2.j.reserva])).cliente_id,
+      null);
+
+    rechazado('no se puede agendar con el cliente de otro negocio',
+      await como(E.uid,
+        "select public.reservar($1,$2,$3,($4 || ' 12:00')::timestamptz,'Juan','','local',$5)",
+        [E.empresaId, profE, corteE, lunesE, juan]),
+      'no es de esta cuenta');
+
+    // La firma vieja tiene que estar muerta, o PostgREST no sabe cuál llamar.
+    ok('queda una sola función reservar',
+      Number(uno(await db.query("select count(*)::int n from pg_proc where proname='reservar'")).n), 1);
+  }
+
+  // =====================================================================
+  // 14 a 16 · ELIMINAR (058). En un negocio aparte, para que lo que se
+  // borra acá no le cambie nada a los grupos de arriba.
+  // =====================================================================
+  const D = await H.montarEmpresa(db, { email: 'duena@tienda.com', nombre: 'Tienda Lucía' });
+  const vendedora = await H.sumarMiembro(db, D.empresaId, 'vende@tienda.com', 'vendedor');
+  const remera = await H.crearProducto(db, D.empresaId, D.uid,
+    { nombre: 'Remera', precio: 80000, costo: 40000, stock: 50, controla_stock: true });
+  const hoyD = uno(await db.query('select public.hoy_empresa($1)::text d', [D.empresaId])).d;
+  const clienteD = async (nombre, tel) => (await valor(D.uid,
+    'select public.guardar_cliente($1,$2,$3) id', [D.empresaId, nombre, tel])).id;
+  const cuenta = async (sql, args) => Number(uno(await db.query(sql, args)).n);
+  const eliminarCliente = async (id) =>
+    (await valor(D.uid, 'select public.eliminar_cliente($1) r', [id])).r;
+  const eliminarProducto = async (id) =>
+    (await valor(D.uid, 'select public.eliminar_producto($1) r', [id])).r;
+  const enLista = async (id) =>
+    (await valor(D.uid, 'select public.lista_clientes($1) j', [D.empresaId])).j.some((c) => c.id === id);
+
+  // =====================================================================
+  grupo('14 · Eliminar un cliente sin perder lo que te debe (058)');
+  // =====================================================================
+  {
+    const repetido = await clienteD('Lucas', '');
+    ok('sin nada atado, se borra de verdad', await eliminarCliente(repetido), 'borrado');
+    ok('y no queda la ficha',
+      await cuenta('select count(*)::int n from public.clientes where id=$1', [repetido]), 0);
+
+    // El libro de fiado cuelga de la ficha con borrado en cascada (054):
+    // borrarla borraría la deuda. Esta es la prueba que importa.
+    const carla = await clienteD('Carla', '0984 123 456');
+    await valor(D.uid,
+      `select public.registrar_venta($1,$2::jsonb,$3,'','credito','','','manual',0,$4) id`,
+      [D.empresaId, JSON.stringify([{ producto_id: remera, cantidad: 1, precio_unitario: 80000 }]),
+       hoyD, carla]);
+    rechazado('a quien te debe no se lo elimina',
+      await como(D.uid, 'select public.eliminar_cliente($1)', [carla]), 'todavía te debe 80.000');
+    ok('y la deuda sigue entera', await saldo(carla), 80000);
+
+    // Pagó todo. Ahora sí, pero se archiva: tiene una venta y un libro.
+    await valor(D.uid, 'select public.cobrar_fiado($1,$2,80000) j', [D.empresaId, carla]);
+    ok('con historia, se archiva en vez de borrarse', await eliminarCliente(carla), 'archivado');
+    ok('el libro de fiado quedó entero',
+      await cuenta('select count(*)::int n from public.fiado where cliente_id=$1', [carla]), 2);
+    ok('la venta sigue diciendo a quién',
+      await cuenta('select count(*)::int n from public.movimientos where cliente_id=$1', [carla]), 1);
+    ok('no aparece en la lista', await enLista(carla), false);
+    ok('ni al buscar para vender',
+      (await valor(D.uid, "select public.buscar_clientes($1,'Carla') j", [D.empresaId])).j.length, 0);
+
+    // Vuelve con el mismo número: es la misma persona, con su historia.
+    ok('si vuelve con el mismo teléfono, es la misma ficha',
+      await clienteD('Carla M.', '0984123456'), carla);
+    ok('y reaparece en la lista', await enLista(carla), true);
+
+    const tina = await clienteD('Tina', '');
+    rechazado('una vendedora no elimina clientes',
+      await como(vendedora, 'select public.eliminar_cliente($1)', [tina]),
+      'dueño o de un administrador');
+    rechazado('ni alguien de otro negocio',
+      await como(B.uid, 'select public.eliminar_cliente($1)', [tina]), 'no pertenecés');
+    ok('y Tina sigue ahí',
+      await cuenta('select count(*)::int n from public.clientes where id=$1 and activo', [tina]), 1);
+  }
+
+  // =====================================================================
+  grupo('15 · El teléfono de una ficha eliminada queda libre (058)');
+  // =====================================================================
+  {
+    // La misma persona cargada dos veces: «Guille», con teléfono y un fiado
+    // ya pagado, y «Guillermo», sin teléfono. Se elimina la primera y a la
+    // segunda se le pone el número. Hasta la 058 el índice único lo frenaba
+    // con «ya existe algo con ese nombre», que encima hablaba del nombre.
+    const guille = await clienteD('Guille', '0982 776 920');
+    await valor(D.uid, "select public.anotar_fiado($1,$2,10000,'Prueba') id", [D.empresaId, guille]);
+    await valor(D.uid, 'select public.cobrar_fiado($1,$2,10000) j', [D.empresaId, guille]);
+    ok('Guille se archiva', await eliminarCliente(guille), 'archivado');
+
+    const guillermo = await clienteD('Guillermo', '');
+    aceptado('a Guillermo se le puede poner ese número',
+      await como(D.uid, "select public.guardar_cliente($1,'Guillermo','0982776920','',$2)",
+        [D.empresaId, guillermo]));
+    ok('el número quedó en Guillermo',
+      uno(await db.query('select telefono_norm from public.clientes where id=$1', [guillermo])).telefono_norm,
+      '0982776920');
+    ok('la ficha vieja lo soltó sin perder su libro',
+      [uno(await db.query('select telefono from public.clientes where id=$1', [guille])).telefono,
+       await cuenta('select count(*)::int n from public.fiado where cliente_id=$1', [guille])],
+      ['', 2]);
+
+    // Con una ficha activa, en cambio, no se pisa: se dice de quién es.
+    await clienteD('Pedro', '0991 000 222');
+    rechazado('el teléfono de una ficha activa no se pisa',
+      await como(D.uid, "select public.guardar_cliente($1,'Guillermo','0991000222','',$2)",
+        [D.empresaId, guillermo]),
+      'ya es de «Pedro»');
+  }
+
+  // =====================================================================
+  grupo('16 · Eliminar del catálogo: lo usado se pausa, lo nuevo se borra (058)');
+  // =====================================================================
+  {
+    const activo = async (id) =>
+      uno(await db.query('select activo from public.productos where id=$1', [id])).activo;
+
+    // Cargado por error y nunca vendido: se va de verdad.
+    const mal = await H.crearProducto(db, D.empresaId, D.uid,
+      { nombre: 'Remra', precio: 80000, costo: 40000 });
+    ok('lo que nunca se vendió se borra', await eliminarProducto(mal), 'borrado');
+    ok('y no queda en el catálogo',
+      await cuenta('select count(*)::int n from public.productos where id=$1', [mal]), 0);
+
+    // La remera ya se vendió (grupo 14): se pausa, y la venta no la suelta.
+    ok('lo vendido se pausa en vez de borrarse', await eliminarProducto(remera), 'pausado');
+    ok('queda pausado', await activo(remera), false);
+    ok('y la venta sigue atada a su producto',
+      await cuenta('select count(*)::int n from public.movimiento_items where producto_id=$1', [remera]), 1);
+
+    // Un servicio con turnos tampoco se borra: un turno no puede quedar sin
+    // su servicio.
+    const corte = await H.crearProducto(db, D.empresaId, D.uid,
+      { nombre: 'Corte', precio: 50000, costo: 0, controla_stock: false });
+    const prof = (await valor(D.uid,
+      "select public.guardar_profesional($1,'Vendedora','comision',50,$2) id",
+      [D.empresaId, vendedora])).id;
+    await valor(D.uid, 'select public.guardar_servicio_agenda($1,$2,$3) j', [D.empresaId, corte, 30]);
+    await valor(D.uid, 'select public.guardar_horario($1,$2,1,$3,$4) j',
+      [D.empresaId, prof, '08:00', '18:00']);
+    const lunes = uno(await db.query(
+      `select (date_trunc('week', current_date + interval '14 days'))::date::text d`)).d;
+    await valor(D.uid,
+      "select public.reservar($1,$2,$3,($4 || ' 10:00')::timestamptz,'Nora','0975 333 444') j",
+      [D.empresaId, prof, corte, lunes]);
+    ok('un servicio con turnos se pausa', await eliminarProducto(corte), 'pausado');
+
+    // Con duración en la agenda pero ningún turno: se borra, y se lleva la
+    // duración, que sin el servicio no significa nada.
+    const barba = await H.crearProducto(db, D.empresaId, D.uid,
+      { nombre: 'Barba', precio: 30000, costo: 0, controla_stock: false });
+    await valor(D.uid, 'select public.guardar_servicio_agenda($1,$2,$3) j', [D.empresaId, barba, 20]);
+    ok('un servicio sin turnos se borra', await eliminarProducto(barba), 'borrado');
+    ok('y se lleva su duración de la agenda',
+      await cuenta('select count(*)::int n from public.turnos_servicio where producto_id=$1', [barba]), 0);
+
+    rechazado('una vendedora no elimina del catálogo',
+      await como(vendedora, 'select public.eliminar_producto($1)', [corte]),
+      'dueño o de un administrador');
+    rechazado('ni alguien de otro negocio',
+      await como(B.uid, 'select public.eliminar_producto($1)', [corte]), 'no pertenecés');
+  }
+
   console.log(`\n${fallos === 0 ? '✓' : '✗'} ${corridas - fallos}/${corridas} pruebas`);
   await db.close();
   process.exit(fallos === 0 ? 0 : 1);

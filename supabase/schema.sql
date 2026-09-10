@@ -57,6 +57,18 @@
 --   · 044_lotes_a_tablas.sql
 --   · 045_lotes_b_resultado.sql
 --   · 046_aviso_de_reserva.sql
+--   · 047_la_plata_del_dueno.sql
+--   · 048_las_sillas_se_pagan.sql
+--   · 049_prueba_mas_corta.sql
+--   · 050_el_precio_del_vendedor.sql
+--   · 051_ver_en_otra_moneda.sql
+--   · 052_clientes_a_tabla.sql
+--   · 053_clientes_b_agenda.sql
+--   · 054_lo_que_te_deben.sql
+--   · 055_venta_fiada.sql
+--   · 056_cobrar_no_es_ganar_dos_veces.sql
+--   · 057_fiado_en_el_cierre_y_cliente_en_la_agenda.sql
+--   · 058_eliminar_clientes_y_productos.sql
 -- ============================================================
 
 -- ############################################################
@@ -13926,3 +13938,3401 @@ end $fn$;
 -- necesita esto: para eso está la agenda.
 revoke all on function public.aviso_de_reserva(uuid, integer) from public, anon, authenticated;
 grant execute on function public.aviso_de_reserva(uuid, integer) to service_role;
+
+
+-- ############################################################
+-- ##  047_la_plata_del_dueno.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 047 · La plata del dueño no es del vendedor
+--
+-- EL PROBLEMA, TAL COMO APARECIÓ
+--
+-- El dueño paga la cuota de su tarjeta desde Deudas. `registrar_pago_deuda`
+-- (015) crea, como corresponde, un movimiento de tipo 'gasto' con la
+-- descripción «Pago Tarjeta Visa» y categoría «Deudas»: la plata salió, y
+-- tiene que salir en los números del negocio.
+--
+-- Pero después el vendedor abre Gastos y lo lee.
+--
+-- No es un descuido de una pantalla: es que NADIE preguntaba de quién era el
+-- gasto. `movimientos_select` (002) deja ver todo lo de la empresa a todo
+-- miembro, y las funciones de lectura son `security definer`, así que ni
+-- siquiera pasan por esa política — suman todo y devuelven el total.
+--
+-- Por eso el arreglo va en los dos lugares. Cerrar solo la política dejaría
+-- los totales mal; cerrar solo las funciones dejaría abierta la consulta
+-- directa desde el navegador, que es justamente la que no controlamos.
+--
+-- LA REGLA, EN UNA LÍNEA
+--
+--   Las ventas son del negocio y las ve todo el mundo.
+--   Todo lo demás —gastos y otros ingresos— lo ve su autor, y el admin.
+--
+-- POR QUÉ TAMBIÉN LOS OTROS INGRESOS
+--
+-- Porque están en la misma pantalla y son igual de privados. Si el dueño
+-- cobra el alquiler de un local, eso entra como 'ingreso' y aparecía en la
+-- lista de Gastos junto a los gastos. Tapar una mitad y dejar la otra sería
+-- arreglar la captura de pantalla, no el problema.
+--
+-- POR QUÉ NO SE LE OCULTAN LAS VENTAS
+--
+-- Un vendedor tiene que ver cómo va el día: es su trabajo, es lo que mide su
+-- comisión y es lo que ya veía. Los costos y el margen de esas ventas siguen
+-- volviendo en NULL para él, como desde la 003. Acá no se toca nada de eso.
+--
+-- LO QUE ESTO NO ES
+--
+-- No es una sección nueva ni una preferencia. No hay ningún interruptor que
+-- el dueño pueda apagar por error: si sos vendedor, no está, y punto.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA POLÍTICA
+--
+--    Primera barrera y la única que protege la consulta directa. Alguien con
+--    la clave pública del navegador puede pedir `movimientos` sin pasar por
+--    ninguna de nuestras funciones; esto es lo que le contesta.
+-- ------------------------------------------------------------
+drop policy if exists movimientos_select on public.movimientos;
+create policy movimientos_select on public.movimientos
+  for select using (
+    public.es_miembro(empresa_id)
+    and (
+      tipo = 'venta'
+      or public.es_admin(empresa_id)
+      or creado_por = auth.uid()
+    )
+  );
+
+-- ------------------------------------------------------------
+-- 2. EL RESUMEN
+--
+--    De acá salen los indicadores del panel y de Gastos. Es el que mostraba
+--    «Gastos del periodo: 15.000.000» a alguien que cargó tres.
+--
+--    `v_admin` ya existía en esta función para decidir si devuelve los
+--    costos. Se reutiliza: una sola idea de «quién ve la plata entera».
+-- ------------------------------------------------------------
+create or replace function public.resumen_financiero(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_admin boolean;
+  v_res   jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+
+  with base as (
+    select m.tipo, m.estado, m.monto, m.subtotal, m.costo_total, m.id
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      -- Acá se cae el gasto del dueño para el vendedor. Va en la CTE y no en
+      -- cada `filter` de abajo para que no quede ni un total sin filtrar el
+      -- día que se agregue una métrica nueva.
+      and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid())
+  ),
+  totales as (
+    select
+      coalesce(sum(monto)       filter (where estado = 'activo' and tipo = 'venta'),   0)::numeric as ventas,
+      coalesce(sum(subtotal)    filter (where estado = 'activo' and tipo = 'venta'),   0)::numeric as ventas_brutas,
+      coalesce(sum(costo_total) filter (where estado = 'activo' and tipo = 'venta'),   0)::numeric as costo_mercaderia,
+      coalesce(sum(monto)       filter (where estado = 'activo' and tipo = 'ingreso'), 0)::numeric as otros_ingresos,
+      coalesce(sum(monto)       filter (where estado = 'activo' and tipo = 'gasto'),   0)::numeric as gastos,
+      coalesce(count(*)         filter (where estado = 'activo' and tipo = 'venta'),   0)::bigint  as cantidad_ventas,
+      coalesce(count(*)         filter (where estado = 'anulado' and tipo = 'venta'),  0)::bigint  as ventas_anuladas,
+      coalesce(sum(monto)       filter (where estado = 'anulado' and tipo = 'venta'),  0)::numeric as monto_ventas_anuladas,
+      coalesce(count(*)         filter (where estado = 'anulado'),                     0)::bigint  as movimientos_anulados,
+      coalesce(sum(monto)       filter (where estado = 'anulado'),                     0)::numeric as monto_movimientos_anulados
+    from base
+  ),
+  unidades as (
+    select coalesce(sum(i.cantidad), 0)::numeric as unidades
+    from public.movimiento_items i
+    join public.movimientos m on m.id = i.movimiento_id
+    where i.empresa_id = p_empresa
+      and m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      and m.estado = 'activo'
+      and m.tipo = 'venta'
+  ),
+  derivados as (
+    select
+      t.*,
+      u.unidades,
+      (t.ventas + t.otros_ingresos) as ingresos_totales,
+      (t.ventas - t.costo_mercaderia) as ganancia_bruta,
+      (t.ventas - t.costo_mercaderia + t.otros_ingresos - t.gastos) as ganancia_neta
+    from totales t cross join unidades u
+  )
+  select jsonb_build_object(
+    'ventas',                     d.ventas,
+    'ventas_brutas',              d.ventas_brutas,
+    'descuentos',                 d.ventas_brutas - d.ventas,
+    'otros_ingresos',             d.otros_ingresos,
+    'ingresos_totales',           d.ingresos_totales,
+    'gastos',                     d.gastos,
+    'cantidad_ventas',            d.cantidad_ventas,
+    'unidades_vendidas',          d.unidades,
+    'ticket_promedio',            case when d.cantidad_ventas > 0 then d.ventas / d.cantidad_ventas else 0 end,
+    'ventas_anuladas',            d.ventas_anuladas,
+    'monto_ventas_anuladas',      d.monto_ventas_anuladas,
+    'movimientos_anulados',       d.movimientos_anulados,
+    'monto_movimientos_anulados', d.monto_movimientos_anulados,
+    'costo_mercaderia', case when v_admin then d.costo_mercaderia else null end,
+    'ganancia_bruta',   case when v_admin then d.ganancia_bruta   else null end,
+    'ganancia_neta',    case when v_admin then d.ganancia_neta    else null end,
+    'margen_bruto',     case when v_admin and d.ventas > 0
+                             then (d.ganancia_bruta / d.ventas) * 100 else null end,
+    'margen_neto',      case when v_admin and d.ingresos_totales > 0
+                             then (d.ganancia_neta / d.ingresos_totales) * 100 else null end,
+    'con_costos',       v_admin
+  ) into v_res
+  from derivados d;
+
+  return v_res;
+end $$;
+
+-- ------------------------------------------------------------
+-- 3. LA SERIE DIARIA
+--
+--    El gráfico del panel. Sin esto, el vendedor no leía el número pero veía
+--    la barra roja del día que el dueño pagó la cuota.
+-- ------------------------------------------------------------
+create or replace function public.serie_financiera_diaria(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_admin boolean;
+  v_dias  integer;
+  v_res   jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  v_dias := (p_hasta - p_desde) + 1;
+  if v_dias > 1100 then
+    raise exception 'El rango no puede superar los 3 años para la serie diaria.' using errcode = '22023';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+
+  with dias as (
+    select generate_series(p_desde, p_hasta, interval '1 day')::date as fecha
+  ),
+  porDia as (
+    select
+      m.fecha,
+      coalesce(sum(m.monto)       filter (where m.tipo = 'venta'), 0)::numeric   as ventas,
+      coalesce(sum(m.monto)       filter (where m.tipo = 'gasto'), 0)::numeric   as gastos,
+      coalesce(sum(m.monto)       filter (where m.tipo = 'ingreso'), 0)::numeric as otros_ingresos,
+      coalesce(sum(m.costo_total) filter (where m.tipo = 'venta'), 0)::numeric   as costo
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      and m.estado = 'activo'
+      and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid())
+    group by m.fecha
+  )
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'fecha',          to_char(d.fecha, 'YYYY-MM-DD'),
+      'ventas',         coalesce(p.ventas, 0),
+      'gastos',         coalesce(p.gastos, 0),
+      'otros_ingresos', coalesce(p.otros_ingresos, 0),
+      'ganancia', case
+        when v_admin then coalesce(p.ventas, 0) - coalesce(p.costo, 0)
+                        + coalesce(p.otros_ingresos, 0) - coalesce(p.gastos, 0)
+        else null
+      end
+    ) order by d.fecha
+  ), '[]'::jsonb) into v_res
+  from dias d
+  left join porDia p on p.fecha = d.fecha;
+
+  return v_res;
+end $$;
+
+-- ------------------------------------------------------------
+-- 4. GASTOS POR CATEGORÍA
+--
+--    Es el que más contaba de una sola mirada: la categoría «Deudas» con el
+--    monto al lado, y el nombre de la deuda en la lista de abajo.
+--
+--    Esta función no calculaba `v_admin` porque no devolvía costos. Ahora lo
+--    necesita.
+-- ------------------------------------------------------------
+create or replace function public.gastos_por_categoria(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_admin boolean;
+  v_res   jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+
+  with porCategoria as (
+    select
+      trim(coalesce(nullif(trim(m.categoria), ''), 'General')) as nombre,
+      sum(m.monto)::numeric as monto,
+      count(*)::bigint      as operaciones
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      and m.estado = 'activo'
+      and m.tipo = 'gasto'
+      and (v_admin or m.creado_por = auth.uid())
+    group by 1
+  ),
+  con_total as (
+    select c.*, sum(c.monto) over () as total from porCategoria c
+  )
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'nombre',        c.nombre,
+      'monto',         c.monto,
+      'operaciones',   c.operaciones,
+      'participacion', case when c.total > 0 then (c.monto / c.total) * 100 else 0 end
+    ) order by c.monto desc
+  ), '[]'::jsonb) into v_res
+  from con_total c;
+
+  return v_res;
+end $$;
+
+-- ------------------------------------------------------------
+-- 5. LA PÁGINA DE MOVIMIENTOS
+--
+--    La lista que se ve abajo de los indicadores, en Gastos y en
+--    Movimientos. Es donde se leía «Pago Tarjeta Visa» con nombre y monto.
+-- ------------------------------------------------------------
+create or replace function public.pagina_movimientos(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date,
+  p_tamano integer default 100,
+  p_cursor_fecha date default null,
+  p_cursor_created timestamptz default null,
+  p_cursor_id uuid default null,
+  p_tipo tipo_movimiento default null,
+  p_incluir_anuladas boolean default true,
+  p_busqueda text default null
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_admin   boolean;
+  v_tamano  integer;
+  v_busca   text;
+  v_filas   jsonb;
+  v_cuantas integer;
+  v_ultima  jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  v_tamano := least(greatest(coalesce(p_tamano, 100), 1), 500);
+  v_admin  := public.es_admin(p_empresa);
+  v_busca  := nullif(lower(trim(coalesce(p_busqueda, ''))), '');
+
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.fecha desc, x.created_at desc, x.id desc), '[]'::jsonb)
+  into v_filas
+  from (
+    select
+      m.id, m.empresa_id, m.tipo, m.estado, m.fecha, m.descripcion, m.categoria,
+      m.subtotal, m.descuento, m.monto,
+      case when v_admin then m.costo_total else null end as costo_total,
+      m.metodo_pago, m.contraparte, m.notas, m.origen, m.creado_por, m.created_at,
+      m.anulado_por, m.anulado_at, m.motivo_anulacion, m.actualizado_por, m.updated_at,
+      coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', i.id,
+            'movimiento_id', i.movimiento_id,
+            'empresa_id', i.empresa_id,
+            'producto_id', i.producto_id,
+            'nombre', i.nombre,
+            'cantidad', i.cantidad,
+            'precio_unitario', i.precio_unitario,
+            'costo_unitario', case when v_admin then i.costo_unitario else null end,
+            'afecto_stock', i.afecto_stock
+          ) order by i.nombre
+        )
+        from public.movimiento_items i where i.movimiento_id = m.id
+      ), '[]'::jsonb) as movimiento_items
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid())
+      and (p_tipo is null or m.tipo = p_tipo)
+      and (p_incluir_anuladas or m.estado = 'activo')
+      and (
+        p_cursor_id is null
+        or (m.fecha, m.created_at, m.id) < (p_cursor_fecha, p_cursor_created, p_cursor_id)
+      )
+      and (
+        v_busca is null
+        or lower(m.descripcion) like '%' || v_busca || '%'
+        or lower(m.categoria)   like '%' || v_busca || '%'
+        or lower(coalesce(m.contraparte, '')) like '%' || v_busca || '%'
+        or exists (
+          select 1 from public.movimiento_items i2
+          where i2.movimiento_id = m.id and lower(i2.nombre) like '%' || v_busca || '%'
+        )
+      )
+    order by m.fecha desc, m.created_at desc, m.id desc
+    limit v_tamano
+  ) x;
+
+  v_cuantas := jsonb_array_length(v_filas);
+  v_ultima  := case when v_cuantas > 0 then v_filas -> (v_cuantas - 1) else null end;
+
+  return jsonb_build_object(
+    'movimientos', v_filas,
+    'siguiente', case
+      when v_cuantas = v_tamano and v_ultima is not null then jsonb_build_object(
+        'fecha',      v_ultima ->> 'fecha',
+        'created_at', v_ultima ->> 'created_at',
+        'id',         v_ultima ->> 'id'
+      )
+      else null
+    end,
+    'tamano', v_tamano
+  );
+end $$;
+
+-- ------------------------------------------------------------
+-- 6. LOS DOS CAMINOS QUE NO USA NINGUNA PANTALLA
+--
+--    `listar_movimientos` y `contar_movimientos` no los llama nadie hoy. Se
+--    cierran igual, y por la misma razón que dice el comentario de la 006:
+--    mientras existan son un camino que alguien podría tomar. Una puerta que
+--    nadie usa sigue siendo una puerta.
+--
+--    En `contar_movimientos` el efecto es más chico pero real: el conteo le
+--    decía cuántos movimientos hay, y de ahí se deduce cuántos no ve.
+-- ------------------------------------------------------------
+create or replace function public.listar_movimientos(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_admin boolean;
+  v_total bigint;
+  v_tope  constant integer := 20000;
+  v_res   jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+
+  -- El tope se mide sobre lo que esta persona puede ver: si no, a un
+  -- vendedor le podría fallar por movimientos que no le vamos a devolver.
+  select count(*) into v_total
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.fecha between p_desde and p_hasta
+    and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid());
+
+  if v_total > v_tope then
+    raise exception
+      'El periodo elegido tiene % movimientos y el máximo por consulta es %. Elegí un rango más corto para que los totales sean exactos.',
+      v_total, v_tope
+      using errcode = '54000';
+  end if;
+
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.fecha desc, x.created_at desc), '[]'::jsonb)
+  into v_res
+  from (
+    select
+      m.id, m.empresa_id, m.tipo, m.estado, m.fecha, m.descripcion, m.categoria,
+      m.subtotal, m.descuento, m.monto,
+      case when v_admin then m.costo_total else null end as costo_total,
+      m.metodo_pago, m.contraparte, m.notas, m.origen, m.creado_por, m.created_at,
+      m.anulado_por, m.anulado_at, m.motivo_anulacion, m.actualizado_por, m.updated_at,
+      coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', i.id,
+            'movimiento_id', i.movimiento_id,
+            'empresa_id', i.empresa_id,
+            'producto_id', i.producto_id,
+            'nombre', i.nombre,
+            'cantidad', i.cantidad,
+            'precio_unitario', i.precio_unitario,
+            'costo_unitario', case when v_admin then i.costo_unitario else null end,
+            'afecto_stock', i.afecto_stock
+          ) order by i.nombre
+        )
+        from public.movimiento_items i where i.movimiento_id = m.id
+      ), '[]'::jsonb) as movimiento_items
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.fecha between p_desde and p_hasta
+      and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid())
+  ) x;
+
+  return v_res;
+end $$;
+
+create or replace function public.contar_movimientos(
+  p_empresa uuid,
+  p_desde date,
+  p_hasta date
+)
+returns bigint language plpgsql stable security definer set search_path = public as $$
+declare
+  v_admin boolean;
+  v_total bigint;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+
+  select count(*) into v_total
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.fecha between p_desde and p_hasta
+    and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid());
+
+  return v_total;
+end $$;
+
+
+-- ############################################################
+-- ##  048_las_sillas_se_pagan.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 048 · Las sillas se pagan
+--
+-- LOS DOS AGUJEROS QUE CIERRA
+--
+-- 1. EL TOPE ERA DEL PLAN, Y EL PLAN ERA UNO SOLO PARA TODOS.
+--
+--    `limites_plan` da 3 personas en Pro y 15 en Negocio, y no había forma
+--    de decir «este negocio pagó por cuatro». Peor: la portada vende Negocio
+--    como «sin tope de vendedores» y la base corta en 15. Prometíamos algo
+--    que el sistema no cumple, y el que se llevaba la sorpresa era el que ya
+--    había pagado.
+--
+--    Desde acá el tope se escribe por negocio, a mano, en el panel de
+--    administración, en el mismo momento en que se cobra. El plan pasa a ser
+--    el valor por defecto de quien no tiene nada escrito.
+--
+-- 2. UN PROFESIONAL SIN CUENTA NO CONTABA PARA NADA.
+--
+--    `turnos_profesional.user_id` era opcional a propósito (ver la 033), y
+--    el argumento no era malo: que el barbero sin celular pueda estar en la
+--    agenda. Pero la consecuencia sí lo era. Una peluquería con seis sillas
+--    usaba agenda, reparto y comisiones enteras SIN sumar un solo miembro,
+--    o sea en el plan gratis. El tope de personas no tocaba el único rubro
+--    donde más gente significa más trabajo para el sistema.
+--
+--    Ahora, para estar en el equipo de reparto hay que ser miembro. Una sola
+--    cuenta de «cuántas personas hay acá», y el tope la gobierna entera.
+--
+-- LO QUE ESTO LE CUESTA AL PRODUCTO, DICHO SIN ADORNO
+--
+-- El barbero que no tiene celular ya no puede estar en la agenda. Es una
+-- pérdida real y fue una decisión tomada a sabiendas: el dueño va a tener
+-- que sumarlo como miembro —y pagar su silla— o llevarlo aparte.
+--
+-- QUÉ PASA CON LOS QUE YA ESTABAN
+--
+-- No se borra ninguno. Los profesionales sin cuenta se DESACTIVAN, que es
+-- reversible y no toca el historial: sus cortes, sus reservas y las
+-- liquidaciones ya cerradas quedan intactas. Para recuperarlos, la persona
+-- entra con el código del negocio y el dueño lo vuelve a activar.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. EL TOPE DE CADA NEGOCIO
+--
+--    Se escribe en VENDEDORES y no en personas porque es lo que se negocia
+--    y se cobra: «pagás por cuatro vendedores». El dueño no es un vendedor
+--    al que se le cobre una silla — es el que paga.
+--
+--    `null` no es cero: significa «este negocio no tiene trato especial,
+--    vale lo que diga su plan». Cero sí es cero: el dueño solo.
+-- ------------------------------------------------------------
+alter table public.suscripciones
+  add column if not exists tope_vendedores integer;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'tope_vendedores_razonable'
+  ) then
+    alter table public.suscripciones
+      add constraint tope_vendedores_razonable
+      check (tope_vendedores is null or tope_vendedores between 0 and 200);
+  end if;
+end $$;
+
+comment on column public.suscripciones.tope_vendedores is
+  'Cuántos vendedores pagó este negocio, sin contar al dueño. NULL = lo que diga su plan. Lo escribe la administración al cobrar.';
+
+-- ------------------------------------------------------------
+-- 2. CUÁNTAS PERSONAS ENTRAN ACÁ
+--
+--    Una sola función que responde la pregunta, para que no haya dos
+--    lugares que puedan contestar distinto.
+--
+--    El «+1» es el dueño, y vive únicamente acá. En el panel se escriben
+--    vendedores; la tabla `miembros` cuenta personas. Si esa suma estuviera
+--    repetida en dos lados, tarde o temprano una de las dos se olvidaría.
+--
+--    SIN PLAN PAGO NO VALE EL TRATO. Si no, un negocio al que le
+--    habilitamos diez sillas se quedaría con las diez el día que deja de
+--    pagar, que es exactamente cuando no corresponde.
+-- ------------------------------------------------------------
+create or replace function public.tope_de_miembros(p_empresa uuid)
+returns integer language sql stable security definer set search_path = public as $fn$
+  select case
+    when public.plan_efectivo_calculado(p_empresa) = 'gratis'
+      then (public.limites_plan('gratis')->>'miembros')::integer
+    else coalesce(
+      (select s.tope_vendedores + 1
+       from public.suscripciones s
+       where s.empresa_id = p_empresa and s.tope_vendedores is not null),
+      (public.limites_plan(public.plan_efectivo_calculado(p_empresa))->>'miembros')::integer
+    )
+  end;
+$fn$;
+
+revoke all on function public.tope_de_miembros(uuid) from public, anon;
+grant execute on function public.tope_de_miembros(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LA PUERTA DE ENTRADA AL NEGOCIO
+--
+--    Único lugar donde alguien se suma a una empresa, y por eso único lugar
+--    donde hay que contar. Lo que cambia es de dónde sale el tope.
+--
+--    El mensaje también cambia. El viejo decía «el plan Negocio permite
+--    más», que ahora sería mentira: en Negocio el tope también lo ponemos
+--    nosotros. Un mensaje de error que manda a la persona equivocada a
+--    hacer la cosa equivocada es peor que uno corto.
+-- ------------------------------------------------------------
+create or replace function public.unirse_empresa(
+  p_codigo text,
+  p_nombre_usuario text default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id      uuid;
+  v_cuantos integer;
+  v_tope    integer;
+  v_tipo    text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select a.empresa_id into v_id
+  from public.empresa_accesos a
+  where a.codigo = upper(trim(coalesce(p_codigo, ''))) and a.activo;
+
+  if v_id is null then
+    raise exception 'El código no corresponde a ninguna empresa.' using errcode = '42501';
+  end if;
+
+  -- Ya es miembro: no es un error, simplemente devolvemos la empresa.
+  if exists (select 1 from public.miembros where empresa_id = v_id and user_id = auth.uid()) then
+    return v_id;
+  end if;
+
+  select tipo_cuenta into v_tipo from public.empresas where id = v_id;
+  if v_tipo = 'personal' then
+    raise exception 'Esa es una cuenta personal: no admite más personas.'
+      using errcode = '54000';
+  end if;
+
+  select count(*)::int into v_cuantos from public.miembros where empresa_id = v_id;
+  v_tope := public.tope_de_miembros(v_id);
+
+  if v_cuantos >= v_tope then
+    raise exception
+      'Este negocio ya tiene sus % personas. Para sumar a alguien más hay que ampliar el plan.', v_tope
+      using errcode = '54000';
+  end if;
+
+  insert into public.miembros (empresa_id, user_id, nombre, rol)
+  values (v_id, auth.uid(), coalesce(nullif(trim(p_nombre_usuario), ''), 'Colaborador'), 'vendedor')
+  on conflict (empresa_id, user_id) do nothing;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.unirse_empresa(text, text) from public, anon;
+grant execute on function public.unirse_empresa(text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. EL PANEL: COBRAR Y HABILITAR SON EL MISMO ACTO
+--
+--    El tope se pone donde se cobra, y no en otra pantalla, porque son la
+--    misma decisión: «me pagó por cuatro vendedores hasta el 9 de octubre».
+--    Separarlos daría cuentas cobradas y sin habilitar, o al revés.
+--
+--    `p_vendedores` en null deja el tope como estaba. Para volver al valor
+--    del plan hay que mandar -1: sin esa distinción no habría forma de
+--    borrar un trato especial, porque null ya significa «no lo toques».
+-- ------------------------------------------------------------
+create or replace function public.cambiar_plan_cuenta(
+  p_empresa    uuid,
+  p_plan       text,
+  p_meses      integer default 1,
+  p_nota       text default '',
+  p_importe    numeric default null,
+  p_vendedores integer default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes    public.suscripciones;
+  v_fin      timestamptz;
+  v_estado   text;
+  v_orden    uuid;
+  v_cliente  text;
+  v_ingreso  uuid;
+  v_aviso    text := null;
+  v_tope     integer;
+  v_personas integer;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  if p_plan not in ('gratis', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', p_plan using errcode = '22023';
+  end if;
+
+  if p_vendedores is not null and p_vendedores < -1 then
+    raise exception 'El tope de vendedores no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  select * into v_antes from public.suscripciones where empresa_id = p_empresa;
+  if v_antes.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select nombre into v_cliente from public.empresas where id = p_empresa;
+
+  if p_plan = 'gratis' then
+    v_estado := 'vencida';
+    v_fin := now();
+    -- Cortar el servicio borra el trato: si vuelve, se negocia de nuevo.
+    v_tope := null;
+  else
+    v_estado := 'activa';
+    -- Si todavía le queda tiempo pago, se le suma; si no, arranca hoy.
+    v_fin := greatest(coalesce(v_antes.periodo_fin, now()), now())
+             + make_interval(months => greatest(1, coalesce(p_meses, 1)));
+    v_tope := case
+      when p_vendedores is null then v_antes.tope_vendedores  -- no se toca
+      when p_vendedores = -1    then null                     -- volver al plan
+      else p_vendedores
+    end;
+  end if;
+
+  update public.suscripciones
+  set plan = p_plan,
+      estado = v_estado,
+      periodo_inicio = case when p_plan = 'gratis' then periodo_inicio else now() end,
+      periodo_fin = v_fin,
+      tope_vendedores = v_tope,
+      proveedor_pago = case when p_plan = 'gratis' then proveedor_pago else 'transferencia' end,
+      updated_at = now()
+  where empresa_id = p_empresa;
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas
+  set plan = case when p_plan = 'gratis' then 'gratis' else 'pro' end
+  where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  -- ---- ¿le queda gente afuera del tope nuevo? ----
+  --
+  -- No se echa a nadie: bajar un número en un panel no puede sacarle el
+  -- acceso a una persona que hoy está trabajando. Pero hay que decirlo, o
+  -- el que lo bajó se entera cuando el cliente reclama.
+  if v_tope is not null then
+    select count(*)::int into v_personas from public.miembros where empresa_id = p_empresa;
+    if v_personas > v_tope + 1 then
+      v_aviso := 'Ojo: este negocio ya tiene ' || v_personas || ' personas y le habilitaste '
+              || v_tope || ' vendedores (' || (v_tope + 1) || ' con el dueño). '
+              || 'No se sacó a nadie, pero no va a poder sumar a nadie más.';
+    end if;
+  end if;
+
+  -- ---- el cobro, como ingreso de Orden ----
+  if p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select empresa_id into v_orden from public.ajustes_orden where unica;
+
+    if v_orden is null then
+      v_aviso := coalesce(v_aviso || ' ', '')
+              || 'No hay una empresa de Orden elegida, así que el cobro no se anotó en tus finanzas.';
+    elsif v_orden = p_empresa then
+      v_aviso := coalesce(v_aviso || ' ', '')
+              || 'Esta ES tu empresa, así que no se anotó ningún ingreso.';
+    else
+      begin
+        insert into public.movimientos (
+          empresa_id, tipo, estado, fecha, descripcion, categoria,
+          subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+        ) values (
+          v_orden, 'ingreso', 'activo', public.hoy_empresa(v_orden),
+          'Suscripción ' || coalesce(v_cliente, 'cliente'), 'Suscripciones',
+          p_importe, 0, p_importe, 0, 'transferencia',
+          left(coalesce(v_cliente, ''), 80), auth.uid()
+        )
+        returning id into v_ingreso;
+      exception when others then
+        v_aviso := coalesce(v_aviso || ' ', '')
+                || 'La cuenta se activó, pero el ingreso no se pudo anotar: ' || sqlerrm;
+      end;
+    end if;
+  end if;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'cambiar_plan', jsonb_build_object(
+    'plan_antes', v_antes.plan, 'plan_despues', p_plan,
+    'estado_antes', v_antes.estado, 'estado_despues', v_estado,
+    'vence_antes', v_antes.periodo_fin, 'vence_despues', v_fin,
+    'meses', greatest(1, coalesce(p_meses, 1)),
+    'importe', p_importe,
+    'tope_antes', v_antes.tope_vendedores,
+    'tope_despues', v_tope,
+    'ingreso_id', v_ingreso,
+    'nota', left(coalesce(p_nota, ''), 300)
+  ));
+
+  return jsonb_build_object(
+    'plan', p_plan, 'estado', v_estado, 'periodo_fin', v_fin,
+    'tope_vendedores', v_tope,
+    'personas_permitidas', public.tope_de_miembros(p_empresa),
+    'ingreso_anotado', v_ingreso is not null,
+    'aviso', v_aviso
+  );
+end $fn$;
+
+-- La firma de 5 argumentos queda muerta: si no se borra, PostgREST ve dos
+-- funciones con el mismo nombre y no sabe cuál llamar. Es la misma razón
+-- por la que la 019 borró la de 4.
+drop function if exists public.cambiar_plan_cuenta(uuid, text, integer, text, numeric);
+
+revoke all on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric, integer)
+  from public, anon;
+grant execute on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric, integer)
+  to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. PARA ESTAR EN EL EQUIPO HAY QUE ESTAR EN EL NEGOCIO
+--
+--    La comprobación de que la cuenta pertenece a esta empresa ya existía
+--    desde la 034. Lo único que cambia es que ahora no se puede omitir.
+-- ------------------------------------------------------------
+create or replace function public.guardar_profesional(
+  p_empresa    uuid,
+  p_nombre     text,
+  p_reparto    text    default 'local',
+  p_porcentaje numeric default null,
+  p_user       uuid    default null,
+  p_id         uuid    default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare v_id uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar el equipo.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber de quién es cada corte.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_reparto, '') not in ('local', 'comision', 'alquiler', 'sueldo') then
+    raise exception 'Ese tipo de arreglo no existe.' using errcode = '22023';
+  end if;
+
+  if p_reparto = 'comision'
+     and (p_porcentaje is null or p_porcentaje <= 0 or p_porcentaje > 100) then
+    raise exception 'Con comisión hace falta un porcentaje entre 1 y 100.' using errcode = '22023';
+  end if;
+
+  -- El cambio de la 048. El mensaje explica el camino completo, porque el
+  -- dueño está mirando una lista de nombres y no tiene por qué adivinar que
+  -- primero hay que pasarle un código.
+  if p_user is null then
+    raise exception
+      'Para estar en el equipo, esa persona tiene que entrar antes al negocio con el código de acceso. Pasale el código, que se cree su cuenta, y después sumala acá.'
+      using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from public.miembros m
+                 where m.empresa_id = p_empresa and m.user_id = p_user) then
+    raise exception 'Esa persona no es parte de este negocio.' using errcode = '42501';
+  end if;
+
+  if p_id is null then
+    insert into public.turnos_profesional (empresa_id, nombre, user_id, reparto, porcentaje)
+    values (p_empresa, trim(p_nombre), p_user, p_reparto,
+            case when p_reparto = 'comision' then p_porcentaje else null end)
+    returning id into v_id;
+  else
+    update public.turnos_profesional
+    set nombre = trim(p_nombre),
+        user_id = p_user,
+        reparto = p_reparto,
+        porcentaje = case when p_reparto = 'comision' then p_porcentaje else null end,
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_profesional(uuid, text, text, numeric, uuid, uuid) from public, anon;
+grant execute on function public.guardar_profesional(uuid, text, text, numeric, uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. LOS QUE YA ESTABAN SIN CUENTA
+--
+--    Se desactivan, no se borran. `activo = false` los saca de la agenda y
+--    del reparto de acá en adelante y deja intacto todo lo anterior: sus
+--    cortes, sus reservas y las liquidaciones ya cerradas siguen
+--    respondiendo por su id.
+--
+--    Borrarlos habría hecho desaparecer de quién fue cada corte y las
+--    liquidaciones del mes pasado dejarían de cerrar — que es exactamente
+--    lo que la 034 evita cuando se borra a alguien con cortes cargados.
+-- ------------------------------------------------------------
+do $$
+declare v_cuantos integer;
+begin
+  update public.turnos_profesional
+  set activo = false, updated_at = now()
+  where user_id is null and activo;
+
+  get diagnostics v_cuantos = row_count;
+
+  if v_cuantos > 0 then
+    raise notice
+      'Se desactivaron % profesionales sin cuenta. No se borró ninguno: para recuperarlos, que la persona entre con el código del negocio y volvelos a activar.',
+      v_cuantos;
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- 7. QUE EL PANEL PUEDA LEER EL TOPE
+--
+--    Sin esto, el número se puede escribir y no se puede ver: quien cobra
+--    tendría que acordarse de memoria de cuántas sillas le habilitó a cada
+--    negocio, o mirar la tabla a mano.
+--
+--    Van los dos números y no uno solo, a propósito: `tope_vendedores` es lo
+--    que se negoció y `personas_permitidas` es lo que la puerta va a contar
+--    de verdad. Mostrar solo el primero obligaría a la pantalla a hacer el
+--    «+1» por su cuenta, y esa suma tiene que vivir en un solo lugar.
+-- ------------------------------------------------------------
+create or replace function public.listar_cuentas(
+  p_busqueda text default null,
+  p_estado   text default null,
+  p_limite   integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+  v_periodo text;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  v_periodo := to_char(now(), 'YYYY-MM');
+
+  select coalesce(jsonb_agg(x order by x->>'orden'), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',   e.id,
+      'nombre',       e.nombre,
+      'tipo_cuenta',  e.tipo_cuenta,
+      'rubro',        e.rubro,
+      'moneda',       e.moneda,
+      'creada',       e.created_at,
+      'propietario',  coalesce(prop.nombre, ''),
+      'correo',       coalesce(u.email, ''),
+      'sin_duenio',   prop.id is null,
+      'como_nos_conocio', e.como_nos_conocio,
+
+      'contacto',  coalesce(f.contacto, ''),
+      'telefono',  coalesce(f.telefono, ''),
+      'se_dedica', coalesce(f.se_dedica, ''),
+      'notas',     coalesce(f.notas, ''),
+
+      'plan',         public.plan_efectivo_calculado(e.id),
+      'plan_guardado', s.plan,
+      'estado',       s.estado,
+      'periodo_fin',  s.periodo_fin,
+      'prueba_fin',   s.prueba_fin,
+      'dias_restantes', case
+        when s.periodo_fin is null then null
+        else floor(extract(epoch from (s.periodo_fin - now())) / 86400)::integer
+      end,
+      'miembros', (select count(*) from public.miembros m where m.empresa_id = e.id),
+      -- Lo negociado y lo que la puerta cuenta. Ver el comentario de arriba.
+      'tope_vendedores',     s.tope_vendedores,
+      'personas_permitidas', public.tope_de_miembros(e.id),
+      'movimientos', (select count(*) from public.movimientos mv where mv.empresa_id = e.id),
+      'ultima_actividad', (select max(mv.created_at) from public.movimientos mv where mv.empresa_id = e.id),
+      'ia_usada', coalesce((
+        select ui.usados from public.uso_ia ui
+        where ui.empresa_id = e.id and ui.periodo = v_periodo
+      ), 0),
+      'ia_tope', (public.limites_plan(public.plan_efectivo_calculado(e.id))->>'capturas_mes')::integer,
+      'puede_deshacer', exists (
+        select 1 from public.registro_admin r
+        where r.empresa_id = e.id
+          and r.accion in ('cambiar_plan', 'extender_prueba')
+          and not coalesce((r.detalle->>'deshecho')::boolean, false)
+      ),
+      'orden', lpad(
+        greatest(0, coalesce(
+          floor(extract(epoch from (s.periodo_fin - now())) / 86400)::integer + 1000,
+          9999))::text, 5, '0')
+    ) as x
+    from public.empresas e
+    join public.suscripciones s on s.empresa_id = e.id
+    left join public.miembros prop
+      on prop.empresa_id = e.id and prop.rol = 'propietario'
+    left join auth.users u on u.id = prop.user_id
+    left join public.ficha_cliente f on f.empresa_id = e.id
+    where (
+        p_busqueda is null
+        or trim(p_busqueda) = ''
+        or e.nombre ilike '%' || trim(p_busqueda) || '%'
+        or coalesce(u.email, '') ilike '%' || trim(p_busqueda) || '%'
+        or coalesce(f.contacto, '') ilike '%' || trim(p_busqueda) || '%'
+        or coalesce(f.telefono, '') ilike '%' || trim(p_busqueda) || '%'
+      )
+      and (p_estado is null or trim(p_estado) = '' or s.estado = p_estado)
+    limit greatest(1, least(coalesce(p_limite, 200), 500))
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.listar_cuentas(text, text, integer) from public, anon;
+grant execute on function public.listar_cuentas(text, text, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  049_prueba_mas_corta.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 049 · La prueba, más corta
+--
+-- 20 días para un negocio y 14 para una cuenta personal pasan a ser 8 y 5.
+--
+-- POR QUÉ SE TOCA UNA SOLA FUNCIÓN
+--
+-- `dias_de_prueba()` la llama `crear_empresa()` UNA vez, en el momento de
+-- nacer la cuenta, y escribe el resultado en `suscripciones.prueba_fin`.
+-- Desde ahí manda esa fecha y nadie vuelve a preguntar.
+--
+-- Eso tiene una consecuencia que conviene saber y no descubrir después:
+-- A NADIE QUE YA ESTÉ PROBANDO SE LE ACORTA LA PRUEBA. Quien entró ayer
+-- con 20 días sigue teniendo sus 20. El número nuevo solo lo ven las
+-- cuentas que se creen a partir de acá.
+--
+-- Y así tiene que ser. Recortarle la prueba a alguien que la está usando es
+-- cambiarle el trato después de haberlo hecho — la misma razón por la que
+-- `extender_prueba()` (016) solo estira y nunca acorta.
+--
+-- LA OTRA MITAD DE ESTE CAMBIO NO ESTÁ ACÁ
+--
+-- El número está escrito a mano en la portada y en los Términos del
+-- servicio. Si se cambia solo esto, la web sigue prometiendo 20 días y la
+-- persona entra y tiene 8: un reclamo con la razón entera del lado del
+-- cliente. Por eso, junto con esta migración, la web pasa a leer el número
+-- de un solo lugar (`DIAS_DE_PRUEBA` en src/lib/precios.ts) y hay una
+-- prueba que compara ese archivo contra esta función y falla si se separan.
+-- ============================================================
+
+create or replace function public.dias_de_prueba(p_tipo text)
+returns integer language sql immutable set search_path = public as $fn$
+  select case coalesce(p_tipo, 'emprendedor')
+    -- Quien anota sus gastos personales sabe en pocos días si le sirve:
+    -- lo usa todos los días desde el primero.
+    when 'personal' then 5
+    -- Un comercio necesita ver un pedazo de semana suyo —los días flojos y
+    -- los buenos— antes de poder decidir.
+    else 8
+  end;
+$fn$;
+
+grant execute on function public.dias_de_prueba(text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  050_el_precio_del_vendedor.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 050 · El precio del vendedor, donde viven los precios
+--
+-- DOS COSAS MAL, Y LA SEGUNDA ES LA QUE IMPORTA
+--
+-- 1. El número en dólares estaba mal. `precio_por_vendedor` (017) devolvía
+--    60.000 Gs. y US$ 7,99, o sea un cambio de 7.509 Gs. por dólar. Los
+--    planes usan entre 5.937 y 5.952 (190.000 = 32, 250.000 = 42), así que
+--    ese 7,99 no salía de ningún lado. Pasa a US$ 11, que es el número que
+--    se decidió.
+--
+--    Los 60.000 con los 11 dan 5.454, que tampoco es exactamente el cambio
+--    de los planes, y está bien: son dos precios redondos, uno en cada
+--    moneda. Un precio se elige, no se calcula con la calculadora del día.
+--
+-- 2. Estaba escrito a mano adentro de una función.
+--
+--    El módulo de precios lo dice desde el primer día: «Los importes viven en
+--    la tabla `precios`, no acá: cambiar un precio no puede requerir un
+--    despliegue». Este número se saltó esa regla, y cambiarlo obligaba a
+--    escribir una migración y desplegar — para tocar un precio.
+--
+--    Eso no es solo incómodo. Un precio que cuesta cambiar se cambia tarde, y
+--    mientras tanto la portada le está diciendo un número a la gente.
+--
+-- POR QUÉ UNA TABLA APARTE Y NO UNA FILA EN `precios`
+--
+-- `precios` está indexada por (tipo_cuenta, plan, moneda, periodo) y su check
+-- solo admite los planes 'pro' y 'negocio'. Meter al vendedor ahí obligaría a
+-- ensanchar ese check con un plan que no es un plan, y `lista_precios()` lo
+-- devolvería junto a los demás: la pantalla de planes mostraría «Vendedor»
+-- como si fuera una opción a contratar.
+--
+-- Un vendedor no es un plan: es algo que se suma a uno. Tabla propia.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LO QUE SE COBRA ADEMÁS DEL PLAN
+--
+--    `concepto` con lista cerrada y no texto libre: el día que haya un
+--    segundo agregado, va a haber que escribirlo acá y pensarlo, en vez de
+--    que aparezca una fila con una palabra que nadie sabe de dónde salió.
+-- ------------------------------------------------------------
+create table if not exists public.precios_adicionales (
+  concepto   text not null check (concepto in ('vendedor')),
+  moneda     text not null check (moneda in ('PYG', 'USD', 'ARS', 'BRL', 'EUR')),
+  importe    numeric(14,2) not null check (importe > 0),
+  activo     boolean not null default true,
+  updated_at timestamptz not null default now(),
+  primary key (concepto, moneda)
+);
+
+comment on table public.precios_adicionales is
+  'Lo que se cobra ADEMÁS del plan. Hoy solo el vendedor extra. Se edita acá, sin desplegar nada.';
+
+alter table public.precios_adicionales enable row level security;
+
+-- Pública igual que `precios`: la portada la muestra antes de que la persona
+-- se registre.
+drop policy if exists precios_adicionales_select on public.precios_adicionales;
+create policy precios_adicionales_select on public.precios_adicionales
+  for select using (activo);
+
+revoke all on public.precios_adicionales from anon, authenticated;
+grant select on public.precios_adicionales to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. LOS IMPORTES
+--
+--    Idempotente: correr esta migración dos veces no duplica ni pisa con
+--    valores viejos algo que se haya ajustado a mano después.
+-- ------------------------------------------------------------
+insert into public.precios_adicionales (concepto, moneda, importe) values
+  ('vendedor', 'PYG', 60000),
+  ('vendedor', 'USD', 11)
+on conflict (concepto, moneda) do update
+  set importe = excluded.importe, updated_at = now();
+
+-- ------------------------------------------------------------
+-- 3. LA FUNCIÓN, AHORA LEYENDO
+--
+--    Deja de ser `immutable` —lee una tabla— y pasa a `stable`. Si no se
+--    cambiara, PostgreSQL podría cachear el valor viejo dentro de una misma
+--    consulta y el precio nuevo no aparecería.
+--
+--    NO lleva `security definer`, y eso es deliberado. La primera versión de
+--    esta migración se lo puso por costumbre y la prueba de permisos la
+--    frenó: hay un control que lista qué funciones `security definer` pueden
+--    estar abiertas a `anon`, y esta no tiene por qué estarlo. La tabla ya es
+--    pública por su política; no hace falta prestarle a nadie privilegios que
+--    no necesita para leer un precio.
+--
+--    Sin fila devuelve NULL, y eso está bien: la portada ya sabe no mostrar
+--    la nota cuando no hay número. Mejor no decir nada que decir un importe
+--    inventado sobre algo que se cobra.
+-- ------------------------------------------------------------
+create or replace function public.precio_por_vendedor(p_moneda text default 'PYG')
+returns numeric language sql stable set search_path = public as $fn$
+  select a.importe
+  from public.precios_adicionales a
+  where a.concepto = 'vendedor'
+    and a.moneda = upper(coalesce(nullif(trim(p_moneda), ''), 'PYG'))
+    and a.activo;
+$fn$;
+
+grant execute on function public.precio_por_vendedor(text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  051_ver_en_otra_moneda.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 051 · Ver en otra moneda
+--
+-- LO QUE HAY HOY ESTÁ MAL, Y ES PEOR QUE QUE FALTE
+--
+-- En Ajustes se puede cambiar la moneda del negocio, y NO CONVIERTE NADA:
+-- solo cambia la etiqueta. Quien pasa de guaraníes a dólares ve sus
+-- 5.000.000 de ventas convertidos en «US$ 5.000.000». El panel, los reportes
+-- y el Excel pasan a mentir, sin un aviso, sin un error, y con los mismos
+-- números de siempre — que es lo que lo hace difícil de notar.
+--
+-- LA DIFERENCIA ENTRE LAS DOS COSAS
+--
+-- Hay dos preguntas distintas que se estaban contestando con un solo campo:
+--
+--   `moneda`        → en qué moneda cargás. Es la moneda de tus datos.
+--                     Cada importe guardado está en ESTA y en ninguna otra.
+--   `moneda_vista`  → en qué moneda querés MIRARLOS ahora.
+--
+-- La primera se elige al abrir la cuenta y no se cambia más. La segunda se
+-- cambia cuando se quiera, no toca un solo dato guardado, y se puede volver
+-- atrás sin consecuencias.
+--
+-- POR QUÉ LA COTIZACIÓN LA PONE EL NEGOCIO
+--
+-- Porque no hay «el» cambio: hay el del banco, el de la casa de cambio de la
+-- esquina y el que le hizo su proveedor. Traerlo de una API sería inventar
+-- una precisión que no tenemos y, peor, cambiaría los números de ayer sin
+-- que nadie toque nada. El dueño escribe el suyo y sabe de dónde salió.
+--
+-- Y POR QUÉ SE GUARDA LA FECHA
+--
+-- Porque una cotización de hace tres meses mostrada como número de hoy es
+-- otra forma de mentir. La pantalla dice «al cambio 7.300, cargado el 5/9»:
+-- el que lo lee decide si le sirve.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LOS TRES CAMPOS
+--
+--    `cotizacion` es CUÁNTO VALE UNA UNIDAD DE `moneda_vista` EN `moneda`.
+--    Con moneda = PYG y vista = USD, es «a cuánto está el dólar»: 7300.
+--    Se guarda en esa dirección y no al revés porque es la que la persona
+--    dice en voz alta, y la que va a escribir sin pensarlo dos veces.
+--
+--    Para convertir: importe_a_la_vista = importe_guardado / cotizacion.
+-- ------------------------------------------------------------
+alter table public.empresas
+  add column if not exists moneda_vista  text,
+  add column if not exists cotizacion    numeric(18,6),
+  add column if not exists cotizacion_at timestamptz;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'vista_moneda_conocida') then
+    alter table public.empresas add constraint vista_moneda_conocida
+      check (moneda_vista is null or moneda_vista in ('PYG', 'USD', 'ARS', 'BRL', 'EUR'));
+  end if;
+
+  -- Una vista sin cotización no se puede calcular, y una cotización en cero
+  -- o negativa daría importes infinitos o con el signo cambiado. Las dos
+  -- cosas van juntas o no va ninguna.
+  if not exists (select 1 from pg_constraint where conname = 'vista_con_cotizacion') then
+    alter table public.empresas add constraint vista_con_cotizacion
+      check (
+        (moneda_vista is null and cotizacion is null)
+        or (moneda_vista is not null and cotizacion is not null and cotizacion > 0)
+      );
+  end if;
+end $$;
+
+comment on column public.empresas.moneda_vista is
+  'Solo para MIRAR. Los importes se guardan siempre en `moneda`. NULL = se ve en la moneda propia.';
+comment on column public.empresas.cotizacion is
+  'Cuánto vale 1 unidad de `moneda_vista` en `moneda`. Con PYG y USD: a cuánto está el dólar.';
+
+-- ------------------------------------------------------------
+-- 2. LA MONEDA DE LOS DATOS NO SE TOCA DESPUÉS
+--
+--    Este es el arreglo del error de hoy. Cambiar `moneda` con movimientos
+--    cargados no convierte nada: reetiqueta el historial entero y lo vuelve
+--    falso.
+--
+--    No se prohíbe siempre, y eso importa: quien se equivocó al abrir la
+--    cuenta y todavía no cargó nada tiene que poder corregirlo. Lo que no se
+--    puede es reetiquetar plata que ya existe.
+--
+--    Va como trigger y no como política de RLS porque una política mira la
+--    fila, no lo que cambió en ella. Esto necesita comparar el antes con el
+--    después.
+-- ------------------------------------------------------------
+create or replace function public.moneda_no_se_reetiqueta()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if new.moneda is distinct from old.moneda
+     and exists (select 1 from public.movimientos m where m.empresa_id = old.id) then
+    raise exception
+      'Ya tenés movimientos cargados en %, así que la moneda del negocio no se puede cambiar: se reetiquetaría todo tu historial sin convertirlo. Si querés ver tus números en otra moneda, usá «Ver en» y poné la cotización.',
+      old.moneda
+      using errcode = '22023';
+  end if;
+
+  -- Si se cambia la moneda de los datos, una vista vieja deja de tener
+  -- sentido: la cotización que había era contra la moneda anterior.
+  if new.moneda is distinct from old.moneda then
+    new.moneda_vista  := null;
+    new.cotizacion    := null;
+    new.cotizacion_at := null;
+  end if;
+
+  -- Ver en la misma moneda que se carga no es una vista: es no tener
+  -- ninguna. Se normaliza acá para que no haya dos maneras de decir lo mismo
+  -- y una pantalla muestre «al cambio 1,00».
+  if new.moneda_vista = new.moneda then
+    new.moneda_vista  := null;
+    new.cotizacion    := null;
+    new.cotizacion_at := null;
+  end if;
+
+  return new;
+end $fn$;
+
+drop trigger if exists moneda_no_se_reetiqueta on public.empresas;
+create trigger moneda_no_se_reetiqueta
+  before update on public.empresas
+  for each row execute function public.moneda_no_se_reetiqueta();
+
+-- Una función de trigger no la llama nadie a mano: la dispara PostgreSQL.
+-- Por defecto queda ejecutable por todos, y como es `security definer` eso
+-- la deja abierta a `anon` sin ninguna razón. La prueba de permisos tiene un
+-- control que lista cuáles pueden estarlo y frenó esto — es la segunda vez
+-- esta semana que ataja un `security definer` puesto por costumbre.
+--
+-- Revocar no rompe el trigger: el permiso se comprueba al CREAR el trigger,
+-- no cada vez que se dispara.
+revoke all on function public.moneda_no_se_reetiqueta() from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. GUARDAR LA VISTA
+--
+--    Por función y no por UPDATE directo porque hay que escribir la fecha, y
+--    la fecha es la mitad del dato: sin ella, la pantalla no puede decir de
+--    cuándo es el cambio que está usando.
+--
+--    `p_moneda` en null apaga la vista y vuelve a la moneda propia.
+-- ------------------------------------------------------------
+create or replace function public.guardar_vista_moneda(
+  p_empresa    uuid,
+  p_moneda     text default null,
+  p_cotizacion numeric default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_propia text;
+  v_moneda text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el propietario o un administrador puede cambiar esto.' using errcode = '42501';
+  end if;
+
+  select moneda into v_propia from public.empresas where id = p_empresa;
+  if v_propia is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  v_moneda := nullif(upper(trim(coalesce(p_moneda, ''))), '');
+
+  -- Apagar la vista: se vuelve a ver en la moneda propia.
+  if v_moneda is null or v_moneda = v_propia then
+    update public.empresas
+    set moneda_vista = null, cotizacion = null, cotizacion_at = null
+    where id = p_empresa;
+    return jsonb_build_object('moneda_vista', null, 'cotizacion', null);
+  end if;
+
+  if v_moneda not in ('PYG', 'USD', 'ARS', 'BRL', 'EUR') then
+    raise exception 'No conocemos esa moneda.' using errcode = '22023';
+  end if;
+
+  if p_cotizacion is null or p_cotizacion <= 0 then
+    raise exception 'Poné a cuánto está el cambio: sin eso no se puede convertir nada.'
+      using errcode = '22023';
+  end if;
+
+  -- Un tope alto y no una validación fina. No sabemos cuánto vale una moneda
+  -- mañana; lo único que se puede afirmar es que un dedazo de más ceros no
+  -- es un tipo de cambio.
+  if p_cotizacion > 100000000 then
+    raise exception 'Esa cotización es demasiado grande. Revisá los ceros.' using errcode = '22023';
+  end if;
+
+  update public.empresas
+  set moneda_vista = v_moneda, cotizacion = p_cotizacion, cotizacion_at = now()
+  where id = p_empresa;
+
+  return jsonb_build_object(
+    'moneda_vista', v_moneda,
+    'cotizacion', p_cotizacion,
+    'desde', v_propia
+  );
+end $fn$;
+
+revoke all on function public.guardar_vista_moneda(uuid, text, numeric) from public, anon;
+grant execute on function public.guardar_vista_moneda(uuid, text, numeric) to authenticated;
+
+
+-- ############################################################
+-- ##  052_clientes_a_tabla.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 052 · Los clientes del negocio
+--
+-- LO QUE PASA HOY
+--
+-- Cuando alguien reserva un turno, su nombre y su teléfono quedan sueltos
+-- adentro de esa reserva (`turnos_reserva.cliente_nombre`). Si Juan viene
+-- diez veces, hay diez reservas y ningún Juan: no se puede ver su historial,
+-- ni cuándo vino por última vez, ni cuánto dejó en el local.
+--
+-- Y al vender o al agendar hay que volver a escribir el nombre y el número
+-- todas las veces.
+--
+-- LA IDENTIDAD ES EL TELÉFONO, NO EL NOMBRE
+--
+-- Hay tres Juan; hay un solo 0981 234 567. Por eso el teléfono es lo único
+-- que no se puede repetir dentro de un negocio, y por eso se compara
+-- normalizado —solo los dígitos—: «0981 234 567», «0981234567» y
+-- «0981-234-567» son la misma persona, y si se guardaran como tres clientes
+-- distintos el historial quedaría partido en tres sin que nadie lo note.
+--
+-- PERO EL TELÉFONO PUEDE FALTAR
+--
+-- En un almacén entra gente que compra fiado y no deja número. Obligarlo
+-- haría que el que atiende invente uno —«0000000»— y entonces sí se
+-- mezclarían clientes distintos. Sin teléfono, cada uno es una ficha aparte:
+-- es peor para buscar y es lo correcto.
+--
+-- ESTO NO ES LA FICHA DE `ficha_cliente`
+--
+-- Aquella (022) son los clientes de ORDEN, para tu panel de administración:
+-- a quién le vendemos el sistema. Esta son los clientes DEL NEGOCIO: a quién
+-- le vende él. Se llaman parecido y no tienen nada que ver.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA TABLA
+--
+--    `telefono_norm` es una columna generada y no algo que escriba la
+--    aplicación: así no hay forma de guardar una fila cuyo teléfono
+--    normalizado no corresponda a su teléfono. Un dato derivado que se
+--    escribe a mano se desincroniza el día que alguien haga un UPDATE
+--    directo, y ese día dos clientes pasan a ser el mismo.
+-- ------------------------------------------------------------
+create table if not exists public.clientes (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  nombre     text not null check (char_length(trim(nombre)) between 1 and 80),
+  telefono   text not null default '' check (char_length(telefono) <= 40),
+  -- Solo los dígitos. Es lo que se compara para saber si ya existe.
+  telefono_norm text generated always as
+    (regexp_replace(coalesce(telefono, ''), '\D', '', 'g')) stored,
+  notas      text not null default '' check (char_length(notas) <= 1000),
+  activo     boolean not null default true,
+  creado_por uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  -- Para que otras tablas puedan apuntar acá SIN poder cruzar de empresa.
+  -- Es el mismo candado estructural que usan los lotes (044): con una clave
+  -- compuesta, una reserva de la empresa A no puede referirse a un cliente
+  -- de la B ni con un UPDATE a mano.
+  constraint clientes_id_empresa unique (id, empresa_id)
+);
+
+comment on table public.clientes is
+  'Los clientes DEL NEGOCIO. No confundir con ficha_cliente (022), que son los clientes de Orden.';
+
+-- Un teléfono, un cliente. Los que no dejaron número quedan afuera del
+-- índice y por eso pueden repetirse: no hay con qué distinguirlos.
+create unique index if not exists clientes_telefono_unico
+  on public.clientes (empresa_id, telefono_norm)
+  where telefono_norm <> '';
+
+create index if not exists clientes_empresa_nombre_idx
+  on public.clientes (empresa_id, lower(nombre)) where activo;
+
+-- ------------------------------------------------------------
+-- 2. QUIÉN LOS VE
+--
+--    Cualquier miembro. No es un descuido: el que atiende el mostrador es
+--    justamente el que necesita el nombre y el número para agendar y para
+--    cobrar, y esconderlos lo obligaría a llevar la libreta aparte.
+--
+--    Vale decir lo que eso implica: un vendedor puede ver la agenda de
+--    teléfonos de la clientela, y el día que se va, se la lleva. Es una
+--    decisión de producto, no un olvido. Si algún día molesta, el lugar de
+--    cambiarla es esta política y nada más.
+-- ------------------------------------------------------------
+alter table public.clientes enable row level security;
+
+drop policy if exists clientes_select on public.clientes;
+create policy clientes_select on public.clientes
+  for select using (public.es_miembro(empresa_id));
+
+-- Se escribe por función, no directo: hay que normalizar, buscar duplicados
+-- y no dejar que se cambie de empresa una ficha existente.
+revoke all on public.clientes from anon, authenticated;
+grant select on public.clientes to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. GUARDAR UN CLIENTE
+--
+--    Lo puede hacer cualquier miembro, incluido un vendedor: es lo que pasa
+--    cuando alguien llama al local y el que atiende lo anota.
+--
+--    Con `p_id` edita; sin él, crea. Y si el teléfono ya es de otro cliente
+--    del mismo negocio, no crea un duplicado: devuelve el que existe con el
+--    nombre actualizado. Un mostrador con dos «Juan 0981...» es peor que uno
+--    con el nombre viejo.
+-- ------------------------------------------------------------
+create or replace function public.guardar_cliente(
+  p_empresa  uuid,
+  p_nombre   text,
+  p_telefono text default '',
+  p_notas    text default '',
+  p_id       uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id     uuid;
+  v_nombre text;
+  v_tel    text;
+  v_norm   text;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_nombre := trim(coalesce(p_nombre, ''));
+  if char_length(v_nombre) = 0 then
+    raise exception 'Ponele un nombre, para saber de quién estamos hablando.' using errcode = '22023';
+  end if;
+  v_nombre := left(v_nombre, 80);
+
+  v_tel  := left(trim(coalesce(p_telefono, '')), 40);
+  v_norm := regexp_replace(v_tel, '\D', '', 'g');
+
+  -- Un teléfono de dos dígitos no es un teléfono: es un dedazo. Se guarda
+  -- vacío antes que guardar algo que después va a hacer chocar a dos
+  -- personas distintas en el mismo índice.
+  if v_norm <> '' and char_length(v_norm) < 6 then
+    v_tel := '';
+    v_norm := '';
+  end if;
+
+  if p_id is not null then
+    update public.clientes
+    set nombre = v_nombre,
+        telefono = v_tel,
+        notas = left(coalesce(p_notas, ''), 1000),
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+    end if;
+    return v_id;
+  end if;
+
+  -- Sin id: si el teléfono ya está, es la misma persona.
+  if v_norm <> '' then
+    select c.id into v_id
+    from public.clientes c
+    where c.empresa_id = p_empresa and c.telefono_norm = v_norm;
+
+    if v_id is not null then
+      update public.clientes
+      set nombre = v_nombre,
+          notas = case when trim(coalesce(p_notas, '')) = '' then notas
+                       else left(p_notas, 1000) end,
+          activo = true,
+          updated_at = now()
+      where id = v_id;
+      return v_id;
+    end if;
+  end if;
+
+  insert into public.clientes (empresa_id, nombre, telefono, notas, creado_por)
+  values (p_empresa, v_nombre, v_tel, left(coalesce(p_notas, ''), 1000), auth.uid())
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_cliente(uuid, text, text, text, uuid) from public, anon;
+grant execute on function public.guardar_cliente(uuid, text, text, text, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. ENCONTRAR O CREAR, PARA USO INTERNO
+--
+--    Lo que llaman las reservas. No comprueba pertenencia porque quien la
+--    llama ya la comprobó —o es la puerta pública, que no tiene a quién
+--    comprobarle— y por eso NO se le da permiso a nadie desde afuera.
+--
+--    Devuelve null si no hay con qué identificar a nadie, en vez de crear
+--    una ficha vacía: mejor una reserva sin cliente que una lista de
+--    clientes llena de fantasmas.
+-- ------------------------------------------------------------
+create or replace function public.cliente_de_contacto(
+  p_empresa  uuid,
+  p_nombre   text,
+  p_telefono text
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id     uuid;
+  v_nombre text;
+  v_tel    text;
+  v_norm   text;
+begin
+  v_nombre := left(trim(coalesce(p_nombre, '')), 80);
+  if char_length(v_nombre) = 0 then return null; end if;
+
+  v_tel  := left(trim(coalesce(p_telefono, '')), 40);
+  v_norm := regexp_replace(v_tel, '\D', '', 'g');
+  if char_length(v_norm) < 6 then
+    v_tel := '';
+    v_norm := '';
+  end if;
+
+  if v_norm <> '' then
+    select c.id into v_id
+    from public.clientes c
+    where c.empresa_id = p_empresa and c.telefono_norm = v_norm;
+
+    if v_id is not null then
+      -- El nombre se refresca: la gente cambia cómo se anota, y el último
+      -- que dio es el que reconoce quien atiende.
+      update public.clientes
+      set nombre = v_nombre, activo = true, updated_at = now()
+      where id = v_id;
+      return v_id;
+    end if;
+  end if;
+
+  -- Sin teléfono no se crea nada desde acá. Una reserva puede no tener
+  -- cliente; una lista de clientes con veinte «Juan» sin número no sirve
+  -- para nada y ensucia la búsqueda para siempre.
+  if v_norm = '' then return null; end if;
+
+  insert into public.clientes (empresa_id, nombre, telefono, creado_por)
+  values (p_empresa, v_nombre, v_tel, auth.uid())
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.cliente_de_contacto(uuid, text, text) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LA LISTA Y LA BÚSQUEDA
+--
+--    Dos funciones y no una: la lista es la sección de Clientes y la
+--    búsqueda es el buscador de cuando estás vendiendo o agendando. La
+--    segunda tiene que ser corta y rápida; la primera, completa.
+--
+--    Las dos devuelven UNA fila con un jsonb adentro, como el resto de las
+--    lecturas desde la 006: así el tope de filas de la Data API no puede
+--    recortar media lista sin avisar.
+-- ------------------------------------------------------------
+create or replace function public.buscar_clientes(
+  p_empresa uuid,
+  p_texto   text default '',
+  p_limite  integer default 8
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res   jsonb;
+  v_busca text;
+  v_norm  text;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_busca := lower(trim(coalesce(p_texto, '')));
+  v_norm  := regexp_replace(v_busca, '\D', '', 'g');
+
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.nombre), '[]'::jsonb) into v_res
+  from (
+    select c.id, c.nombre, c.telefono
+    from public.clientes c
+    where c.empresa_id = p_empresa
+      and c.activo
+      and (
+        v_busca = ''
+        or lower(c.nombre) like '%' || v_busca || '%'
+        -- Buscar por número escrito de cualquier manera.
+        or (v_norm <> '' and c.telefono_norm like '%' || v_norm || '%')
+      )
+    order by c.nombre
+    limit least(greatest(coalesce(p_limite, 8), 1), 50)
+  ) x;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.buscar_clientes(uuid, text, integer) from public, anon;
+grant execute on function public.buscar_clientes(uuid, text, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  053_clientes_b_agenda.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 053 · Cada reserva deja un cliente
+--
+-- Lo que pidió el dueño, textual: «reservó un servicio y ya queda registrado
+-- ese cliente».
+--
+-- POR QUÉ UN TRIGGER Y NO UNA LÍNEA EN CADA FUNCIÓN
+--
+-- Hay dos puertas por donde entra una reserva —`reservar()` desde el local y
+-- `reservar_publico()` desde el link que comparte el dueño— y las dos tienen
+-- que registrar al cliente. Poner la llamada en cada una significa que el día
+-- que se agregue una tercera puerta, o que alguien toque una de las dos, la
+-- regla se puede caer de una sola y nadie lo va a notar: las reservas van a
+-- seguir funcionando, solo que sin cliente.
+--
+-- Con un trigger la regla se escribe una vez y no hay forma de esquivarla,
+-- ni siquiera con un INSERT a mano desde el editor SQL.
+--
+-- LO QUE EL TRIGGER NO HACE
+--
+-- No inventa clientes. Si la reserva no trae teléfono, `cliente_de_contacto`
+-- devuelve null y la reserva queda sin cliente — que es lo correcto: no hay
+-- con qué distinguir a esa persona de la próxima que se llame igual.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA COLUMNA
+--
+--    La clave compuesta contra `clientes (id, empresa_id)` es la que impide
+--    que una reserva de un negocio apunte al cliente de otro. No es
+--    prolijidad: es lo único que lo impide incluso ante un UPDATE directo.
+--
+--    `on delete set null` y no `cascade`: borrar una ficha de cliente no
+--    puede hacer desaparecer un turno que existió y se cobró.
+-- ------------------------------------------------------------
+alter table public.turnos_reserva
+  add column if not exists cliente_id uuid;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'reserva_cliente_misma_empresa') then
+    alter table public.turnos_reserva
+      add constraint reserva_cliente_misma_empresa
+      foreign key (cliente_id, empresa_id)
+      references public.clientes (id, empresa_id)
+      on delete set null;
+  end if;
+end $$;
+
+create index if not exists turnos_reserva_cliente_idx
+  on public.turnos_reserva (cliente_id) where cliente_id is not null;
+
+-- ------------------------------------------------------------
+-- 2. EL TRIGGER
+-- ------------------------------------------------------------
+create or replace function public.reserva_registra_cliente()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  -- Si ya viene con cliente (por ejemplo, se lo eligió de la lista al
+  -- agendar), no se toca: quien lo eligió sabe mejor que el teléfono.
+  if new.cliente_id is null then
+    new.cliente_id := public.cliente_de_contacto(
+      new.empresa_id, new.cliente_nombre, new.cliente_telefono);
+  end if;
+  return new;
+end $fn$;
+
+-- Una función de trigger no la llama nadie a mano: la dispara PostgreSQL, y
+-- dejarla ejecutable por todos la abriría a `anon` sin ninguna razón. El
+-- permiso se comprueba al CREAR el trigger, no cada vez que se dispara.
+revoke all on function public.reserva_registra_cliente() from public, anon, authenticated;
+
+drop trigger if exists reserva_registra_cliente on public.turnos_reserva;
+create trigger reserva_registra_cliente
+  before insert on public.turnos_reserva
+  for each row execute function public.reserva_registra_cliente();
+
+-- ------------------------------------------------------------
+-- 3. LOS QUE YA ESTABAN
+--
+--    Las reservas viejas también tienen gente adentro. Se les arma la ficha
+--    y se las enlaza, agrupando por teléfono normalizado y quedándose con el
+--    nombre de la reserva más reciente — que es el que el local reconoce.
+--
+--    Se hace en dos pasos y no con un INSERT ... SELECT y un UPDATE sueltos
+--    para que el enlace use exactamente las fichas que se acaban de crear.
+-- ------------------------------------------------------------
+do $$
+declare
+  v_creados integer := 0;
+  v_ligados integer := 0;
+begin
+  with contactos as (
+    select
+      r.empresa_id,
+      regexp_replace(r.cliente_telefono, '\D', '', 'g') as norm,
+      -- El nombre de la reserva más nueva de ese número.
+      (array_agg(r.cliente_nombre order by r.created_at desc))[1] as nombre,
+      (array_agg(r.cliente_telefono order by r.created_at desc))[1] as telefono
+    from public.turnos_reserva r
+    where r.cliente_id is null
+      and char_length(regexp_replace(r.cliente_telefono, '\D', '', 'g')) >= 6
+    group by 1, 2
+  )
+  insert into public.clientes (empresa_id, nombre, telefono)
+  select c.empresa_id, left(c.nombre, 80), left(c.telefono, 40)
+  from contactos c
+  on conflict (empresa_id, telefono_norm) where telefono_norm <> '' do nothing;
+
+  get diagnostics v_creados = row_count;
+
+  update public.turnos_reserva r
+  set cliente_id = c.id
+  from public.clientes c
+  where r.cliente_id is null
+    and c.empresa_id = r.empresa_id
+    and c.telefono_norm = regexp_replace(r.cliente_telefono, '\D', '', 'g')
+    and c.telefono_norm <> '';
+
+  get diagnostics v_ligados = row_count;
+
+  raise notice 'Clientes creados desde reservas viejas: %. Reservas enlazadas: %.',
+    v_creados, v_ligados;
+end $$;
+
+-- ------------------------------------------------------------
+-- 4. LA SECCIÓN DE CLIENTES
+--
+--    Una lista que solo se mira no vale el trabajo de mantenerla. Lo que la
+--    hace útil es lo de al lado: cuántas veces vino, cuándo fue la última y
+--    cuánto dejó. Eso es lo que convierte «Juan Pérez» en «Juan, que viene
+--    cada tres semanas y hace seis meses que no aparece».
+--
+--    `gastado` sale de los turnos ATENDIDOS, no de los reservados: un turno
+--    al que no vino no es plata. Es la misma regla de siempre.
+-- ------------------------------------------------------------
+create or replace function public.lista_clientes(
+  p_empresa uuid,
+  p_texto   text default '',
+  p_limite  integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res   jsonb;
+  v_busca text;
+  v_norm  text;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_busca := lower(trim(coalesce(p_texto, '')));
+  v_norm  := regexp_replace(v_busca, '\D', '', 'g');
+
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.ultima_visita desc nulls last, x.nombre), '[]'::jsonb)
+  into v_res
+  from (
+    select
+      c.id, c.nombre, c.telefono, c.notas, c.created_at,
+      coalesce(t.visitas, 0)::int    as visitas,
+      t.ultima_visita,
+      coalesce(t.gastado, 0)::numeric as gastado,
+      coalesce(t.proximo, null)      as proximo_turno
+    from public.clientes c
+    left join lateral (
+      select
+        count(*) filter (where r.estado = 'atendida')::int as visitas,
+        max(r.inicia) filter (where r.estado = 'atendida') as ultima_visita,
+        coalesce(sum(a.monto_cobrado) filter (where r.estado = 'atendida'), 0) as gastado,
+        min(r.inicia) filter (
+          where r.estado in ('pendiente', 'confirmada') and r.inicia > now()
+        ) as proximo
+      from public.turnos_reserva r
+      left join public.turnos_atribucion a on a.id = r.atribucion_id
+      where r.cliente_id = c.id
+    ) t on true
+    where c.empresa_id = p_empresa
+      and c.activo
+      and (
+        v_busca = ''
+        or lower(c.nombre) like '%' || v_busca || '%'
+        or (v_norm <> '' and c.telefono_norm like '%' || v_norm || '%')
+      )
+    limit least(greatest(coalesce(p_limite, 200), 1), 500)
+  ) x;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.lista_clientes(uuid, text, integer) from public, anon;
+grant execute on function public.lista_clientes(uuid, text, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LA FICHA DE UNO
+--
+--    Sus turnos, del más nuevo al más viejo. Es lo que se abre al tocarlo en
+--    la lista, y lo que contesta «¿este cliente ya vino?» sin tener que
+--    acordarse.
+-- ------------------------------------------------------------
+create or replace function public.historial_cliente(
+  p_cliente uuid,
+  p_limite  integer default 50
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+  v_res     jsonb;
+begin
+  select empresa_id into v_empresa from public.clientes where id = p_cliente;
+  if v_empresa is null then
+    raise exception 'Ese cliente no existe.' using errcode = 'P0002';
+  end if;
+  if not public.es_miembro(v_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.inicia desc), '[]'::jsonb) into v_res
+  from (
+    select
+      r.id, r.inicia, r.estado,
+      pr.nombre as servicio,
+      p.nombre  as profesional,
+      coalesce(a.monto_cobrado, 0)::numeric as monto
+    from public.turnos_reserva r
+    left join public.productos pr on pr.id = r.producto_id
+    left join public.turnos_profesional p on p.id = r.profesional_id
+    left join public.turnos_atribucion a on a.id = r.atribucion_id
+    where r.cliente_id = p_cliente
+    order by r.inicia desc
+    limit least(greatest(coalesce(p_limite, 50), 1), 200)
+  ) x;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.historial_cliente(uuid, integer) from public, anon;
+grant execute on function public.historial_cliente(uuid, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  054_lo_que_te_deben.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 054 · Lo que te deben
+--
+-- EL ERROR QUE ESTABA A MEDIO HACER
+--
+-- La forma de cobro «Fiado» ya existía: se podía marcar una venta como
+-- fiada. Pero no se guardaba QUIÉN debe, ni si alguna vez pagó, y —lo
+-- grave— esa venta sumaba como ingreso del día igual que si te hubieran
+-- pagado en efectivo. El método de pago solo se usaba para agrupar, nunca
+-- para descontar.
+--
+-- Vendés 500.000 fiado y el panel te dice que ganaste 500.000. Esa plata no
+-- está en tu bolsillo. Es exactamente lo que este sistema promete no hacer.
+--
+-- POR QUÉ NO VA ADENTRO DE `deudas`
+--
+-- `deudas` es lo que el negocio DEBE: tiene una columna `acreedor`, a quién
+-- le debés. Meter las dos direcciones en la misma tabla obliga a que cada
+-- consulta que ya existe lleve un filtro nuevo, y el día que alguien se
+-- olvide de uno, tu deuda va a aparecer sumando como plata tuya. Ese error
+-- no avisa: da un número lindo y falso.
+--
+-- CÓMO SE MODELA
+--
+-- No como «una deuda por cliente con su saldo», sino como un LIBRO: cada
+-- línea es «se le fio tanto» o «me pagó tanto», y el saldo es la resta.
+--
+-- Un saldo guardado se desincroniza —basta una línea borrada, un pago
+-- cargado dos veces, un UPDATE a mano— y cuando eso pasa nadie se entera
+-- hasta que el cliente reclama. Sumando el libro, el saldo no puede estar
+-- mal: es lo que hay escrito.
+--
+-- SIRVE PARA LOS DOS TIPOS DE CUENTA
+--
+-- Un almacén fía; a una persona también le deben. Y quien debe puede ser
+-- una persona o un negocio —«hoy me llevó tanto el supermercado»—, que es
+-- por lo que el que debe es un `cliente` y un cliente es solo un nombre con
+-- un teléfono.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. EL LIBRO
+--
+--    `venta_id` enlaza la línea con la venta que la originó, cuando vino de
+--    una. Es lo que permite que anular una venta fiada borre la deuda que
+--    creó, en vez de dejarla viva reclamando plata por algo que no pasó.
+--
+--    Y es opcional, porque el otro caso es igual de real: «David me debe
+--    500.000» dicho en un audio, sin ninguna venta detrás.
+-- ------------------------------------------------------------
+create table if not exists public.fiado (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  cliente_id uuid not null,
+  -- 'fio'   → le fiaste: te deben más.
+  -- 'cobro' → te pagó: te deben menos.
+  tipo       text not null check (tipo in ('fio', 'cobro')),
+  monto      numeric(14,2) not null check (monto > 0),
+  fecha      date not null,
+  concepto   text not null default '' check (char_length(concepto) <= 200),
+  -- La venta que lo originó, si vino de una.
+  venta_id   uuid references public.movimientos (id) on delete cascade,
+  -- El movimiento de ingreso que generó el cobro, para poder anularlo junto.
+  cobro_id   uuid references public.movimientos (id) on delete set null,
+  creado_por uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+
+  -- El mismo candado estructural de siempre: una línea de fiado no puede
+  -- apuntar al cliente de otro negocio.
+  constraint fiado_cliente_misma_empresa
+    foreign key (cliente_id, empresa_id)
+    references public.clientes (id, empresa_id) on delete cascade,
+
+  constraint fiado_fecha_razonable check (fecha >= date '2000-01-01')
+);
+
+comment on table public.fiado is
+  'Libro de lo que le deben al negocio. Cada línea suma o resta; el saldo es la resta, nunca un número guardado.';
+
+create index if not exists fiado_cliente_idx on public.fiado (cliente_id, fecha desc);
+create index if not exists fiado_empresa_idx on public.fiado (empresa_id, fecha desc);
+create index if not exists fiado_venta_idx   on public.fiado (venta_id) where venta_id is not null;
+
+alter table public.fiado enable row level security;
+
+-- Se lee como miembro; se escribe solo por función, porque hay que validar
+-- el cliente, la fecha y el tope contra lo que realmente se debe.
+drop policy if exists fiado_select on public.fiado;
+create policy fiado_select on public.fiado
+  for select using (public.es_miembro(empresa_id));
+
+revoke all on public.fiado from anon, authenticated;
+grant select on public.fiado to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. CUÁNTO DEBE UNO
+--
+--    Una sola definición del saldo. Si esta cuenta estuviera repetida en la
+--    pantalla, en el reporte y en el Excel, tarde o temprano una de las tres
+--    diría otra cosa — y ninguna sabría cuál está mal.
+-- ------------------------------------------------------------
+create or replace function public.saldo_fiado(p_cliente uuid)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select coalesce(sum(
+    case when f.tipo = 'fio' then f.monto else -f.monto end
+  ), 0)::numeric
+  from public.fiado f
+  where f.cliente_id = p_cliente;
+$fn$;
+
+revoke all on function public.saldo_fiado(uuid) from public, anon;
+grant execute on function public.saldo_fiado(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. ANOTAR QUE ALGUIEN TE DEBE
+--
+--    Cualquier miembro: el que fía es el que está en el mostrador.
+-- ------------------------------------------------------------
+create or replace function public.anotar_fiado(
+  p_empresa  uuid,
+  p_cliente  uuid,
+  p_monto    numeric,
+  p_concepto text default '',
+  p_fecha    date default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare v_id uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from public.clientes
+                 where id = p_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  insert into public.fiado (empresa_id, cliente_id, tipo, monto, fecha, concepto, creado_por)
+  values (p_empresa, p_cliente, 'fio', p_monto,
+          coalesce(p_fecha, public.hoy_empresa(p_empresa)),
+          left(coalesce(p_concepto, ''), 200), auth.uid())
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.anotar_fiado(uuid, uuid, numeric, text, date) from public, anon;
+grant execute on function public.anotar_fiado(uuid, uuid, numeric, text, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. COBRAR
+--
+--    ACÁ ES DONDE LA PLATA ENTRA DE VERDAD, y por eso acá —y no en la venta
+--    fiada— es donde se registra el ingreso.
+--
+--    El movimiento se crea primero: si falla, no queremos haber bajado el
+--    saldo. Es la misma secuencia que `registrar_pago_deuda` (015), por la
+--    misma razón.
+--
+--    No se puede cobrar más de lo que se debe. Un saldo negativo no
+--    significa nada: si el cliente pagó de más, eso es otra cosa (un
+--    adelanto) y no se resuelve fingiendo que debe menos que cero.
+-- ------------------------------------------------------------
+create or replace function public.cobrar_fiado(
+  p_empresa uuid,
+  p_cliente uuid,
+  p_monto   numeric,
+  p_metodo  text default 'efectivo',
+  p_fecha   date default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_saldo   numeric;
+  v_nombre  text;
+  v_fecha   date;
+  v_mov     uuid;
+  v_id      uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  select nombre into v_nombre from public.clientes
+  where id = p_cliente and empresa_id = p_empresa;
+  if v_nombre is null then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  v_saldo := public.saldo_fiado(p_cliente);
+  if v_saldo <= 0 then
+    raise exception '% no te debe nada.', v_nombre using errcode = '22023';
+  end if;
+  if p_monto > v_saldo then
+    raise exception '% te debe %, no podés cobrarle más que eso.', v_nombre, v_saldo
+      using errcode = '22023';
+  end if;
+
+  if coalesce(p_metodo, '') not in ('efectivo', 'transferencia', 'tarjeta', 'otro') then
+    raise exception 'Esa forma de cobro no es válida.' using errcode = '22023';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  -- Entra como «otro ingreso» y NO como venta: la venta ya se registró el
+  -- día que se entregó la mercadería. Contarla otra vez acá duplicaría la
+  -- facturación del negocio.
+  insert into public.movimientos (
+    empresa_id, tipo, fecha, descripcion, categoria,
+    subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+  ) values (
+    p_empresa, 'ingreso', v_fecha,
+    'Cobro de fiado · ' || v_nombre, 'Fiado',
+    p_monto, 0, p_monto, 0, coalesce(p_metodo, 'efectivo'), left(v_nombre, 80), auth.uid()
+  )
+  returning id into v_mov;
+
+  insert into public.fiado (
+    empresa_id, cliente_id, tipo, monto, fecha, concepto, cobro_id, creado_por
+  ) values (
+    p_empresa, p_cliente, 'cobro', p_monto, v_fecha, 'Pago recibido', v_mov, auth.uid()
+  )
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'id', v_id,
+    'movimiento', v_mov,
+    'saldo', public.saldo_fiado(p_cliente)
+  );
+end $fn$;
+
+revoke all on function public.cobrar_fiado(uuid, uuid, numeric, text, date) from public, anon;
+grant execute on function public.cobrar_fiado(uuid, uuid, numeric, text, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LO QUE TE DEBEN, TODO JUNTO
+--
+--    El total y la lista de quiénes. Es la pantalla, y es también el número
+--    que el panel necesita para poder decir la verdad.
+--
+--    `dias` es cuántos hace de la línea más vieja sin saldar. No es un
+--    adorno: la diferencia entre «me deben 800.000» y «me deben 800.000
+--    desde hace cuatro meses» es toda.
+-- ------------------------------------------------------------
+create or replace function public.resumen_fiado(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  with saldos as (
+    select
+      f.cliente_id,
+      sum(case when f.tipo = 'fio' then f.monto else -f.monto end)::numeric as saldo,
+      min(f.fecha) filter (where f.tipo = 'fio') as desde
+    from public.fiado f
+    where f.empresa_id = p_empresa
+    group by f.cliente_id
+  ),
+  conNombre as (
+    select
+      s.cliente_id, c.nombre, c.telefono, s.saldo, s.desde,
+      (public.hoy_empresa(p_empresa) - s.desde) as dias
+    from saldos s
+    join public.clientes c on c.id = s.cliente_id
+    -- Quien ya pagó todo no aparece en «lo que te deben». Sigue en Clientes.
+    where s.saldo > 0
+  )
+  select jsonb_build_object(
+    'total',    coalesce((select sum(saldo) from conNombre), 0),
+    'cuantos',  coalesce((select count(*) from conNombre), 0),
+    'clientes', coalesce((
+      select jsonb_agg(to_jsonb(x) order by x.saldo desc)
+      from conNombre x
+    ), '[]'::jsonb)
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.resumen_fiado(uuid) from public, anon;
+grant execute on function public.resumen_fiado(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. EL MOVIMIENTO DE UN CLIENTE
+-- ------------------------------------------------------------
+create or replace function public.libro_fiado(p_cliente uuid, p_limite integer default 100)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+  v_res     jsonb;
+begin
+  select empresa_id into v_empresa from public.clientes where id = p_cliente;
+  if v_empresa is null then
+    raise exception 'Ese cliente no existe.' using errcode = 'P0002';
+  end if;
+  if not public.es_miembro(v_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.fecha desc, x.created_at desc), '[]'::jsonb)
+  into v_res
+  from (
+    select f.id, f.tipo, f.monto, f.fecha, f.concepto, f.venta_id, f.created_at
+    from public.fiado f
+    where f.cliente_id = p_cliente
+    order by f.fecha desc, f.created_at desc
+    limit least(greatest(coalesce(p_limite, 100), 1), 500)
+  ) x;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.libro_fiado(uuid, integer) from public, anon;
+grant execute on function public.libro_fiado(uuid, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  055_venta_fiada.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 055 · Una venta fiada deja una deuda
+--
+-- LA MITAD QUE FALTABA
+--
+-- La 054 armó el libro de lo que te deben. Esto lo conecta con la caja:
+-- cuando una venta se cobra «Fiado», queda anotada como deuda de ese
+-- cliente en lugar de desaparecer en una etiqueta.
+--
+-- Y con eso, «Fiado» deja de ser una palabra al lado de una venta y pasa a
+-- ser plata que alguien tiene que ir a cobrar.
+--
+-- POR QUÉ AHORA HAY QUE DECIR A QUIÉN SE LE FÍA
+--
+-- Antes se podía marcar una venta como fiada sin decir de quién. Eso dejaba
+-- una deuda que nadie puede cobrar y un ingreso que nunca se va a cerrar.
+-- Ahora es obligatorio, y es un cambio de comportamiento: una venta fiada
+-- sin cliente ahora es rechazada, con un mensaje que dice qué hacer.
+--
+-- LA FIRMA CAMBIA, ASÍ QUE LA VIEJA SE BORRA
+--
+-- Si quedaran las dos, PostgREST vería dos funciones con el mismo nombre y
+-- no sabría cuál llamar. Es lo mismo que hicieron la 019 y la 048.
+--
+-- EL CUERPO NO SE TOCÓ A MANO
+--
+-- Esta función mueve stock y plata. El cuerpo se extrajo del archivo de la
+-- 032 con un script y se le agregaron solo las partes marcadas, para que no
+-- haya forma de que se cuele una diferencia silenciosa al transcribir.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. A QUIÉN SE LE VENDIÓ
+--
+--    Sirve para toda venta, no solo para las fiadas: es lo que permite ver
+--    el historial de un cliente en un almacén, donde no hay turnos.
+--
+--    Clave compuesta contra `clientes (id, empresa_id)`: una venta no puede
+--    apuntar al cliente de otro negocio ni con un UPDATE a mano.
+-- ------------------------------------------------------------
+alter table public.movimientos
+  add column if not exists cliente_id uuid;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'movimiento_cliente_misma_empresa') then
+    alter table public.movimientos
+      add constraint movimiento_cliente_misma_empresa
+      foreign key (cliente_id, empresa_id)
+      references public.clientes (id, empresa_id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists movimientos_cliente_idx
+  on public.movimientos (cliente_id) where cliente_id is not null;
+
+-- ------------------------------------------------------------
+-- 2. LA VENTA
+-- ------------------------------------------------------------
+create or replace function public.registrar_venta(
+  p_empresa uuid,
+  p_items jsonb,
+  p_fecha date default null,
+  p_descripcion text default '',
+  p_metodo_pago text default 'efectivo',
+  p_contraparte text default '',
+  p_notas text default '',
+  p_origen origen_captura default 'manual',
+  p_descuento numeric default 0,
+  -- A quién se le vende. Solo hace falta cuando la venta es fiada, pero se
+  -- guarda siempre: sirve para el historial del cliente.
+  p_cliente uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_mov       uuid;
+  v_item      jsonb;
+  v_prod      public.productos%rowtype;
+  v_norm      jsonb := '[]'::jsonb;
+  v_subtotal  numeric(14,2) := 0;
+  v_costo     numeric(14,2) := 0;
+  v_desc      numeric(14,2);
+  v_cant      numeric(14,2);
+  v_precio    numeric(14,2);
+  v_costo_u   numeric(14,2);
+  v_nombre    text;
+  v_pid       uuid;
+  v_fecha     date;
+  v_permitir  boolean;
+  v_stock     numeric(14,2);
+  v_metodo    text;
+  v_cliente   uuid;
+begin
+  ------------------------------------------------ autenticación y pertenencia
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select permitir_stock_negativo into v_permitir from public.empresas where id = p_empresa;
+  if not found then
+    raise exception 'La empresa no existe.' using errcode = '42501';
+  end if;
+
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  ------------------------------------------------ validaciones generales
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'La venta necesita una lista de productos.' using errcode = '22023';
+  end if;
+
+  if jsonb_array_length(p_items) = 0 then
+    raise exception 'La venta necesita al menos un producto.' using errcode = '22023';
+  end if;
+
+  if jsonb_array_length(p_items) > 200 then
+    raise exception 'Una venta no puede tener más de 200 líneas.' using errcode = '22023';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+  if v_fecha < date '2000-01-01' or v_fecha > public.hoy_empresa(p_empresa) + 1 then
+    raise exception 'La fecha de la venta no es válida.' using errcode = '22007';
+  end if;
+
+  v_metodo := lower(coalesce(nullif(trim(p_metodo_pago), ''), 'efectivo'));
+  if v_metodo not in ('efectivo', 'transferencia', 'tarjeta', 'credito', 'otro') then
+    raise exception 'La forma de cobro no es válida.' using errcode = '22023';
+  end if;
+
+  ------------------------------------------------ primera pasada: validar y normalizar
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    if jsonb_typeof(v_item) <> 'object' then
+      raise exception 'Cada línea de la venta tiene que ser un objeto.' using errcode = '22023';
+    end if;
+
+    begin
+      v_cant := (v_item ->> 'cantidad')::numeric;
+    exception when others then
+      raise exception 'La cantidad tiene que ser un número.' using errcode = '22023';
+    end;
+
+    if v_cant is null or v_cant <= 0 then
+      raise exception 'La cantidad tiene que ser mayor a cero.' using errcode = '22023';
+    end if;
+    if v_cant > 1000000 then
+      raise exception 'La cantidad es demasiado grande.' using errcode = '22023';
+    end if;
+
+    v_pid := null;
+    if nullif(trim(coalesce(v_item ->> 'producto_id', '')), '') is not null then
+      begin
+        v_pid := (v_item ->> 'producto_id')::uuid;
+      exception when others then
+        raise exception 'El identificador del producto no es válido.' using errcode = '22023';
+      end;
+    end if;
+
+    if v_pid is not null then
+      -- El producto tiene que existir Y ser de esta empresa.
+      select * into v_prod from public.productos where id = v_pid and empresa_id = p_empresa;
+      if not found then
+        raise exception 'Ese producto no pertenece a esta empresa.' using errcode = '42501';
+      end if;
+
+      v_nombre  := v_prod.nombre;
+      -- El precio SÍ puede ser distinto al del catálogo (rebaja puntual, acuerdo con el cliente).
+      v_precio  := coalesce(nullif(v_item ->> 'precio_unitario', '')::numeric, v_prod.precio);
+      -- El costo NO: siempre el del catálogo. Lo que mande el cliente se descarta.
+      v_costo_u := v_prod.costo;
+    else
+      v_nombre := nullif(trim(coalesce(v_item ->> 'nombre', '')), '');
+      if v_nombre is null then
+        raise exception 'Cada producto suelto necesita un nombre.' using errcode = '22023';
+      end if;
+      v_nombre  := left(v_nombre, 120);
+      v_precio  := coalesce(nullif(v_item ->> 'precio_unitario', '')::numeric, 0);
+      v_costo_u := coalesce(nullif(v_item ->> 'costo_unitario', '')::numeric, 0);
+    end if;
+
+    if v_precio is null or v_precio < 0 then
+      raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+    end if;
+    if v_costo_u is null or v_costo_u < 0 then
+      raise exception 'El costo no puede ser negativo.' using errcode = '22023';
+    end if;
+
+    v_subtotal := v_subtotal + (v_cant * v_precio);
+    v_costo    := v_costo + (v_cant * v_costo_u);
+
+    v_norm := v_norm || jsonb_build_object(
+      'producto_id', v_pid,
+      'nombre', v_nombre,
+      'cantidad', v_cant,
+      'precio_unitario', v_precio,
+      'costo_unitario', v_costo_u,
+      'controla_stock', coalesce(v_pid is not null and v_prod.controla_stock, false)
+    );
+  end loop;
+
+  ------------------------------------------------ descuento
+  v_desc := coalesce(p_descuento, 0);
+  if v_desc < 0 then
+    raise exception 'El descuento no puede ser negativo.' using errcode = '22023';
+  end if;
+  if v_desc > v_subtotal then
+    raise exception 'El descuento no puede ser mayor que el subtotal de la venta.' using errcode = '22023';
+  end if;
+
+  ------------------------------------------------ el cliente
+  -- Se valida ANTES de tocar el stock: si el cliente no es de esta cuenta,
+  -- que la venta entera no llegue a existir.
+  v_cliente := p_cliente;
+  if v_cliente is not null
+     and not exists (select 1 from public.clientes
+                     where id = v_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Fiar sin saber a quién es anotar en la pared. Se puede vender fiado sin
+  -- cliente en otros sistemas; acá no, porque el resultado sería una deuda
+  -- que nadie puede cobrar y un número que infla los ingresos para siempre.
+  if v_metodo = 'credito' and v_cliente is null then
+    raise exception 'Para vender fiado hay que decir a quién: elegí o creá el cliente.'
+      using errcode = '22023';
+  end if;
+
+  ------------------------------------------------ cabecera
+  insert into public.movimientos (
+    empresa_id, tipo, estado, fecha, descripcion, categoria,
+    subtotal, descuento, monto, costo_total,
+    metodo_pago, contraparte, notas, origen, creado_por, cliente_id
+  )
+  values (
+    p_empresa, 'venta', 'activo', v_fecha,
+    left(coalesce(trim(p_descripcion), ''), 200), 'Ventas',
+    v_subtotal, v_desc, v_subtotal - v_desc, v_costo,
+    v_metodo, left(coalesce(trim(p_contraparte), ''), 80), left(coalesce(p_notas, ''), 500),
+    coalesce(p_origen, 'manual'), auth.uid(), v_cliente
+  )
+  returning id into v_mov;
+
+  ------------------------------------------------ items y stock
+  for v_item in select * from jsonb_elements_ordenados(v_norm) loop
+    v_cant := (v_item ->> 'cantidad')::numeric;
+    v_pid  := nullif(v_item ->> 'producto_id', '')::uuid;
+
+    if v_pid is not null and (v_item ->> 'controla_stock')::boolean then
+      -- Aritmética relativa: dos ventas simultáneas no se pisan.
+      update public.productos
+        set stock = stock - v_cant
+        where id = v_pid
+        returning stock into v_stock;
+
+      if not v_permitir and v_stock < 0 then
+        raise exception 'No hay stock suficiente de %.', v_item ->> 'nombre' using errcode = '23514';
+      end if;
+    end if;
+
+    insert into public.movimiento_items (
+      movimiento_id, empresa_id, producto_id, nombre, cantidad,
+      precio_unitario, costo_unitario, afecto_stock
+    )
+    values (
+      v_mov, p_empresa, v_pid, v_item ->> 'nombre', v_cant,
+      (v_item ->> 'precio_unitario')::numeric,
+      (v_item ->> 'costo_unitario')::numeric,
+      coalesce(v_pid is not null and (v_item ->> 'controla_stock')::boolean, false)
+    );
+  end loop;
+
+  ------------------------------------------------ descripción automática
+  update public.movimientos
+  set descripcion = (
+    select string_agg(nombre || ' x' || trim(to_char(cantidad, 'FM999999990.##')), ', ')
+    from public.movimiento_items where movimiento_id = v_mov
+  )
+  where id = v_mov and coalesce(trim(descripcion), '') = '';
+
+  ------------------------------------------------ si fue fiada, se anota
+  --
+  -- Acá está el arreglo. Hasta ahora «Fiado» era una etiqueta: la venta
+  -- sumaba como ingreso igual que si te hubieran pagado en efectivo, y no
+  -- quedaba escrito quién debía.
+  --
+  -- Va al final, después del stock y de los items: si algo de eso falla, la
+  -- transacción se va entera y no queda una deuda por una venta que no pasó.
+  if v_metodo = 'credito' then
+    insert into public.fiado (
+      empresa_id, cliente_id, tipo, monto, fecha, concepto, venta_id, creado_por
+    )
+    select p_empresa, v_cliente, 'fio', v_subtotal - v_desc, v_fecha,
+           left(coalesce((
+             select string_agg(nombre || ' x' || trim(to_char(cantidad, 'FM999999990.##')), ', ')
+             from public.movimiento_items where movimiento_id = v_mov
+           ), 'Venta fiada'), 200),
+           v_mov, auth.uid();
+  end if;
+
+  return v_mov;
+end $$;
+
+-- La firma vieja de 9 argumentos queda muerta.
+drop function if exists public.registrar_venta(
+  uuid, jsonb, date, text, text, text, text, origen_captura, numeric);
+
+revoke all on function public.registrar_venta(
+  uuid, jsonb, date, text, text, text, text, origen_captura, numeric, uuid) from public, anon;
+grant execute on function public.registrar_venta(
+  uuid, jsonb, date, text, text, text, text, origen_captura, numeric, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. ANULAR UNA VENTA FIADA BORRA LA DEUDA
+--
+--    Anular no borra el movimiento: lo marca. Así que la línea del libro no
+--    se va sola, y quedaría reclamando plata por una venta que se deshizo.
+--
+--    Se hace con un trigger y no dentro de `anular_movimiento` por lo mismo
+--    de siempre: es una regla sobre el dato, y tiene que valer venga por
+--    donde venga —incluido un UPDATE desde el editor SQL.
+--
+--    Si el cliente ya pagó algo, NO se borra en silencio: eso dejaría el
+--    saldo en negativo, que no significa nada. Se frena y se explica.
+-- ------------------------------------------------------------
+create or replace function public.anular_borra_el_fiado()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+declare
+  v_cliente uuid;
+  v_monto   numeric;
+  v_saldo   numeric;
+begin
+  if new.estado <> 'anulado' or old.estado = 'anulado' then
+    return new;
+  end if;
+
+  select f.cliente_id, f.monto into v_cliente, v_monto
+  from public.fiado f
+  where f.venta_id = new.id and f.tipo = 'fio';
+
+  if v_cliente is null then return new; end if;
+
+  v_saldo := public.saldo_fiado(v_cliente);
+  if v_saldo - v_monto < 0 then
+    raise exception
+      'Esa venta fiada ya fue cobrada, entera o en parte. Anulá primero el cobro y después la venta.'
+      using errcode = '22023';
+  end if;
+
+  delete from public.fiado where venta_id = new.id and tipo = 'fio';
+  return new;
+end $fn$;
+
+revoke all on function public.anular_borra_el_fiado() from public, anon, authenticated;
+
+drop trigger if exists anular_borra_el_fiado on public.movimientos;
+create trigger anular_borra_el_fiado
+  after update on public.movimientos
+  for each row execute function public.anular_borra_el_fiado();
+
+
+-- ############################################################
+-- ##  056_cobrar_no_es_ganar_dos_veces.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 056 · Cobrar un fiado no es ganar dos veces
+--
+-- EL ERROR, QUE ESTABA EN LA 054
+--
+-- `cobrar_fiado` registraba cada cobro como «otro ingreso». La intención
+-- era no duplicar la FACTURACIÓN —la venta ya se había registrado el día que
+-- salió la mercadería— y eso se cumplía. Pero la ganancia se calcula como
+--
+--     ventas − costo + otros ingresos − gastos
+--
+-- así que una venta fiada de 500.000 contaba 500.000 el día de la venta y
+-- otros 500.000 el día del cobro. La ganancia del negocio quedaba inflada
+-- exactamente en todo lo que se cobraba de fiado.
+--
+-- Con lo anotado a mano era igual de falso: si le prestaste 500.000 a David
+-- y te los devuelve, no ganaste nada. Con la 054, ganabas 500.000.
+--
+-- Apareció escribiendo la pantalla de Fiado, antes de que existiera ningún
+-- botón «Cobrar». La prueba de la 054 afirmaba que el cobro entraba como
+-- otro ingreso —describía el error como si fuera la regla— y por eso pasaba.
+--
+-- LO QUE PASA AHORA
+--
+-- Cobrar solo baja lo que te deben. No crea ningún movimiento: la venta ya
+-- está contada, y un préstamo que vuelve no es ganancia. El panel va a decir
+-- cuánto de lo vendido todavía no se cobró, que es la otra mitad de la verdad.
+--
+-- LO QUE ESTO NO RESUELVE, DICHO DE FRENTE
+--
+-- La plata que se cobra en efectivo entra al cajón y no aparece entre los
+-- movimientos del día, así que el cierre de caja no la ve. Es información que
+-- falta, no un número falso, y se arregla mostrando los cobros de fiado en el
+-- cierre. Duplicar la ganancia era peor.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. CÓMO SE COBRÓ
+--
+--    Sin movimiento, el libro es el único lugar donde queda. Y va a hacer
+--    falta el día que el cierre de caja muestre los cobros en efectivo.
+-- ------------------------------------------------------------
+alter table public.fiado
+  add column if not exists metodo text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'fiado_metodo_valido') then
+    alter table public.fiado add constraint fiado_metodo_valido
+      check (metodo is null or metodo in ('efectivo', 'transferencia', 'tarjeta', 'otro'));
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- 2. COBRAR, SIN INGRESO
+--
+--    Misma firma que en la 054, así que se reemplaza sin tocar a quien ya la
+--    llama. Lo único que cambia es que no inserta nada en `movimientos`.
+--
+--    Se agrega un candado sobre el cliente: dos cobros al mismo tiempo podían
+--    pasar los dos el control del saldo y dejarlo por debajo de cero.
+-- ------------------------------------------------------------
+create or replace function public.cobrar_fiado(
+  p_empresa uuid,
+  p_cliente uuid,
+  p_monto   numeric,
+  p_metodo  text default 'efectivo',
+  p_fecha   date default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_saldo  numeric;
+  v_nombre text;
+  v_id     uuid;
+  v_debe   text;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  select nombre into v_nombre from public.clientes
+  where id = p_cliente and empresa_id = p_empresa
+  for update;
+  if v_nombre is null then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if coalesce(p_metodo, '') not in ('efectivo', 'transferencia', 'tarjeta', 'otro') then
+    raise exception 'Esa forma de cobro no es válida.' using errcode = '22023';
+  end if;
+
+  v_saldo := public.saldo_fiado(p_cliente);
+  if v_saldo <= 0 then
+    raise exception '% no te debe nada.', v_nombre using errcode = '22023';
+  end if;
+
+  if p_monto > v_saldo then
+    -- «600.000» y no «600000.00»: esto lo lee una persona.
+    v_debe := case when v_saldo = trunc(v_saldo)
+                   then replace(to_char(v_saldo, 'FM999,999,999,990'), ',', '.')
+                   else v_saldo::text end;
+    raise exception '% te debe %, no podés cobrarle más que eso.', v_nombre, v_debe
+      using errcode = '22023';
+  end if;
+
+  insert into public.fiado (
+    empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, creado_por
+  ) values (
+    p_empresa, p_cliente, 'cobro', p_monto,
+    coalesce(p_fecha, public.hoy_empresa(p_empresa)),
+    'Pago recibido', p_metodo, auth.uid()
+  )
+  returning id into v_id;
+
+  return jsonb_build_object('id', v_id, 'saldo', public.saldo_fiado(p_cliente));
+end $fn$;
+
+revoke all on function public.cobrar_fiado(uuid, uuid, numeric, text, date) from public, anon;
+grant execute on function public.cobrar_fiado(uuid, uuid, numeric, text, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. BORRAR LO ANOTADO POR ERROR
+--
+--    Un fiado cargado dos veces, un pago con el monto equivocado: sin esto,
+--    la única salida era anotar una línea al revés y ensuciar el libro.
+--
+--    Lo puede borrar quien lo anotó o un administrador. Lo que vino de una
+--    venta NO se borra acá: se deshace anulando la venta, que es la que
+--    además devuelve el stock.
+--
+--    Y borrar algo fiado no puede dejar el saldo por debajo de cero: si ya te
+--    pagó parte, primero va el cobro.
+-- ------------------------------------------------------------
+create or replace function public.borrar_linea_fiado(p_linea uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v public.fiado;
+begin
+  select * into v from public.fiado where id = p_linea;
+  if v.id is null then
+    raise exception 'Esa línea ya no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not (public.es_admin(v.empresa_id) or v.creado_por = auth.uid()) then
+    raise exception 'Solo quien la anotó o un administrador puede borrarla.' using errcode = '42501';
+  end if;
+
+  if v.venta_id is not null then
+    raise exception
+      'Esa deuda viene de una venta. Para borrarla, anulá la venta desde el historial: así también vuelve el stock.'
+      using errcode = '22023';
+  end if;
+
+  -- El mismo candado que al cobrar: el control del saldo no puede correr
+  -- en paralelo con un cobro.
+  perform 1 from public.clientes where id = v.cliente_id for update;
+
+  if v.tipo = 'fio' and public.saldo_fiado(v.cliente_id) - v.monto < 0 then
+    raise exception
+      'Si borrás eso quedaría debiendo menos que cero, porque ya te pagó parte. Borrá primero el pago.'
+      using errcode = '22023';
+  end if;
+
+  delete from public.fiado where id = p_linea;
+
+  return jsonb_build_object('saldo', public.saldo_fiado(v.cliente_id));
+end $fn$;
+
+revoke all on function public.borrar_linea_fiado(uuid) from public, anon;
+grant execute on function public.borrar_linea_fiado(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. EL MENSAJE AL ANULAR UNA VENTA YA COBRADA
+--
+--    Decía «anulá primero el cobro», y no había forma de hacerlo. Ahora la
+--    hay, así que el mensaje dice dónde.
+-- ------------------------------------------------------------
+create or replace function public.anular_borra_el_fiado()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+declare
+  v_cliente uuid;
+  v_monto   numeric;
+begin
+  if new.estado <> 'anulado' or old.estado = 'anulado' then
+    return new;
+  end if;
+
+  select f.cliente_id, f.monto into v_cliente, v_monto
+  from public.fiado f
+  where f.venta_id = new.id and f.tipo = 'fio';
+
+  if v_cliente is null then return new; end if;
+
+  if public.saldo_fiado(v_cliente) - v_monto < 0 then
+    raise exception
+      'Esa venta fiada ya fue cobrada, entera o en parte. Borrá primero el pago desde Fiado y después anulá la venta.'
+      using errcode = '22023';
+  end if;
+
+  delete from public.fiado where venta_id = new.id and tipo = 'fio';
+  return new;
+end $fn$;
+
+revoke all on function public.anular_borra_el_fiado() from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LOS COBROS QUE YA SE HABÍAN CONTADO COMO INGRESO
+--
+--    Si alguno llegó a existir, su «otro ingreso» sigue inflando la ganancia.
+--    No se tocan solos: son movimientos de un negocio real, y anularlos es
+--    una decisión que se toma mirándolos. Se avisa cuántos hay.
+-- ------------------------------------------------------------
+do $$
+declare v_cuantos integer;
+begin
+  select count(*) into v_cuantos
+  from public.fiado f
+  join public.movimientos m on m.id = f.cobro_id
+  where f.tipo = 'cobro' and m.estado = 'activo';
+
+  if v_cuantos > 0 then
+    raise notice
+      'Hay % cobros de fiado anteriores que siguen contando como ingreso. Revisalos en el historial (categoría «Fiado») y anulalos.',
+      v_cuantos;
+  end if;
+end $$;
+
+
+-- ############################################################
+-- ##  057_fiado_en_el_cierre_y_cliente_en_la_agenda.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 057 · El fiado en el cierre, y el cliente en la agenda
+--
+-- 1. EL CIERRE DEL DÍA NO SABÍA DEL FIADO
+--
+-- «Entró» es ventas más otros ingresos. Una venta fiada está en ventas, así
+-- que el cierre la mostraba como plata que entró ese día, cuando al cajón no
+-- entró nada. Y lo que te pagan de fiados viejos (desde la 056, un cobro ya
+-- no es un ingreso) no aparecía en ningún lado: un día en que solo cobraste
+-- fiados salía «sin actividad».
+--
+-- No se cambia lo que significa «Entró»: rompería las comparaciones con la
+-- semana pasada, que se calculan igual. Se agregan dos números, y la pantalla
+-- los muestra solo cuando no son cero:
+--
+--   fiado_vendido → de lo vendido hoy, cuánto se fio: se vendió, no entró.
+--   fiado_cobrado → cuánto se cobró hoy de fiados: entró, sin venta de hoy.
+--
+-- 2. RESERVAR, CON EL CLIENTE ELEGIDO
+--
+-- Al agendar desde el local ahora se elige al cliente de la lista. La 053 ya
+-- ata cada reserva a su cliente por el teléfono; lo que faltaba es el cliente
+-- elegido que no tiene teléfono, que quedaba suelto y se perdía su historial.
+-- El trigger de la 053 respeta un cliente que ya viene puesto, así que alcanza
+-- con que `reservar` lo reciba.
+--
+-- La firma cambia, así que la vieja se borra: con las dos, PostgREST no
+-- sabría cuál llamar. Es lo mismo que hicieron la 019, la 048 y la 055.
+--
+-- LOS CUERPOS NO SE TOCARON A MANO
+--
+-- Se extrajeron de la 008 y la 037 con un script y se les agregaron solo las
+-- partes marcadas.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. EL CIERRE DEL DÍA
+--
+--    Misma firma que en la 008, así que se reemplaza sin tocar a quien ya la
+--    llama.
+-- ------------------------------------------------------------
+create or replace function public.cierre_del_dia(p_empresa uuid, p_fecha date default null)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_fecha    date;
+  v_previo   date;
+  v_hoy_r    jsonb;
+  v_prev_r   jsonb;
+  v_sem_r    jsonb;
+  v_top      jsonb;
+  v_res      jsonb;
+  v_admin    boolean;
+  v_fiado_vendido numeric;
+  v_fiado_cobrado numeric;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_fecha  := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+  v_previo := v_fecha - 7;
+  v_admin  := public.es_admin(p_empresa);
+
+  v_hoy_r  := public.resumen_financiero(p_empresa, v_fecha, v_fecha);
+  v_prev_r := public.resumen_financiero(p_empresa, v_previo, v_previo);
+  -- Los siete días ANTERIORES, sin incluir el que se está cerrando: si lo
+  -- incluyéramos, el día se estaría comparando en parte contra sí mismo.
+  v_sem_r  := public.resumen_financiero(p_empresa, v_fecha - 7, v_fecha - 1);
+
+  -- Lo que la venta del día no dice. Una venta fiada está en «ventas» —se
+  -- vendió— pero no entró al cajón; y lo que se cobra de fiados viejos
+  -- entró al cajón pero no está en ninguna venta de hoy (056).
+  select coalesce(sum(m.monto), 0) into v_fiado_vendido
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.fecha = v_fecha
+    and m.tipo = 'venta' and m.estado = 'activo' and m.metodo_pago = 'credito';
+
+  select coalesce(sum(f.monto), 0) into v_fiado_cobrado
+  from public.fiado f
+  where f.empresa_id = p_empresa and f.fecha = v_fecha and f.tipo = 'cobro';
+
+  select jsonb_build_object('nombre', r->>'nombre', 'unidades', r->'unidades', 'ingresos', r->'ingresos')
+  into v_top
+  from jsonb_array_elements(
+    coalesce(public.ranking_productos(p_empresa, v_fecha, v_fecha, 1), '[]'::jsonb)
+  ) as r
+  limit 1;
+
+  select jsonb_build_object(
+    'fecha',              v_fecha,
+    'es_hoy',             v_fecha = public.hoy_empresa(p_empresa),
+    'hubo_actividad',     coalesce((v_hoy_r->>'cantidad_ventas')::numeric, 0) > 0
+                          or coalesce((v_hoy_r->>'gastos')::numeric, 0) > 0
+                          or coalesce((v_hoy_r->>'otros_ingresos')::numeric, 0) > 0
+                          -- Un día en que solo se cobraron fiados también tuvo
+                          -- plata que entró: no es un día «sin actividad».
+                          or v_fiado_cobrado > 0,
+    'resumen',            v_hoy_r,
+    'misma_dia_semana_pasada', v_prev_r,
+    -- Promedio diario de la semana previa, para decir "hoy vendiste más que
+    -- un día normal tuyo" sin que un lunes flojo arruine la comparación.
+    'promedio_semana',    jsonb_build_object(
+                            'ventas',  round(coalesce((v_sem_r->>'ventas')::numeric, 0) / 7, 2),
+                            'gastos',  round(coalesce((v_sem_r->>'gastos')::numeric, 0) / 7, 2),
+                            'ganancia_neta', case when v_admin
+                              then round(coalesce((v_sem_r->>'ganancia_neta')::numeric, 0) / 7, 2)
+                              else null end
+                          ),
+    'producto_estrella',  v_top,
+    'fiado_vendido',      v_fiado_vendido,
+    'fiado_cobrado',      v_fiado_cobrado,
+    'racha',              public.racha_empresa(p_empresa),
+    'ya_cerrado',         exists (
+                            select 1 from public.cierres c
+                            where c.empresa_id = p_empresa
+                              and c.user_id = auth.uid()
+                              and c.fecha = v_fecha
+                          )
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 2. RESERVAR
+-- ------------------------------------------------------------
+create or replace function public.reservar(
+  p_empresa     uuid,
+  p_profesional uuid,
+  p_producto    uuid,
+  p_inicia      timestamptz,
+  p_nombre      text,
+  p_telefono    text default '',
+  p_origen      text default 'local',
+  -- El cliente elegido de la lista (057). Si viene, la reserva queda atada a
+  -- él aunque no tenga teléfono; si no, el trigger de la 053 lo busca por el
+  -- teléfono, como siempre.
+  p_cliente     uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_zona   text;
+  v_fecha  date;
+  v_libre  boolean;
+  v_fin    timestamptz;
+  v_id     uuid;
+  v_token  uuid;
+  v_cliente uuid;
+begin
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Falta el nombre de quien reserva.' using errcode = '22023';
+  end if;
+
+  if p_inicia is null then
+    raise exception 'Falta el horario.' using errcode = '22023';
+  end if;
+
+  -- Esta puerta es la del LOCAL: la usa quien trabaja ahí para anotar a
+  -- alguien que llamó por teléfono. La puerta pública —la del link que el
+  -- dueño comparte— es otra función, con sus propios límites, y por eso acá
+  -- se exige pertenecer. Sin esta línea, cualquiera con una cuenta de Orden
+  -- podía llenarle la agenda a un negocio ajeno.
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  -- El candado. Todo lo que sigue está serializado por profesional.
+  perform 1 from public.turnos_profesional
+  where id = p_profesional and empresa_id = p_empresa and activo
+  for update;
+
+  if not found then
+    raise exception 'Esa persona no está en el equipo de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  select coalesce(e.zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  v_fecha := (p_inicia at time zone v_zona)::date;
+
+  -- Que el hueco EXISTA, no solo que esté libre. Sin esto se podría reservar
+  -- a las tres de la mañana mandando el horario a mano.
+  select exists (
+    select 1 from public.huecos_del_dia(p_profesional, v_fecha, p_producto) h
+    where h.inicia = p_inicia
+  ) into v_libre;
+
+  if not v_libre then
+    raise exception 'Ese horario ya no está disponible.' using errcode = '23505';
+  end if;
+
+  select h.termina into v_fin
+  from public.huecos_del_dia(p_profesional, v_fecha, p_producto) h
+  where h.inicia = p_inicia;
+
+  -- Un cliente de otro negocio no se puede colgar de un turno de este. La
+  -- clave compuesta de la 053 ya lo impediría, pero con un error que nadie
+  -- entiende; esto lo dice en castellano.
+  v_cliente := p_cliente;
+  if v_cliente is not null
+     and not exists (select 1 from public.clientes
+                     where id = v_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  insert into public.turnos_reserva (
+    empresa_id, profesional_id, producto_id, inicia, termina,
+    cliente_nombre, cliente_telefono, origen, creada_por, cliente_id
+  )
+  values (
+    p_empresa, p_profesional, p_producto, p_inicia, v_fin,
+    left(trim(p_nombre), 80), left(coalesce(trim(p_telefono), ''), 40),
+    case when p_origen = 'publico' then 'publico' else 'local' end,
+    auth.uid(), v_cliente
+  )
+  returning id, token into v_id, v_token;
+
+  return jsonb_build_object('reserva', v_id, 'token', v_token, 'inicia', p_inicia, 'termina', v_fin);
+end $fn$;
+
+drop function if exists public.reservar(uuid, uuid, uuid, timestamptz, text, text, text);
+
+revoke all on function public.reservar(uuid, uuid, uuid, timestamptz, text, text, text, uuid)
+  from public, anon;
+grant execute on function public.reservar(uuid, uuid, uuid, timestamptz, text, text, text, uuid)
+  to authenticated;
+
+
+-- ############################################################
+-- ##  058_eliminar_clientes_y_productos.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 058 · Eliminar un cliente, y eliminar del catálogo
+--
+-- Hasta acá no había forma de sacar a nadie de la lista de clientes, y del
+-- catálogo solo se podía pausar. Las dos cosas se piden igual —«eliminar»—
+-- pero ninguna puede ser un DELETE a secas, porque cada ficha tiene cosas
+-- colgadas.
+--
+-- 1. UN CLIENTE
+--
+--    El libro de fiado cuelga del cliente con borrado en cascada (054):
+--    borrar la ficha de alguien que te debe borraría también su deuda, sin
+--    avisar a nadie. Por eso:
+--
+--      · Si te debe, no se elimina. Primero se cobra o se borra la deuda.
+--      · Si no tiene nada atado —la ficha repetida, el nombre mal escrito—
+--        se borra de verdad.
+--      · Si tiene historia —ventas, turnos, un fiado ya pagado— se archiva:
+--        deja de aparecer en la lista y al elegir cliente, y lo que ya pasó
+--        sigue diciendo a quién. Si vuelve a reservar o se lo carga con el
+--        mismo teléfono, reaparece con su historial (la 052 ya lo hacía).
+--
+--    Y un arreglo que esto vuelve necesario: al ponerle a un cliente el
+--    teléfono de una ficha eliminada, el índice único lo frenaba con «ya
+--    existe algo con ese nombre». Ahora el número eliminado queda libre, y
+--    si es de una ficha activa se dice de quién es.
+--
+-- 2. ALGO DEL CATÁLOGO
+--
+--    Lo que ya se vendió o tiene turnos no se borra: se pausa, que es lo que
+--    la pantalla ofreció siempre. Deja de aparecer para vender sin soltar las
+--    ventas ni los turnos que ya pasaron. Lo que nunca se usó —lo cargado
+--    por error— se borra de verdad.
+--
+-- LAS DOS COSAS SON DEL DUEÑO O DE UN ADMINISTRADOR
+--
+--    Un vendedor puede cargar clientes (052) pero no sacarlos: sacarlos
+--    esconde historia, y eso lo decide quien administra.
+--
+-- El cuerpo de guardar_cliente se extrajo de la 052 con un script y se le
+-- agregó solo la parte marcada con (058).
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. GUARDAR UN CLIENTE
+--
+--    Misma firma que en la 052: se reemplaza sin tocar a quien ya la llama.
+-- ------------------------------------------------------------
+create or replace function public.guardar_cliente(
+  p_empresa  uuid,
+  p_nombre   text,
+  p_telefono text default '',
+  p_notas    text default '',
+  p_id       uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id     uuid;
+  v_nombre text;
+  v_tel    text;
+  v_norm   text;
+  v_otro   public.clientes;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_nombre := trim(coalesce(p_nombre, ''));
+  if char_length(v_nombre) = 0 then
+    raise exception 'Ponele un nombre, para saber de quién estamos hablando.' using errcode = '22023';
+  end if;
+  v_nombre := left(v_nombre, 80);
+
+  v_tel  := left(trim(coalesce(p_telefono, '')), 40);
+  v_norm := regexp_replace(v_tel, '\D', '', 'g');
+
+  -- Un teléfono de dos dígitos no es un teléfono: es un dedazo. Se guarda
+  -- vacío antes que guardar algo que después va a hacer chocar a dos
+  -- personas distintas en el mismo índice.
+  if v_norm <> '' and char_length(v_norm) < 6 then
+    v_tel := '';
+    v_norm := '';
+  end if;
+
+  if p_id is not null then
+    -- (058) El número nuevo puede ser de otra ficha. Si esa ficha se
+    -- eliminó, el número quedó libre: se le saca a la vieja, que conserva
+    -- su historial por id. Si está activa, se dice de quién es, en vez del
+    -- «ya existe algo con ese nombre» del índice único, que encima hablaba
+    -- del nombre cuando el problema era el teléfono.
+    if v_norm <> '' then
+      select * into v_otro
+      from public.clientes c
+      where c.empresa_id = p_empresa and c.telefono_norm = v_norm and c.id <> p_id;
+
+      if v_otro.id is not null then
+        if v_otro.activo then
+          raise exception 'Ese teléfono ya es de «%». Si son la misma persona, eliminá la ficha que sobra.',
+            v_otro.nombre using errcode = '22023';
+        end if;
+        update public.clientes set telefono = '', updated_at = now() where id = v_otro.id;
+      end if;
+    end if;
+
+    update public.clientes
+    set nombre = v_nombre,
+        telefono = v_tel,
+        notas = left(coalesce(p_notas, ''), 1000),
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+    end if;
+    return v_id;
+  end if;
+
+  -- Sin id: si el teléfono ya está, es la misma persona.
+  if v_norm <> '' then
+    select c.id into v_id
+    from public.clientes c
+    where c.empresa_id = p_empresa and c.telefono_norm = v_norm;
+
+    if v_id is not null then
+      update public.clientes
+      set nombre = v_nombre,
+          notas = case when trim(coalesce(p_notas, '')) = '' then notas
+                       else left(p_notas, 1000) end,
+          activo = true,
+          updated_at = now()
+      where id = v_id;
+      return v_id;
+    end if;
+  end if;
+
+  insert into public.clientes (empresa_id, nombre, telefono, notas, creado_por)
+  values (p_empresa, v_nombre, v_tel, left(coalesce(p_notas, ''), 1000), auth.uid())
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_cliente(uuid, text, text, text, uuid) from public, anon;
+grant execute on function public.guardar_cliente(uuid, text, text, text, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. ELIMINAR UN CLIENTE
+--
+--    Devuelve qué hizo: 'borrado' o 'archivado'. Para quien toca el botón es
+--    lo mismo —deja de estar en la lista—, pero las pruebas necesitan saber
+--    cuál de las dos pasó.
+-- ------------------------------------------------------------
+create or replace function public.eliminar_cliente(p_cliente uuid)
+returns text language plpgsql security definer set search_path = public as $fn$
+declare
+  v       public.clientes;
+  v_saldo numeric;
+  v_debe  text;
+begin
+  select * into v from public.clientes where id = p_cliente;
+  if v.id is null then
+    raise exception 'Ese cliente ya no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(v.empresa_id) then
+    raise exception 'Eliminar clientes es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  -- El mismo candado que al cobrar (056): mientras se decide, nadie le fía
+  -- ni le cobra a este cliente.
+  perform 1 from public.clientes where id = p_cliente for update;
+
+  v_saldo := public.saldo_fiado(p_cliente);
+  if v_saldo > 0 then
+    -- «80.000» y no «80000.00»: esto lo lee una persona.
+    v_debe := case when v_saldo = trunc(v_saldo)
+                   then replace(to_char(v_saldo, 'FM999,999,999,990'), ',', '.')
+                   else v_saldo::text end;
+    raise exception '% todavía te debe %. Cobrale o borrá esa deuda desde Fiado, y después lo eliminás.',
+      v.nombre, v_debe using errcode = '22023';
+  end if;
+
+  -- Sin nada atado se borra de verdad: no hay nada que conservar.
+  if not exists (select 1 from public.fiado where cliente_id = p_cliente)
+     and not exists (select 1 from public.movimientos where cliente_id = p_cliente)
+     and not exists (select 1 from public.turnos_reserva where cliente_id = p_cliente) then
+    delete from public.clientes where id = p_cliente;
+    return 'borrado';
+  end if;
+
+  -- Con historia se archiva. La lista y el buscador ya dejan afuera a los
+  -- archivados (052, 053); «lo que te deben» no, así que si alguna vez
+  -- vuelve a deber algo, aparece ahí igual.
+  update public.clientes set activo = false, updated_at = now() where id = p_cliente;
+  return 'archivado';
+end $fn$;
+
+revoke all on function public.eliminar_cliente(uuid) from public, anon;
+grant execute on function public.eliminar_cliente(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. ELIMINAR DEL CATÁLOGO
+--
+--    Devuelve 'borrado' o 'pausado', y la pantalla lo dice: si quedó
+--    pausado, que no parezca que el botón no hizo lo que decía.
+-- ------------------------------------------------------------
+create or replace function public.eliminar_producto(p_producto uuid)
+returns text language plpgsql security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+begin
+  select empresa_id into v_empresa from public.productos where id = p_producto;
+  if v_empresa is null then
+    raise exception 'Eso ya no está en tu catálogo.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(v_empresa) then
+    raise exception 'Eliminar del catálogo es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  -- Que no se venda ni se reserve justo mientras se decide.
+  perform 1 from public.productos where id = p_producto for update;
+
+  -- Lo vendido queda atado a sus ventas (001) y al reparto (033), y un
+  -- turno no puede quedar sin su servicio (037). En esos casos pausar hace
+  -- lo que se busca —que no aparezca más para vender— sin soltar nada de lo
+  -- que ya pasó.
+  if exists (select 1 from public.movimiento_items where producto_id = p_producto)
+     or exists (select 1 from public.turnos_atribucion where producto_id = p_producto)
+     or exists (select 1 from public.turnos_reserva where producto_id = p_producto) then
+    update public.productos set activo = false where id = p_producto;
+    return 'pausado';
+  end if;
+
+  -- Nunca se usó: se borra, y con él su duración en la agenda (036) y sus
+  -- precios por profesional (033), que sin el servicio no significan nada.
+  delete from public.productos where id = p_producto;
+  return 'borrado';
+end $fn$;
+
+revoke all on function public.eliminar_producto(uuid) from public, anon;
+grant execute on function public.eliminar_producto(uuid) to authenticated;

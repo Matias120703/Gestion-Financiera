@@ -58,6 +58,10 @@ export default async function PaginaCierre({
   const r = cierre.resumen;
   const entro = Number(r.ventas) + Number(r.otros_ingresos);
   const salio = Number(r.gastos);
+  // `?? 0`: si este código llegara antes que la migración 057, el cierre
+  // sigue andando igual que antes en vez de romperse.
+  const fiadoVendido = Number(cierre.fiado_vendido ?? 0);
+  const fiadoCobrado = Number(cierre.fiado_cobrado ?? 0);
   const quedo = verRent && r.ganancia_neta !== null ? Number(r.ganancia_neta) : null;
 
   const vsSemana = comparar(entro, Number(cierre.misma_dia_semana_pasada.ventas)
@@ -87,6 +91,24 @@ export default async function PaginaCierre({
               valor={dinero(entro, m, true, locale)}
               tono="bueno"
             />
+            {/* Lo que «Entró» no dice (057). Una venta fiada está sumada ahí
+                arriba pero no llegó al cajón; lo cobrado de fiados viejos
+                llegó al cajón pero no es una venta de hoy. Solo aparecen
+                cuando no son cero: el cierre se lee en diez segundos. */}
+            {fiadoVendido > 0 && (
+              <Detalle
+                etiqueta="De eso, fiado"
+                valor={dinero(fiadoVendido, m, true, locale)}
+                nota="se vendió, pero todavía no entró"
+              />
+            )}
+            {fiadoCobrado > 0 && (
+              <Detalle
+                etiqueta="Cobraste de fiado"
+                valor={dinero(fiadoCobrado, m, true, locale)}
+                nota="entró hoy, de ventas de otros días"
+              />
+            )}
             <Fila
               etiqueta={t.cierre.salio}
               valor={dinero(salio, m, true, locale)}
@@ -170,6 +192,19 @@ function Fila({
       <span className={`tabular-nums ${destacado ? 'text-[22px] font-bold' : 'text-[17px] font-bold'} ${color}`}>
         {valor}
       </span>
+    </div>
+  );
+}
+
+/** Un renglón chico debajo de otro: aclara, no compite. */
+function Detalle({ etiqueta, valor, nota }: { etiqueta: string; valor: string; nota: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 bg-arena/40 px-4 py-2.5">
+      <span className="min-w-0">
+        <span className="block text-[13px] font-semibold text-tinta/60">{etiqueta}</span>
+        <span className="block text-[11.5px] text-tinta/40">{nota}</span>
+      </span>
+      <span className="shrink-0 text-[14px] font-bold tabular-nums text-tinta/70">{valor}</span>
     </div>
   );
 }
