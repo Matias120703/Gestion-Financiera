@@ -67,7 +67,7 @@ export default async function PaginaReportes({
           gastos={rp.gastos}
           porOrigen={origen}
           porDestino={destino}
-          moneda={ctx.empresa.moneda}
+          moneda={ctx.vista}
           locale={FICHA[idiomaActual()].locale}
           t={t}
         />
@@ -84,7 +84,13 @@ export default async function PaginaReportes({
     traerProductos(ctx.empresa.id),
   ]);
 
-  const m = ctx.empresa.moneda;
+  /**
+   * Se mira en la moneda de la vista (051): acá solo se informa, no se carga
+   * nada. Las pantallas donde se ESCRIBE un importe siguen recibiendo
+   * `ctx.empresa.moneda` a secas — un formulario en dólares que guardara el
+   * número tal cual estaría guardando dólares como guaraníes.
+   */
+  const m = ctx.vista;
   const vendidos = new Set(ranking.map((p) => p.producto_id).filter(Boolean) as string[]);
   const quietos = productos.filter((p) => !vendidos.has(p.id));
   const plataParada = quietos.reduce((s, p) => s + Number(p.stock) * Number(p.costo ?? 0), 0);

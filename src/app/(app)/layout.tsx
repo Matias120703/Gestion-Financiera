@@ -2,6 +2,7 @@ import { contextoObligatorio } from '@/lib/sesion';
 import { BarraSuperior, NavInferior, NavLateral } from '@/components/Navegacion';
 import { BotonCaptura } from '@/components/CapturaInteligente';
 import { AvisoCuenta } from '@/components/AvisoCuenta';
+import { AvisoMonedaVista } from '@/components/AvisoMonedaVista';
 import { ProveedorZona } from '@/lib/zona';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     // captura vive acá afuera y también necesita saber qué día es hoy.
     <ProveedorZona zona={ctx.zonaHoraria}>
     <div className="flex min-h-screen">
-      <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} />
+      <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <BarraSuperior
@@ -33,6 +34,12 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
               enPrueba={ctx.suscripcion?.en_prueba ?? false}
               diasRestantes={ctx.suscripcion?.dias_restantes ?? 99}
             />
+            {/* Mientras haya una vista de moneda encendida hay que decirlo en
+                todas las pantallas, no solo en Ajustes. Alguien que ve
+                «US$ 685» sin saber que está mirando convertido lee un número
+                que no es el de su caja. Va acá por lo mismo que el aviso de
+                cuenta vencida: no es asunto de una pantalla, es del sistema. */}
+            <AvisoMonedaVista vista={ctx.vista} />
             {children}
           </div>
         </main>

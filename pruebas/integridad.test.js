@@ -702,8 +702,18 @@ async function principal() {
         })),
       'quién creó la empresa|denied|policy');
 
-    aceptado('cambiar el nombre y la moneda SÍ se puede',
-      await H.intentar(db, A.uid, () => db.query("update public.empresas set nombre='Aurora Perfumes', moneda='USD' where id=$1", [A.empresaId])));
+    aceptado('cambiar el nombre SÍ se puede',
+      await H.intentar(db, A.uid, () =>
+        db.query("update public.empresas set nombre='Aurora Perfumes' where id=$1", [A.empresaId])));
+
+    // Hasta la 051 esta misma línea cambiaba también la moneda y pasaba. No
+    // era un permiso bien puesto: era el error: con movimientos cargados,
+    // cambiar la moneda reetiquetaba el historial entero sin convertirlo.
+    // Esta empresa ya tiene ventas, así que ahora tiene que rebotar.
+    rechazado('pero la moneda ya no, porque acá hay plata cargada',
+      await H.intentar(db, A.uid, () =>
+        db.query("update public.empresas set moneda='USD' where id=$1", [A.empresaId])),
+      'reetiquetaría todo tu historial');
   }
 
   // =====================================================================

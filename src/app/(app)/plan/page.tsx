@@ -1,7 +1,7 @@
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos } from '@/i18n';
 import { FICHA } from '@/i18n/idiomas';
-import { dinero } from '@/lib/formato';
+import { precio as precioTexto } from '@/lib/formato';
 import {
   LIMITES_VISIBLES, MONEDAS_DE_COBRO, mesesDeRegalo, monedaDeCobro, precioDe, traerPrecios,
   type PlanPago,
@@ -142,7 +142,7 @@ export default async function PaginaPlan({
               key={plan}
               nombre={plan === 'pro' ? t.plan.pro : t.plan.negocio}
               destacado={plan === 'pro'}
-              precio={precio ? dinero(Number(precio.importe), moneda, true, locale) : t.comun.sinDato}
+              precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : t.comun.sinDato}
               porPeriodo={periodo === 'anual' ? `/ ${t.plan.porAnio}` : `/ ${t.plan.porMes}`}
               actual={esActual}
               etiquetaActual={t.plan.actual}
@@ -173,7 +173,7 @@ export default async function PaginaPlan({
                       whatsapp={whatsapp}
                       empresa={ctx.empresa.nombre}
                       plan={plan === 'pro' ? t.plan.pro : t.plan.negocio}
-                      precio={precio ? dinero(Number(precio.importe), moneda, true, locale) : ''}
+                      precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
                       periodo={periodo}
                       etiqueta={sus.en_prueba ? 'Activar este plan' : 'Suscribirme'}
                     />

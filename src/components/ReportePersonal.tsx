@@ -1,4 +1,4 @@
-import { dinero, porcentaje } from '@/lib/formato';
+import { type Moneda, dinero, porcentaje } from '@/lib/formato';
 import { Seccion, Vacio, Barra } from '@/components/Piezas';
 import type { Textos as Diccionario } from '@/i18n';
 
@@ -28,7 +28,7 @@ export function ReportePersonal({
   gastos: number;
   porOrigen: Fila[];
   porDestino: Fila[];
-  moneda: string;
+  moneda: Moneda;
   locale: string;
   t: Diccionario;
 }) {
@@ -84,7 +84,7 @@ function Listado({
   filas, moneda, locale, tono, vacio, detalleVacio,
 }: {
   filas: Fila[];
-  moneda: string;
+  moneda: Moneda;
   locale: string;
   tono: 'verde' | 'rojo';
   vacio: string;

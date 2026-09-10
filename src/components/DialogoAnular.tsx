@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTextos } from '@/i18n/cliente';
-import { dinero, fechaLegible } from '@/lib/formato';
+import { type Moneda, dinero, fechaLegible } from '@/lib/formato';
 import type { Movimiento } from '@/lib/tipos';
 
 const MOTIVOS_VENTA = ['El cliente devolvió', 'Me equivoqué al cargar', 'Se cargó dos veces', 'No se concretó'];
@@ -16,7 +16,7 @@ export function DialogoAnular({
   movimiento, moneda, onCerrar, onConfirmar,
 }: {
   movimiento: Movimiento;
-  moneda: string;
+  moneda: Moneda;
   onCerrar: () => void;
   onConfirmar: (motivo: string) => Promise<void>;
 }) {

@@ -100,6 +100,14 @@ const Ico = {
       <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5" />
     </svg>
   ),
+  // El anillo de la marca. Es el panel de Orden, no una sección del negocio,
+  // y el ícono lo dice antes de que se lea el texto.
+  orden: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <circle cx="12" cy="12" r="7.5" />
+      <path d="M12 8.2v7.6" />
+    </svg>
+  ),
 };
 
 /**
@@ -216,7 +224,25 @@ function activo(ruta: string, href: string) {
   return ruta === href || ruta.startsWith(`${href}/`);
 }
 
-export function NavLateral({ empresa, esAdmin = true }: { empresa: Empresa; esAdmin?: boolean }) {
+/**
+ * EL ENLACE AL PANEL DE ORDEN
+ *
+ * El panel de administración se decidió no anunciarlo en ningún lado: «una
+ * puerta que anuncia que está cerrada invita a golpearla». Esto no rompe esa
+ * regla, la respeta — el enlace SOLO se dibuja para quien ya está en la tabla
+ * `superadmins`. Un cliente nunca lo ve ni se entera de que existe.
+ *
+ * Y no habilita nada: cada función del panel exige `es_superadmin()` en
+ * PostgreSQL. Si alguien fuerza el enlace, la pantalla lo manda a su propio
+ * panel sin decirle por qué.
+ */
+export function NavLateral({
+  empresa, esAdmin = true, administraOrden = false,
+}: {
+  empresa: Empresa;
+  esAdmin?: boolean;
+  administraOrden?: boolean;
+}) {
   const ruta = usePathname();
   const t = useTextos();
   const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, esAdmin);
@@ -242,6 +268,24 @@ export function NavLateral({ empresa, esAdmin = true }: { empresa: Empresa; esAd
             {i.texto}
           </Link>
         ))}
+
+        {administraOrden && (
+          <>
+            {/* Separado del resto: no es una sección del negocio, es otra
+                cosa. Que se note evita el susto de creer que se está mirando
+                la propia cuenta cuando se está mirando la de un cliente. */}
+            <div className="my-2 border-t border-borde" />
+            <Link
+              href="/admin"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-semibold transition ${
+                activo(ruta, '/admin') ? 'bg-verde-claro text-verde-fuerte' : 'text-tinta/60 hover:bg-arena hover:text-tinta'
+              }`}
+            >
+              {Ico.orden}
+              Panel de Orden
+            </Link>
+          </>
+        )}
       </nav>
     </aside>
   );

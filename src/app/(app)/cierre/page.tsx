@@ -38,7 +38,13 @@ export default async function PaginaCierre({
   const t = textos();
   const locale = FICHA[ctx.idioma].locale;
   const abrev = t.formato;
-  const m = ctx.empresa.moneda;
+  /**
+   * Se mira en la moneda de la vista (051): acá solo se informa, no se carga
+   * nada. Las pantallas donde se ESCRIBE un importe siguen recibiendo
+   * `ctx.empresa.moneda` a secas — un formulario en dólares que guardara el
+   * número tal cual estaría guardando dólares como guaraníes.
+   */
+  const m = ctx.vista;
 
   // Permite mirar el cierre de un día pasado desde el historial.
   const pedida = typeof searchParams.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.fecha)

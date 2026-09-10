@@ -31,7 +31,13 @@ export default async function PaginaMovimientos({
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tamano: TAMANO_PAGINA }),
     contarMovimientos(ctx.empresa.id, rango.desde, rango.hasta),
   ]);
-  const m = ctx.empresa.moneda;
+  /**
+   * Se mira en la moneda de la vista (051): acá solo se informa, no se carga
+   * nada. Las pantallas donde se ESCRIBE un importe siguen recibiendo
+   * `ctx.empresa.moneda` a secas — un formulario en dólares que guardara el
+   * número tal cual estaría guardando dólares como guaraníes.
+   */
+  const m = ctx.vista;
   const verRent = permisosDe(ctx.miembro.rol).verRentabilidad && r.conCostos;
 
   return (

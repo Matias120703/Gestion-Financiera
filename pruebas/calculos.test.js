@@ -438,6 +438,103 @@ ok('y sus palabras',
 ok('un rubro desconocido no rompe: cae en comercio',
   fichaDe('marciano', 'emprendedor').clave, 'comercio');
 
+// --- Ver en otra moneda: la cuenta que decide si el número es cierto ---
+//
+// La conversión vive pegada a la moneda (`Vista`) para que el símbolo y el
+// factor no se puedan separar. Si se separaran, una pantalla mostraría el
+// número en guaraníes con el símbolo del dólar — el mismo error que esto
+// viene a arreglar, pero en un solo lugar y sin que nadie lo note.
+{
+  const F = require('../.compilado/formato.js');
+
+  const enDolares = {
+    moneda: 'USD', factor: 1 / 7300, propia: 'PYG',
+    cotizacion: 7300, desde: '2026-09-09T12:00:00Z',
+  };
+
+  // Un string suelto sigue significando «esta moneda, sin convertir». Es lo
+  // que reciben los formularios, y romperlo sería guardar dólares como
+  // guaraníes.
+  ok('un string no convierte nada', F.dinero(5000000, 'PYG', false, 'es-PY'), '5.000.000');
+  ok('y sigue poniendo su símbolo', F.dinero(1000, 'PYG', true, 'es-PY'), 'Gs. 1.000');
+
+  ok('5.000.000 al cambio 7.300 son 684,93 dólares',
+    F.dinero(5000000, enDolares, false, 'es-PY'), '684,93');
+  ok('con el símbolo de la moneda que se está mirando',
+    F.dinero(5000000, enDolares, true, 'es-PY'), 'US$ 684,93');
+
+  // Los decimales salen de la moneda de la VISTA, no de la propia. En
+  // guaraníes no hay centavos; en dólares sí, y esconderlos acá sería
+  // redondear plata en pantalla.
+  ok('los centavos aparecen porque el dólar los tiene',
+    F.dinero(7300, enDolares, false, 'es-PY'), '1,00');
+
+  // La abreviatura se decide sobre el número YA convertido. Al revés, cinco
+  // millones de guaraníes se leerían «US$ 5,0 M»: la escala con una moneda y
+  // el símbolo con la otra.
+  ok('el corto abrevia sobre lo convertido',
+    F.dineroCorto(5000000, enDolares, 'es-PY'), 'US$ 684,93');
+  ok('y sin vista abrevia como siempre',
+    F.dineroCorto(5000000, 'PYG', 'es-PY'), 'Gs. 5,0 M');
+
+  ok('convertido() da el número solo', Math.round(F.convertido(7300, enDolares)), 1);
+  ok('sin vista, el número no se toca', F.convertido(7300, 'PYG'), 7300);
+
+  ok('sabe cuándo está convertida', F.estaConvertida(enDolares), true);
+  ok('y cuándo no', F.estaConvertida('PYG'), false);
+  // Mirar en la misma moneda no es una conversión: si contara como tal, el
+  // cartel de arriba diría «estás viendo en Gs. al cambio 1».
+  ok('ver en la propia no cuenta como conversión',
+    F.estaConvertida(F.sinConvertir('PYG')), false);
+
+  // Un número que no se puede convertir no puede terminar en pantalla como
+  // «NaN» ni como «Infinity» donde iba plata.
+  ok('un valor roto no imprime NaN', F.dinero(NaN, enDolares, false, 'es-PY'), '0,00');
+  ok('ni el corto', F.dineroCorto(NaN, enDolares, 'es-PY'), 'US$ 0,00');
+
+  // Y el precio de la suscripción, que se muestra sin centavos cuando no los
+  // tiene: «US$ 32», no «US$ 32,00».
+  ok('un precio redondo va sin centavos', F.precio(32, 'USD', 'es-PY'), 'US$ 32');
+  ok('y uno con centavos los muestra', F.precio(9.9, 'USD', 'es-PY'), 'US$ 9,90');
+  ok('en guaraníes, como siempre', F.precio(190000, 'PYG', 'es-PY'), 'Gs. 190.000');
+}
+
+// --- El panel de Orden no se le anuncia a un cliente ---
+//
+// El panel de administración se decidió no anunciarlo en ningún lado: «una
+// puerta que anuncia que está cerrada invita a golpearla». Ahora hay un
+// enlace en el menú, y eso solo es compatible con aquella regla si el enlace
+// se dibuja ÚNICAMENTE para quien ya administra Orden.
+//
+// El permiso de verdad está en PostgreSQL —cada función del panel exige
+// `es_superadmin()`—, así que esto no protege datos. Protege otra cosa: que
+// un comerciante no vea en su menú una puerta que no es suya y se pregunte
+// qué hay adentro.
+{
+  const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
+
+  ok('el menú tiene el enlace al panel de Orden', nav.includes("href=\"/admin\""), true);
+
+  // Que exista el enlace no dice nada; lo que importa es que esté detrás de
+  // la condición. Se busca el bloque entero, no las dos palabras sueltas.
+  ok('y está detrás de administraOrden',
+    nav.includes('{administraOrden && ('), true);
+
+  // Y que la condición venga de afuera y no tenga un valor por defecto que
+  // lo encienda: si el layout se olvidara de pasarla, no tiene que aparecer.
+  ok('si no se lo pasan, no se muestra',
+    nav.includes('administraOrden = false'), true);
+
+  const layout = require('fs').readFileSync('src/app/(app)/layout.tsx', 'utf8');
+  ok('y el layout se la pasa desde el contexto',
+    layout.includes('administraOrden={ctx.administraOrden}'), true);
+
+  // El contexto lo pregunta a la base, no lo deduce de nada local.
+  const sesion = require('fs').readFileSync('src/lib/sesion.ts', 'utf8');
+  ok('que lo pregunta a PostgreSQL', sesion.includes("rpc('es_superadmin')"), true);
+  ok('y ante la duda dice que no', sesion.includes('esSuper === true'), true);
+}
+
 // --- Los días de prueba: la web y la base tienen que decir lo mismo ---
 //
 // El número vive en dos lados que no se hablan: `dias_de_prueba()` en la
@@ -454,7 +551,10 @@ ok('un rubro desconocido no rompe: cae en comercio',
 {
   const fs = require('fs');
 
-  const ts = fs.readFileSync('src/lib/precios.ts', 'utf8');
+  // Vive en constantes.ts y no en precios.ts: precios.ts arrastra el cliente
+  // de Supabase del servidor, y la pantalla de registro es de navegador. Al
+  // importarlo desde ahí, el build se cayó entero.
+  const ts = fs.readFileSync('src/lib/constantes.ts', 'utf8');
   const bloque = ts.slice(ts.indexOf('export const DIAS_DE_PRUEBA'));
   const delTs = {
     emprendedor: Number((bloque.match(/emprendedor:\s*(\d+)/) ?? [])[1]),
@@ -485,11 +585,45 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('un negocio prueba 8 días', delSql.emprendedor, 8);
   ok('una cuenta personal, 5', delSql.personal, 5);
 
-  // Nadie tiene que volver a escribir el número a mano en la portada.
-  const portada = fs.readFileSync('src/app/page.tsx', 'utf8');
-  ok('la portada no tiene días escritos a mano',
-    /\b(?:20|14|8|5) días\b/.test(portada), false);
-  ok('y usa el módulo', portada.includes('textoPrueba('), true);
+  // Y QUE NO QUEDE NINGUNO ESCRITO A MANO EN NINGÚN LADO.
+  //
+  // La primera versión de esto miraba solo src/app/page.tsx, y por eso pasó
+  // en verde mientras la pantalla de registro seguía prometiendo 20 y 14
+  // días —era el primer lugar donde alguien lee el número, justo antes de
+  // crear la cuenta—. Una prueba que revisa un archivo cuando el problema
+  // puede estar en cualquiera da algo peor que ninguna prueba: da confianza.
+  //
+  // Ahora se recorre src/ entero.
+  {
+    const sospechosos = [];
+    const mirar = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const ruta = dir + '/' + e.name;
+        if (e.isDirectory()) { mirar(ruta); continue; }
+        if (!/\.(ts|tsx)$/.test(e.name)) continue;
+        // El diccionario define la plantilla «N días de prueba»; ahí el
+        // número es un hueco, no un valor.
+        if (ruta.includes('/i18n/textos/')) continue;
+        const texto = fs.readFileSync(ruta, 'utf8');
+        // Un número pegado a «días» en un texto, o metido dentro de la
+        // función que arma la frase.
+        if (/\b\d+ d[ií]as de prueba\b/.test(texto)
+            || /diasPrueba\(\s*\d/.test(texto)
+            || /Probar \d+ d/.test(texto)
+            || /Empezar los \d+ d/.test(texto)) {
+          sospechosos.push(ruta.replace('src/', ''));
+        }
+      }
+    };
+    mirar('src');
+    ok('ningún archivo escribe los días de prueba a mano', sospechosos, []);
+
+    // Y que los dos lugares que lo muestran de verdad usen el módulo.
+    ok('la portada lo lee del módulo',
+      fs.readFileSync('src/app/page.tsx', 'utf8').includes('textoPrueba('), true);
+    ok('y la pantalla de registro también',
+      fs.readFileSync('src/components/DatosDelNegocio.tsx', 'utf8').includes('DIAS_DE_PRUEBA.'), true);
+  }
 }
 
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);

@@ -2,6 +2,7 @@
 
 import { LISTA_RUBROS } from '@/lib/rubros';
 import { CANALES, type DatosRegistro } from '@/lib/registro';
+import { DIAS_DE_PRUEBA } from '@/lib/constantes';
 import { useTextos } from '@/i18n/cliente';
 import type { Rubro } from '@/lib/tipos';
 
@@ -36,14 +37,14 @@ export default function DatosDelNegocio({
             onClick={() => alCambiar({ tipoCuenta: 'emprendedor' })}
             titulo={t.pantallas.paraMiNegocio}
             detalle={t.pantallas.paraMiNegocioDetalle}
-            prueba={t.pantallas.diasPrueba(20)}
+            prueba={t.pantallas.diasPrueba(DIAS_DE_PRUEBA.emprendedor)}
           />
           <Eleccion
             activo={esPersonal}
             onClick={() => alCambiar({ tipoCuenta: 'personal' })}
             titulo={t.pantallas.paraMi}
             detalle={t.pantallas.paraMiDetalle}
-            prueba={t.pantallas.diasPrueba(14)}
+            prueba={t.pantallas.diasPrueba(DIAS_DE_PRUEBA.personal)}
           />
         </div>
       </div>

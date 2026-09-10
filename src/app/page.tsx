@@ -2,14 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { clienteServidor } from '@/lib/supabase/servidor';
-import { dinero } from '@/lib/formato';
+import { precio } from '@/lib/formato';
 import { textos, idiomaActual } from '@/i18n';
 import Demos from '@/components/Demos';
 import { Marca } from '@/components/Marca';
 import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
-import { DIAS_DE_PRUEBA, textoPrueba } from '@/lib/precios';
+import { DIAS_DE_PRUEBA, MONEDAS_DE_COBRO, monedaDeCobro, textoPrueba } from '@/lib/precios';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +51,11 @@ export const metadata: Metadata = {
  * es que paga el triple y es donde está la demanda probada. La cuenta
  * personal está bien explicada, pero no le pelea el lugar principal.
  */
-export default async function Portada() {
+export default async function Portada({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
   // Con sesión, esta página no aporta nada: al panel.
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
@@ -60,7 +64,22 @@ export default async function Portada() {
   const t = textos();
   const idioma = idiomaActual();
   const locale = FICHA[idioma].locale;
-  const moneda = MONEDA_DE_COBRO[idioma] ?? 'USD';
+
+  /**
+   * En qué moneda se muestran los precios.
+   *
+   * Antes salía solo del idioma, y cuando sacamos el inglés la portada quedó
+   * clavada en guaraníes: los precios en dólares existían en la tabla desde
+   * siempre y no había forma de verlos. Orden no es solo para Paraguay, y a
+   * alguien de afuera un importe de siete cifras no le dice nada.
+   *
+   * Va por la URL y no por estado del navegador, igual que en la pantalla de
+   * Plan: así el enlace se puede compartir ya en la moneda que corresponde, y
+   * los importes los sigue calculando el servidor desde la tabla. Ninguna
+   * cifra pasa por el navegador donde se pueda tocar.
+   */
+  const moneda = monedaDeCobro(
+    idioma, typeof searchParams.moneda === 'string' ? searchParams.moneda : null);
 
   // Si la lectura de precios falla, la portada igual se muestra: mejor una
   // página sin la tabla de precios que un error para alguien que todavía no
@@ -72,7 +91,7 @@ export default async function Portada() {
     precios.find((p) => p.tipo_cuenta === tipo && p.plan === plan && p.periodo === periodo) ?? null;
 
   const importe = (p: Precio | null) =>
-    p ? dinero(Number(p.importe), moneda, true, locale) : '—';
+    p ? precio(Number(p.importe), moneda, locale) : '—';
 
   const personalMes = precioDe('personal', 'pro');
   const personalAnio = precioDe('personal', 'pro', 'anual');
@@ -82,7 +101,7 @@ export default async function Portada() {
 
   const { data: porVendedor } = await supabase.rpc('precio_por_vendedor', { p_moneda: moneda });
   const vendedorExtra = porVendedor != null
-    ? dinero(Number(porVendedor), moneda, true, locale)
+    ? precio(Number(porVendedor), moneda, locale)
     : null;
 
   /** «Dos meses gratis» solo se dice si los números lo sostienen. */
@@ -442,12 +461,45 @@ export default async function Portada() {
 
       {/* ---------------- Precios ---------------- */}
       <section id="precios" className="mx-auto max-w-6xl px-5 py-14 scroll-mt-4">
-        <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">Cuánto cuesta</h2>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">Cuánto cuesta</h2>
+
+          {/* Enlaces y no botones: la portada la lee gente que todavía no
+              decidió nada, y un enlace anda antes de que cargue un solo
+              script. El ancla devuelve a esta misma sección, así que cambiar
+              de moneda no te manda de vuelta arriba de todo. */}
+          <div className="flex items-center gap-1 rounded-xl bg-arena p-1">
+            {MONEDAS_DE_COBRO.map((m) => (
+              <Link
+                key={m}
+                href={m === 'PYG' ? '/#precios' : `/?moneda=${m}#precios`}
+                aria-current={m === moneda ? 'true' : undefined}
+                className={`rounded-lg px-3 py-1.5 text-[12.5px] font-bold transition ${
+                  m === moneda ? 'bg-tinta text-white' : 'text-tinta/50 hover:text-tinta'
+                }`}
+              >
+                {m === 'PYG' ? 'Gs.' : 'US$'}
+              </Link>
+            ))}
+          </div>
+        </div>
+
         <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
           Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día
           no querés seguir, <strong className="text-tinta">no te quedás sin tus datos</strong>:
           seguís entrando, viendo todo tu historial y bajando tu Excel cuando quieras.
         </p>
+
+        {moneda !== 'PYG' && (
+          /* Quien mira en dólares está afuera, y el cobro es por
+             transferencia hablando con una persona. Decirlo acá y no cuando
+             ya eligió el plan: enterarse tarde de cómo se paga es de las
+             cosas que hacen abandonar. */
+          <p className="mt-3 max-w-2xl rounded-xl bg-arena px-4 py-3 text-[13.5px] leading-relaxed text-tinta/65">
+            Los precios en dólares son de referencia. Se cobra por transferencia y lo
+            arreglamos por WhatsApp: escribinos y te decimos cómo pagar desde tu país.
+          </p>
+        )}
 
         {/* ---- negocio ---- */}
         <div className="mt-10">

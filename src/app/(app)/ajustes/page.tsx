@@ -2,6 +2,7 @@ import { contextoObligatorio } from '@/lib/sesion';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { Seccion } from '@/components/Piezas';
 import { EditorEmpresa, CodigoEquipo } from '@/components/PantallaAjustes';
+import { VerEnOtraMoneda } from '@/components/VerEnOtraMoneda';
 import type { Miembro } from '@/lib/tipos';
 import { fechaLegible } from '@/lib/formato';
 import { textos } from '@/i18n';
@@ -66,6 +67,22 @@ export default async function PaginaAjustes() {
         <Seccion titulo={esPersonal ? t.pantallas.tuCuenta : t.pantallas.tuNegocio}>
           <div className="px-4 pb-4 pt-2">
             <EditorEmpresa empresa={ctx.empresa} puedeEditar={ctx.esAdmin} />
+          </div>
+        </Seccion>
+
+        {/* Va pegado a la moneda del negocio y no perdido en otra pantalla:
+            son la misma pregunta —«en qué moneda estoy mirando esto»— y
+            separarlas haría que alguien cambie la de arriba buscando esto. */}
+        <Seccion titulo="Ver en otra moneda">
+          <div className="px-4 pb-4 pt-3">
+            <VerEnOtraMoneda
+              empresaId={ctx.empresa.id}
+              monedaPropia={ctx.empresa.moneda}
+              monedaVista={ctx.empresa.moneda_vista}
+              cotizacion={ctx.empresa.cotizacion}
+              cotizacionAt={ctx.empresa.cotizacion_at}
+              puedeEditar={ctx.esAdmin}
+            />
           </div>
         </Seccion>
 

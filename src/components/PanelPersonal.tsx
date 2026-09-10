@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { dinero, dineroCorto, fechaLegible } from '@/lib/formato';
+import { type Moneda, dinero, dineroCorto, fechaLegible } from '@/lib/formato';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type { ResumenPersonal, ResumenDeudas } from '@/lib/tipos';
 import type { Textos as Diccionario } from '@/i18n';
@@ -29,7 +29,7 @@ export function PanelPersonal({
 }: {
   resumen: ResumenPersonal;
   deudas: ResumenDeudas | null;
-  moneda: string;
+  moneda: Moneda;
   locale: string;
   t: Diccionario;
 }) {

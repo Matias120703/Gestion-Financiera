@@ -17,7 +17,18 @@ export type EstadoMovimiento = 'activo' | 'anulado';
 export interface Empresa {
   id: string;
   nombre: string;
+  /**
+   * En qué moneda se CARGA. Todo importe guardado está en esta y en ninguna
+   * otra. Desde la 051 no se puede cambiar una vez que hay movimientos: un
+   * cambio ahí reetiquetaría el historial sin convertirlo.
+   */
   moneda: string;
+  /** Solo para MIRAR (051). null = se ve en la moneda propia. */
+  moneda_vista: string | null;
+  /** Cuánto vale 1 de `moneda_vista` en `moneda`. Lo escribe el negocio. */
+  cotizacion: number | null;
+  /** Cuándo se cargó ese cambio. Se muestra: uno viejo no es el de hoy. */
+  cotizacion_at: string | null;
   /**
    * ESPEJO / LEGADO. La autoridad sobre el plan es `suscripciones` +
    * `plan_efectivo()`. No usar este campo para habilitar funciones.

@@ -1,4 +1,4 @@
-import { dinero, porcentaje } from '@/lib/formato';
+import { type Moneda, dinero, porcentaje } from '@/lib/formato';
 import { fechaLegible } from '@/lib/formato';
 import type { FilaDia } from '@/lib/calculos';
 
@@ -35,7 +35,7 @@ export function Indicador({
 }
 
 /** Barras diarias en SVG. Sin librerías: liviano y funciona sin JavaScript. */
-export function GraficoDiario({ datos, moneda }: { datos: FilaDia[]; moneda: string }) {
+export function GraficoDiario({ datos, moneda }: { datos: FilaDia[]; moneda: Moneda }) {
   if (datos.length === 0) return null;
 
   const maximo = Math.max(...datos.map((d) => Math.max(d.ventas, d.gastos)), 1);

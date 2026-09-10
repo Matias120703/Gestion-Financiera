@@ -63,7 +63,7 @@ export default async function PaginaPanel({
       <PanelPersonal
         resumen={resumenPersonal}
         deudas={deudasPersonal}
-        moneda={ctx.empresa.moneda}
+        moneda={ctx.vista}
         locale={FICHA[idiomaActual()].locale}
         t={t}
       />
@@ -128,7 +128,13 @@ export default async function PaginaPanel({
       ])
     : [null, null];
 
-  const m = ctx.empresa.moneda;
+  /**
+   * Se mira en la moneda de la vista (051): acá solo se informa, no se carga
+   * nada. Las pantallas donde se ESCRIBE un importe siguen recibiendo
+   * `ctx.empresa.moneda` a secas — un formulario en dólares que guardara el
+   * número tal cual estaría guardando dólares como guaraníes.
+   */
+  const m = ctx.vista;
   const t = textos();
   const permisos = permisosDe(ctx.miembro.rol);
   const verRent = permisos.verRentabilidad && r.conCostos;

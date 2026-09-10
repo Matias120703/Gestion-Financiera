@@ -59,7 +59,9 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
           <option value="EUR">{t.pantallas.monedaEUR}</option>
         </select>
         <span className="mt-1 block text-[12px] text-tinta/45">
-          Cambiar la moneda no convierte los montos ya cargados, solo cambia cómo se muestran.
+          En qué moneda cargás. Una vez que tengas movimientos ya no se puede cambiar:
+          reetiquetaría todo tu historial sin convertirlo. Para ver tus números en otra
+          moneda usá «Ver en otra moneda», acá abajo.
         </span>
       </label>
 

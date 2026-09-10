@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useTextos } from '@/i18n/cliente';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { dinero, numero, fechaLarga } from '@/lib/formato';
+import { type Moneda, dinero, numero, fechaLarga } from '@/lib/formato';
 import type { Movimiento, Rol, TipoMovimiento } from '@/lib/tipos';
 import { Vacio } from '@/components/Piezas';
 import { puedeAnular } from '@/lib/permisos';
@@ -36,7 +36,7 @@ export function ListaMovimientos({
   total: number;
   desde: string;
   hasta: string;
-  moneda: string;
+  moneda: Moneda;
   rol: Rol;
   userId: string;
   hoy: string;
