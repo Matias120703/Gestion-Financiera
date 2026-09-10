@@ -115,6 +115,9 @@ export function BotonCaptura({
     setError('');
     setSinCupo(false);
     setBorrador(null);
+    // El cliente elegido es de ESTA captura. Si se quedara, la próxima venta
+    // saldría a nombre de quien fue el último, sin que nadie lo eligiera.
+    setElegido({ id: null, nombre: '', telefono: '' });
     setPaso('');
   }
 
@@ -138,7 +141,12 @@ export function BotonCaptura({
       }
 
       if (!r.ok) throw new Error(datos?.error ?? 'No se pudo interpretar.');
-      setBorrador(normalizar(datos as CapturaInterpretada));
+      const interpretado = normalizar(datos as CapturaInterpretada);
+      setBorrador(interpretado);
+      // Si la persona dijo «fiado a Juan», la IA ya sabe que es Juan. Dejar
+      // el campo vacío la obligaba a escribir de nuevo algo que acababa de
+      // decir, y si tocaba Guardar sin darse cuenta, la venta no salía.
+      setElegido({ id: null, nombre: interpretado.contraparte ?? '', telefono: '' });
       setModo('revisar');
     } catch (e: any) {
       setError(mensajeDeError(e, 'Algo falló al interpretar.'));
@@ -381,7 +389,9 @@ export function BotonCaptura({
         if (borrador.metodo_pago === 'credito' && elegido.nombre.trim().length === 0) {
           throw new Error('Para fiar hay que decir a quién. Escribí el nombre del cliente.');
         }
-        const clienteId = await asegurarCliente(empresaId, elegido);
+        const clienteId = borrador.metodo_pago === 'credito'
+          ? await asegurarCliente(empresaId, elegido)
+          : null;
 
         const { data, error } = await supabase.rpc('registrar_venta', {
           p_empresa: empresaId,

@@ -68,6 +68,9 @@ export const es = {
     agenda: 'Agenda',
     lotes: 'Lotes',
     repartoCorto: 'Equipo',
+    fiado: 'Fiado',
+    meDeben: 'Me deben',
+    clientes: 'Clientes',
 
     plan: 'Mi plan',
     miCuenta: 'Mi cuenta',

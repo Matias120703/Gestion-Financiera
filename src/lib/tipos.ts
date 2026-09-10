@@ -838,3 +838,59 @@ export interface PagoDeuda {
   nota: string;
   created_at: string;
 }
+
+/**
+ * Alguien que te debe (054). Puede ser una persona o un negocio: para el
+ * sistema es un cliente, y un cliente es un nombre con un teléfono.
+ */
+export interface DeudorFiado {
+  cliente_id: string;
+  nombre: string;
+  telefono: string;
+  /** Lo que falta cobrar. Sale de sumar el libro, nunca de un número guardado. */
+  saldo: number;
+  /** La fecha de la línea fiada más vieja. */
+  desde: string | null;
+  /** Cuántos días hace. «Me debe 800.000» y «hace cuatro meses» no son lo mismo. */
+  dias: number | null;
+}
+
+export interface ResumenFiado {
+  total: number;
+  cuantos: number;
+  clientes: DeudorFiado[];
+}
+
+/** Una línea del libro: se le fio, o te pagó. */
+export interface LineaFiado {
+  id: string;
+  tipo: 'fio' | 'cobro';
+  monto: number;
+  fecha: string;
+  concepto: string;
+  venta_id: string | null;
+  created_at: string;
+}
+
+/** Un cliente en la lista, con lo que lo vuelve útil: cuándo vino y cuánto dejó (053). */
+export interface ClienteLista {
+  id: string;
+  nombre: string;
+  telefono: string;
+  notas: string;
+  created_at: string;
+  visitas: number;
+  ultima_visita: string | null;
+  gastado: number;
+  proximo_turno: string | null;
+}
+
+/** Un turno en la ficha de un cliente. */
+export interface TurnoCliente {
+  id: string;
+  inicia: string;
+  estado: string;
+  servicio: string | null;
+  profesional: string | null;
+  monto: number;
+}

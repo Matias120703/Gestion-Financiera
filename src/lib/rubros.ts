@@ -39,7 +39,7 @@ import type { Rubro, TipoCuenta } from './tipos';
 export type Seccion =
   | '/panel' | '/vender' | '/gastos' | '/deudas' | '/cierre' | '/productos'
   | '/movimientos' | '/reto' | '/organizacion' | '/agenda' | '/reparto'
-  | '/lotes' | '/reportes' | '/ajustes';
+  | '/lotes' | '/reportes' | '/ajustes' | '/fiado' | '/clientes';
 
 export interface FichaRubro {
   clave: Rubro;
@@ -102,6 +102,11 @@ const NUCLEO = {
   '/reto': true,
   '/reportes': true,
   '/ajustes': true,
+  // Lo que te deben y a quién le vendés (052-055). Un almacén fía, a una
+  // persona también le deben, y un ganadero le vende a un frigorífico que
+  // paga a treinta días: no es de un rubro, es de todos.
+  '/fiado': true,
+  '/clientes': true,
   // Lo que NO es de un negocio común. Cada rubro prende lo suyo.
   '/organizacion': false,
   '/agenda': false,
@@ -228,6 +233,10 @@ export const PERSONAL: FichaRubro = {
     '/organizacion': true,
     // Una persona no vende ni lleva stock.
     '/vender': false,
+    // Ni tiene clientes. A quien le debe plata lo lleva en «Me deben», que
+    // es la misma tabla por debajo: una sección de «Clientes» en las
+    // finanzas de alguien sería hablarle como a un comercio.
+    '/clientes': false,
     '/productos': false,
     // Sin cierre por el mismo motivo que la ganadería: el día no es el ciclo.
     // El de un ganadero es el novillo; el de alguien con sueldo va de cobro a

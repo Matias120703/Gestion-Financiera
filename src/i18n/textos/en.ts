@@ -62,6 +62,9 @@ export const en: Textos = {
     agenda: 'Schedule',
     lotes: 'Batches',
     repartoCorto: 'Team',
+    fiado: 'Owed to you',
+    meDeben: 'Owed to you',
+    clientes: 'Customers',
 
     plan: 'My plan',
     miCuenta: 'My account',

@@ -211,15 +211,17 @@ async function principal() {
   }
 
   // =====================================================================
-  grupo('5 · Cobrar es donde entra la plata');
+  grupo('5 · Cobrar baja la deuda y no suma como ganancia (056)');
   // =====================================================================
   {
     const r = await resumen(A.uid, A.empresaId, hoy, hoy);
-    // Los 200.000 cobrados entraron como «otro ingreso», no como venta: la
-    // venta ya se registró el día que se entregó la mercadería, y contarla
-    // otra vez duplicaría la facturación.
-    ok('el cobro entró como otro ingreso', Number(r.otros_ingresos), 200000);
-    ok('y no como venta', Number(r.ventas), 0);
+    // Hasta la 056 esta línea afirmaba que el cobro entraba como «otro
+    // ingreso», y pasaba. Era el error escrito como regla: la ganancia se
+    // calcula con ventas + otros ingresos, así que una venta fiada contaba
+    // dos veces. Y estos 200.000 ni siquiera vienen de una venta: son de lo
+    // anotado a mano, y un préstamo que vuelve no es ganancia.
+    ok('cobrar no crea un ingreso', Number(r.otros_ingresos), 0);
+    ok('ni una venta', Number(r.ventas), 0);
 
     rechazado('no se puede cobrar más de lo que se debe',
       await como(A.uid, 'select public.cobrar_fiado($1,$2,999999999)', [A.empresaId, juan]),
@@ -342,6 +344,84 @@ async function principal() {
         `insert into public.fiado (empresa_id, cliente_id, tipo, monto, fecha)
          values ($1,$2,'fio',1,current_date)`, [A.empresaId, juan]),
       'denied|policy|permission');
+  }
+
+  // =====================================================================
+  grupo('10 · Una venta fiada cobrada cuenta una sola vez (056)');
+  // =====================================================================
+  {
+    const ana = (await valor(A.uid,
+      "select public.guardar_cliente($1,'Ana','0981 777 888') id", [A.empresaId])).id;
+
+    const antes = await resumen(A.uid, A.empresaId, hoy, hoy);
+    await valor(A.uid,
+      `select public.registrar_venta($1,$2::jsonb,$3,'','credito','','','manual',0,$4) id`,
+      [A.empresaId, JSON.stringify([{ producto_id: prod, cantidad: 1, precio_unitario: 30000 }]),
+       hoy, ana]);
+    const vendida = await resumen(A.uid, A.empresaId, hoy, hoy);
+    ok('la venta fiada suma una vez a las ventas',
+      Number(vendida.ventas) - Number(antes.ventas), 30000);
+
+    await valor(A.uid, "select public.cobrar_fiado($1,$2,30000,'transferencia') j", [A.empresaId, ana]);
+    const cobrada = await resumen(A.uid, A.empresaId, hoy, hoy);
+
+    // El centro de la 056: cobrar no puede volver a sumar.
+    ok('cobrarla no suma otra vez a los ingresos',
+      Number(cobrada.otros_ingresos) - Number(vendida.otros_ingresos), 0);
+    ok('ni a la ganancia',
+      Number(cobrada.ganancia_neta) - Number(vendida.ganancia_neta), 0);
+    ok('la deuda quedó en cero', await saldo(ana), 0);
+    ok('y quedó anotado cómo pagó',
+      uno(await db.query("select metodo from public.fiado where cliente_id=$1 and tipo='cobro'", [ana])).metodo,
+      'transferencia');
+    ok('sin crear ningún movimiento de cobro',
+      Number(uno(await db.query(
+        "select count(*)::int n from public.movimientos where empresa_id=$1 and categoria='Fiado'",
+        [A.empresaId])).n), 0);
+
+    rechazado('una forma de cobro inventada se rechaza',
+      await como(A.uid, "select public.cobrar_fiado($1,$2,1,'trueque')", [A.empresaId, juan]),
+      'no es válida');
+  }
+
+  // =====================================================================
+  grupo('11 · Borrar lo anotado por error (056)');
+  // =====================================================================
+  {
+    const beto = (await valor(A.uid,
+      "select public.guardar_cliente($1,'Beto','0982 111 222') id", [A.empresaId])).id;
+    const linea = (await valor(A.uid,
+      "select public.anotar_fiado($1,$2,100000,'Préstamo') id", [A.empresaId, beto])).id;
+    await valor(A.uid, 'select public.cobrar_fiado($1,$2,40000) j', [A.empresaId, beto]);
+    ok('debe 60.000', await saldo(beto), 60000);
+
+    // Borrar la deuda con parte ya pagada dejaría el saldo en negativo.
+    rechazado('no se borra lo fiado si ya pagó parte',
+      await como(A.uid, 'select public.borrar_linea_fiado($1)', [linea]),
+      'Borrá primero el pago');
+
+    const cobro = uno(await db.query(
+      "select id from public.fiado where cliente_id=$1 and tipo='cobro'", [beto])).id;
+    aceptado('se borra el pago', await como(A.uid, 'select public.borrar_linea_fiado($1)', [cobro]));
+    ok('y vuelve a deber lo de antes', await saldo(beto), 100000);
+    aceptado('ahora sí se borra lo fiado', await como(A.uid, 'select public.borrar_linea_fiado($1)', [linea]));
+    ok('y no debe nada', await saldo(beto), 0);
+
+    // Lo que vino de una venta se deshace anulando la venta, que además
+    // devuelve el stock.
+    const v = (await valor(A.uid,
+      `select public.registrar_venta($1,$2::jsonb,$3,'','credito','','','manual',0,$4) id`,
+      [A.empresaId, JSON.stringify([{ producto_id: prod, cantidad: 1, precio_unitario: 30000 }]),
+       hoy, beto])).id;
+    const deVenta = uno(await db.query(
+      'select id from public.fiado where venta_id=$1', [v])).id;
+    rechazado('lo de una venta no se borra acá',
+      await como(A.uid, 'select public.borrar_linea_fiado($1)', [deVenta]),
+      'anulá la venta');
+
+    rechazado('y alguien de otra empresa no borra nada',
+      await como(B.uid, 'select public.borrar_linea_fiado($1)', [deVenta]),
+      'no pertenecés');
   }
 
   console.log(`\n${fallos === 0 ? '✓' : '✗'} ${corridas - fallos}/${corridas} pruebas`);

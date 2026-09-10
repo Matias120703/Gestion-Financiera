@@ -100,6 +100,21 @@ const Ico = {
       <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5" />
     </svg>
   ),
+  // La libreta del fiado: la de siempre, la del almacén.
+  fiado: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <rect x="5" y="3.5" width="14" height="17" rx="2" />
+      <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
+    </svg>
+  ),
+  clientes: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <circle cx="9" cy="8.5" r="3.2" />
+      <path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8" />
+      <circle cx="16.8" cy="9.5" r="2.4" />
+      <path d="M16.6 14.4c2 .2 3.4 1.7 3.9 4.1" />
+    </svg>
+  ),
   // El anillo de la marca. Es el panel de Orden, no una sección del negocio,
   // y el ícono lo dice antes de que se lea el texto.
   orden: (
@@ -161,6 +176,10 @@ export function itemsDe(
     { href: '/vender',      texto: suPalabra('vender', t.nav.vender), icono: Ico.vender },
     { href: '/gastos',      texto: t.nav.gastos,      icono: Ico.gastos },
     { href: '/deudas',      texto: t.nav.deudas,      icono: Ico.deudas },
+    // «Fiado» es la palabra del mostrador; a una persona no se le fía, le
+    // deben. Mismo módulo, la palabra de cada uno.
+    { href: '/fiado',       texto: tipo === 'personal' ? t.nav.meDeben : t.nav.fiado, icono: Ico.fiado },
+    { href: '/clientes',    texto: t.nav.clientes,    icono: Ico.clientes },
     { href: '/cierre',      texto: t.nav.cierre,      icono: Ico.cierre },
     { href: '/productos',   texto: suPalabra('productos', t.nav.productos), icono: Ico.productos },
     { href: '/lotes',       texto: t.nav.lotes,       icono: Ico.lotes },

@@ -287,6 +287,10 @@ const MATRIZ = {
   '/reparto':      [ false,    true,      false,     false,       false ],
   '/lotes':        [ false,    false,     true,      true,        false ],
   '/organizacion': [ false,    false,     false,     false,       true  ],
+  // Lo que te deben es de todos; los clientes, de todo negocio y no de una
+  // persona.
+  '/fiado':        [ true,     true,      true,      true,        true  ],
+  '/clientes':     [ true,     true,      true,      true,        false ],
 };
 
 for (const [ruta, esperado] of Object.entries(MATRIZ)) {
@@ -525,6 +529,20 @@ ok('un rubro desconocido no rompe: cae en comercio',
       codigo.includes("metodo_pago === 'credito'") || codigo.includes("metodo === 'credito'"), true);
   }
 
+  // La captura por voz: lo que la IA entendió como «a quién» tiene que
+  // llegar ya escrito, y olvidarse al cerrar. Las dos cosas fallaban.
+  {
+    const cap = fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8');
+    ok('la captura trae el nombre que entendió la IA',
+      cap.includes('nombre: interpretado.contraparte'), true);
+    const desde = cap.indexOf('function cerrar()');
+    const cuerpo = cap.slice(desde, cap.indexOf('\n  }\n', desde));
+    ok('y lo olvida al cerrar, para no pegárselo a la venta siguiente',
+      desde > 0 && cuerpo.includes('setElegido('), true);
+    ok('y solo crea la ficha cuando se fía',
+      cap.includes('? await asegurarCliente(empresaId, elegido)'), true);
+  }
+
   // Nadie más llama a registrar_venta. Si aparece un tercer camino, esta
   // línea falla y obliga a mirarlo.
   const todas = [];
@@ -539,6 +557,36 @@ ok('un rubro desconocido no rompe: cae en comercio',
   mirar('src');
   ok('solo esos dos caminos registran ventas', todas.sort(),
     ['components/CapturaInteligente.tsx', 'components/PantallaVenta.tsx']);
+}
+
+// --- Las pantallas de Fiado y Clientes ---
+//
+// Las funciones de la base se prueban en clientes.test.js. Esto comprueba
+// que las pantallas existan y lleguen a ellas, y dos reglas que no se
+// ven en la base: que la ficha del cliente se cree al guardar y no
+// mientras se escribe, y que el menú ofrezca las dos secciones.
+{
+  const fs = require('fs');
+  const fia = fs.readFileSync('src/components/PantallaFiado.tsx', 'utf8');
+  const cli = fs.readFileSync('src/components/PantallaClientes.tsx', 'utf8');
+  const nav = fs.readFileSync('src/components/Navegacion.tsx', 'utf8');
+  ok('Fiado cobra', fia.includes("rpc('cobrar_fiado'"), true);
+  ok('Fiado anota', fia.includes("rpc('anotar_fiado'"), true);
+  ok('Fiado deja borrar lo anotado por error', fia.includes("rpc('borrar_linea_fiado'"), true);
+  ok('Fiado crea la ficha al guardar, no al escribir', fia.includes('await asegurarCliente('), true);
+  ok('Clientes guarda', cli.includes("rpc('guardar_cliente'"), true);
+  ok('Clientes muestra el historial de turnos', cli.includes("rpc('historial_cliente'"), true);
+  ok('el menú tiene Fiado', nav.includes("href: '/fiado'"), true);
+  ok('y Clientes', nav.includes("href: '/clientes'"), true);
+  // El panel lo pone al lado de las ventas. No lo resta: la venta existió.
+  const pan = fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8');
+  ok('el panel dice cuánto te deben',
+    pan.includes('traerResumenFiado(') && pan.includes('href="/fiado"'), true);
+  ok('y si esa lectura falla, el panel no se cae',
+    pan.includes('traerResumenFiado(ctx.empresa.id).catch(() => null)'), true);
+  ok('las páginas existen',
+    [fs.existsSync('src/app/(app)/fiado/page.tsx'), fs.existsSync('src/app/(app)/clientes/page.tsx')],
+    [true, true]);
 }
 
 // --- El panel de Orden no se le anuncia a un cliente ---

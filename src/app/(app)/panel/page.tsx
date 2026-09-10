@@ -17,6 +17,7 @@ import { traerRacha } from '@/lib/habito';
 import { TarjetaRacha } from '@/components/Racha';
 import { fichaDe } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
+import { traerResumenFiado } from '@/lib/fiado';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,7 +99,7 @@ export default async function PaginaPanel({
     ? { desde: dias[0], hasta: dias[dias.length - 1] }
     : { desde: rango.desde, hasta: rango.hasta };
 
-  const [r, rPrevio, top, categorias, serie, cobros, productos, reto, racha] = await Promise.all([
+  const [r, rPrevio, top, categorias, serie, cobros, productos, reto, racha, fiado] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
     traerResumen(ctx.empresa.id, previo.desde, previo.hasta),
     traerRanking(ctx.empresa.id, rango.desde, rango.hasta, 6),
@@ -108,6 +109,9 @@ export default async function PaginaPanel({
     traerProductos(ctx.empresa.id),
     traerRetoActivo(ctx.empresa.id),
     traerRacha(ctx.empresa.id),
+    // Si falla, el panel no se cae: es un dato de contexto. El número exacto
+    // está en la pantalla de Fiado, que sí lanza si no puede leer.
+    traerResumenFiado(ctx.empresa.id).catch(() => null),
   ]);
 
   /**
@@ -236,6 +240,29 @@ export default async function PaginaPanel({
           </>
         )}
       </div>
+
+      {/* ---------------- Lo que te deben (054-056) ----------------
+          La venta fiada ya está sumada en las ventas de arriba. Esto dice
+          cuánto de lo que te deben todavía no entró: sin este número, el
+          panel mostraba la venta como plata ganada y nada más.
+
+          NO se resta de las ventas, y es a propósito: la venta existió, la
+          mercadería salió, el vendedor ganó su comisión. Se pone al lado,
+          que es donde se lee junto. */}
+      {fiado && fiado.total > 0 && (
+        <Link href="/fiado" className="tarjeta block p-4 transition hover:border-verde/50">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-tinta/55">Te deben</p>
+              <p className="mt-0.5 text-[22px] font-bold tabular-nums tracking-tight">{dinero(fiado.total, m)}</p>
+              <p className="mt-0.5 text-[12.5px] text-tinta/50">
+                {fiado.cuantos === 1 ? '1 cliente' : `${fiado.cuantos} clientes`} · plata que todavía no entró
+              </p>
+            </div>
+            <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">Ver fiado →</span>
+          </div>
+        </Link>
+      )}
 
       {/* ---------------- Reto activo ---------------- */}
       {retoVisible && reto && retoInfo && (
