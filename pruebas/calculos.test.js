@@ -513,7 +513,14 @@ ok('un rubro desconocido no rompe: cae en comercio',
 {
   const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
 
-  ok('el menú tiene el enlace al panel de Orden', nav.includes("href=\"/admin\""), true);
+  // En los DOS menús, y esto se comprueba contando.
+  //
+  // La primera versión lo puso solo en la barra lateral, que es `lg:flex`:
+  // en un celular esa barra no existe. Quien administra desde el teléfono
+  // no tenía cómo llegar más que escribiendo la dirección a mano — y el
+  // dueño de Orden usa el celular como todos los demás.
+  ok('el enlace al panel está en los dos menús: lateral y celular',
+    nav.split('href="/admin"').length - 1, 2);
 
   // Que exista el enlace no dice nada; lo que importa es que esté detrás de
   // la condición. Se busca el bloque entero, no las dos palabras sueltas.

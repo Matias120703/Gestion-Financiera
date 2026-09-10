@@ -292,8 +292,21 @@ export function NavLateral({
 }
 
 export function NavInferior({
-  tipo = 'emprendedor', rubro = 'comercio', esAdmin = true,
-}: { tipo?: TipoCuenta; rubro?: Rubro; esAdmin?: boolean }) {
+  tipo = 'emprendedor', rubro = 'comercio', esAdmin = true, administraOrden = false,
+}: {
+  tipo?: TipoCuenta;
+  rubro?: Rubro;
+  esAdmin?: boolean;
+  /**
+   * El enlace al panel de Orden estaba SOLO en la barra lateral, que es
+   * `lg:flex`: no existe en un celular. Quien administra desde el teléfono
+   * no tenía cómo llegar más que escribiendo la dirección.
+   *
+   * Igual que en la lateral, solo se dibuja para quien ya está en
+   * `superadmins`: un cliente no lo ve ni se entera de que existe.
+   */
+  administraOrden?: boolean;
+}) {
   const ruta = usePathname();
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
@@ -373,6 +386,19 @@ export function NavInferior({
                 {Ico.plan}
                 <span className="px-0.5">{t.nav.plan}</span>
               </Link>
+
+              {administraOrden && (
+                <Link
+                  href="/admin"
+                  onClick={() => setAbierto(false)}
+                  className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                    activo(ruta, '/admin') ? 'bg-verde-claro text-verde-fuerte' : 'bg-noche text-white'
+                  }`}
+                >
+                  {Ico.orden}
+                  <span className="px-0.5">Panel de Orden</span>
+                </Link>
+              )}
             </div>
           </div>
         </div>
