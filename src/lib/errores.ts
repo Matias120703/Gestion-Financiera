@@ -13,7 +13,9 @@ interface ErrorSupabase {
   hint?: string;
 }
 
-const REGLAS: { patron: RegExp; mensaje: string }[] = [
+// Se exporta solo para que la prueba la pueda contrastar contra todos
+// nuestros mensajes. Ver pruebas/errores.test.js.
+export const REGLAS: { patron: RegExp; mensaje: string }[] = [
   {
     patron: /row-level security|permission denied|insufficient privilege|policy/i,
     mensaje: 'No tenés permiso para hacer esto. Si creés que deberías, pedile a un administrador.',
@@ -47,8 +49,21 @@ const REGLAS: { patron: RegExp; mensaje: string }[] = [
     mensaje: 'Tu sesión venció. Volvé a entrar.',
   },
   {
-    patron: /failed to fetch|network|timeout|ECONN/i,
-    mensaje: 'No hay conexión. Probá de nuevo cuando vuelva internet.',
+    // Cada navegador avisa «sin red» a su manera, y hay que reconocerlas
+    // todas: Chrome dice «Failed to fetch», Firefox «NetworkError…», Node
+    // «fetch failed», y Safari —el de todos los iPhone— «Load failed».
+    //
+    // Esa última faltaba. Y como arranca con mayúscula, `esNuestro` la
+    // tomaba por un mensaje nuestro y la mostraba cruda: «TypeError: Load
+    // failed» en la pantalla de alguien que solo había perdido la señal un
+    // segundo. Pasó en producción, en Deudas y en Presupuesto.
+    //
+    // El mensaje no promete que no se guardó: un corte puede pasar antes o
+    // después de que el pedido llegue. Dice lo que pasó y qué hacer. Y no
+    // dice «no hay conexión», porque casi siempre la hay: lo que se cortó
+    // fue ese pedido.
+    patron: /failed to fetch|fetch failed|load failed|network|timeout|timed out|ECONN|internet connection|connection was lost|could not connect|hostname could not be found|aborted|abort ?error/i,
+    mensaje: 'Se cortó la conexión. Revisá tu internet y probá de nuevo.',
   },
 ];
 
@@ -68,8 +83,13 @@ export function mensajeDeError(error: unknown, respaldo = 'No se pudo completar 
   // sesión vencida y el celular sin señal— y eran justo los que se colaban.
   //
   // Invertirlo es seguro porque los patrones son cadenas técnicas en inglés
-  // que no aparecen en ningún mensaje nuestro: hay una prueba que los
-  // contrasta contra los 442 que levantan las migraciones.
+  // que no aparecen en ningún mensaje nuestro.
+  //
+  // Este comentario decía que una prueba lo comprobaba contra los mensajes
+  // de las migraciones, y esa prueba no existía. Apareció al ampliar la
+  // regla de conexión, que es justo cuando hacía falta. Ahora existe:
+  // errores.test.js recorre todos los mensajes de la base y todos los que
+  // lanzan las pantallas, y falla si alguna regla tapa uno.
   for (const { patron, mensaje } of REGLAS) {
     if (patron.test(crudo) || patron.test(e.details ?? '') || patron.test(e.code ?? '')) {
       return mensaje;
@@ -78,7 +98,13 @@ export function mensajeDeError(error: unknown, respaldo = 'No se pudo completar 
 
   // Nuestras propias excepciones ya vienen redactadas para el usuario.
   // Las reconocemos porque arrancan en mayúscula y no traen jerga de Postgres.
+  //
+  // Pero el nombre de un error de JavaScript también arranca con mayúscula
+  // —«TypeError: …», «AbortError: …»—, así que sin la segunda condición
+  // cualquier falla técnica del navegador pasaba por mensaje nuestro.
+  // Nuestros mensajes nunca empiezan con el nombre de una clase de error.
   const esNuestro = /^[A-ZÁÉÍÓÚÑ¡¿]/.test(crudo)
+    && !/^[A-Z][a-zA-Z]*Error\b/.test(crudo)
     && !/relation|column|function|constraint|violates|denied|syntax/i.test(crudo);
   if (esNuestro) return crudo;
 
