@@ -499,6 +499,48 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('en guaraníes, como siempre', F.precio(190000, 'PYG', 'es-PY'), 'Gs. 190.000');
 }
 
+// --- Los dos caminos de venta mandan el cliente ---
+//
+// Desde la 055, la base rechaza una venta fiada sin cliente. Eso arregla el
+// dato, pero deja un filo: si una pantalla no manda `p_cliente`, elegir
+// «Fiado» ahí se convierte en un callejón sin salida — un error del servidor
+// sobre algo que la persona ya dio por confirmado, y sin nada que pueda
+// hacer al respecto.
+//
+// Hay DOS caminos que registran ventas y los dos tienen que mandarlo. Esto
+// se cuenta, no se comprueba de a uno: contar es lo que agarra al tercero
+// que aparezca mañana.
+{
+  const fs = require('fs');
+  const pantallas = ['src/components/PantallaVenta.tsx', 'src/components/CapturaInteligente.tsx'];
+
+  for (const ruta of pantallas) {
+    const codigo = fs.readFileSync(ruta, 'utf8');
+    const corto = ruta.replace('src/components/', '');
+    ok(corto + ' registra ventas', codigo.includes("rpc('registrar_venta'"), true);
+    ok(corto + ' manda el cliente', codigo.includes('p_cliente:'), true);
+    ok(corto + ' ofrece elegirlo', codigo.includes('<SelectorCliente'), true);
+    // Y avisa antes de mandar, en vez de dejar que reviente en el servidor.
+    ok(corto + ' avisa antes de fiar sin cliente',
+      codigo.includes("metodo_pago === 'credito'") || codigo.includes("metodo === 'credito'"), true);
+  }
+
+  // Nadie más llama a registrar_venta. Si aparece un tercer camino, esta
+  // línea falla y obliga a mirarlo.
+  const todas = [];
+  const mirar = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const r = dir + '/' + e.name;
+      if (e.isDirectory()) { mirar(r); continue; }
+      if (!/\.(ts|tsx)$/.test(e.name)) continue;
+      if (fs.readFileSync(r, 'utf8').includes("rpc('registrar_venta'")) todas.push(r.replace('src/', ''));
+    }
+  };
+  mirar('src');
+  ok('solo esos dos caminos registran ventas', todas.sort(),
+    ['components/CapturaInteligente.tsx', 'components/PantallaVenta.tsx']);
+}
+
 // --- El panel de Orden no se le anuncia a un cliente ---
 //
 // El panel de administración se decidió no anunciarlo en ningún lado: «una

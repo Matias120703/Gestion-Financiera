@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
@@ -65,6 +66,14 @@ export function BotonCaptura({
   const [error, setError] = useState('');
   const [segundos, setSegundos] = useState(0);
   const [borrador, setBorrador] = useState<CapturaInterpretada | null>(null);
+  /**
+   * A quién se le fía, cuando la venta es fiada (055).
+   *
+   * La IA puede entender «vendí tres yerbas fiado», pero no sabe a quién:
+   * un nombre dictado no alcanza para atarlo a una ficha. Se pregunta acá,
+   * sobre lo que ya se entendió, que es cuando la persona lo tiene fresco.
+   */
+  const [elegido, setElegido] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
   const [guardando, setGuardando] = useState(false);
   const [paso, setPaso] = useState('');
   const [origen, setOrigen] = useState<Origen>('texto');
@@ -366,6 +375,14 @@ export function BotonCaptura({
         // El total que confirmó la persona manda; la diferencia es descuento.
         const descuento = Math.max(0, Math.min(bruto, bruto - borrador.monto));
 
+        // La base rechaza una venta fiada sin cliente. Se avisa acá antes,
+        // para que no llegue como un error del servidor sobre algo que la
+        // persona ya dio por confirmado.
+        if (borrador.metodo_pago === 'credito' && elegido.nombre.trim().length === 0) {
+          throw new Error('Para fiar hay que decir a quién. Escribí el nombre del cliente.');
+        }
+        const clienteId = await asegurarCliente(empresaId, elegido);
+
         const { data, error } = await supabase.rpc('registrar_venta', {
           p_empresa: empresaId,
           p_items: items.map((i) => ({
@@ -379,7 +396,8 @@ export function BotonCaptura({
           p_fecha: borrador.fecha,
           p_descripcion: borrador.descripcion,
           p_metodo_pago: borrador.metodo_pago,
-          p_contraparte: borrador.contraparte ?? '',
+          p_contraparte: elegido.nombre || (borrador.contraparte ?? ''),
+          p_cliente: clienteId,
           p_notas: borrador.transcripcion ?? '',
           p_origen: origen,
           p_descuento: descuento,
@@ -570,6 +588,7 @@ export function BotonCaptura({
                 tipoCuenta={tipoCuenta}
                 deudas={deudas} crearGasto={crearGasto} onCrearGasto={setCrearGasto}
                 onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
+                empresaId={empresaId} elegido={elegido} setElegido={setElegido}
               />
             )}
           </div>
@@ -596,10 +615,14 @@ function Opcion({ titulo, detalle, icono, onClick }: { titulo: string; detalle: 
 
 function Revision({
   borrador, moneda, error, guardando, paso, tipoCuenta, deudas, crearGasto, onCrearGasto,
-  onCambio, onCancelar, onGuardar,
+  onCambio, onCancelar, onGuardar, empresaId, elegido, setElegido,
 }: {
   borrador: CapturaInterpretada;
   moneda: string;
+  empresaId: string;
+  /** Solo se usa al fiar. Ver el comentario del estado en BotonCaptura. */
+  elegido: ClienteElegido;
+  setElegido: (c: ClienteElegido) => void;
   error: string;
   guardando: boolean;
   paso: string;
@@ -743,6 +766,22 @@ function Revision({
               <option value="credito">{t.captura.metodoCredito}</option>
               <option value="otro">{t.captura.metodoOtro}</option>
             </select>
+          </div>
+        )}
+
+        {/* Solo al fiar una venta. En cualquier otro caso, preguntar por el
+            cliente sería una pregunta de más en una pantalla que existe
+            justamente para no tener que escribir. */}
+        {borrador.tipo === 'venta' && borrador.metodo_pago === 'credito' && (
+          <div className="sm:col-span-2">
+            <SelectorCliente
+              empresaId={empresaId}
+              valor={elegido}
+              alElegir={setElegido}
+              etiqueta="¿A quién se lo fiás?"
+              pedirTelefono
+              obligatorio
+            />
           </div>
         )}
       </div>

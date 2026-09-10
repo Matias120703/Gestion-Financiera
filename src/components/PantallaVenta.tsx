@@ -5,6 +5,7 @@ import { useTextos } from '@/i18n/cliente';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { dinero, decimalesDe, numero } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
@@ -75,6 +76,14 @@ export function PantallaVenta({
   const [carrito, setCarrito] = useState<LineaCarrito[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [metodo, setMetodo] = useState('efectivo');
+  /**
+   * A quién se le vende (052-055).
+   *
+   * Era un texto suelto que solo se guardaba en `contraparte`: servía para
+   * acordarse y para nada más. Ahora, si es un cliente cargado, la venta
+   * queda atada a su ficha y el fiado se le puede cobrar.
+   */
+  const [elegido, setElegido] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
   const [fecha, setFecha] = useState(hoyISO(zona));
   const [cliente, setCliente] = useState('');
   const [descuento, setDescuento] = useState(0);
@@ -188,6 +197,20 @@ export function PantallaVenta({
 
     try {
       const supabase = clienteNavegador();
+
+      // Fiar sin decir a quién deja una deuda que nadie puede cobrar. La
+      // base lo rechaza; esto lo dice antes, en la pantalla, para que no
+      // llegue como un error del servidor después de armar todo el carrito.
+      if (metodo === 'credito' && elegido.nombre.trim().length === 0) {
+        setError('Para fiar hay que decir a quién. Escribí el nombre del cliente.');
+        setGuardando(false);
+        return;
+      }
+
+      // Se crea recién acá, y no mientras se escribe: una ficha por cada
+      // nombre a medio escribir llenaría la lista de «J», «Ju», «Jua».
+      const clienteId = await asegurarCliente(empresaId, elegido);
+
       const { error } = await supabase.rpc('registrar_venta', {
         p_empresa: empresaId,
         p_items: carrito.map((l) => ({
@@ -202,7 +225,8 @@ export function PantallaVenta({
         p_fecha: fecha,
         p_descripcion: '',
         p_metodo_pago: metodo,
-        p_contraparte: cliente,
+        p_contraparte: elegido.nombre,
+        p_cliente: clienteId,
         p_notas: '',
         p_origen: 'manual',
         p_descuento: descuentoAplicado,
@@ -338,10 +362,11 @@ export function PantallaVenta({
         <div className="sticky top-24">
           <Carrito
             carrito={carrito} moneda={moneda} dec={dec} total={total} subtotal={subtotal}
-            ganancia={ganancia} verCostos={verCostos} descuento={descuento} metodo={metodo} fecha={fecha} cliente={cliente}
+            ganancia={ganancia} verCostos={verCostos} descuento={descuento} metodo={metodo} fecha={fecha}
+            empresaId={empresaId} elegido={elegido} setElegido={setElegido}
             guardando={guardando} error={error}
             onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
-            setDescuento={setDescuento} setMetodo={setMetodo} setFecha={setFecha} setCliente={setCliente}
+            setDescuento={setDescuento} setMetodo={setMetodo} setFecha={setFecha}
           />
         </div>
       </aside>
@@ -400,10 +425,11 @@ export function PantallaVenta({
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde" />
             <Carrito
               carrito={carrito} moneda={moneda} dec={dec} total={total} subtotal={subtotal}
-              ganancia={ganancia} verCostos={verCostos} descuento={descuento} metodo={metodo} fecha={fecha} cliente={cliente}
+              ganancia={ganancia} verCostos={verCostos} descuento={descuento} metodo={metodo} fecha={fecha}
+            empresaId={empresaId} elegido={elegido} setElegido={setElegido}
               guardando={guardando} error={error} sinMarco
               onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
-              setDescuento={setDescuento} setMetodo={setMetodo} setFecha={setFecha} setCliente={setCliente}
+              setDescuento={setDescuento} setMetodo={setMetodo} setFecha={setFecha}
             />
           </div>
         </div>
@@ -421,7 +447,8 @@ export function PantallaVenta({
 function Carrito(props: {
   carrito: LineaCarrito[];
   moneda: string; dec: number; total: number; subtotal: number; ganancia: number; verCostos: boolean;
-  descuento: number; metodo: string; fecha: string; cliente: string;
+  descuento: number; metodo: string; fecha: string;
+  empresaId: string; elegido: ClienteElegido;
   guardando: boolean; error: string; sinMarco?: boolean;
   onCambiar: (clave: string, c: Partial<LineaCarrito>) => void;
   onQuitar: (clave: string) => void;
@@ -430,13 +457,14 @@ function Carrito(props: {
   setDescuento: (n: number) => void;
   setMetodo: (s: string) => void;
   setFecha: (s: string) => void;
-  setCliente: (s: string) => void;
+  setElegido: (c: ClienteElegido) => void;
 }) {
   const t = useTextos();
   const {
-    carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha, cliente,
+    carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha,
+    empresaId, elegido, setElegido,
     guardando, error, sinMarco, onCambiar, onQuitar, onLimpiar, onCobrar,
-    setDescuento, setMetodo, setFecha, setCliente,
+    setDescuento, setMetodo, setFecha,
   } = props;
 
   const [masOpciones, setMasOpciones] = useState(false);
@@ -551,10 +579,14 @@ function Carrito(props: {
 
             {masOpciones && (
               <div className="grid grid-cols-2 gap-2.5 aparecer">
-                <label className="block">
-                  <span className="etiqueta">{t.venta.cliente}</span>
-                  <input className="campo py-2.5" placeholder={t.venta.opcional} value={cliente} onChange={(e) => setCliente(e.target.value)} />
-                </label>
+                <SelectorCliente
+                  empresaId={empresaId}
+                  valor={elegido}
+                  alElegir={setElegido}
+                  etiqueta={t.venta.cliente}
+                  pedirTelefono={metodo === 'credito'}
+                  obligatorio={metodo === 'credito'}
+                />
                 <label className="block">
                   <span className="etiqueta">{t.venta.fecha}</span>
                   <input type="date" className="campo py-2.5" value={fecha} onChange={(e) => setFecha(e.target.value)} />
