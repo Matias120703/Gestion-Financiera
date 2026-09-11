@@ -610,6 +610,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('la agenda elige el cliente de la lista', age.includes('<SelectorCliente'), true);
   ok('y lo manda al reservar', age.includes('p_cliente: d.cliente'), true);
   ok('con textos de agenda y no de fiado', age.includes('placeholder="Nombre de quien viene"'), true);
+  // Y se puede dictar (turnos por voz, del cuaderno del dueño).
+  ok('la agenda deja dictar el turno', age.includes("fetch('/api/dictar-turno'"), true);
+  ok('y lo dictado completa el mismo formulario, no reserva solo', age.includes('aplicarDictado('), true);
+  const cap = fs.readFileSync('src/app/api/capturar/route.ts', 'utf8');
+  ok('el micrófono de siempre no carga un turno como venta de mañana',
+    cap.includes("limpio.tipo === 'venta' && fechaValida > hoy"), true);
 
   // El panel lo pone al lado de las ventas. No lo resta: la venta existió.
   const pan = fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8');

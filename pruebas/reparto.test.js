@@ -379,6 +379,74 @@ const num = (v) => Number(v);
     await llamar(otra.uid, 'select public.registrar_servicio($1,$2,$3)', [local.empresaId, pedro, corte]),
     'No pertenecés');
 
+  // =====================================================================
+  grupo('Quitar a alguien del equipo sin romper nada (059)');
+  // =====================================================================
+  {
+    const S = await H.montarEmpresa(db, { email: 'duena@salon.com', nombre: 'Salón Sol' });
+    const uidAna = await H.sumarMiembro(db, S.empresaId, 'ana@salon.com', 'vendedor');
+    const uidBea = await H.sumarMiembro(db, S.empresaId, 'bea@salon.com', 'vendedor');
+    const alta = async (nombre, reparto, pct, uid, id = null) => (await valor(S.uid,
+      'select public.guardar_profesional($1,$2,$3,$4,$5,$6) as id',
+      [S.empresaId, nombre, reparto, pct, uid, id])).id;
+    const quitar = async (id) =>
+      (await valor(S.uid, 'select public.borrar_profesional($1,$2) as r', [S.empresaId, id])).r;
+    const activo = async (id) =>
+      (await crudo('select activo from public.turnos_profesional where id=$1', [id]))?.activo;
+    const cuantos = async (sql, args) => num((await crudo(sql, args)).n);
+    const corteS = await H.crearProducto(db, S.empresaId, S.uid,
+      { nombre: 'Corte', precio: 40000, costo: 0, controla_stock: false });
+
+    // Sin nada cargado se borra de verdad.
+    const yo = await alta('La dueña', 'local', null, S.uid);
+    ok('sin nada, se borra', await quitar(yo), { borrado: true });
+    ok('y no queda',
+      await cuantos('select count(*)::int n from public.turnos_profesional where id=$1', [yo]), 0);
+
+    // Con un pago y ningún cobro. Antes la base frenaba ese borrado (035) con
+    // un error que no decía nada.
+    const bea = await alta('Bea', 'sueldo', null, uidBea);
+    await valor(S.uid, 'select public.pagar_profesional($1,$2,$3) as r', [S.empresaId, bea, 100000]);
+    ok('con un pago registrado, se desactiva en vez de fallar', await quitar(bea), { desactivado: true });
+    ok('queda inactiva', await activo(bea), false);
+    ok('y el pago sigue ahí',
+      await cuantos('select count(*)::int n from public.turnos_pago where profesional_id=$1', [bea]), 1);
+
+    // Guardarla de nuevo la vuelve a sumar. Antes no había forma.
+    await alta('Bea', 'sueldo', null, uidBea, bea);
+    ok('guardarla de nuevo la vuelve a sumar', await activo(bea), true);
+
+    // Cambiar cómo se le paga vale de acá en adelante: lo cobrado no se toca.
+    const ana = await alta('Ana', 'comision', 50, uidAna);
+    await valor(S.uid, 'select public.registrar_servicio($1,$2,$3) as r', [S.empresaId, ana, corteS]);
+    await alta('Ana', 'comision', 30, uidAna, ana);
+    await valor(S.uid, 'select public.registrar_servicio($1,$2,$3) as r', [S.empresaId, ana, corteS]);
+    const partes = (await db.query(
+      'select parte_profesional from public.turnos_atribucion where profesional_id=$1 order by parte_profesional desc',
+      [ana])).rows.map((f) => num(f.parte_profesional));
+    ok('lo cobrado antes sigue al 50% y lo nuevo va al 30%', partes, [20000, 12000]);
+
+    // Con un turno por delante no se quita: borrarla se lo llevaba puesto en
+    // cascada (037), y el cliente llegaba y no había turno.
+    await valor(S.uid, 'select public.guardar_servicio_agenda($1,$2,$3) j', [S.empresaId, corteS, 30]);
+    await valor(S.uid, 'select public.guardar_horario($1,$2,1,$3,$4) j', [S.empresaId, ana, '08:00', '18:00']);
+    const lunes = (await crudo(
+      `select (date_trunc('week', current_date + interval '14 days'))::date::text d`)).d;
+    await valor(S.uid,
+      "select public.reservar($1,$2,$3,($4 || ' 10:00')::timestamptz,'Nora','0975 333 444') j",
+      [S.empresaId, ana, corteS, lunes]);
+    rechazado('con turnos agendados no se quita',
+      await llamar(S.uid, 'select public.borrar_profesional($1,$2)', [S.empresaId, ana]),
+      'todavía tiene turnos agendados');
+    ok('el turno sigue en pie',
+      await cuantos('select count(*)::int n from public.turnos_reserva where profesional_id=$1', [ana]), 1);
+    ok('y ella sigue en el equipo', await activo(ana), true);
+
+    rechazado('una vendedora no saca a nadie del equipo',
+      await llamar(uidAna, 'select public.borrar_profesional($1,$2)', [S.empresaId, bea]),
+      'Solo el dueño');
+  }
+
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL REPARTO FALLARON`);

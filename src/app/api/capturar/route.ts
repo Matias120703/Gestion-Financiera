@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { hoyISO } from '@/lib/fechas';
+import { tieneSeccion } from '@/lib/rubros';
+import { transcribir } from '@/lib/transcribir';
 import type { CapturaInterpretada, Producto } from '@/lib/tipos';
 import { ESQUEMA, instrucciones } from '@/lib/captura';
 
@@ -9,17 +11,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const MODELO_TEXTO = process.env.MODELO_IA || 'gpt-4o-mini';
-
-/**
- * El modelo que escucha.
- *
- * `gpt-4o-mini-transcribe` transcribe bastante más rápido que `whisper-1`, y
- * la espera del audio es la que más se siente: la persona ya habló y está
- * mirando la pantalla. Si por lo que sea no estuviera disponible, se cae solo
- * a whisper (ver `transcribir`), así que cambiarlo no puede romper la captura.
- */
-const MODELO_AUDIO = process.env.MODELO_AUDIO || 'gpt-4o-mini-transcribe';
-const MODELO_AUDIO_RESPALDO = 'whisper-1';
+// El modelo que escucha, y su respaldo, están en lib/transcribir: los
+// comparte con el dictado de turnos.
 const LIMITE_ARCHIVO = 9 * 1024 * 1024;
 
 function respuestaVacia(mensaje: string, estado = 400) {
@@ -30,30 +23,6 @@ function respuestaVacia(mensaje: string, estado = 400) {
 const PISTA_AUDIO =
   'Nota de voz de alguien en Paraguay registrando ventas, gastos o cobros. '
   + 'Puede decir montos como "150 mil", "dos millones", "150 lucas".';
-
-/**
- * Transcribe, y si el modelo rápido no está disponible usa whisper.
- *
- * El respaldo existe porque el modelo por defecto se puede cambiar por
- * variable de entorno y porque los nombres de modelo cambian con el tiempo.
- * Que una captura por voz falle entera por eso sería absurdo: whisper es más
- * lento, pero anda.
- */
-async function transcribir(openai: OpenAI, archivo: File): Promise<string> {
-  try {
-    const t = await openai.audio.transcriptions.create({
-      file: archivo, model: MODELO_AUDIO, language: 'es', prompt: PISTA_AUDIO,
-    });
-    return (t.text ?? '').trim();
-  } catch (e: any) {
-    if (MODELO_AUDIO === MODELO_AUDIO_RESPALDO) throw e;
-    console.warn('[capturar] audio con', MODELO_AUDIO, 'falló; voy con whisper:', e?.message);
-    const t = await openai.audio.transcriptions.create({
-      file: archivo, model: MODELO_AUDIO_RESPALDO, language: 'es', prompt: PISTA_AUDIO,
-    });
-    return (t.text ?? '').trim();
-  }
-}
 
 export async function POST(request: Request) {
   // ---------- 1. Sesión y permisos ----------
@@ -246,7 +215,7 @@ export async function POST(request: Request) {
       if (!(archivo instanceof File)) return respuestaVacia('No llegó el audio.');
       if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia('El audio es demasiado largo.');
 
-      transcripcion = await transcribir(openai, archivo);
+      transcripcion = await transcribir(openai, archivo, PISTA_AUDIO);
       if (!transcripcion) return respuestaVacia('No se entendió el audio. Probá de nuevo hablando más cerca.');
       textoUsuario = transcripcion;
     } else if (modo === 'foto') {
@@ -371,6 +340,17 @@ export async function POST(request: Request) {
     if (limpio.monto <= 0) {
       limpio.aviso = 'No pude sacar el monto del mensaje. Escribilo vos.';
       limpio.confianza = Math.min(limpio.confianza, 0.4);
+    }
+
+    // Una venta con fecha futura casi siempre es un turno dictado al
+    // micrófono equivocado: «Juan, mañana a las tres, corte». Guardarla
+    // sumaría a las ventas una plata que todavía no entró. Va después del
+    // aviso del monto porque importa más: si es un turno, el monto da igual.
+    if (limpio.tipo === 'venta' && fechaValida > hoy) {
+      limpio.aviso = tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/agenda')
+        ? 'Esto tiene fecha futura. Si es un turno, anotalo en Agenda con «Dictar».'
+        : 'Esto tiene fecha futura: una venta se carga el día que se cobra.';
+      limpio.confianza = Math.min(limpio.confianza, 0.3);
     }
 
     return NextResponse.json(limpio);

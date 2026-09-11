@@ -82,6 +82,12 @@ export interface DatosReporte {
      * se genera: una hoja vacía no informa, ocupa y hace dudar del resto.
      */
     rubro?: string;
+    /**
+     * Si los números vienen convertidos a otra moneda (051): de cuál, a qué
+     * cambio y desde cuándo. `moneda` ya es la de la vista. Lo pone
+     * `enLaMonedaDeLaVista`, y cada hoja lo dice arriba.
+     */
+    conversion?: { propia: string; cotizacion: number | null; desde: string | null };
   };
   desde: string;
   hasta: string;
@@ -131,9 +137,7 @@ function libroDeNegocio({
   const r = resumen;
   const productos = ranking;
   const dias = serie.map((d) => d.fecha);
-  const periodo = desde === hasta
-    ? `Periodo: ${fechaLegible(desde)}`
-    : `Periodo: ${fechaLegible(desde)} al ${fechaLegible(hasta)}`;
+  const periodo = textoPeriodo(desde, hasta, empresa);
 
   const libro = new ExcelJS.Workbook();
   libro.creator = 'Orden';
@@ -579,9 +583,7 @@ function libroPersonal({
   const salio = r.gastos;
   const teQuedo = entro - salio;
 
-  const periodo = desde === hasta
-    ? `Periodo: ${fechaLegible(desde)}`
-    : `Periodo: ${fechaLegible(desde)} al ${fechaLegible(hasta)}`;
+  const periodo = textoPeriodo(desde, hasta, empresa);
 
   // Días del calendario, no días con movimientos: para el promedio diario lo
   // que importa es cuánto duró el período, no en cuántos días cargó algo.
@@ -1030,7 +1032,114 @@ function tablaDeCategorias(
   });
 }
 
-export function nombreArchivo(empresa: string, desde: string, hasta: string): string {
+export function nombreArchivo(empresa: string, desde: string, hasta: string, moneda?: string): string {
   const limpio = empresa.replace(/[^\p{L}\p{N} ]/gu, '').trim() || 'Negocio';
-  return `Orden ${limpio} ${desde}${desde === hasta ? '' : ` a ${hasta}`}.xlsx`;
+  // En otra moneda se dice en el nombre: dos archivos del mismo mes, uno en
+  // guaraníes y otro en dólares, no pueden llamarse igual.
+  const enOtra = moneda ? ` en ${moneda}` : '';
+  return `Orden ${limpio} ${desde}${desde === hasta ? '' : ` a ${hasta}`}${enOtra}.xlsx`;
+}
+
+/**
+ * Lo que dice arriba de cada hoja. Con los números convertidos dice además a
+ * qué cambio: sin eso, quien abra en seis meses un Excel en dólares de un
+ * negocio en guaraníes no tendría cómo saber de dónde salió cada número.
+ */
+function textoPeriodo(desde: string, hasta: string, empresa: DatosReporte['empresa']): string {
+  const periodo = desde === hasta
+    ? `Periodo: ${fechaLegible(desde)}`
+    : `Periodo: ${fechaLegible(desde)} al ${fechaLegible(hasta)}`;
+  const c = empresa.conversion;
+  if (!c || !c.cotizacion) return periodo;
+  const cambio = c.cotizacion.toLocaleString('es-PY', { maximumFractionDigits: 6 });
+  const cuando = c.desde ? ` del ${fechaLegible(c.desde.slice(0, 10))}` : '';
+  const s = simboloDe(empresa.moneda);
+  return `${periodo} · En ${s}, al cambio${cuando}: 1 ${s} = ${simboloDe(c.propia)} ${cambio}`;
+}
+
+/**
+ * Qué campos del resumen son plata. Los demás son conteos, porcentajes o
+ * banderas, y se quedan como están.
+ *
+ * Una prueba revisa que cada campo del resumen esté en una de las dos
+ * listas. El día que el resumen sume un campo de plata y nadie lo agregue
+ * acá, el Excel en dólares lo mostraría en guaraníes con el símbolo del
+ * dólar: exactamente el error que esto viene a evitar.
+ */
+export const RESUMEN_PLATA: (keyof Resumen)[] = [
+  'ventas', 'ventasBrutas', 'descuentos', 'otrosIngresos', 'ingresosTotales', 'costoMercaderia',
+  'gananciaBruta', 'gastos', 'gananciaNeta', 'ticketPromedio', 'montoVentasAnuladas',
+  'montoMovimientosAnulados',
+];
+
+export const RESUMEN_NO_PLATA: (keyof Resumen)[] = [
+  'margenBruto', 'margenNeto', 'cantidadVentas', 'unidadesVendidas', 'ventasAnuladas',
+  'movimientosAnulados', 'conCostos',
+];
+
+/**
+ * EL EXCEL EN LA MONEDA QUE SE ESTÁ MIRANDO (051)
+ *
+ * Si el negocio mira sus números en otra moneda, el Excel sale en esa, con el
+ * mismo cambio que las pantallas: bajar el archivo no puede mostrar otros
+ * números que los que se estaban viendo.
+ *
+ * Se convierte ANTES de armar el libro y no celda por celda. El libro tiene
+ * decenas de celdas de plata, y la que se olvidara saldría en la moneda de
+ * al lado con el símbolo de la otra. Acá hay un solo lugar donde mirar.
+ *
+ * El redondeo a millonésimas solo saca el ruido de la coma flotante
+ * (450.000 × 1/7.500 da 60,00000000000001): no cambia ningún número que se
+ * vea, y deja limpia la celda para quien copie el valor.
+ */
+export function enLaMonedaDeLaVista(
+  datos: DatosReporte,
+  vista: { moneda: string; factor: number; propia: string; cotizacion: number | null; desde: string | null },
+): DatosReporte {
+  if (vista.moneda === vista.propia || !(vista.factor > 0)) return datos;
+  const k = vista.factor;
+  const x = (n: number) => Math.round(Number(n) * k * 1e6) / 1e6;
+  // Lo que falta sigue faltando: un costo que no se ve no pasa a ser cero.
+  const xn = (n: number | null) => (n === null || n === undefined ? null : x(n));
+  // Lo que en los tipos es un número pero en una fila vieja puede venir
+  // vacío: se deja vacío, para que la hoja caiga en su valor de respaldo.
+  const xs = (n: number) => (n === null || n === undefined ? n : x(n));
+
+  const resumen = { ...datos.resumen };
+  for (const campo of RESUMEN_PLATA) (resumen as any)[campo] = x(datos.resumen[campo] as number);
+
+  return {
+    ...datos,
+    empresa: {
+      ...datos.empresa,
+      moneda: vista.moneda,
+      conversion: { propia: vista.propia, cotizacion: vista.cotizacion, desde: vista.desde },
+    },
+    resumen,
+    ranking: datos.ranking.map((p) => ({
+      ...p,
+      ingresosBrutos: x(p.ingresosBrutos), descuento: x(p.descuento), ingresos: x(p.ingresos),
+      costo: xn(p.costo), ganancia: xn(p.ganancia),
+    })),
+    categorias: datos.categorias.map((c) => ({ ...c, monto: x(c.monto) })),
+    ingresos: datos.ingresos.map((c) => ({ ...c, monto: x(c.monto) })),
+    ahorro: {
+      ...datos.ahorro,
+      aportado: x(datos.ahorro.aportado), retirado: x(datos.ahorro.retirado), neto: x(datos.ahorro.neto),
+      porFondo: datos.ahorro.porFondo.map((f) => ({
+        ...f, aportado: x(f.aportado), retirado: x(f.retirado), neto: x(f.neto), saldo_hoy: x(f.saldo_hoy),
+      })),
+    },
+    serie: datos.serie.map((d) => ({
+      ...d, ventas: x(d.ventas), gastos: x(d.gastos), otrosIngresos: x(d.otrosIngresos), ganancia: xn(d.ganancia),
+    })),
+    movimientos: datos.movimientos.map((m) => ({
+      ...m,
+      subtotal: xs(m.subtotal), descuento: xs(m.descuento), monto: x(m.monto), costo_total: xn(m.costo_total),
+      movimiento_items: m.movimiento_items?.map((i) => ({
+        ...i, precio_unitario: x(i.precio_unitario), costo_unitario: xn(i.costo_unitario),
+      })),
+    })),
+    productosBd: datos.productosBd.map((p) => ({ ...p, precio: x(p.precio), costo: xn(p.costo) })),
+  };
 }

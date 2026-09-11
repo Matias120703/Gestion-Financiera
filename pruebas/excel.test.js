@@ -319,6 +319,55 @@ const productosBd = [
   ok('el ahorro no cambia lo que salio', buscar(resA, 'Total que salió'), 2100000);
   ok('ni lo que quedo', buscar(resA, 'Te quedó'), 1800000);
   ok('pero se informa aparte', buscar(resA, 'Guardado en el periodo'), 400000);
+  // ---- En la moneda que se está mirando (051) ----
+  //
+  // Si el negocio mira sus números en dólares, el Excel sale en dólares, con
+  // el mismo cambio que las pantallas. Hasta acá salía siempre en la moneda
+  // propia: bajar el archivo mostraba otros números que los que se veían.
+  const { enLaMonedaDeLaVista, RESUMEN_PLATA, RESUMEN_NO_PLATA } = require('../.compilado/reporte.js');
+  const { simboloDe } = require('../.compilado/formato.js');
+  const US = simboloDe('USD');
+  const r2 = (v) => Math.round(Number(v) * 100) / 100;
+  const vistaUsd = { moneda:'USD', factor:1/7500, propia:'PYG', cotizacion:7500, desde:'2026-09-01T12:00:00Z' };
+  const datosAurora = {
+    empresa:{ nombre:'Perfumería Aurora', moneda:'PYG' }, desde:'2026-08-10', hasta:'2026-08-12',
+    resumen: resumir(movimientos), ranking: rankingProductos(movimientos),
+    categorias: gastosPorCategoria(movimientos), ingresos: ingresosPorCategoria(movimientos),
+    ahorro: SIN_AHORRO, serie: serieDiaria(movimientos, diasDelRango('2026-08-10', '2026-08-12', 400)),
+    movimientos, productosBd,
+  };
+  const rutaUsd = path.join(__dirname, '..', '.compilado', 'en-dolares.xlsx');
+  await construirLibro(enLaMonedaDeLaVista(datosAurora, vistaUsd)).xlsx.writeFile(rutaUsd);
+  const leidoUsd = new ExcelJS.Workbook();
+  await leidoUsd.xlsx.readFile(rutaUsd);
+
+  const resUsd = leidoUsd.getWorksheet('Resumen');
+  ok('la ganancia neta sale en dólares', r2(buscar(resUsd, 'Ganancia neta')), 60);   // 450.000 / 7.500
+  ok('las ventas también', r2(buscar(resUsd, 'Ventas cobradas')), 160);              // 1.200.000 / 7.500
+  const prodUsd = leidoUsd.getWorksheet('Productos');
+  ok('las celdas tienen el formato del dólar', prodUsd.getCell('D7').numFmt.includes(US), true);
+  ok('y no el del guaraní', prodUsd.getCell('D7').numFmt.includes('Gs.'), false);
+  ok('el margen no se convierte: es un porcentaje', prodUsd.getCell('I7').value, prod.getCell('I7').value);
+  ok('las unidades tampoco', prodUsd.getCell('C7').value, 5);
+  ok('el detalle también va convertido', r2(leidoUsd.getWorksheet('Movimientos').getCell('H8').value), -16);
+  const arriba = String(resUsd.getCell('A3').value);
+  ok('arriba dice en qué moneda', arriba.includes(`En ${US}`), true);
+  ok('y a qué cambio', arriba.includes('7.500'), true);
+
+  // El candado: un campo de plata nuevo en el resumen que nadie clasifique
+  // saldría en guaraníes con el símbolo del dólar.
+  ok('cada campo del resumen está clasificado como plata o no',
+    Object.keys(datosAurora.resumen).filter((k) => !RESUMEN_PLATA.includes(k) && !RESUMEN_NO_PLATA.includes(k)), []);
+  ok('un costo que no se ve sigue sin verse, no pasa a cero',
+    enLaMonedaDeLaVista({ ...datosAurora, ranking: [{ ...datosAurora.ranking[0], costo: null, ganancia: null }] }, vistaUsd)
+      .ranking[0].costo, null);
+  ok('sin otra moneda, los datos no se tocan',
+    enLaMonedaDeLaVista(datosAurora, { moneda:'PYG', factor:1, propia:'PYG', cotizacion:null, desde:null }) === datosAurora,
+    true);
+  ok('el nombre del archivo dice la moneda',
+    nombreArchivo('Perfumería Aurora','2026-08-10','2026-08-12','USD'),
+    'Orden Perfumería Aurora 2026-08-10 a 2026-08-12 en USD.xlsx');
+
   console.log(fallos===0 ? '>>> EXCEL OK' : `>>> ${fallos} FALLAS`);
   process.exit(fallos?1:0);
 })();

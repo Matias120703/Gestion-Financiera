@@ -78,8 +78,9 @@ export default function Privacidad() {
           Solo con lo que hace falta para que la aplicación funcione, y solo lo necesario:
         </p>
         <Lista items={[
-          <><strong className="text-tinta">OpenAI.</strong> Cuando usás la carga por voz, foto o texto, ese
-            contenido se le manda para interpretarlo. No se usa para entrenar sus modelos.
+          <><strong className="text-tinta">OpenAI.</strong> Cuando usás la carga por voz, foto o texto
+            —también al dictar un turno, con el nombre y el teléfono del cliente—, ese contenido se le
+            manda para interpretarlo. No se usa para entrenar sus modelos.
             Si no usás esa función, no se le manda nada.</>,
           <><strong className="text-tinta">Resend.</strong> Tu correo, para poder enviarte los mensajes de la
             cuenta y el resumen semanal.</>,

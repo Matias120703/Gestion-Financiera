@@ -6,8 +6,9 @@ import {
   traerSerieDiaria, traerAhorroDelPeriodo,
   recorrerTodosLosMovimientos, contarMovimientos,
 } from '@/lib/agregados';
-import { construirLibro, nombreArchivo } from '@/lib/reporte';
-import type { Producto } from '@/lib/tipos';
+import { construirLibro, enLaMonedaDeLaVista, nombreArchivo } from '@/lib/reporte';
+import { vistaDeEmpresa } from '@/lib/sesion';
+import type { Empresa, Producto } from '@/lib/tipos';
 import { esErrorDeLectura } from '@/lib/lectura';
 
 export const runtime = 'nodejs';
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
   // RLS: si no es miembro de la empresa, esta consulta vuelve vacía.
   const { data: empresa } = await supabase
     .from('empresas')
-    .select('id, nombre, moneda, tipo_cuenta, rubro')
+    .select('id, nombre, moneda, tipo_cuenta, rubro, moneda_vista, cotizacion, cotizacion_at')
     .eq('id', empresaId)
     .maybeSingle();
   if (!empresa) return NextResponse.json({ error: 'No tenés acceso a esta empresa.' }, { status: 403 });
@@ -79,7 +80,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const libro = construirLibro({
+    // En la moneda que se está mirando, con el mismo cambio que las pantallas
+    // (051). Bajar el archivo no puede mostrar otros números que los que se
+    // estaban viendo.
+    const vista = vistaDeEmpresa(empresa as unknown as Empresa);
+    const libro = construirLibro(enLaMonedaDeLaVista({
       empresa: {
         nombre: empresa.nombre, moneda: empresa.moneda,
         tipo_cuenta: empresa.tipo_cuenta, rubro: empresa.rubro,
@@ -94,10 +99,11 @@ export async function GET(request: Request) {
       serie,
       movimientos,
       productosBd: productos as Producto[],
-    });
+    }, vista));
 
     const buffer = await libro.xlsx.writeBuffer();
-    const nombre = nombreArchivo(empresa.nombre, desde, hasta);
+    const nombre = nombreArchivo(empresa.nombre, desde, hasta,
+      vista.moneda !== vista.propia ? vista.moneda : undefined);
 
     return new NextResponse(buffer as any, {
       status: 200,

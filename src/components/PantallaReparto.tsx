@@ -192,6 +192,16 @@ export function PantallaReparto({
           p_empresa: empresaId,
           p_id: id,
         }))}
+        // Volver a sumar es guardarla como estaba: desde la 059, guardar a
+        // alguien lo deja en el equipo.
+        alVolver={(p) => correr('equipo', async () => sb().rpc('guardar_profesional', {
+          p_empresa: empresaId,
+          p_nombre: p.nombre,
+          p_reparto: p.reparto,
+          p_porcentaje: p.porcentaje,
+          p_user: p.user_id,
+          p_id: p.id,
+        }))}
       />
     </div>
   );
@@ -456,25 +466,34 @@ type DatosProfesional = {
 };
 
 function Equipo({
-  profesionales, equipo, ocupado, alGuardar, alQuitar,
+  profesionales, equipo, ocupado, alGuardar, alQuitar, alVolver,
 }: {
   profesionales: Profesional[];
   equipo: Equipo;
   ocupado: boolean;
   alGuardar: (d: DatosProfesional) => void;
   alQuitar: (id: string) => void;
+  /** Volver a sumar a alguien que se había quitado. */
+  alVolver: (p: Profesional) => void;
 }) {
   const t = useTextos();
   const [creando, setCreando] = useState(false);
   const [editando, setEditando] = useState<Profesional | null>(null);
+  const [verViejos, setVerViejos] = useState(false);
 
   const cerrar = () => { setCreando(false); setEditando(null); };
+
+  // Los que se quitaron no van mezclados con el equipo de hoy. Tachados en
+  // la misma lista, parecía que «Quitar» no había funcionado. Van aparte,
+  // plegados, con la opción de volver a sumarlos.
+  const activos = profesionales.filter((p) => p.activo);
+  const viejos = profesionales.filter((p) => !p.activo);
 
   return (
     <Seccion
       titulo={t.reparto.equipo}
       accion={
-        profesionales.length > 0 ? (
+        activos.length > 0 ? (
           <button
             type="button" className="boton-texto"
             onClick={() => { setEditando(null); setCreando(true); }} disabled={ocupado}
@@ -486,7 +505,7 @@ function Equipo({
     >
       <p className="px-4 pb-2 text-[12.5px] leading-relaxed text-tinta/50">{t.reparto.intro}</p>
 
-      {profesionales.length === 0 ? (
+      {activos.length === 0 ? (
         <div className="px-4 pb-4">
           <Vacio titulo={t.reparto.sinEquipo} detalle={t.reparto.sinEquipoDetalle} />
           {!creando && (
@@ -500,21 +519,19 @@ function Equipo({
         </div>
       ) : (
         <ul className="divide-y divide-borde border-t border-borde">
-          {profesionales.map((p) => (
+          {activos.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-[14px] font-semibold">{p.nombre}</span>
+                <EtiquetaReparto reparto={p.reparto} porcentaje={p.porcentaje} />
+              </span>
+              {/* Antes el nombre era el botón y nada decía que se podía tocar:
+                  quien quería cambiar cómo le paga no encontraba por dónde. */}
               <button
-                type="button" className="min-w-0 flex-1 text-left"
-                onClick={() => { setCreando(false); setEditando(p); }} disabled={ocupado}
+                type="button" onClick={() => { setCreando(false); setEditando(p); }} disabled={ocupado}
+                className="inline-flex shrink-0 items-center rounded-xl border border-borde bg-white px-3 py-1.5 text-[13px] font-semibold text-tinta/70 hover:bg-arena"
               >
-                <span className="flex items-center gap-2">
-                  <span className={`truncate text-[14px] font-semibold ${p.activo ? '' : 'text-tinta/40 line-through'}`}>
-                    {p.nombre}
-                  </span>
-                  <EtiquetaReparto reparto={p.reparto} porcentaje={p.porcentaje} />
-                </span>
-                {!p.user_id && (
-                  <span className="mt-0.5 block text-[12px] text-tinta/45">{t.reparto.sinCuenta}</span>
-                )}
+                {t.reparto.editar}
               </button>
             </li>
           ))}
@@ -523,16 +540,48 @@ function Equipo({
 
       {(creando || editando) && (
         <div className="border-t border-borde bg-arena/50 px-4 py-4">
+          {/* La key hace que el formulario arranque de cero al pasar de una
+              persona a otra: sin ella se quedaba con los datos de la primera. */}
           <FormularioProfesional
+            key={editando?.id ?? 'nuevo'}
             persona={editando}
             equipo={equipo}
             ocupado={ocupado}
             alCerrar={cerrar}
             alGuardar={(d) => { alGuardar(d); cerrar(); }}
-            alQuitar={editando ? () => {
-              if (confirm(t.reparto.confirmarQuitar(editando.nombre))) { alQuitar(editando.id); cerrar(); }
-            } : undefined}
+            alQuitar={editando ? () => { alQuitar(editando.id); cerrar(); } : undefined}
           />
+        </div>
+      )}
+
+      {viejos.length > 0 && (
+        <div className="border-t border-borde px-4 py-3">
+          <button
+            type="button" onClick={() => setVerViejos((v) => !v)}
+            className="text-[12.5px] font-semibold text-tinta/50 hover:text-tinta"
+          >
+            {verViejos ? '▾' : '▸'} {t.reparto.yaNoEstan(viejos.length)}
+          </button>
+          {verViejos && (
+            <ul className="mt-2 space-y-2">
+              {viejos.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13.5px] text-tinta/55">{p.nombre}</span>
+                    {!p.user_id && (
+                      <span className="block text-[12px] text-tinta/40">{t.reparto.sinCuentaParaVolver}</span>
+                    )}
+                  </span>
+                  <button
+                    type="button" onClick={() => alVolver(p)} disabled={ocupado}
+                    className="shrink-0 text-[12.5px] font-semibold text-verde-fuerte hover:underline"
+                  >
+                    {t.reparto.volverASumar}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </Seccion>
@@ -554,9 +603,18 @@ function FormularioProfesional({
   const [reparto, setReparto] = useState<Reparto>(persona?.reparto ?? 'comision');
   const [porcentaje, setPorcentaje] = useState(persona?.porcentaje ? String(persona.porcentaje) : '50');
   const [userId, setUserId] = useState(persona?.user_id ?? '');
+  const [confirmarQuitar, setConfirmarQuitar] = useState(false);
 
   const pct = Number(porcentaje.replace(',', '.'));
-  const valido = nombre.trim() !== '' && (reparto !== 'comision' || (pct > 0 && pct <= 100));
+  // Desde la 048 no hay equipo sin cuenta: la base lo rechaza. Acá no se deja
+  // guardar sin elegirla, en vez de dejar que falle después de tocar Guardar.
+  const valido = nombre.trim() !== '' && userId !== ''
+    && (reparto !== 'comision' || (pct > 0 && pct <= 100));
+  // Cambiar el arreglo no reescribe lo ya cobrado: cada cobro guardó su parte
+  // cuando se hizo (033). Se dice, porque es lo primero que se pregunta quien
+  // cambia una comisión a mitad de mes.
+  const cambioElPago = persona !== null && (reparto !== persona.reparto
+    || (reparto === 'comision' && pct !== Number(persona.porcentaje ?? 0)));
 
   const OPCIONES: { clave: Reparto; titulo: string; detalle: string }[] = [
     { clave: 'comision', titulo: t.reparto.repartoComision, detalle: t.reparto.repartoComisionDetalle },
@@ -567,6 +625,8 @@ function FormularioProfesional({
 
   return (
     <div className="space-y-3">
+      {persona && <p className="text-[15px] font-bold">{t.reparto.editarA(persona.nombre)}</p>}
+
       <div>
         <label className="etiqueta" htmlFor="prof-nombre">{t.reparto.nombrePersona}</label>
         <input
@@ -612,18 +672,28 @@ function FormularioProfesional({
         </div>
       )}
 
+      {cambioElPago && (
+        <p className="rounded-xl bg-white px-3 py-2 text-[12.5px] leading-snug text-tinta/60">
+          {t.reparto.cambioDesdeAhora}
+        </p>
+      )}
+
       <div>
         <label className="etiqueta" htmlFor="prof-cuenta">{t.reparto.cuentaDeOrden}</label>
+        {/* Sin la opción «sin cuenta»: desde la 048 la base no la acepta, y
+            ofrecerla era prometer algo que iba a fallar al guardar. */}
         <select
           id="prof-cuenta" className="campo" value={userId}
           onChange={(e) => setUserId(e.target.value)}
         >
-          <option value="">{t.reparto.sinCuenta}</option>
+          <option value="">{t.reparto.elegiCuenta}</option>
           {equipo.map((m) => (
             <option key={m.user_id} value={m.user_id}>{m.nombre}</option>
           ))}
         </select>
-        <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">{t.reparto.cuentaDetalle}</p>
+        <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">
+          {userId === '' ? t.reparto.necesitaCuenta : t.reparto.cuentaDetalle}
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -645,14 +715,33 @@ function FormularioProfesional({
         </button>
       </div>
 
+      {/* Quitar era un texto gris al pie, y no se encontraba. Ahora es un botón,
+          con una confirmación que dice qué pasa con lo que ya cobró. */}
       {alQuitar && (
-        <button
-          type="button"
-          className="w-full py-1.5 text-[12.5px] font-semibold text-tinta/40 hover:text-rojo"
-          onClick={alQuitar} disabled={ocupado}
-        >
-          {t.reparto.quitar}
-        </button>
+        confirmarQuitar ? (
+          <div className="space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
+            <p className="text-[13.5px] font-bold text-rojo">{t.reparto.confirmarQuitar(persona?.nombre ?? '')}</p>
+            <p className="text-[12.5px] leading-snug text-tinta/65">{t.reparto.quitarDetalle}</p>
+            <div className="flex gap-2">
+              <button type="button" className="boton-texto px-4" onClick={() => setConfirmarQuitar(false)} disabled={ocupado}>
+                {t.comun.cancelar}
+              </button>
+              <button
+                type="button" onClick={alQuitar} disabled={ocupado}
+                className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
+              >
+                {t.reparto.siQuitar}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button" onClick={() => setConfirmarQuitar(true)} disabled={ocupado}
+            className="w-full rounded-xl border border-rojo/30 py-2 text-[13px] font-semibold text-rojo/80 hover:bg-rojo-claro hover:text-rojo"
+          >
+            {t.reparto.quitar}
+          </button>
+        )
       )}
     </div>
   );
