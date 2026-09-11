@@ -618,9 +618,17 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('la agenda elige el cliente de la lista', age.includes('<SelectorCliente'), true);
   ok('y lo manda al reservar', age.includes('p_cliente: d.cliente'), true);
   ok('con textos de agenda y no de fiado', age.includes('placeholder="Nombre de quien viene"'), true);
-  // Y se puede dictar (turnos por voz, del cuaderno del dueño).
-  ok('la agenda deja dictar el turno', age.includes("fetch('/api/dictar-turno'"), true);
+  // Y se agenda hablando, en el micrófono de siempre: el dueño no quería uno
+  // aparte adentro de la agenda.
+  ok('la agenda levanta el turno dictado en la captura', age.includes('EVENTO_TURNO_DICTADO'), true);
   ok('y lo dictado completa el mismo formulario, no reserva solo', age.includes('aplicarDictado('), true);
+  ok('sin un micrófono aparte adentro de la agenda', age.includes('useGrabacion'), false);
+  ok('la captura manda los turnos a la agenda',
+    fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8').includes('sessionStorage.setItem(CLAVE_TURNO_DICTADO'), true);
+  ok('la voz agrega al catálogo',
+    fs.readFileSync('src/components/RevisionProducto.tsx', 'utf8').includes(".from('productos')"), true);
+  ok('y carga clientes',
+    fs.readFileSync('src/components/RevisionCliente.tsx', 'utf8').includes("rpc('guardar_cliente'"), true);
   const cap = fs.readFileSync('src/app/api/capturar/route.ts', 'utf8');
   ok('el micrófono de siempre no carga un turno como venta de mañana',
     cap.includes("limpio.tipo === 'venta' && fechaValida > hoy"), true);

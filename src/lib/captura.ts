@@ -45,7 +45,7 @@ export type DeudorConocido = { id: string; nombre: string; saldo: number };
 export const ESQUEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'items', 'deuda', 'confianza', 'aviso'],
+  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'items', 'deuda', 'turno', 'producto', 'ficha', 'confianza', 'aviso'],
   properties: {
     /**
      * `deuda` y `pago_deuda` se agregaron porque, sin ellos, decir «debo
@@ -61,7 +61,10 @@ export const ESQUEMA = {
      * era lo más parecido que el modelo tenía. Y «Lucas me pagó» caía en
      * ingreso, sumando otra vez a la ganancia una venta que ya había contado.
      */
-    tipo: { type: 'string', enum: ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado'] },
+    tipo: {
+      type: 'string',
+      enum: ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado', 'turno', 'producto', 'cliente'],
+    },
     fecha: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
     descripcion: { type: 'string' },
     categoria: { type: 'string' },
@@ -70,6 +73,48 @@ export const ESQUEMA = {
     contraparte: { type: ['string', 'null'] },
     /** Para `cobro_fiado` (y `fiado`, si ya debía): el id EXACTO de la lista TE DEBEN. */
     cliente_id: { type: ['string', 'null'] },
+    /**
+     * Lo que no es plata: un turno, algo del catálogo, un cliente nuevo. El
+     * dueño pidió que la voz sirva «para todo». Cada objeto se completa solo
+     * en su tipo; en los demás viaja con todo en null, porque el esquema
+     * estricto exige que la clave exista siempre.
+     */
+    turno: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['fecha', 'hora', 'servicio_id', 'profesional_id', 'telefono'],
+      properties: {
+        fecha: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
+        hora: { type: ['string', 'null'], description: 'HH:MM, 24 horas' },
+        servicio_id: { type: ['string', 'null'] },
+        profesional_id: { type: ['string', 'null'] },
+        telefono: { type: ['string', 'null'] },
+      },
+    },
+    producto: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['accion', 'producto_id', 'nombre', 'es_servicio', 'precio', 'costo', 'cantidad', 'categoria'],
+      properties: {
+        accion: { type: ['string', 'null'], enum: ['crear', 'precio', 'stock', null] },
+        producto_id: { type: ['string', 'null'] },
+        nombre: { type: ['string', 'null'] },
+        es_servicio: { type: ['boolean', 'null'] },
+        precio: { type: ['number', 'null'] },
+        costo: { type: ['number', 'null'] },
+        cantidad: { type: ['number', 'null'] },
+        categoria: { type: ['string', 'null'] },
+      },
+    },
+    ficha: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['telefono', 'notas'],
+      properties: {
+        telefono: { type: ['string', 'null'] },
+        notas: { type: ['string', 'null'] },
+      },
+    },
     confianza: { type: 'number' },
     aviso: { type: ['string', 'null'] },
     items: {
@@ -136,7 +181,55 @@ export function instrucciones(
   ingresos: CategoriaSugerida[] = [],
   /** Quién le debe plata a esta cuenta (054). Ver `DeudorConocido`. */
   deudores: DeudorConocido[] = [],
+  /**
+   * Lo que no es plata y existe en esta cuenta (turno, producto, cliente), y
+   * el bloque de turnos ya armado (turno-voz.ts). Viene de afuera porque
+   * depende de la agenda y del rubro de cada negocio.
+   */
+  extras: { tipos?: string[]; bloqueTurnos?: string } = {},
 ) {
+  const tipos = new Set(extras.tipos ?? []);
+  const conTurnos = tipos.has('turno') && !!extras.bloqueTurnos;
+
+  // Los tipos que no son plata, en la lista de tipos. Solo los que existen
+  // en esta cuenta: un tipo disponible es un tipo que el modelo va a usar.
+  const tiposAccion = [
+    conTurnos ? '   - "turno": anotar un turno a futuro para alguien (ver TURNOS). No es una venta: todavía no se cobró nada.' : '',
+    tipos.has('producto') ? '   - "producto": agregar algo al catálogo, o cambiarle el precio o el stock (ver PRODUCTOS). No entra ni sale plata.' : '',
+    tipos.has('cliente') ? '   - "cliente": anotar un cliente nuevo, sin plata de por medio (ver CLIENTES).' : '',
+  ].filter(Boolean).join('\n');
+
+  /**
+   * Lo que no es plata. El dueño pidió que la voz sirva «para todo», y cada
+   * cosa que se suma tiene que decirle al modelo también cuándo NO es ella:
+   * sin «si pagó la mercadería es un gasto», «entraron diez shampoos» y
+   * «compré diez shampoos» caerían en el mismo lugar.
+   */
+  const bloqueAcciones = [
+    conTurnos ? extras.bloqueTurnos : '',
+    tipos.has('producto') ? `PRODUCTOS — "producto" es agregar algo al catálogo, o cambiarle el precio o el stock. No entra ni sale plata: NO es una venta ni un gasto.
+   - "agregá el shampoo, me cuesta 20 mil y lo vendo a 35"      → producto, accion "crear"
+   - "agregá el servicio barba, 30 mil"                         → producto, accion "crear", es_servicio true
+   - "subile el precio al corte a 60 mil"                       → producto, accion "precio"
+   - "entraron 10 shampoos" / "me llegaron 10 shampoos"         → producto, accion "stock"
+   Si PAGÓ la mercadería ("compré 10 shampoos a 20 mil"), es un GASTO, no un producto.
+
+   En "producto":
+   - "producto.accion": "crear", "precio" o "stock".
+   - "producto.producto_id": para "precio" y "stock", el id EXACTO del CATÁLOGO de arriba. Para "crear", null.
+   - "producto.nombre": como lo dicen.
+   - "producto.es_servicio": true si es algo que se hace (un corte, una barba, una sesión); false si es algo que se compra y se revende.
+   - "producto.precio": a cuánto se vende. "producto.costo": cuánto le cuesta, solo en productos. Si no lo dicen, null.
+   - "producto.cantidad": al crear, cuántos tiene; en "stock", cuántos entraron. Si no lo dicen, null.
+   - "producto.categoria": solo si la dice. Si no, null.
+   - "descripcion": qué se hizo, corto ("Nuevo: Shampoo").` : '',
+    tipos.has('cliente') ? `CLIENTES — "cliente" es anotar un cliente nuevo, sin plata de por medio: "agregá a Marta como clienta, su número es 0981 234 567".
+   - "contraparte": el nombre.
+   - "ficha.telefono": el número si lo dicen, con dígitos. Si no, null. Nunca lo inventes.
+   - "ficha.notas": algo que quieran recordar de esa persona ("prefiere los martes"). Si no, null.` : '',
+    tiposAccion ? 'En "turno", "producto" y "cliente": "monto" va en 0, "items" vacío y todo el objeto "deuda" en null. '
+      + 'Y en cualquier tipo, los objetos "turno", "producto" y "ficha" que no son del tipo elegido van con todo en null.' : '',
+  ].filter(Boolean).join('\n\n');
   const listaDeudores = deudores.length
     ? deudores.slice(0, 60).map((d) => `- ${d.nombre} | id=${d.id} | debe=${d.saldo}`).join('\n')
     : '(nadie te debe nada)';
@@ -324,7 +417,7 @@ ${reglaFiado}
    - Nunca devuelvas separadores de miles ni símbolos: solo el número.
    ${moneda !== 'PYG' ? `- OJO: la moneda es ${moneda}, los montos chicos SÍ pueden ser literales.` : ''}
 
-5. "items" SIEMPRE va vacío: []. Acá no hay productos.
+5. "items" SIEMPRE va vacío: []. Acá no hay productos. Y "turno", "producto" y "ficha" van siempre con todo en null: en una cuenta personal no hay agenda, ni catálogo, ni clientes.
 
 6. FECHA
    - Sin referencia temporal → hoy (${hoy}).
@@ -355,7 +448,7 @@ ${reglaFiado}
    - Nunca inventes datos que no estén en el mensaje.`;
   }
 
-  return `Sos el asistente contable de un negocio pequeño en Paraguay. Convertís lenguaje cotidiano en un movimiento financiero estructurado.
+  return `Sos el asistente de un negocio pequeño en Paraguay. Convertís lo que te dicen, en lenguaje cotidiano, en algo que el sistema pueda guardar: casi siempre un movimiento de plata${tiposAccion ? ', y a veces un turno, algo del catálogo o un cliente' : ''}.
 
 FECHA DE HOY: ${hoy}
 MONEDA DEL NEGOCIO: ${moneda}
@@ -379,7 +472,8 @@ REGLAS:
    - "pago_deuda": está pagando una cuota o parte de una deuda que YA está cargada.
    - "fiado": ALGUIEN LE DEBE plata al negocio y no hubo venta de productos ahora: "Lucas me debe 300 mil", "le presté 200 mil a David". No entró nada.
    - "cobro_fiado": alguien que le debía al negocio le pagó, todo o parte. Si es alguien de la lista TE DEBEN, es esto y NO un ingreso, aunque diga «me pagó».
-   Si dice "compré" mercadería para revender, es un GASTO, no una venta.
+${tiposAccion ? `${tiposAccion}\n` : ''}   Si dice "compré" mercadería para revender, es un GASTO, no una venta.
+${bloqueAcciones ? `\n${bloqueAcciones}\n` : ''}
 
 1 bis. DEUDA vs INGRESO — LA CONFUSIÓN MÁS CARA
    Esto se equivocaba antes y le sumaba millones falsos a la ganancia.

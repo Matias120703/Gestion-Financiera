@@ -1,15 +1,18 @@
 /**
- * DICTAR UN TURNO
+ * LOS TURNOS DICTADOS
  *
- * Del cuaderno del dueño: «Poder agendar un turno hablando». Se dice «Juan,
- * mañana a las tres, corte con Pedro» y el formulario de «Anotar un turno»
- * se completa solo. Quien reserva sigue siendo el formulario, con los
- * horarios libres de la base: lo dictado pasa por las mismas reglas que lo
- * cargado a mano, y un turno mal entendido se corrige antes de existir.
+ * Del cuaderno del dueño: «Poder agendar un turno hablando». Y después, más
+ * claro todavía: que sea en el micrófono de siempre, el mismo de las ventas
+ * y los gastos, no en uno aparte adentro de la agenda.
  *
- * Vive acá y no en la ruta por lo mismo que captura.ts: la ruta importa
- * next/server y no se puede probar suelta, y el prompt y el saneo son
- * exactamente lo que hay que poder probar.
+ * Se dice «Juan, mañana a las tres, corte con Pedro» y se abre la agenda con
+ * el formulario de «Anotar un turno» completo. Quien reserva sigue siendo ese
+ * formulario, con los horarios libres de la base: lo dictado pasa por las
+ * mismas reglas que lo cargado a mano, y un turno mal entendido se corrige
+ * antes de existir.
+ *
+ * Acá vive lo que se puede probar sin servidor: el calendario y las reglas
+ * que se le dan al modelo, y el saneo de lo que devuelve.
  *
  * Este archivo NO importa nada del servidor a propósito.
  */
@@ -32,32 +35,21 @@ export interface TurnoDictado {
   aviso: string | null;
 }
 
-/** Lo que la ruta le devuelve a la pantalla. */
+/** Lo que llega a la agenda. */
 export interface TurnoRespuesta extends TurnoDictado {
   /** El cliente ya cargado, solo si se lo reconoció sin ninguna duda. */
   cliente: { id: string; nombre: string; telefono: string } | null;
   transcripcion: string | null;
 }
 
-/** Esquema estricto: obliga al modelo a devolver exactamente esta forma. */
-export const ESQUEMA_TURNO = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'cliente_nombre', 'cliente_telefono', 'fecha', 'hora',
-    'servicio_id', 'profesional_id', 'confianza', 'aviso',
-  ],
-  properties: {
-    cliente_nombre: { type: ['string', 'null'] },
-    cliente_telefono: { type: ['string', 'null'] },
-    fecha: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
-    hora: { type: ['string', 'null'], description: 'HH:MM, 24 horas' },
-    servicio_id: { type: ['string', 'null'] },
-    profesional_id: { type: ['string', 'null'] },
-    confianza: { type: 'number' },
-    aviso: { type: ['string', 'null'] },
-  },
-} as const;
+/**
+ * Cómo viaja lo dictado desde el micrófono hasta la agenda: por
+ * sessionStorage, más un aviso por si la agenda ya estaba abierta. No por la
+ * URL, porque lleva el nombre y el teléfono de un cliente, y una URL queda en
+ * el historial y en los registros del servidor.
+ */
+export const CLAVE_TURNO_DICTADO = 'orden:turno-dictado';
+export const EVENTO_TURNO_DICTADO = 'orden:turno-dictado';
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
@@ -89,7 +81,12 @@ export function calendario(hoy: string, dias = 15): string {
   }).join('\n');
 }
 
-export function instruccionesTurno(d: {
+/**
+ * Lo que el modelo necesita para entender un turno, dentro de las
+ * instrucciones de la captura: los próximos días ya calculados, qué se
+ * reserva, quién atiende y cómo se leen las horas.
+ */
+export function bloqueTurnos(d: {
   hoy: string;
   servicios: ServicioDictable[];
   profesionales: ProfesionalDictable[];
@@ -101,49 +98,34 @@ export function instruccionesTurno(d: {
     ? d.profesionales.slice(0, 40).map((p) => `- ${p.nombre} | id=${p.id}`).join('\n')
     : '(no hay nadie en el equipo)';
 
-  return `Sos quien anota los turnos de un negocio de servicios en Paraguay: una peluquería, una barbería, un consultorio. Te dictan un turno —por teléfono, de memoria, apurado— y lo convertís en datos.
+  return `TURNOS — "turno" es anotar un turno a futuro para alguien. NO es una venta: todavía no se cobró nada.
+   - "Juan, mañana a las tres, corte con Pedro"                 → turno
+   - "anotame a Marta el jueves a las 10 para color"            → turno
+   Si ya lo atendió y cobró ("le hice un corte a Juan, 50 mil"), es una VENTA, no un turno.
 
-LOS PRÓXIMOS DÍAS (elegí la fecha SOLO de esta lista, nunca la calcules):
+   LOS PRÓXIMOS DÍAS (elegí la fecha SOLO de esta lista, nunca la calcules):
 ${calendario(d.hoy)}
 
-SERVICIOS QUE SE RESERVAN:
+   SERVICIOS QUE SE RESERVAN:
 ${servicios}
 
-EQUIPO:
+   EQUIPO:
 ${equipo}
 
-REGLAS:
-
-1. CLIENTE
-   - "cliente_nombre": el nombre de quien viene, tal como lo dicen ("Juan", "Marta Benítez"). Sin "para", "turno" ni "el señor". Si no lo dicen, null.
-   - "cliente_telefono": SOLO si dictan un número. Con dígitos y sin espacios: "cero nueve ocho uno, doscientos treinta y cuatro…" → "0981234…". Si no lo dicen, null. Nunca lo inventes.
-
-2. FECHA — elegila de la lista de arriba.
-   - "hoy", "mañana", "pasado mañana" → la que está marcada así.
-   - "el jueves", "este jueves", "el jueves que viene" → el PRIMER jueves de la lista que no sea hoy.
-   - "el 15", "el 15 de octubre" → esa fecha, si está en la lista. Si no está, null, y decilo en "aviso".
-   - Si no dicen el día, null: la pantalla usa el día que se está mirando.
-
-3. HORA — "HH:MM", 24 horas.
-   - De 1 a 7 sin aclarar es de la TARDE: "a las tres" → "15:00", "a las 7" → "19:00".
-   - De 8 a 11 sin aclarar es de la MAÑANA: "a las nueve" → "09:00".
-   - "a las doce", "al mediodía" → "12:00".
-   - "y media" suma 30, "y cuarto" suma 15, "menos cuarto" resta 15: "tres y media" → "15:30", "cinco menos cuarto" → "16:45".
-   - "de la mañana", "de la tarde", "de la noche" mandan sobre todo lo anterior: "a las siete de la mañana" → "07:00".
-   - Si no dicen la hora, null.
-
-4. SERVICIO — el id EXACTO de la lista, aunque lo digan distinto ("corte" puede ser "Corte de pelo"; "la barba", "Barba"). Si no lo dicen, null. Si dicen uno que no está en la lista, null, y decilo en "aviso".
-
-5. CON QUIÉN — el id EXACTO del equipo, solo si lo nombran ("con Pedro", "que lo atienda Pedro"). Si no lo nombran, null: no elijas a nadie por tu cuenta.
-
-6. CONFIANZA (0 a 1)
-   - 0.9+ si el nombre, el día, la hora y el servicio están claros.
-   - Más baja si tuviste que suponer algo.
-   - "aviso": una frase corta, en español rioplatense, con lo que no quedó claro. null si todo está claro.
-
-7. Si lo que dicen no es un turno (una venta, un gasto, cualquier otra cosa), todo va en null, confianza 0, y en "aviso": "Eso no parece un turno."
-
-Nunca inventes un dato que no esté en el mensaje.`;
+   En "turno":
+   - "contraparte": el nombre de quien viene, tal como lo dicen ("Juan", "Marta Benítez"). Sin "para", "turno" ni "el señor".
+   - "turno.telefono": SOLO si dictan un número, con dígitos y sin espacios. Si no, null. Nunca lo inventes.
+   - "turno.fecha": de la lista de arriba. "hoy", "mañana", "pasado mañana" → la marcada así. "el jueves", "este jueves", "el jueves que viene" → el PRIMER jueves de la lista que no sea hoy. Si no dicen el día, null.
+   - "turno.hora": "HH:MM", 24 horas.
+     · De 1 a 7 sin aclarar es de la TARDE: "a las tres" → "15:00", "a las 7" → "19:00".
+     · De 8 a 11 sin aclarar es de la MAÑANA: "a las nueve" → "09:00".
+     · "a las doce", "al mediodía" → "12:00".
+     · "y media" suma 30, "y cuarto" suma 15, "menos cuarto" resta 15: "tres y media" → "15:30".
+     · "de la mañana", "de la tarde", "de la noche" mandan sobre todo lo anterior.
+     · Si no dicen la hora, null.
+   - "turno.servicio_id": el id EXACTO de la lista de servicios, aunque lo digan distinto ("corte" puede ser "Corte de pelo"). Si no lo dicen o no está, null; si dijeron uno que no está, decilo en "aviso".
+   - "turno.profesional_id": el id EXACTO del equipo, solo si lo nombran ("con Pedro"). Si no, null: no elijas a nadie por tu cuenta.
+   - "monto" va en 0 e "items" vacío.`;
 }
 
 /**

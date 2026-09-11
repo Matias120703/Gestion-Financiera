@@ -131,6 +131,8 @@ export const es = {
     tipoFiado: 'Te deben (fiado)',
     tipoMeDeben: 'Alguien te debe',
     tipoCobroFiado: 'Te pagaron lo que te debían',
+    tipoProducto: 'Algo del catálogo',
+    tipoCliente: 'Cliente nuevo',
     campoDescripcion: 'Descripción',
     campoNombreDeuda: 'Nombre de la deuda',
     campoFecha: 'Fecha',
@@ -1073,13 +1075,7 @@ export const es = {
     nombreCliente: 'Nombre del cliente',
     telefonoCliente: 'Teléfono',
     confirmarTurno: 'Anotar el turno',
-    /** Dictar el turno en vez de tocar cinco campos (turnos por voz). */
-    dictar: 'Dictar',
-    dictarTurno: 'Dictar el turno',
-    escuchando: 'Escuchando',
-    dictarEjemplo: '«Juan, mañana a las tres, corte con Pedro»',
-    entendiendo: 'Entendiendo el turno…',
-    noSeEntendio: 'No se pudo entender el turno. Probá de nuevo o anotalo a mano.',
+    /** Un turno dictado en el micrófono de siempre, que llega al formulario. */
     dictadoSinLugar: (hora: string) => `A las ${hora} no hay lugar. Elegí otro horario de estos.`,
     dictadoElegiQuien: (hora: string) => `Elegí con quién y te marco las ${hora} si está libre.`,
     sinReservablesDetalle: 'Ninguno de tus servicios está marcado para reservarse todavía, así que no hay horarios que ofrecer. Se marca más abajo, en «Qué se puede reservar».',

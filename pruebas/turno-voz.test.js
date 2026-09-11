@@ -1,5 +1,5 @@
 /**
- * Dictar un turno (turnos por voz).
+ * Los turnos dictados (en el micrófono de siempre).
  *
  * Como las pruebas del prompt de la captura, no comprueban que la IA acierte
  * —eso solo se sabe hablándole de verdad— sino dos cosas que sí dependen de
@@ -11,8 +11,7 @@
  *   · que nada de lo que devuelve llegue a la pantalla sin sanear: un id
  *     inventado, una hora imposible o una fecha que ya pasó.
  */
-const { calendario, instruccionesTurno, sanearTurno, mismoNombre, ESQUEMA_TURNO } =
-  require('../.compilado/turno-voz.js');
+const { calendario, bloqueTurnos, sanearTurno, mismoNombre } = require('../.compilado/turno-voz.js');
 
 let fallos = 0;
 let corridas = 0;
@@ -54,14 +53,16 @@ grupo('1 · El calendario se calcula, no se le pide al modelo');
 }
 
 // ═══════════════════════════════════════════════════════════
-grupo('2 · El prompt lleva las listas, con sus ids');
+grupo('2 · Lo que se le dice al modelo sobre los turnos');
 {
-  const p = instruccionesTurno(CTX);
-  ok('lleva el calendario', p.includes('- jueves 2026-09-10 (hoy)'), true);
-  ok('cada servicio con su id y su duración', p.includes('- Corte | id=s-corte | dura 30 min'), true);
-  ok('cada uno del equipo con su id', p.includes('- Pedro | id=p-pedro'), true);
-  ok('«a las tres» es de la tarde', p.includes('De 1 a 7 sin aclarar es de la TARDE'), true);
-  ok('y no elige profesional por su cuenta', p.includes('no elijas a nadie por tu cuenta'), true);
+  const b = bloqueTurnos(CTX);
+  ok('lleva el calendario', b.includes('- jueves 2026-09-10 (hoy)'), true);
+  ok('cada servicio con su id y su duración', b.includes('- Corte | id=s-corte | dura 30 min'), true);
+  ok('cada uno del equipo con su id', b.includes('- Pedro | id=p-pedro'), true);
+  ok('«a las tres» es de la tarde', b.includes('De 1 a 7 sin aclarar es de la TARDE'), true);
+  ok('no elige profesional por su cuenta', b.includes('no elijas a nadie por tu cuenta'), true);
+  ok('un turno no es una venta', b.includes('NO es una venta: todavía no se cobró nada'), true);
+  ok('pero lo ya atendido y cobrado sí', b.includes('es una VENTA, no un turno'), true);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -108,14 +109,6 @@ grupo('4 · Reconocer a un cliente por el nombre');
   ok('con espacios de más también', mismoNombre('Juan  Pérez', ' juan perez'), true);
   ok('Juan no es Juana', mismoNombre('Juan', 'Juana'), false);
   ok('vacío no coincide con vacío', mismoNombre('', ''), false);
-}
-
-// ═══════════════════════════════════════════════════════════
-grupo('5 · El esquema es estricto');
-{
-  ok('pide todo lo que describe',
-    [...ESQUEMA_TURNO.required].sort(), Object.keys(ESQUEMA_TURNO.properties).sort());
-  ok('y no acepta nada más', ESQUEMA_TURNO.additionalProperties, false);
 }
 
 console.log(`\n${fallos === 0 ? '✓' : '✗'} ${corridas - fallos}/${corridas} pruebas`);

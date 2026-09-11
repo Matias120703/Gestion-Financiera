@@ -6,23 +6,28 @@ import { tieneSeccion } from '@/lib/rubros';
 import { transcribir } from '@/lib/transcribir';
 import type { CapturaInterpretada, Producto } from '@/lib/tipos';
 import { ESQUEMA, instrucciones } from '@/lib/captura';
+import { sanearFicha, sanearProducto } from '@/lib/acciones';
+import { contextoAcciones, turnoDictado } from '@/lib/acciones-servidor';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const MODELO_TEXTO = process.env.MODELO_IA || 'gpt-4o-mini';
-// El modelo que escucha, y su respaldo, están en lib/transcribir: los
-// comparte con el dictado de turnos.
+// El modelo que escucha, y su respaldo, están en lib/transcribir.
 const LIMITE_ARCHIVO = 9 * 1024 * 1024;
 
 function respuestaVacia(mensaje: string, estado = 400) {
   return NextResponse.json({ error: mensaje }, { status: estado });
 }
 
-/** Lo que se le dice al modelo antes de escuchar, para que no invente montos. */
+/**
+ * Lo que se le dice al modelo antes de escuchar: qué clase de cosas va a
+ * oír. Con esto «150 lucas» sale como un monto y «a las tres» como una hora.
+ */
 const PISTA_AUDIO =
-  'Nota de voz de alguien en Paraguay registrando ventas, gastos o cobros. '
-  + 'Puede decir montos como "150 mil", "dos millones", "150 lucas".';
+  'Nota de voz de alguien en Paraguay registrando ventas, gastos, cobros, turnos, '
+  + 'productos o clientes. Puede decir montos como "150 mil", "dos millones", '
+  + '"150 lucas", y horas como "mañana a las tres".';
 
 export async function POST(request: Request) {
   // ---------- 1. Sesión y permisos ----------
@@ -208,8 +213,16 @@ export async function POST(request: Request) {
     .filter((d: { id: string; saldo: number }) => d.id !== '' && d.saldo > 0);
 
   const hoy = hoyISO(empresa.zona_horaria);
+
+  // Lo que no es plata y existe en esta cuenta: turnos, catálogo, clientes.
+  // Solo lee la agenda si el rubro la tiene; si falla, sigue sin turnos.
+  const acciones = await contextoAcciones({
+    empresaId, rubro: empresa.rubro, tipoCuenta: empresa.tipo_cuenta, hoy, catalogo,
+  });
+
   const sistema = instrucciones(
-    hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores);
+    hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores,
+    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos });
 
   try {
     let textoUsuario = '';
@@ -295,10 +308,14 @@ export async function POST(request: Request) {
     const fechaValida = typeof datos.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(datos.fecha) ? datos.fecha : hoy;
 
     // `fiado` y `cobro_fiado` existen en las dos: una persona también le
-    // presta plata a un amigo («Me deben»).
-    const TIPOS = esPersonal
-      ? ['gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado']
-      : ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado'];
+    // presta plata a un amigo («Me deben»). Lo que no es plata —turno,
+    // producto, cliente— solo si existe en esta cuenta.
+    const TIPOS: string[] = [
+      ...(esPersonal
+        ? ['gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado']
+        : ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado']),
+      ...acciones.tipos,
+    ];
     // El saneo también lo aplica, no solo el prompt: una instrucción se puede
     // ignorar, esto no. Si igual devolviera 'venta' en una cuenta personal,
     // acá se convierte en el ingreso que en realidad era.
@@ -379,6 +396,44 @@ export async function POST(request: Request) {
         ? 'Esto tiene fecha futura. Si es un turno, anotalo en Agenda con «Dictar».'
         : 'Esto tiene fecha futura: una venta se carga el día que se cobra.';
       limpio.confianza = Math.min(limpio.confianza, 0.3);
+    }
+
+    // ---------- 6. Lo que no es plata ----------
+    // Un turno, algo del catálogo o un cliente nuevo: cada uno se limpia con
+    // su propia regla. Lo del monto no aplica: en esos va en 0 a propósito, y
+    // el aviso de «no pude sacar el monto» sobraría.
+    limpio.turno = null;
+    limpio.producto = null;
+    limpio.ficha = null;
+    if (tipo === 'turno' || tipo === 'producto' || tipo === 'cliente') {
+      limpio.items = [];
+      limpio.deuda = null;
+      limpio.cliente_id = null;
+      limpio.monto = 0;
+      if (tipo === 'turno') {
+        const turno = await turnoDictado({
+          datos,
+          ctx: acciones,
+          transcripcion,
+          buscarClientes: async (texto) => {
+            const { data } = await supabase.rpc('buscar_clientes', {
+              p_empresa: empresaId, p_texto: texto, p_limite: 8,
+            });
+            return (Array.isArray(data) ? data : []) as { id: string; nombre: string; telefono: string }[];
+          },
+        });
+        limpio.turno = turno;
+        limpio.aviso = turno.aviso;
+        limpio.confianza = turno.confianza || limpio.confianza;
+      } else if (tipo === 'producto') {
+        const r = sanearProducto(datos, catalogo);
+        limpio.producto = r.producto;
+        limpio.aviso = r.aviso;
+      } else {
+        const r = sanearFicha(datos);
+        limpio.ficha = r.ficha;
+        limpio.aviso = r.aviso;
+      }
     }
 
     return NextResponse.json(limpio);

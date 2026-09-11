@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
+import { OpcionesTipo } from '@/components/OpcionesTipo';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { mismoNombre } from '@/lib/turno-voz';
@@ -143,21 +144,15 @@ export function RevisionFiado({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        {/* Si la IA se equivocó de tipo, se cambia acá y vuelve a la
-            revisión de los movimientos. */}
+        {/* Si la IA se equivocó de tipo, se cambia acá y pasa a la revisión
+            que corresponde. */}
         <div className="col-span-2">
           <label className="etiqueta">{t.captura.campoTipo}</label>
           <select
             className="campo" value={borrador.tipo}
             onChange={(e) => onCambio({ ...borrador, tipo: e.target.value as TipoCaptura })}
           >
-            {!esPersonal && <option value="venta">{t.captura.tipoVenta}</option>}
-            <option value="gasto">{t.captura.tipoGasto}</option>
-            <option value="ingreso">{esPersonal ? t.captura.tipoIngreso : t.captura.tipoOtroIngreso}</option>
-            <option value="deuda">{t.captura.tipoDeuda}</option>
-            <option value="pago_deuda">{t.captura.tipoPagoDeuda}</option>
-            <option value="fiado">{esPersonal ? t.captura.tipoMeDeben : t.captura.tipoFiado}</option>
-            <option value="cobro_fiado">{t.captura.tipoCobroFiado}</option>
+            <OpcionesTipo tipoCuenta={tipoCuenta} />
           </select>
         </div>
 

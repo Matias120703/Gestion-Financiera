@@ -10,8 +10,7 @@ import { enlaceWhatsApp } from '@/lib/telefono';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import { SelectorCliente, type ClienteElegido } from '@/components/SelectorCliente';
-import { useGrabacion } from '@/lib/grabacion';
-import type { TurnoRespuesta } from '@/lib/turno-voz';
+import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO, type TurnoRespuesta } from '@/lib/turno-voz';
 import type {
   Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
   Excepcion,
@@ -534,33 +533,39 @@ function NuevoTurno({
   const [pedido, setPedido] = useState('');
   // Lo que se entendió, a la vista: si algo salió mal, se ve de dónde vino.
   const [dictado, setDictado] = useState<{ texto: string; aviso: string | null } | null>(null);
-  const [entendiendo, setEntendiendo] = useState(false);
-  const [errorVoz, setErrorVoz] = useState('');
-
-  const voz = useGrabacion(async (audio, nombre) => {
-    // Un toque sin hablar no gasta un pedido a la IA.
-    if (audio.size < 1200) { setErrorVoz(t.captura.audioCorto); return; }
-    const fd = new FormData();
-    fd.append('modo', 'audio');
-    fd.append('empresa_id', empresaId);
-    fd.append('archivo', audio, nombre);
-    setEntendiendo(true);
-    setErrorVoz('');
-    try {
-      const r = await fetch('/api/dictar-turno', { method: 'POST', body: fd });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.error ?? t.agenda.noSeEntendio);
-      aplicarDictado(d as TurnoRespuesta);
-    } catch (e: unknown) {
-      setErrorVoz(mensajeDeError(e, t.agenda.noSeEntendio));
-    } finally {
-      setEntendiendo(false);
-    }
-  });
-
   // Si se cambia de día en la agenda, el formulario acompaña: lo más probable
-  // es que quien lo abra ahí quiera anotar para ese día.
-  useEffect(() => { setFecha(dia); setElegido(''); }, [dia]);
+  // es que quien lo abra ahí quiera anotar para ese día. Si ya estaba en ese
+  // día —porque lo trajo un turno dictado—, no se toca: borraría la hora que
+  // se acaba de marcar.
+  useEffect(() => {
+    if (fecha !== dia) { setFecha(dia); setElegido(''); }
+  }, [dia]);
+
+  // Lo que se dictó en el micrófono de siempre (la captura) llega acá, y el
+  // formulario se abre con todo puesto. Al montar, por si la captura trajo a
+  // la persona hasta la agenda; y con el aviso, por si ya estaba en ella.
+  useEffect(() => {
+    function levantar() {
+      let crudo: string | null = null;
+      try {
+        crudo = sessionStorage.getItem(CLAVE_TURNO_DICTADO);
+        sessionStorage.removeItem(CLAVE_TURNO_DICTADO);
+      } catch {
+        return;
+      }
+      if (!crudo) return;
+      try {
+        const d = JSON.parse(crudo) as TurnoRespuesta;
+        setAbierto(true);
+        aplicarDictado(d);
+      } catch {
+        // Algo ilegible en el almacenamiento: se ignora, y se anota a mano.
+      }
+    }
+    levantar();
+    window.addEventListener(EVENTO_TURNO_DICTADO, levantar);
+    return () => window.removeEventListener(EVENTO_TURNO_DICTADO, levantar);
+  }, []);
 
   /**
    * Lo dictado completa el formulario de siempre y nada más: no reserva. Lo
@@ -580,20 +585,11 @@ function NuevoTurno({
     setDictado({ texto: d.transcripcion ?? '', aviso: d.aviso });
   }
 
-  async function dictar() {
-    setAbierto(true);
-    setErrorVoz('');
-    setDictado(null);
-    if (!(await voz.empezar())) setErrorVoz(t.captura.sinMicrofonoDetalle);
-  }
-
   function cerrar() {
-    if (voz.grabando) voz.parar(true);
     setAbierto(false);
     setElegido('');
     setPedido('');
     setDictado(null);
-    setErrorVoz('');
   }
 
   // Sin nadie en el equipo no hay agenda posible, y la sección de horarios que
@@ -601,20 +597,15 @@ function NuevoTurno({
   // ningún lado.
   if (profesionales.length === 0) return null;
 
+  // Para dictar un turno no hay un botón acá: se usa el micrófono de siempre,
+  // el mismo de las ventas, y trae hasta este formulario lo que entendió.
   if (!abierto) {
     return (
-      <div className="flex gap-2 px-4 pb-3">
-        <button type="button" className="boton-suave flex-1 py-2 text-[13.5px]"
+      <div className="px-4 pb-3">
+        <button type="button" className="boton-suave w-full py-2 text-[13.5px]"
           onClick={() => setAbierto(true)}>
           {t.agenda.anotarTurno}
         </button>
-        {/* Dictar abre el formulario y ya empieza a escuchar: un toque, y a hablar. */}
-        {agendables.length > 0 && (
-          <button type="button" onClick={dictar} aria-label={t.agenda.dictarTurno}
-            className="boton-suave inline-flex items-center gap-1.5 px-3.5 py-2 text-[13.5px]">
-            <Microfono /> {t.agenda.dictar}
-          </button>
-        )}
       </div>
     );
   }
@@ -644,50 +635,12 @@ function NuevoTurno({
     setCliente({ id: null, nombre: '', telefono: '' });
   }
 
-  const reloj = `${String(Math.floor(voz.segundos / 60)).padStart(2, '0')}:${String(voz.segundos % 60).padStart(2, '0')}`;
-
   return (
     <div className="mx-4 mb-3 rounded-xl border border-borde bg-arena/40 p-3">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <p className="text-[12.5px] leading-relaxed text-tinta/55">{t.agenda.anotarDetalle}</p>
-        {!voz.grabando && !entendiendo && (
-          <button type="button" onClick={dictar} disabled={ocupado} aria-label={t.agenda.dictarTurno}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-verde/40 bg-white px-3 py-1.5 text-[13px] font-semibold text-verde-fuerte hover:bg-verde-claro">
-            <Microfono /> {t.agenda.dictar}
-          </button>
-        )}
-      </div>
+      <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/55">{t.agenda.anotarDetalle}</p>
 
-      {voz.grabando && (
-        <div className="mb-3 flex items-center gap-3 rounded-xl bg-white px-3 py-2.5 aparecer">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-rojo text-white grabando">
-            <Microfono />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-semibold tabular-nums">{t.agenda.escuchando} · {reloj}</p>
-            <p className="truncate text-[12px] text-tinta/50">{t.agenda.dictarEjemplo}</p>
-          </div>
-          <button type="button" className="boton-texto text-[13px]" onClick={() => voz.parar(true)}>
-            {t.comun.cancelar}
-          </button>
-          <button type="button" className="boton-principal px-3.5 py-2 text-[13px]" onClick={() => voz.parar()}>
-            {t.comun.listo}
-          </button>
-        </div>
-      )}
-
-      {entendiendo && (
-        <p className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-tinta/60">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-verde-claro border-t-verde" />
-          {t.agenda.entendiendo}
-        </p>
-      )}
-
-      {errorVoz && (
-        <p className="mb-3 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{errorVoz}</p>
-      )}
-
-      {dictado && !entendiendo && (
+      {/* Lo que llegó dictado, a la vista: si algo salió mal, se ve de dónde vino. */}
+      {dictado && (
         <div className="mb-3 space-y-1.5">
           {dictado.texto && (
             <p className="rounded-xl bg-white px-3 py-2 text-[12.5px] italic leading-relaxed text-tinta/60">
@@ -762,17 +715,6 @@ function NuevoTurno({
         </button>
       </div>
     </div>
-  );
-}
-
-/** El micrófono de «Dictar». El mismo dibujo que el botón de la captura. */
-function Microfono() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8}
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" />
-      <path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" />
-    </svg>
   );
 }
 

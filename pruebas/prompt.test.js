@@ -131,6 +131,34 @@ grupo('5 · Quién le debe a quién: lo que te deben no es una deuda tuya');
   ok('sin nadie debiendo, se dice', instrucciones(HOY, 'PYG', [], [], false).includes('(nadie te debe nada)'), true);
 }
 
+// ═══════════════════════════════════════════════════════════
+grupo('6 · La voz sirve para todo: turnos, catálogo y clientes');
+
+// El dueño lo pidió así: el micrófono de siempre, para todo lo del sistema.
+// Solo se ofrece lo que existe en la cuenta: un tipo disponible es un tipo
+// que el modelo va a usar.
+{
+  const conTodo = instrucciones(HOY, 'PYG', [], [], false, [], [], [], [],
+    { tipos: ['turno', 'producto', 'cliente'], bloqueTurnos: 'TURNOS — bloque de prueba' });
+  ok('ofrece el turno', conTodo.includes('- "turno":'), true);
+  ok('con su bloque', conTodo.includes('TURNOS — bloque de prueba'), true);
+  ok('ofrece el catálogo', conTodo.includes('- "producto":'), true);
+  ok('comprar mercadería sigue siendo gasto', conTodo.includes('es un GASTO, no un producto'), true);
+  ok('sumar stock dice cuánto entró', conTodo.includes('en "stock", cuántos entraron'), true);
+  ok('ofrece cargar clientes', conTodo.includes('- "cliente":'), true);
+  ok('lo que no es del tipo va en null', conTodo.includes('van con todo en null'), true);
+
+  const sinAgenda = instrucciones(HOY, 'PYG', [], [], false, [], [], [], [], { tipos: ['producto', 'cliente'] });
+  ok('sin agenda no hay turnos', sinAgenda.includes('- "turno":'), false);
+
+  const sinNada = instrucciones(HOY, 'PYG', [], [], false);
+  ok('sin decir qué hay, no se ofrece nada de esto', /- "(turno|producto|cliente)":/.test(sinNada), false);
+
+  const persona = instrucciones(HOY, 'PYG', [], [], true);
+  ok('una cuenta personal lleva esos objetos en null',
+    persona.includes('"turno", "producto" y "ficha" van siempre con todo en null'), true);
+}
+
 console.log('\n' + '═'.repeat(62));
 if (fallos > 0) {
   console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL PROMPT FALLARON`);

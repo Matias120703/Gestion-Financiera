@@ -6,6 +6,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { RevisionFiado } from '@/components/RevisionFiado';
+import { RevisionProducto } from '@/components/RevisionProducto';
+import { RevisionCliente } from '@/components/RevisionCliente';
+import { OpcionesTipo } from '@/components/OpcionesTipo';
+import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO } from '@/lib/turno-voz';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
@@ -143,6 +147,25 @@ export function BotonCaptura({
 
       if (!r.ok) throw new Error(datos?.error ?? 'No se pudo interpretar.');
       const interpretado = normalizar(datos as CapturaInterpretada);
+
+      // Un turno se revisa en la agenda, en el formulario de siempre: con los
+      // horarios libres a la vista, que es lo único que dice si se puede.
+      // Viaja por sessionStorage y no por la URL, porque lleva el nombre y el
+      // teléfono de un cliente. El aviso es por si la agenda ya estaba abierta.
+      if (interpretado.tipo === 'turno' && interpretado.turno) {
+        try {
+          sessionStorage.setItem(CLAVE_TURNO_DICTADO, JSON.stringify(interpretado.turno));
+        } catch {
+          // Sin almacenamiento (una ventana privada estricta) la agenda se
+          // abre igual, con el formulario para completar a mano.
+        }
+        cerrar();
+        const dia = interpretado.turno.fecha;
+        router.push(dia ? `/agenda?dia=${dia}` : '/agenda');
+        window.dispatchEvent(new Event(EVENTO_TURNO_DICTADO));
+        return;
+      }
+
       setBorrador(interpretado);
       // Si la persona dijo «fiado a Juan», la IA ya sabe que es Juan. Dejar
       // el campo vacío la obligaba a escribir de nuevo algo que acababa de
@@ -505,8 +528,13 @@ export function BotonCaptura({
               <>
                 <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />
                 <h2 className="text-[19px] font-bold tracking-tight">{t.captura.registrarRapido}</h2>
+                {/* Que el micrófono sirve para más que plata se dice acá: si no,
+                    nadie prueba decirle «agregá el shampoo». En una cuenta
+                    personal no hay catálogo ni clientes. */}
                 <p className="mt-1 text-[14px] leading-relaxed text-tinta/60">
-                  Contale al sistema lo que pasó. Él lo ordena y vos confirmás.
+                  {tipoCuenta === 'personal'
+                    ? 'Contale al sistema lo que pasó. Él lo ordena y vos confirmás.'
+                    : 'Contale lo que pasó o lo que querés anotar: una venta, un gasto, un turno, un cliente, algo nuevo del catálogo. Él lo ordena y vos confirmás.'}
                 </p>
 
                 {error && (
@@ -527,7 +555,10 @@ export function BotonCaptura({
 
                 <div className="mt-5 space-y-2.5">
                   <Opcion
-                    titulo={t.captura.porVoz} detalle="&laquo;Vendí dos perfumes a 150 mil cada uno&raquo;"
+                    titulo={t.captura.porVoz}
+                    detalle={tipoCuenta === 'personal'
+                      ? '&laquo;Pagué el súper, 250 mil&raquo;'
+                      : '&laquo;Vendí dos perfumes&raquo; · &laquo;Juan, mañana a las tres&raquo;'}
                     onClick={empezarGrabacion}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" /><path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" /></svg>}
                   />
@@ -599,6 +630,18 @@ export function BotonCaptura({
               borrador.tipo === 'fiado' || borrador.tipo === 'cobro_fiado' ? (
                 <RevisionFiado
                   borrador={borrador} moneda={moneda} empresaId={empresaId} tipoCuenta={tipoCuenta}
+                  onCambio={setBorrador} onCancelar={() => setModo('menu')}
+                  onListo={() => { cerrar(); router.refresh(); }}
+                />
+              ) : borrador.tipo === 'producto' ? (
+                <RevisionProducto
+                  borrador={borrador} moneda={moneda} empresaId={empresaId} tipoCuenta={tipoCuenta}
+                  onCambio={setBorrador} onCancelar={() => setModo('menu')}
+                  onListo={() => { cerrar(); router.refresh(); }}
+                />
+              ) : borrador.tipo === 'cliente' ? (
+                <RevisionCliente
+                  borrador={borrador} empresaId={empresaId} tipoCuenta={tipoCuenta}
                   onCambio={setBorrador} onCancelar={() => setModo('menu')}
                   onListo={() => { cerrar(); router.refresh(); }}
                 />
@@ -706,8 +749,10 @@ function Revision({
   const etiquetaTipo: Record<TipoCaptura, string> = {
     venta: 'Venta', gasto: 'Gasto', ingreso: 'Otro ingreso',
     deuda: 'Deuda', pago_deuda: 'Pago de deuda',
-    // Estos dos se revisan en RevisionFiado; acá están para que el tipo cierre.
+    // Estos se revisan en su propia pantalla (RevisionFiado, RevisionProducto,
+    // RevisionCliente) o en la agenda; acá están para que el tipo cierre.
     fiado: 'Te deben', cobro_fiado: 'Te pagaron',
+    turno: 'Turno', producto: 'Catálogo', cliente: 'Cliente',
   };
 
   // La deuda se pinta en ámbar y no en rojo: no es plata que se fue, es plata
@@ -756,15 +801,10 @@ function Revision({
         <div className={esDeuda ? 'col-span-2' : ''}>
           <label className="etiqueta">{t.captura.campoTipo}</label>
           <select className="campo" value={borrador.tipo} onChange={(e) => setTipo(e.target.value as TipoCaptura)}>
-            {!esCuentaPersonal && <option value="venta">{t.captura.tipoVenta}</option>}
-            <option value="gasto">{t.captura.tipoGasto}</option>
-            <option value="ingreso">{esCuentaPersonal ? t.captura.tipoIngreso : t.captura.tipoOtroIngreso}</option>
-            <option value="deuda">{t.captura.tipoDeuda}</option>
-            <option value="pago_deuda">{t.captura.tipoPagoDeuda}</option>
-            {/* Si la IA confundió «me debe» con «debo», se corrige acá y pasa
-                a la revisión del fiado. */}
-            <option value="fiado">{esCuentaPersonal ? t.captura.tipoMeDeben : t.captura.tipoFiado}</option>
-            <option value="cobro_fiado">{t.captura.tipoCobroFiado}</option>
+            {/* Si la IA se equivocó de tipo —«me debe» por «debo», un producto
+                nuevo por una venta—, se corrige acá y pasa a la revisión que
+                corresponde. */}
+            <OpcionesTipo tipoCuenta={tipoCuenta} />
           </select>
         </div>
 

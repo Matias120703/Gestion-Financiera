@@ -13,7 +13,34 @@ export type TipoMovimiento = 'venta' | 'gasto' | 'ingreso';
  * Ninguno de los dos es un movimiento: el primero todavía no entró, y el
  * segundo ya se contó cuando se vendió o se prestó.
  */
-export type TipoCaptura = TipoMovimiento | 'deuda' | 'pago_deuda' | 'fiado' | 'cobro_fiado';
+export type TipoCaptura = TipoMovimiento | 'deuda' | 'pago_deuda' | 'fiado' | 'cobro_fiado'
+  /**
+   * Lo que no es plata (el dueño pidió que la voz sirva «para todo»): anotar
+   * un turno, agregar o cambiar algo del catálogo, y cargar un cliente.
+   */
+  | 'turno' | 'producto' | 'cliente';
+
+/** Algo del catálogo dictado: uno nuevo, o el precio o el stock de uno que ya está. */
+export interface ProductoDictado {
+  accion: 'crear' | 'precio' | 'stock';
+  /** Para precio y stock: uno REAL del catálogo. */
+  producto_id: string | null;
+  nombre: string;
+  /** Un corte o una sesión: sin costo ni stock. */
+  es_servicio: boolean;
+  precio: number | null;
+  costo: number | null;
+  /** Al crear, el stock con que arranca. Al sumar stock, cuánto entra. */
+  cantidad: number | null;
+  categoria: string;
+}
+
+/** Un cliente nuevo dictado. */
+export interface FichaDictada {
+  nombre: string;
+  telefono: string;
+  notas: string;
+}
 export type ClaseDeuda = 'tarjeta' | 'prestamo' | 'proveedor' | 'otro';
 export type Origen = 'manual' | 'texto' | 'audio' | 'foto';
 export type Medida = 'ventas' | 'ganancia';
@@ -241,6 +268,12 @@ export interface CapturaInterpretada {
   contraparte?: string | null;
   /** Fiado y cobro de fiado: el cliente de la lista de quién debe, si se lo reconoció. */
   cliente_id?: string | null;
+  /** Turno: lo entendido, saneado, con el cliente si se lo reconoció. Se revisa en la agenda. */
+  turno?: import('./turno-voz').TurnoRespuesta | null;
+  /** Producto: uno nuevo, o el precio o el stock de uno que ya está. */
+  producto?: ProductoDictado | null;
+  /** Cliente: uno nuevo. */
+  ficha?: FichaDictada | null;
   items: ItemInterpretado[];
   /** Solo cuando tipo es 'deuda' o 'pago_deuda'. */
   deuda?: DeudaInterpretada | null;
