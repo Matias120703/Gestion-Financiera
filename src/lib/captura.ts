@@ -35,11 +35,17 @@ export type FijoConocido = {
   categoria?: string;
 };
 
+/**
+ * Alguien que le debe plata a esta cuenta, con lo que debe (054). Para
+ * reconocer «Lucas me pagó cien mil» y saber CUÁL Lucas.
+ */
+export type DeudorConocido = { id: string; nombre: string; saldo: number };
+
 /** Esquema estricto: obliga al modelo a devolver exactamente esta forma. */
 export const ESQUEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'items', 'deuda', 'confianza', 'aviso'],
+  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'items', 'deuda', 'confianza', 'aviso'],
   properties: {
     /**
      * `deuda` y `pago_deuda` se agregaron porque, sin ellos, decir «debo
@@ -49,14 +55,21 @@ export const ESQUEMA = {
      *
      * Un tipo que falta no hace que el modelo diga «no sé»: hace que elija
      * mal con total seguridad.
+     *
+     * Y volvió a pasar al revés con `fiado` y `cobro_fiado`. «Lucas me debe
+     * 300 mil» se guardó como una deuda del dueño con Lucas, porque «debe»
+     * era lo más parecido que el modelo tenía. Y «Lucas me pagó» caía en
+     * ingreso, sumando otra vez a la ganancia una venta que ya había contado.
      */
-    tipo: { type: 'string', enum: ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda'] },
+    tipo: { type: 'string', enum: ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado'] },
     fecha: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
     descripcion: { type: 'string' },
     categoria: { type: 'string' },
     monto: { type: 'number' },
     metodo_pago: { type: 'string', enum: ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'] },
     contraparte: { type: ['string', 'null'] },
+    /** Para `cobro_fiado` (y `fiado`, si ya debía): el id EXACTO de la lista TE DEBEN. */
+    cliente_id: { type: ['string', 'null'] },
     confianza: { type: 'number' },
     aviso: { type: ['string', 'null'] },
     items: {
@@ -121,7 +134,50 @@ export function instrucciones(
   fijos: FijoConocido[] = [],
   /** En qué casilleros puede caer lo que ENTRA. Ver `listaIngresos`. */
   ingresos: CategoriaSugerida[] = [],
+  /** Quién le debe plata a esta cuenta (054). Ver `DeudorConocido`. */
+  deudores: DeudorConocido[] = [],
 ) {
+  const listaDeudores = deudores.length
+    ? deudores.slice(0, 60).map((d) => `- ${d.nombre} | id=${d.id} | debe=${d.saldo}`).join('\n')
+    : '(nadie te debe nada)';
+
+  /**
+   * Quién le debe a quién. La otra mitad de la confusión entre deuda e
+   * ingreso, y la que faltaba: «Lucas me debe 300 mil» se guardaba como una
+   * deuda del dueño con Lucas, porque la regla decía que «queda debiendo»
+   * era deuda y no había un tipo para lo que te deben. Va igual en las dos
+   * cuentas: una persona también le presta plata a un amigo.
+   */
+  const reglaFiado = `
+   Y la otra mitad de la misma pregunta: ¿el que debe es quien te habla, o
+   es OTRO?
+
+   Debe quien te habla → "deuda":
+   - "le debo 300 mil a Lucas"                                  → deuda
+   - "Lucas me fió 300 mil"                                     → deuda
+
+   Debe OTRO → "fiado". No entró plata: se anota lo que le deben.
+   - "Lucas me debe 300 mil"                                    → fiado
+   - "Juan me quedó debiendo 50 mil"                            → fiado
+   - "le presté 200 mil a David" / "le fié 200 mil a David"     → fiado
+${esPersonal ? '' : `   Si además vendió productos ("le vendí tres yerbas fiado a Juan"), NO es
+   "fiado": es una VENTA con metodo_pago "credito".
+`}
+   OTRO pagó lo que debía → "cobro_fiado". NO es ingreso: esa plata ya se
+   contó cuando se vendió o se prestó, y sumarla otra vez la contaría dos
+   veces.
+   - "Lucas me pagó 100 mil de lo que me debía"                 → cobro_fiado
+   - "Juan me pagó el fiado"                                    → cobro_fiado
+
+   En "fiado" y "cobro_fiado":
+   - "contraparte": el nombre de quien debe o de quien pagó.
+   - "cliente_id": el id EXACTO de la lista TE DEBEN, si es alguien de ahí.
+     En "cobro_fiado" casi siempre lo es; si no está, null, y decilo en
+     "aviso". En cualquier otro tipo, "cliente_id" va en null.
+   - "monto": lo que debe (fiado) o lo que pagó (cobro_fiado).
+   - "descripcion": por qué debe, si lo dice ("Plata que le presté"). Si no, "Fiado".
+   - "categoria": "Fiado". "items" va vacío y todo el objeto "deuda" va en null.`;
+
   // El costo NO va en el prompt: la base lo asigna sola al registrar la venta.
   // Mandarlo sería filtrarlo sin necesidad.
   const lista = catalogo.length
@@ -189,15 +245,18 @@ MONEDA: ${moneda}
 
 DEUDAS YA CARGADAS:
 ${listaDeudas}
+
+TE DEBEN (gente que le debe plata, con lo que falta):
+${listaDeudores}
 ${bloqueFijos}
 ESTA ES UNA CUENTA PERSONAL, NO UN NEGOCIO.
 
 Quien te habla no vende nada: lleva sus propias finanzas. Anota su sueldo,
-lo que gasta y lo que debe.
+lo que gasta, lo que debe y lo que le deben.
 
 REGLAS:
 
-1. TIPO — solo existen CUATRO. "venta" NO existe acá, nunca la uses.
+1. TIPO — solo existen SEIS. "venta" NO existe acá, nunca la uses.
    - "ingreso": entró plata. El sueldo, un aguinaldo, un trabajo extra, algo
      que le devolvieron, plata que le prestaron y no tiene que devolver.
    - "gasto": salió plata. Comida, transporte, alquiler, farmacia, ropa,
@@ -205,6 +264,11 @@ REGLAS:
    - "deuda": DEBE plata. No entró ni salió nada ahora: se está anotando una
      obligación.
    - "pago_deuda": está pagando una cuota o parte de una deuda YA cargada.
+   - "fiado": ALGUIEN LE DEBE plata a esta persona: le prestó a un amigo, le
+     vendió algo que todavía no le pagaron. No entró nada ahora.
+   - "cobro_fiado": alguien que le debía le pagó o le devolvió, todo o
+     parte. Si es alguien de la lista TE DEBEN, es esto aunque diga «me
+     devolvió»: no es un ingreso.
 
    OJO con el sueldo: "cobré mi sueldo", "me pagaron", "entraron 3 millones"
    son INGRESO. Aunque suene a que le pagaron por algo, no es una venta:
@@ -228,6 +292,7 @@ REGLAS:
 
    Si la frase tiene "debo", "tengo una deuda", "saqué un préstamo" o "me
    fiaron", es DEUDA. Nunca ingreso.
+${reglaFiado}
 
 3. CAMPOS DE LA DEUDA
    Cuando el tipo es "deuda", completá el objeto "deuda":
@@ -300,6 +365,9 @@ ${lista}
 
 DEUDAS YA CARGADAS:
 ${listaDeudas}
+
+TE DEBEN (clientes con plata pendiente, con lo que falta):
+${listaDeudores}
 ${bloqueFijos}
 REGLAS:
 
@@ -309,6 +377,8 @@ REGLAS:
    - "ingreso": entró plata que NO es venta de producto (aporte de capital, devolución, algo que le pagaron).
    - "deuda": la persona DEBE plata. No entró ni salió nada ahora: se está anotando una obligación.
    - "pago_deuda": está pagando una cuota o parte de una deuda que YA está cargada.
+   - "fiado": ALGUIEN LE DEBE plata al negocio y no hubo venta de productos ahora: "Lucas me debe 300 mil", "le presté 200 mil a David". No entró nada.
+   - "cobro_fiado": alguien que le debía al negocio le pagó, todo o parte. Si es alguien de la lista TE DEBEN, es esto y NO un ingreso, aunque diga «me pagó».
    Si dice "compré" mercadería para revender, es un GASTO, no una venta.
 
 1 bis. DEUDA vs INGRESO — LA CONFUSIÓN MÁS CARA
@@ -342,8 +412,9 @@ REGLAS:
    - "me devolvieron doscientos mil"                             → ingreso
    - "puse un millón de mi bolsillo en la caja"                  → ingreso
 
-   Si la frase tiene "debo", "tengo una deuda", "saqué un préstamo", "me
-   fiaron" o "queda debiendo", es DEUDA. Nunca ingreso.
+   Si la frase tiene "debo", "tengo una deuda", "saqué un préstamo" o "me
+   fiaron", es DEUDA. Nunca ingreso.
+${reglaFiado}
 
 1 ter. CAMPOS DE LA DEUDA
    Cuando el tipo es "deuda", completá el objeto "deuda":

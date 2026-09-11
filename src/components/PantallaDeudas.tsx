@@ -244,7 +244,68 @@ function TarjetaDeuda({
         </button>
       </div>
 
+      {puedeEditar && <EliminarDeuda deuda={deuda} />}
+
       {verPagos && <ListaPagos deudaId={deuda.id} moneda={moneda} />}
+    </div>
+  );
+}
+
+/**
+ * ELIMINAR UNA DEUDA CARGADA POR ERROR
+ *
+ * La voz confundía «Lucas me debe» con «le debo a Lucas», y la deuda quedaba
+ * cargada sin forma de sacarla: pagarla habría creado un gasto que nunca
+ * existió. Se archiva (015): deja de aparecer y de sumar al total. Si ya
+ * tenía pagos, esos gastos siguen en los números, porque esa plata sí salió.
+ */
+function EliminarDeuda({ deuda }: { deuda: Deuda }) {
+  const t = useTextos();
+  const router = useRouter();
+  const [confirmar, setConfirmar] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
+  const [error, setError] = useState('');
+
+  async function eliminar() {
+    setEliminando(true);
+    setError('');
+    try {
+      const { error: err } = await clienteNavegador().rpc('archivar_deuda', { p_deuda: deuda.id });
+      if (err) throw err;
+      router.refresh();
+    } catch (e: unknown) {
+      setError(mensajeDeError(e, t.errores.generico));
+      setEliminando(false);
+    }
+  }
+
+  if (!confirmar) {
+    return (
+      <button
+        type="button" onClick={() => setConfirmar(true)}
+        className="mt-3 rounded-xl border border-rojo/30 px-3 py-1.5 text-[13px] font-semibold text-rojo/80 hover:bg-rojo-claro hover:text-rojo"
+      >
+        {t.deudas.eliminar}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
+      <p className="text-[13.5px] font-bold text-rojo">{t.deudas.confirmarEliminar(deuda.nombre)}</p>
+      <p className="text-[12.5px] leading-snug text-tinta/65">{t.deudas.eliminarDetalle}</p>
+      {error && <p className="text-[12.5px] font-medium text-rojo">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" className="boton-texto px-4" onClick={() => setConfirmar(false)} disabled={eliminando}>
+          {t.comun.cancelar}
+        </button>
+        <button
+          type="button" onClick={eliminar} disabled={eliminando}
+          className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
+        >
+          {t.deudas.siEliminar}
+        </button>
+      </div>
     </div>
   );
 }

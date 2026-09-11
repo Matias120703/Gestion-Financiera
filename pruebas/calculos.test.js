@@ -580,6 +580,14 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('Clientes muestra el historial de turnos', cli.includes("rpc('historial_cliente'"), true);
   ok('el menú tiene Fiado', nav.includes("href: '/fiado'"), true);
   ok('y Clientes', nav.includes("href: '/clientes'"), true);
+  // «Lucas me debe 300 mil» es fiado, no una deuda tuya: la voz no lo conocía.
+  const rf = fs.readFileSync('src/components/RevisionFiado.tsx', 'utf8');
+  ok('la voz anota lo que te deben en el libro de fiado', rf.includes("rpc('anotar_fiado'"), true);
+  ok('y el cobro baja lo que debe, sin sumar como ingreso', rf.includes("rpc('cobrar_fiado'"), true);
+  ok('la captura manda el fiado a su propia revisión',
+    fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8').includes('<RevisionFiado'), true);
+  ok('una deuda cargada por error se puede eliminar',
+    fs.readFileSync('src/components/PantallaDeudas.tsx', 'utf8').includes("rpc('archivar_deuda'"), true);
   // Servicios y productos, separados (estaba en el cuaderno del dueño).
   const pro = fs.readFileSync('src/components/PantallaProductos.tsx', 'utf8');
   ok('productos tiene pestañas de servicios y productos',

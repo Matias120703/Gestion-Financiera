@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
+import { RevisionFiado } from '@/components/RevisionFiado';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
@@ -592,14 +593,24 @@ export function BotonCaptura({
             )}
 
             {/* ---------------- REVISAR ---------------- */}
+            {/* Lo que te deben tiene su propia revisión: pregunta quién, que es
+                lo único que importa, y guarda en el libro de fiado. */}
             {modo === 'revisar' && borrador && (
-              <Revision
-                borrador={borrador} moneda={moneda} error={error} guardando={guardando} paso={paso}
-                tipoCuenta={tipoCuenta}
-                deudas={deudas} crearGasto={crearGasto} onCrearGasto={setCrearGasto}
-                onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
-                empresaId={empresaId} elegido={elegido} setElegido={setElegido}
-              />
+              borrador.tipo === 'fiado' || borrador.tipo === 'cobro_fiado' ? (
+                <RevisionFiado
+                  borrador={borrador} moneda={moneda} empresaId={empresaId} tipoCuenta={tipoCuenta}
+                  onCambio={setBorrador} onCancelar={() => setModo('menu')}
+                  onListo={() => { cerrar(); router.refresh(); }}
+                />
+              ) : (
+                <Revision
+                  borrador={borrador} moneda={moneda} error={error} guardando={guardando} paso={paso}
+                  tipoCuenta={tipoCuenta}
+                  deudas={deudas} crearGasto={crearGasto} onCrearGasto={setCrearGasto}
+                  onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
+                  empresaId={empresaId} elegido={elegido} setElegido={setElegido}
+                />
+              )
             )}
           </div>
         </div>
@@ -695,6 +706,8 @@ function Revision({
   const etiquetaTipo: Record<TipoCaptura, string> = {
     venta: 'Venta', gasto: 'Gasto', ingreso: 'Otro ingreso',
     deuda: 'Deuda', pago_deuda: 'Pago de deuda',
+    // Estos dos se revisan en RevisionFiado; acá están para que el tipo cierre.
+    fiado: 'Te deben', cobro_fiado: 'Te pagaron',
   };
 
   // La deuda se pinta en ámbar y no en rojo: no es plata que se fue, es plata
@@ -748,6 +761,10 @@ function Revision({
             <option value="ingreso">{esCuentaPersonal ? t.captura.tipoIngreso : t.captura.tipoOtroIngreso}</option>
             <option value="deuda">{t.captura.tipoDeuda}</option>
             <option value="pago_deuda">{t.captura.tipoPagoDeuda}</option>
+            {/* Si la IA confundió «me debe» con «debo», se corrige acá y pasa
+                a la revisión del fiado. */}
+            <option value="fiado">{esCuentaPersonal ? t.captura.tipoMeDeben : t.captura.tipoFiado}</option>
+            <option value="cobro_fiado">{t.captura.tipoCobroFiado}</option>
           </select>
         </div>
 

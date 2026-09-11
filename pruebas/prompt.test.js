@@ -106,6 +106,31 @@ const conCatalogo = instrucciones(
 ok('el precio va', conCatalogo.includes('precio=180000'), true);
 ok('el costo NO va', conCatalogo.includes('90000'), false);
 
+// ═══════════════════════════════════════════════════════════
+grupo('5 · Quién le debe a quién: lo que te deben no es una deuda tuya');
+
+// «Lucas me debe 300 mil» se guardó como una deuda del DUEÑO con Lucas: la
+// voz no conocía el fiado, y la regla decía que «queda debiendo» era deuda.
+// En un bloque: `negocio` y `persona` ya son nombres de otros grupos.
+{
+  const DEUDORES = [{ id: 'c-lucas', nombre: 'Lucas', saldo: 300000 }];
+  const negocio = instrucciones(HOY, 'PYG', [], [], false, [], [], [], DEUDORES);
+  const persona = instrucciones(HOY, 'PYG', [], [], true, [], [], [], DEUDORES);
+
+  ok('el negocio conoce el fiado', negocio.includes('"fiado"'), true);
+  ok('y el cobro de un fiado', negocio.includes('"cobro_fiado"'), true);
+  ok('«me debe» es fiado, con el ejemplo', /Lucas me debe 300 mil"\s+→ fiado/.test(negocio), true);
+  ok('«queda debiendo» ya no es una deuda del dueño',
+    /queda debiendo" o|"queda debiendo", es DEUDA/.test(negocio), false);
+  ok('cobrar un fiado no es un ingreso', negocio.includes('NO es ingreso'), true);
+  ok('una venta fiada sigue siendo venta a crédito', negocio.includes('es una VENTA con metodo_pago "credito"'), true);
+  ok('llega la lista de quién debe, con su id', negocio.includes('- Lucas | id=c-lucas | debe=300000'), true);
+  ok('una cuenta personal también conoce el fiado',
+    persona.includes('"fiado"') && persona.includes('"cobro_fiado"'), true);
+  ok('y recibe la misma lista', persona.includes('- Lucas | id=c-lucas | debe=300000'), true);
+  ok('sin nadie debiendo, se dice', instrucciones(HOY, 'PYG', [], [], false).includes('(nadie te debe nada)'), true);
+}
+
 console.log('\n' + '═'.repeat(62));
 if (fallos > 0) {
   console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL PROMPT FALLARON`);

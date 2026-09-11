@@ -8,7 +8,12 @@ export type TipoMovimiento = 'venta' | 'gasto' | 'ingreso';
  * alguien le puede dictar a la app. Tenerlos separados es lo que evita que
  * una deuda termine sumando en los ingresos del día.
  */
-export type TipoCaptura = TipoMovimiento | 'deuda' | 'pago_deuda';
+/**
+ * `fiado`: alguien te debe (054). `cobro_fiado`: te pagó parte o todo (056).
+ * Ninguno de los dos es un movimiento: el primero todavía no entró, y el
+ * segundo ya se contó cuando se vendió o se prestó.
+ */
+export type TipoCaptura = TipoMovimiento | 'deuda' | 'pago_deuda' | 'fiado' | 'cobro_fiado';
 export type ClaseDeuda = 'tarjeta' | 'prestamo' | 'proveedor' | 'otro';
 export type Origen = 'manual' | 'texto' | 'audio' | 'foto';
 export type Medida = 'ventas' | 'ganancia';
@@ -234,6 +239,8 @@ export interface CapturaInterpretada {
   monto: number;
   metodo_pago: string;
   contraparte?: string | null;
+  /** Fiado y cobro de fiado: el cliente de la lista de quién debe, si se lo reconoció. */
+  cliente_id?: string | null;
   items: ItemInterpretado[];
   /** Solo cuando tipo es 'deuda' o 'pago_deuda'. */
   deuda?: DeudaInterpretada | null;

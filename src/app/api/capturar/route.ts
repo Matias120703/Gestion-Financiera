@@ -86,7 +86,7 @@ export async function POST(request: Request) {
    * consulta salga en paralelo no cambia eso: lo que importa es que la
    * decisión se toma antes de gastar, y sigue siendo así.
    */
-  const [respCupo, respProductos, respDeudas, respCats, respFijos, respIngresos] = await Promise.all([
+  const [respCupo, respProductos, respDeudas, respCats, respFijos, respIngresos, respFiado] = await Promise.all([
     supabase.rpc('consumir_credito_ia', { p_empresa: empresaId }),
     esPersonal
       ? Promise.resolve({ data: [], error: null })
@@ -99,6 +99,9 @@ export async function POST(request: Request) {
     supabase.rpc('categorias_de_empresa', { p_empresa: empresaId, p_clase: 'gasto' }),
     supabase.rpc('fijos_para_captura', { p_empresa: empresaId }),
     supabase.rpc('categorias_de_empresa', { p_empresa: empresaId, p_clase: 'ingreso' }),
+    // Quién te debe y cuánto (054), para reconocer «Lucas me pagó» y saber
+    // cuál Lucas. Si falla, la captura sigue: el cobro se elige a mano.
+    supabase.rpc('resumen_fiado', { p_empresa: empresaId }),
   ]);
 
   const { data: cupo, error: errorCupo } = respCupo;
@@ -196,9 +199,17 @@ export async function POST(request: Request) {
   // El día que se le cuenta a la IA es el del negocio. Si le pasáramos el
   // de Asunción, «cargá esto de hoy» escribiría una fecha equivocada en
   // cualquier cuenta que no esté en Paraguay.
+  /**
+   * Quién te debe y cuánto (054). Mismo trato que las deudas: si no llega,
+   * no se corta nada; solo se pierde reconocer a quién se le cobra.
+   */
+  const deudores = (Array.isArray(respFiado.data?.clientes) ? respFiado.data.clientes : [])
+    .map((c: any) => ({ id: String(c.cliente_id), nombre: String(c.nombre ?? ''), saldo: Number(c.saldo ?? 0) }))
+    .filter((d: { id: string; saldo: number }) => d.id !== '' && d.saldo > 0);
+
   const hoy = hoyISO(empresa.zona_horaria);
   const sistema = instrucciones(
-    hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos);
+    hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores);
 
   try {
     let textoUsuario = '';
@@ -283,9 +294,11 @@ export async function POST(request: Request) {
 
     const fechaValida = typeof datos.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(datos.fecha) ? datos.fecha : hoy;
 
+    // `fiado` y `cobro_fiado` existen en las dos: una persona también le
+    // presta plata a un amigo («Me deben»).
     const TIPOS = esPersonal
-      ? ['gasto', 'ingreso', 'deuda', 'pago_deuda']
-      : ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda'];
+      ? ['gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado']
+      : ['venta', 'gasto', 'ingreso', 'deuda', 'pago_deuda', 'fiado', 'cobro_fiado'];
     // El saneo también lo aplica, no solo el prompt: una instrucción se puede
     // ignorar, esto no. Si igual devolviera 'venta' en una cuenta personal,
     // acá se convierte en el ingreso que en realidad era.
@@ -321,6 +334,13 @@ export async function POST(request: Request) {
       monto,
       metodo_pago: String(datos.metodo_pago ?? 'efectivo'),
       contraparte: datos.contraparte ? String(datos.contraparte).slice(0, 80) : null,
+      // Como el `deuda_id`: tiene que ser uno REAL de la lista de quién debe.
+      // Un id inventado intentaría cobrarle a alguien que no existe.
+      cliente_id: (tipo === 'fiado' || tipo === 'cobro_fiado')
+        && typeof (datos as any).cliente_id === 'string'
+        && deudores.some((x: { id: string }) => x.id === (datos as any).cliente_id)
+        ? (datos as any).cliente_id
+        : null,
       items: tipo === 'venta' ? items : [],
       deuda: infoDeuda,
       confianza: Math.min(1, Math.max(0, Number(datos.confianza) || 0.5)),
@@ -334,6 +354,14 @@ export async function POST(request: Request) {
       limpio.aviso = deudas.length === 0
         ? 'Todavía no tenés deudas cargadas. Cargá la deuda primero.'
         : 'No supe a cuál de tus deudas corresponde. Elegila vos.';
+      limpio.confianza = Math.min(limpio.confianza, 0.4);
+    }
+
+    // Lo mismo con un cobro: sin saber quién pagó, se elige a mano.
+    if (tipo === 'cobro_fiado' && !limpio.cliente_id) {
+      limpio.aviso = deudores.length === 0
+        ? 'Nadie te debe nada todavía, así que no hay a quién cobrarle.'
+        : 'No supe quién te pagó. Elegilo vos.';
       limpio.confianza = Math.min(limpio.confianza, 0.4);
     }
 
