@@ -537,18 +537,23 @@ export function BotonCaptura({
       {abierto && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-noche/70 px-4 pb-24 pt-6 backdrop-blur-sm sm:pb-6" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
           <div
-            className="max-h-full w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-borde bg-superficie p-5 shadow-tarjeta aparecer"
+            className={`max-h-full w-full max-w-md overflow-y-auto overscroll-contain aparecer ${
+              modo === 'menu'
+                ? 'p-1'
+                : 'rounded-3xl border border-borde bg-superficie p-5 shadow-tarjeta'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* ---------------- MENÚ ---------------- */}
             {modo === 'menu' && (
               <>
-                <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />
-                <h2 className="text-[19px] font-bold tracking-tight">{t.captura.registrarRapido}</h2>
+                <h2 className="px-1 text-[19px] font-bold tracking-tight text-white">
+                  {t.captura.registrarRapido}
+                </h2>
                 {/* Que el micrófono sirve para más que plata se dice acá: si no,
                     nadie prueba decirle «agregá el shampoo». En una cuenta
                     personal no hay catálogo ni clientes. */}
-                <p className="mt-1 text-[14px] leading-relaxed text-tinta/60">
+                <p className="mt-1 px-1 text-[14px] leading-relaxed text-white/60">
                   {tipoCuenta === 'personal'
                     ? 'Contale al sistema lo que pasó. Él lo ordena y vos confirmás.'
                     : 'Contale lo que pasó o lo que querés anotar: una venta, un gasto, un turno, un cliente, algo nuevo del catálogo. Él lo ordena y vos confirmás.'}
@@ -612,7 +617,7 @@ export function BotonCaptura({
                   />
                 </div>
 
-                <button onClick={cerrar} className="mt-4 w-full py-2 text-[13.5px] font-semibold text-tinta/45">{t.comun.cancelar}</button>
+                <button onClick={cerrar} className="mt-4 w-full py-2 text-[13.5px] font-semibold text-white/50">{t.comun.cancelar}</button>
               </>
             )}
 
@@ -704,7 +709,7 @@ function Opcion({ titulo, detalle, icono, onClick }: { titulo: string; detalle: 
   return (
     <button
       type="button" onClick={onClick}
-      className="flex w-full items-center gap-3.5 rounded-2xl border border-borde px-4 py-3.5 text-left transition hover:border-verde hover:bg-verde-claro/40 active:scale-[.99]"
+      className="flex w-full items-center gap-3.5 rounded-2xl border border-borde bg-superficie px-4 py-3.5 text-left shadow-tarjeta transition hover:border-verde hover:bg-verde-claro/40 active:scale-[.99]"
     >
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-verde-claro text-verde-fuerte">{icono}</span>
       <span className="min-w-0">

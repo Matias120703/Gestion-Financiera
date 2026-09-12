@@ -638,13 +638,14 @@ export default async function Portada({
             <div>
               <p className="titulo-seccion">Un extra</p>
               <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
-                Traé un negocio y llevate la mitad de su primer pago
+                Traé a alguien a Orden y llevate la mitad de su primer pago
               </h2>
               <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
-                Conocés gente que todavía anota sus ventas en un cuaderno. Si entra con tu
-                enlace y paga su primer mes,{' '}
-                <strong className="text-tinta">la mitad de ese pago es tuya</strong>. Se cobra
-                una sola vez por cada negocio, y no hay tope: podés traer uno o veinte.
+                Puede ser un negocio que todavía anota sus ventas en un cuaderno, o una persona
+                que no sabe en qué se le va el sueldo: las dos cuentas valen igual. Si entra con
+                tu enlace y paga su primer mes,{' '}
+                <strong className="text-tinta">la mitad de ese pago es tuya</strong> —sea el plan
+                que sea—. Una sola vez por cada cuenta, y sin tope: podés traer uno o veinte.
               </p>
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -663,11 +664,11 @@ export default async function Portada({
               <Paso
                 numero="1"
                 titulo="Compartís tu enlace"
-                texto="Cada cuenta tiene el suyo. Se manda por WhatsApp en un toque."
+                texto="Cada cuenta tiene el suyo. Sirve igual para un negocio o para una persona."
               />
               <Paso
                 numero="2"
-                titulo="Esa persona paga su primer mes"
+                titulo="Paga su primer mes"
                 texto="Mientras prueba gratis no pasa nada. Se cuenta cuando paga de verdad."
               />
               <Paso
@@ -679,9 +680,10 @@ export default async function Portada({
           </div>
 
           <p className="mt-8 max-w-3xl text-[13.5px] leading-relaxed text-tinta/50">
-            Lo que ese negocio pague de ahí en adelante ya no entra: la comisión es por el
-            primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes.
-            Tampoco vale traerte a vos mismo ni al negocio donde trabajás.
+            Lo que esa cuenta pague de ahí en adelante ya no entra: la comisión es por el primer
+            pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la
+            mitad de lo que esa persona paga, traer un negocio deja más que traer una cuenta
+            personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.
           </p>
         </div>
       </section>

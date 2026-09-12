@@ -990,8 +990,15 @@ ok('un rubro desconocido no rompe: cae en comercio',
     nav.includes('items-center justify-center px-4 pb-24'), true);
   ok('la captura también', cap.includes('items-center justify-center bg-noche/70'), true);
 
-  ok('abrir el menú no prende una segunda luz en la barra',
-    nav.includes('abierto || enOtraSeccion'), false);
+  // Una sola luz, y es donde estás AHORA: con el menú abierto estás en el
+  // menú, no en el panel de atrás.
+  ok('con el menú abierto se apaga la sección de atrás',
+    nav.includes('activo(ruta, i.href) && !abierto'), true);
+  ok('y se prende «Más», que es donde estás',
+    nav.includes('abierto || enOtraSeccion'), true);
+  ok('los cuadritos flotan: sin tarjeta detrás',
+    nav.includes('flex max-h-full w-full max-w-sm flex-col aparecer'), true);
+  ok('y la captura también', cap.includes("? 'p-1'"), true);
 }
 
 // --- La portada cuenta lo de recomendar, y deja elegir los colores ---
@@ -1007,7 +1014,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('y cuenta cómo se gana recomendando', portada.includes('id="recomendar"'), true);
   ok('con los tres pasos', portada.split('<Paso').length - 1, 3);
   ok('diciendo que se cobra una sola vez y no todos los meses',
-    portada.includes('una sola vez por cada negocio'), true);
+    portada.includes('Una sola vez por cada cuenta'), true);
+  ok('se aclara que también vale una persona, no solo un negocio',
+    portada.includes('las dos cuentas valen igual'), true);
   ok('los precios aclaran que está en todos los planes',
     portada.includes('Recomendar está en todos los planes'), true);
   ok('y la pantalla de planes de adentro también lleva ahí',

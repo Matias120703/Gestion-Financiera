@@ -391,10 +391,12 @@ export function NavInferior({
             desplaza adentro.
           */}
           <div
-            className="flex max-h-full w-full max-w-sm flex-col overflow-hidden rounded-3xl border border-borde bg-superficie pt-4 shadow-tarjeta aparecer"
+            className="flex max-h-full w-full max-w-sm flex-col aparecer"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="titulo-seccion shrink-0 px-5 pb-2">{t.nav.todasLasSecciones}</p>
+            <p className="shrink-0 px-1 pb-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">
+              {t.nav.todasLasSecciones}
+            </p>
 
             {/*
               El relleno de abajo tiene que dejar pasar la barra de navegación
@@ -403,7 +405,7 @@ export function NavInferior({
               cuadro queda tapado justo cuando alguien lo va a tocar.
             */}
             <div
-              className="grid min-h-0 grid-cols-3 gap-2 overflow-y-auto overscroll-contain px-3 pb-5"
+              className="grid min-h-0 grid-cols-3 gap-2.5 overflow-y-auto overscroll-contain p-1"
             >
               {todos.map((i) => {
                 const on = activo(ruta, i.href);
@@ -412,8 +414,8 @@ export function NavInferior({
                     key={i.href}
                     href={i.href}
                     onClick={() => setAbierto(false)}
-                    className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
-                      on ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
+                    className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight shadow-tarjeta transition active:scale-95 ${
+                      on ? 'bg-verde-claro text-verde-fuerte' : 'bg-superficie text-tinta/70'
                     }`}
                   >
                     {i.icono}
@@ -425,8 +427,8 @@ export function NavInferior({
               <Link
                 href="/plan"
                 onClick={() => setAbierto(false)}
-                className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
-                  activo(ruta, '/plan') ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
+                className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight shadow-tarjeta transition active:scale-95 ${
+                  activo(ruta, '/plan') ? 'bg-verde-claro text-verde-fuerte' : 'bg-superficie text-tinta/70'
                 }`}
               >
                 {Ico.plan}
@@ -439,8 +441,8 @@ export function NavInferior({
               <Link
                 href="/recomendar"
                 onClick={() => setAbierto(false)}
-                className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
-                  activo(ruta, '/recomendar') ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
+                className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight shadow-tarjeta transition active:scale-95 ${
+                  activo(ruta, '/recomendar') ? 'bg-verde-claro text-verde-fuerte' : 'bg-superficie text-tinta/70'
                 }`}
               >
                 {Ico.recomendar}
@@ -451,7 +453,7 @@ export function NavInferior({
                 <Link
                   href="/admin"
                   onClick={() => setAbierto(false)}
-                  className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                  className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight shadow-tarjeta transition active:scale-95 ${
                     activo(ruta, '/admin') ? 'bg-verde-claro text-verde-fuerte' : 'bg-noche text-white'
                   }`}
                 >
@@ -479,7 +481,11 @@ export function NavInferior({
           style={{ gridTemplateColumns: `repeat(${fijos.length + 1}, minmax(0, 1fr))` }}
         >
           {fijos.map((i) => {
-            const on = activo(ruta, i.href);
+            // Con el menú abierto, la sección de atrás se apaga: mientras
+            // estás eligiendo, estás en el menú y no en el panel. Dos luces
+            // al mismo tiempo no dicen dónde estás, que es lo único que esta
+            // barra tiene que decir.
+            const on = activo(ruta, i.href) && !abierto;
             return (
               <Link
                 key={i.href} href={i.href}
@@ -502,7 +508,7 @@ export function NavInferior({
             aria-expanded={abierto}
             aria-label={t.nav.todasLasSecciones}
             className={`flex flex-col items-center gap-1 px-1 py-2.5 text-center text-[10.5px] font-bold leading-tight transition ${
-              enOtraSeccion ? 'text-verde-fuerte' : 'text-tinta/40'
+              abierto || enOtraSeccion ? 'text-verde-fuerte' : 'text-tinta/40'
             }`}
           >
             {Ico.mas}
