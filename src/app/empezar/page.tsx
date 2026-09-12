@@ -9,6 +9,7 @@ import {
   DATOS_VACIOS, leerPendiente, limpiarPendiente, telefonoLimpio, telefonoValido,
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
+import { aplicarRef } from '@/lib/referido';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 
@@ -90,6 +91,10 @@ export default function PaginaEmpezar() {
         p_se_dedica: datos.seDedica.trim(),
       });
       if (fallo) throw fallo;
+      // Quien vino por el enlace de un socio y confirmó el correo llega acá,
+      // no a /crear. Si esto faltara, el camino con confirmación perdería la
+      // comisión de alguien sin que nadie se entere.
+      await aplicarRef(supabase, data as string);
       activar(data as string);
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo crear la empresa.');

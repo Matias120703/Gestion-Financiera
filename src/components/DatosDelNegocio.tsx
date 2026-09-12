@@ -3,6 +3,7 @@
 import { LISTA_RUBROS } from '@/lib/rubros';
 import { CANALES, type DatosRegistro } from '@/lib/registro';
 import { DIAS_DE_PRUEBA } from '@/lib/constantes';
+import { CampoCodigoRef } from '@/components/CampoCodigoRef';
 import { useTextos } from '@/i18n/cliente';
 import type { Rubro } from '@/lib/tipos';
 
@@ -147,6 +148,11 @@ export default function DatosDelNegocio({
           <option value="Otro">{t.captura.metodoOtro}</option>
         </select>
       </div>
+
+      <CampoCodigoRef
+        etiqueta="Código de quien te recomendó (opcional)"
+        ayuda="Si alguien que ya usa Orden te pasó su código, ponelo acá. No cambia nada de tu cuenta ni de lo que pagás."
+      />
     </div>
   );
 }

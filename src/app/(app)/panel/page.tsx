@@ -15,6 +15,8 @@ import { traerResumenPersonal } from '@/lib/personal';
 import { PanelPersonal } from '@/components/PanelPersonal';
 import { traerRacha } from '@/lib/habito';
 import { TarjetaRacha } from '@/components/Racha';
+import { AvisoComision, type Novedad } from '@/components/AvisoComision';
+import { clienteServidor } from '@/lib/supabase/servidor';
 import { fichaDe } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
@@ -27,6 +29,17 @@ export default async function PaginaPanel({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const ctx = await contextoObligatorio();
+
+  /**
+   * «Fulano pagó su primer mes, te tocan 95.000.»
+   *
+   * Se dispara acá y se espera abajo, así corre junto con todo lo demás y no
+   * le agrega un viaje a la pantalla. Si falla, el panel ni se entera: es una
+   * buena noticia, no un dato del que dependa una decisión.
+   */
+  const novedadComision = Promise.resolve(clienteServidor().rpc('novedad_comisiones'))
+    .then((r) => (r.data as Novedad | null) ?? { hay: false })
+    .catch((): Novedad => ({ hay: false }));
 
   /**
    * UNA CUENTA PERSONAL TIENE SU PROPIO PANEL.
@@ -61,13 +74,16 @@ export default async function PaginaPanel({
     ]);
 
     return (
-      <PanelPersonal
-        resumen={resumenPersonal}
-        deudas={deudasPersonal}
-        moneda={ctx.vista}
-        locale={FICHA[idiomaActual()].locale}
-        t={t}
-      />
+      <div className="space-y-4">
+        <AvisoComision novedad={await novedadComision} />
+        <PanelPersonal
+          resumen={resumenPersonal}
+          deudas={deudasPersonal}
+          moneda={ctx.vista}
+          locale={FICHA[idiomaActual()].locale}
+          t={t}
+        />
+      </div>
     );
   }
 
@@ -174,6 +190,8 @@ export default async function PaginaPanel({
 
   return (
     <div className="space-y-5">
+      <AvisoComision novedad={await novedadComision} />
+
       {/* La racha solo donde el hábito es diario. Ver el comentario de arriba. */}
       {!cicloLargo && <TarjetaRacha racha={racha} t={t} />}
 

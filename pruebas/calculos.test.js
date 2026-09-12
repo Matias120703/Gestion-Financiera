@@ -778,5 +778,111 @@ ok('un rubro desconocido no rompe: cae en comercio',
   }
 }
 
+// --- El panel de socios no calcula comisiones ---
+//
+// La comisión la crea la base cuando entra la plata (migración 060), y una
+// sola vez por negocio. Si la pantalla también la calculara, un día los dos
+// números no iban a coincidir y habría que adivinar cuál es el bueno.
+//
+// Lo que sí tiene que hacer la pantalla es dejar ajustar el monto al pagar:
+// medio año cobrado de una vez es mucha plata para partirla con una fórmula.
+{
+  const fs = require('fs');
+  const soc = fs.readFileSync('src/components/PanelSocios.tsx', 'utf8');
+
+  ok('el panel no multiplica por ningún porcentaje',
+    /porcentaje\s*\/\s*100|\*\s*0\.5|\/\s*2\b/.test(soc), false);
+  ok('marca pagada por la función de la base', soc.includes("rpc('marcar_comision_pagada'"), true);
+  ok('y deja ajustar el monto al pagar', soc.includes('p_monto:'), true);
+  ok('anular es otra acción, no un borrado', soc.includes("rpc('anular_comision'"), true);
+  ok('crea socios por la función', soc.includes("rpc('guardar_socio'"), true);
+
+  const pad = fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8');
+  ok('la ficha del cliente anota quién lo trajo', pad.includes("rpc('asignar_referido'"), true);
+  ok('y deja desanotarlo si fue un error', pad.includes("rpc('quitar_referido'"), true);
+  ok('pero no ofrece quitarlo cuando ya se pagó',
+    pad.includes("referido.comision !== 'pagada'"), true);
+
+  const adm = fs.readFileSync('src/lib/admin.ts', 'utf8');
+  ok('las tres lecturas del programa existen',
+    ['listar_socios', 'listar_comisiones', 'listar_referidos'].every((f) => adm.includes(f)), true);
+}
+
+// --- El código de quien te trajo no se pierde en el camino (061) ---
+//
+// El socio comparte un enlace y quien entra por ahí casi nunca se registra en
+// el acto: mira, se va, vuelve al otro día. El código tiene que sobrevivir a
+// eso, y sobre todo tiene que sobrevivir al camino con confirmación por
+// correo, que pasa por otra pantalla y es justo el que se olvida.
+{
+  const fs = require('fs');
+
+  ok('el código del enlace se guarda apenas se pisa el sitio',
+    fs.readFileSync('src/app/layout.tsx', 'utf8').includes('<CapturarRef />'), true);
+  ok('se usa al crear la cuenta sin confirmación',
+    fs.readFileSync('src/app/crear/page.tsx', 'utf8').includes('aplicarRef(supabase'), true);
+  ok('y también cuando vuelve por el correo',
+    fs.readFileSync('src/app/empezar/page.tsx', 'utf8').includes('aplicarRef(supabase'), true);
+
+  // Si esto falla, un registro se cae por un programa de comisiones.
+  const ref = fs.readFileSync('src/lib/referido.ts', 'utf8');
+  ok('aplicar el código nunca puede romper un registro', /catch\s*{/.test(ref), true);
+  ok('el enlace lo arma un solo lugar', ref.includes('export function enlaceDeSocio'), true);
+
+  // Adivinar códigos ajenos de a uno no puede ser un juego público: el premio
+  // por acertar es la comisión de otra persona.
+  const campo = fs.readFileSync('src/components/CampoCodigoRef.tsx', 'utf8');
+  ok('el campo del registro no consulta la base mientras escribe',
+    campo.includes('.rpc('), false);
+
+  const rec = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
+  ok('el código se pide, no se reparte solo', rec.includes("rpc('mi_codigo_socio')"), true);
+  ok('el socio dice dónde cobra', rec.includes("rpc('guardar_donde_cobro'"), true);
+  ok('la pantalla no calcula comisiones', /porcentaje\s*\/\s*100|\*\s*0\.5/.test(rec), false);
+  ok('y dice que se cobra una sola vez', rec.includes('una sola vez'), true);
+  ok('hay cómo llegar desde el menú',
+    fs.readFileSync('src/components/Navegacion.tsx', 'utf8').includes('href="/recomendar"'), true);
+}
+
+// --- Se pide en el momento, no en un menú (062) ---
+//
+// Lo que mata a un programa de referidos no es el abuso: es el silencio. Una
+// pantalla que hay que ir a buscar da cero. Estas comprobaciones fijan los dos
+// momentos y, sobre todo, que las reglas de CUÁNDO pedirlo no se copien en
+// cada pantalla: viven en la base, o el día que se agregue un tercer lugar
+// alguna se va a quedar afuera.
+{
+  const fs = require('fs');
+
+  const cie = fs.readFileSync('src/app/(app)/cierre/page.tsx', 'utf8');
+  ok('el cierre pregunta si es momento', cie.includes("rpc('momento_de_recomendar'"), true);
+  ok('y solo lo ofrece con el día de hoy cerrado en verde',
+    cie.includes('cierre.es_hoy && cierre.hubo_actividad && (quedo !== null ? quedo > 0 : entro > salio)'),
+    true);
+  ok('si esa lectura falla, el cierre no se cae', cie.includes('.catch(() => false)'), true);
+
+  const pla = fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8');
+  ok('y se vuelve a ofrecer al que acaba de pagar', pla.includes('<TarjetaRecomendar'), true);
+
+  const tar = fs.readFileSync('src/components/TarjetaRecomendar.tsx', 'utf8');
+  // No mira la base ni vuelve a preguntar: la pantalla ya decidió si la
+  // dibuja. Lo único que hace la tarjeta es ofrecer y anotar la respuesta.
+  ok('la tarjeta no decide cuándo aparecer',
+    tar.includes('.from(') || tar.includes("rpc('momento_de_recomendar'"), false);
+  ok('el «ahora no» se guarda por persona, no en el teléfono',
+    tar.includes("rpc('posponer_recomendacion')") && !tar.includes('localStorage'), true);
+  ok('aceptar es un solo toque: crea el código ahí mismo',
+    tar.includes("rpc('mi_codigo_socio')"), true);
+
+  const pan = fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8');
+  ok('el panel avisa cuando a alguien le tocó plata',
+    pan.includes("rpc('novedad_comisiones')") && pan.includes('<AvisoComision'), true);
+  ok('y ese aviso tampoco puede tirar abajo el panel',
+    pan.includes('.catch((): Novedad => ({ hay: false }))'), true);
+  ok('el aviso se marca visto para no repetirse',
+    fs.readFileSync('src/components/AvisoComision.tsx', 'utf8')
+      .includes("rpc('marcar_comisiones_vistas')"), true);
+}
+
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);

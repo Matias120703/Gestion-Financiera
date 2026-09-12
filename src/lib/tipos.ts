@@ -341,6 +341,108 @@ export interface CuentaAdmin {
 }
 
 /**
+ * Alguien que trae clientes a Orden y cobra por eso. Ver migración 060.
+ *
+ * No necesita tener cuenta en Orden: la mayoría no va a usar el sistema, solo
+ * conoce negocios a los que les sirve.
+ */
+export interface SocioAdmin {
+  id: string;
+  nombre: string;
+  telefono: string;
+  email: string;
+  /** Lo que comparte para que le atribuyan los clientes que trae. No cambia. */
+  codigo: string;
+  activo: boolean;
+  /** Banco, billetera o alias. Texto libre: es para leerlo al transferir. */
+  cobra_en: string;
+  notas: string;
+  tiene_cuenta: boolean;
+  creado: string;
+  /** Cuántos negocios trajo. */
+  traidos: number;
+  /** De esos, cuántos llegaron a pagar. */
+  pagaron: number;
+  por_pagar: number;
+  pagado: number;
+}
+
+export type EstadoComision = 'por_pagar' | 'pagada' | 'anulada';
+
+/** El 50% del primer pago de un cliente traído. Una por negocio, para siempre. */
+export interface ComisionAdmin {
+  id: string;
+  socio_id: string;
+  socio: string;
+  telefono: string;
+  cobra_en: string;
+  empresa_id: string;
+  negocio: string;
+  /** Lo que pagó el cliente. La comisión sale de acá, no del precio de lista. */
+  base: number;
+  porcentaje: number;
+  monto: number;
+  estado: EstadoComision;
+  creado: string;
+  pagada_at: string | null;
+  medio: string;
+  nota: string;
+  /** El cobro que la generó se anuló: no hay que transferir nada. */
+  ingreso_anulado: boolean;
+}
+
+/** Quién trajo a un negocio, para la ficha de ese cliente en el panel. */
+export interface ReferidoAdmin {
+  empresa_id: string;
+  negocio: string;
+  socio_id: string;
+  socio: string;
+  codigo: string;
+  origen: 'link' | 'a_mano';
+  nota: string;
+  desde: string;
+  /** El plan del negocio traído: dice si trajo un cliente o una cuenta gratis. */
+  plan: string;
+  paga: boolean;
+  /** null = todavía no pagó nunca, así que no hay comisión. */
+  comision: EstadoComision | null;
+  base: number | null;
+  monto: number | null;
+}
+
+/**
+ * Lo que ve el socio de sí mismo (migración 061).
+ *
+ * De cada negocio que trajo ve el nombre, si está pagando y su comisión. Nada
+ * de lo que ese negocio vende, gasta o debe: la comisión sale de un pago que
+ * él mismo generó, y eso es todo lo que le toca saber.
+ */
+export type PanelSocio =
+  | { tiene_codigo: false }
+  | {
+      tiene_codigo: true;
+      codigo: string;
+      nombre: string;
+      cobra_en: string;
+      activo: boolean;
+      traidos: number;
+      pagaron: number;
+      por_pagar: number;
+      pagado: number;
+      referidos: {
+        negocio: string;
+        desde: string;
+        paga: boolean;
+        plan: string;
+        /** 'sin_pagar' mientras el negocio no pagó nunca. */
+        estado: EstadoComision | 'sin_pagar';
+        monto: number;
+        cuando: string | null;
+        pagada_at: string | null;
+      }[];
+    };
+
+/**
  * Las finanzas de Orden mismo, para el panel.
  *
  * Salen de los mismos movimientos que ve cualquier cliente: no hay una

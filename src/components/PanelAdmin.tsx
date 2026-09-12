@@ -7,8 +7,10 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import type {
-  AccionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ResumenPanel, TipoCuenta,
+  AccionAdmin, ComisionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
+  ResumenPanel, SocioAdmin, TipoCuenta,
 } from '@/lib/tipos';
+import { PanelSocios } from './PanelSocios';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -50,15 +52,24 @@ const NOMBRE_PLAN: Record<string, string> = {
 };
 
 export function PanelAdmin({
-  cuentas, resumen, finanzas, misEmpresas, whatsapp,
+  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, whatsapp,
 }: {
   cuentas: CuentaAdmin[];
   resumen: ResumenPanel;
   finanzas: FinanzasOrden;
   misEmpresas: { id: string; nombre: string }[];
+  socios: SocioAdmin[];
+  comisiones: ComisionAdmin[];
+  referidos: ReferidoAdmin[];
   whatsapp: string | null;
 }) {
   const router = useRouter();
+  // Quién trajo a cada negocio, por empresa: la ficha lo necesita al abrirse y
+  // no vale una consulta por cada vez que alguien abre una.
+  const porEmpresa = useMemo(
+    () => new Map(referidos.map((r) => [r.empresa_id, r])),
+    [referidos],
+  );
   const [filtro, setFiltro] = useState<Filtro>('atencion');
   const [busqueda, setBusqueda] = useState('');
   const [abierta, setAbierta] = useState<CuentaAdmin | null>(null);
@@ -219,9 +230,18 @@ export function PanelAdmin({
         )}
       </section>
 
+      {/* ---------------- Socios y comisiones ---------------- */}
+      <PanelSocios
+        socios={socios}
+        comisiones={comisiones}
+        referidos={referidos}
+        moneda={finanzas.configurada ? finanzas.moneda : 'PYG'}
+      />
+
       {abierta && (
         <FichaCuenta
           cuenta={abierta}
+          referido={porEmpresa.get(abierta.empresa_id) ?? null}
           whatsapp={whatsapp}
           onCerrar={() => setAbierta(null)}
           onHecho={() => { setAbierta(null); router.refresh(); }}
@@ -371,12 +391,15 @@ function Metrica({ titulo, valor, detalle, tono }: {
 
 // ---------------------------------------------------------------- ficha
 
-function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
+function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
   cuenta: CuentaAdmin;
+  /** Quién trajo este negocio, si alguien lo trajo. Ver migración 060. */
+  referido: ReferidoAdmin | null;
   whatsapp: string | null;
   onCerrar: () => void;
   onHecho: () => void;
 }) {
+  const [codigoSocio, setCodigoSocio] = useState('');
   const [plan, setPlan] = useState<PlanEfectivo>(cuenta.plan === 'gratis' ? 'pro' : cuenta.plan);
   const [meses, setMeses] = useState(1);
   const [importe, setImporte] = useState('');
@@ -456,6 +479,13 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
 
   const deshacer = () => correr('deshaciendo', async () =>
     clienteNavegador().rpc('deshacer_ultimo_cambio', { p_empresa: cuenta.empresa_id }));
+
+  const anotarSocio = () => correr('anotando', async () => clienteNavegador().rpc('asignar_referido', {
+    p_empresa: cuenta.empresa_id, p_codigo: codigoSocio, p_nota: '',
+  }));
+
+  const desanotarSocio = () => correr('desanotando', async () =>
+    clienteNavegador().rpc('quitar_referido', { p_empresa: cuenta.empresa_id }));
 
   const borrar = () => correr('borrando', async () => clienteNavegador().rpc('borrar_cuenta', {
     p_empresa: cuenta.empresa_id,
@@ -613,6 +643,17 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
               Con el WhatsApp cargado, el botón de arriba le escribe directo a esta persona.
             </p>
           </div>
+
+          {/* ---- quién lo trajo ---- */}
+          <QuienLoTrajo
+            referido={referido}
+            codigo={codigoSocio}
+            onCodigo={setCodigoSocio}
+            anotar={anotarSocio}
+            desanotar={desanotarSocio}
+            trabajando={trabajando}
+            ocupado={ocupado}
+          />
 
           {/* ---- entró el pago ---- */}
           <div className="rounded-2xl border border-verde/30 bg-verde-claro/25 p-4">
@@ -796,6 +837,77 @@ function FichaCuenta({ cuenta, whatsapp, onCerrar, onHecho }: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Quién trajo este negocio.
+ *
+ * Se anota acá, con el código del socio, y se anota UNA VEZ: después la base
+ * no deja cambiarlo. Es a propósito —si dos personas dicen haber traído al
+ * mismo cliente, la respuesta no puede depender de quién reclame más fuerte—,
+ * así que este formulario desaparece en cuanto hay alguien anotado.
+ */
+function QuienLoTrajo({ referido, codigo, onCodigo, anotar, desanotar, trabajando, ocupado }: {
+  referido: ReferidoAdmin | null;
+  codigo: string;
+  onCodigo: (v: string) => void;
+  anotar: () => void;
+  desanotar: () => void;
+  trabajando: string;
+  ocupado: boolean;
+}) {
+  if (!referido) {
+    return (
+      <div className="rounded-2xl border border-borde p-4">
+        <p className="titulo-seccion mb-1">Quién lo trajo</p>
+        <p className="mb-3 text-[12.5px] leading-snug text-tinta/50">
+          Si alguien te trajo este cliente, poné su código. Cuando el cliente pague, la comisión se
+          genera sola y aparece en «Socios».
+        </p>
+        <div className="flex gap-2">
+          <input
+            className="campo uppercase tracking-widest" placeholder="ABCD1234" maxLength={8}
+            value={codigo} onChange={(e) => onCodigo(e.target.value.trim().toUpperCase())}
+          />
+          <button
+            className="boton-suave shrink-0 px-4" onClick={anotar}
+            disabled={ocupado || codigo.trim().length < 4}
+          >
+            {trabajando === 'anotando' ? 'Anotando…' : 'Anotar'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const estado = referido.comision === 'pagada' ? 'la comisión ya se le pagó'
+    : referido.comision === 'por_pagar' ? 'tiene una comisión por pagar'
+    : referido.comision === 'anulada' ? 'su comisión quedó anulada'
+    : 'todavía no pagó, así que no hay comisión';
+
+  return (
+    <div className="rounded-2xl border border-borde p-4">
+      <p className="titulo-seccion mb-1">Quién lo trajo</p>
+      <p className="text-[14.5px] font-bold">{referido.socio}</p>
+      <p className="mt-0.5 text-[12.5px] text-tinta/50">
+        código {referido.codigo} · desde {fechaCorta(referido.desde)} ·{' '}
+        {referido.origen === 'link' ? 'por su enlace' : 'anotado a mano'}
+      </p>
+      <p className="mt-1 text-[12.5px] text-tinta/50">{estado}</p>
+
+      {/* Solo se puede desanotar mientras no haya plata de por medio. La base
+          lo exige igual; el botón se esconde para no ofrecer algo que va a
+          fallar. */}
+      {referido.comision !== 'pagada' && (
+        <button
+          type="button" onClick={desanotar} disabled={ocupado}
+          className="mt-2.5 text-[12.5px] font-semibold text-rojo hover:underline"
+        >
+          {trabajando === 'desanotando' ? 'Quitando…' : 'Me equivoqué, quitarlo'}
+        </button>
+      )}
     </div>
   );
 }

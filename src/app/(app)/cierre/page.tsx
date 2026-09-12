@@ -9,6 +9,8 @@ import { FICHA } from '@/i18n/idiomas';
 import { permisosDe } from '@/lib/permisos';
 import { TarjetaRacha } from '@/components/Racha';
 import { BotonCerrarDia } from '@/components/BotonCerrarDia';
+import { TarjetaRecomendar } from '@/components/TarjetaRecomendar';
+import { clienteServidor } from '@/lib/supabase/servidor';
 import { Vacio } from '@/components/Piezas';
 
 export const dynamic = 'force-dynamic';
@@ -51,7 +53,15 @@ export default async function PaginaCierre({
     ? searchParams.fecha
     : undefined;
 
-  const cierre = await traerCierre(ctx.empresa.id, pedida);
+  // El pedido de recomendación va con el cierre en el mismo viaje: es un
+  // extra, y no puede costarle una espera a la pantalla que tiene que
+  // leerse en diez segundos. Si falla, no se pide y listo.
+  const [cierre, momento] = await Promise.all([
+    traerCierre(ctx.empresa.id, pedida),
+    Promise.resolve(clienteServidor().rpc('momento_de_recomendar', { p_empresa: ctx.empresa.id }))
+      .then((r) => (r.data as { pedir?: boolean } | null)?.pedir === true)
+      .catch(() => false),
+  ]);
   const permisos = permisosDe(ctx.miembro.rol);
   const verRent = permisos.verRentabilidad && cierre.resumen.con_costos;
 
@@ -157,6 +167,20 @@ export default async function PaginaCierre({
       )}
 
       <TarjetaRacha racha={cierre.racha} t={t} />
+
+      {/* Solo con el día cerrado en verde, y solo hoy: pedirle un favor a
+          alguien mirando un día malo —o el cierre de la semana pasada— es
+          pedirlo en el peor momento. El encabezado lo arma esta pantalla
+          porque es la que tiene los números. */}
+      {momento && cierre.es_hoy && cierre.hubo_actividad && (quedo !== null ? quedo > 0 : entro > salio) && (
+        <TarjetaRecomendar
+          encabezado={cierre.racha.dias >= 7
+            ? `Llevás ${cierre.racha.dias} días seguidos anotando.`
+            : quedo !== null
+              ? `Cerraste el día con ${dinero(quedo, m, true, locale)} de ganancia.`
+              : `Hoy entraron ${dinero(entro, m, true, locale)}.`}
+        />
+      )}
 
       {/* Solo se cierra el día de hoy. Marcar como "visto" un día de la
           semana pasada no significa nada. */}

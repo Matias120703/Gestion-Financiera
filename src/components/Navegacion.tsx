@@ -86,6 +86,15 @@ const Ico = {
       <path d="M3.5 11.5h17M7 15.5h3" /><path d="M6.5 8.5V6.8A1.3 1.3 0 0 1 7.8 5.5h8.4a1.3 1.3 0 0 1 1.3 1.3v1.7" />
     </svg>
   ),
+  // Un nodo que reparte a otros dos: es compartir, no regalar. El regalo
+  // prometería algo que esto no es.
+  recomendar: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <circle cx="17.5" cy="6" r="2.5" /><circle cx="17.5" cy="18" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <path d="m8.3 10.9 6.9-3.5M8.3 13.1l6.9 3.5" />
+    </svg>
+  ),
   equipo: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <circle cx="9" cy="8" r="3.2" />
@@ -404,6 +413,20 @@ export function NavInferior({
               >
                 {Ico.plan}
                 <span className="px-0.5">{t.nav.plan}</span>
+              </Link>
+
+              {/* Recomendar no es una sección del negocio: es un extra para
+                  la persona. Va al lado del plan, que es el otro lugar donde
+                  se habla de plata con Orden y no con los clientes. */}
+              <Link
+                href="/recomendar"
+                onClick={() => setAbierto(false)}
+                className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                  activo(ruta, '/recomendar') ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
+                }`}
+              >
+                {Ico.recomendar}
+                <span className="px-0.5">Recomendar</span>
               </Link>
 
               {administraOrden && (

@@ -1,6 +1,8 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
-import type { CuentaAdmin, FinanzasOrden, ResumenPanel } from './tipos';
+import type {
+  ComisionAdmin, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, SocioAdmin,
+} from './tipos';
 
 /**
  * Lecturas del panel del dueño del sistema.
@@ -51,6 +53,33 @@ export async function traerFinanzasOrden(): Promise<FinanzasOrden> {
   const { data, error } = await supabase.rpc('finanzas_orden');
   if (error || !data) return { configurada: false };
   return data as FinanzasOrden;
+}
+
+/**
+ * El programa de socios: quién trae clientes y qué se le debe.
+ *
+ * Las tres se tragan el error a propósito, como las finanzas: si el panel de
+ * socios falla, lo que no puede pasar es que se caiga la lista de cuentas, que
+ * es para lo que se entra todos los días.
+ */
+export async function traerSocios(): Promise<SocioAdmin[]> {
+  const supabase = clienteServidor();
+  const { data } = await supabase.rpc('listar_socios', { p_busqueda: null, p_limite: 200 });
+  return Array.isArray(data) ? (data as SocioAdmin[]) : [];
+}
+
+export async function traerComisiones(): Promise<ComisionAdmin[]> {
+  const supabase = clienteServidor();
+  const { data } = await supabase.rpc('listar_comisiones', {
+    p_estado: null, p_socio: null, p_limite: 200,
+  });
+  return Array.isArray(data) ? (data as ComisionAdmin[]) : [];
+}
+
+export async function traerReferidos(): Promise<ReferidoAdmin[]> {
+  const supabase = clienteServidor();
+  const { data } = await supabase.rpc('listar_referidos', { p_limite: 500 });
+  return Array.isArray(data) ? (data as ReferidoAdmin[]) : [];
 }
 
 /** Las empresas propias, para poder elegir cuál representa a Orden. */

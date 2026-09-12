@@ -12,6 +12,7 @@ import {
   DATOS_VACIOS, guardarPendiente, limpiarPendiente, telefonoLimpio, telefonoValido,
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
+import { aplicarRef } from '@/lib/referido';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 
@@ -156,6 +157,10 @@ export default function PaginaCrear() {
           p_se_dedica: datos.seDedica.trim(),
         });
         if (errorEmpresa) throw errorEmpresa;
+
+        // Si entró por el enlace de alguien, queda anotado quién lo trajo.
+        // No frena nada ni se le avisa: ver `aplicarRef`.
+        await aplicarRef(supabase, empresaId as string);
 
         limpiarPendiente();
         document.cookie =

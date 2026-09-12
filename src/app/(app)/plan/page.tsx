@@ -10,6 +10,8 @@ import type { PeriodoCobro } from '@/lib/tipos';
 import { SelectorCobro } from '@/components/SelectorCobro';
 import { BotonSuscribirme, BotonCotizar } from '@/components/BotonSuscribirme';
 import { BotonPagar } from '@/components/BotonPagar';
+import { TarjetaRecomendar } from '@/components/TarjetaRecomendar';
+import { clienteServidor } from '@/lib/supabase/servidor';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +49,12 @@ export default async function PaginaPlan({
     ? ['pro']
     : ['pro', 'negocio'];
   const sus = ctx.suscripcion;
+
+  // Si es momento de ofrecerle recomendar Orden. Las reglas están en la
+  // base (062); acá solo se pregunta, y si falla no se ofrece nada.
+  const momentoRecomendar = await Promise.resolve(
+    clienteServidor().rpc('momento_de_recomendar', { p_empresa: ctx.empresa.id }),
+  ).then((r) => (r.data as { pedir?: boolean } | null)?.pedir === true).catch(() => false);
   const uso = ctx.capturasIA;
 
   // Mientras el cobro sea por transferencia, el camino es WhatsApp. Si algún
@@ -72,6 +80,18 @@ export default async function PaginaPlan({
           <p className="mt-1 text-[14px] font-semibold">{t.plan.diasDePrueba(sus.dias_restantes)}</p>
           <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">{t.plan.pruebaVence}</p>
         </div>
+      )}
+
+      {/* El otro momento para pedirlo: acaba de pagar. Es cuando más cree en
+          el producto —puso plata— y es el único lugar donde la pantalla ya
+          está hablando de plata con Orden y no con sus clientes.
+
+          «Recién pagó» se deduce de los días que le quedan y no de una fecha
+          de pago: el cobro lo anota la administración, no hay checkout. Con
+          más de 25 días por delante en un plan mensual, pagó esta semana. */}
+      {momentoRecomendar && sus.estado === 'activa' && !sus.en_prueba
+        && sus.dias_restantes >= (sus.periodo === 'anual' ? 360 : 25) && (
+        <TarjetaRecomendar encabezado="Ya está, tu cuenta quedó al día." />
       )}
 
       {!sus.en_prueba && ctx.planEfectivo === 'gratis' && sus.ya_uso_prueba && (

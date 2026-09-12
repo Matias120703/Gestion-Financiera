@@ -3,6 +3,7 @@ import './globals.css';
 import { idiomaActual, textos } from '@/i18n';
 import { ProveedorIdioma } from '@/i18n/cliente';
 import { RegistrarServiceWorker } from '@/components/RegistrarServiceWorker';
+import { CapturarRef } from '@/components/CapturarRef';
 
 export const metadata: Metadata = {
   title: 'Orden · Gestión financiera',
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang={idioma}>
       <body>
         <ProveedorIdioma idioma={idioma}>
+          <CapturarRef />
           {children}
           <RegistrarServiceWorker sinConexion={t.sinConexion.titulo} />
         </ProveedorIdioma>
