@@ -85,7 +85,8 @@ async function principal() {
 
   // Lectura directa, como superusuario: para comprobar el dato, no el permiso.
   const comisionDe = (empresa) => db.query(
-    'select id, monto, base, porcentaje, estado, nota, gasto_id from public.comisiones where empresa_id = $1',
+    `select id, monto, base, porcentaje, estado, nota, gasto_id, movimiento_id
+       from public.comisiones where empresa_id = $1`,
     [empresa],
   ).then((r) => r.rows[0] ?? null);
 
@@ -448,12 +449,22 @@ async function principal() {
       await db.query('select count(*)::int n from public.socios').then((r) => r.rows[0].n), antes + 1);
 
     // Dónde cobra lo escribe él, no la administración.
+    // Los cuatro datos que pide cualquier transferencia (064). Antes era una
+    // sola línea de texto y había que adivinar qué parte era el banco.
+    const dondeCobra = (uid, banco, titular, cuenta, doc) => H.intentar(db, uid, () =>
+      db.query('select public.guardar_donde_cobro($1,$2,$3,$4)', [banco, titular, cuenta, doc]));
+
     rechazado('sin código no se puede decir dónde cobra',
-      await H.intentar(db, C.uid, () => db.query('select public.guardar_donde_cobro($1)', ['Itaú'])),
+      await dondeCobra(C.uid, 'Itaú', 'Ana', '123', '1234567'),
       'Todavía no pediste');
     aceptado('con código sí',
-      await H.intentar(db, A.uid, () => db.query('select public.guardar_donde_cobro($1)', ['Itaú 998877'])));
-    ok('y queda guardado', (await miPanel(A.uid)).valor.cobra_en, 'Itaú 998877');
+      await dondeCobra(A.uid, 'Banco Familiar', 'Matías Aranda', '0984158986', '4.123.456'));
+
+    const conDatos = (await miPanel(A.uid)).valor;
+    ok('quedan los cuatro datos separados',
+      [conDatos.banco, conDatos.titular, conDatos.cuenta, conDatos.documento],
+      ['Banco Familiar', 'Matías Aranda', '0984158986', '4.123.456']);
+    ok('y la línea de un vistazo se arma sola', conDatos.cobra_en, 'Banco Familiar · 0984158986');
 
     // El camino del link: alguien se registra con el código de otro.
     const F = await H.montarEmpresa(db, { email: 'dueno@panaderia.com', nombre: 'Panadería del Sur' });
@@ -598,6 +609,44 @@ async function principal() {
     const cK = await comisionDe(K.empresaId);
     await comoJefe(() => db.query('select public.anular_comision($1,$2)', [cK.id, 'no llegó']));
     ok('pero si se anula, el aviso se va', (await nueva(sofiaUid)).valor.hay, false);
+  }
+
+  // =====================================================================
+  grupo('13 · La comisión no cuelga de la contabilidad (063)');
+  // =====================================================================
+  {
+    // El incidente que obligó a la 063, tal como pasó: la empresa que
+    // representaba a Orden estaba borrada, así que el cobro no se pudo anotar
+    // en ningún lado. El socio había traído a un cliente que pagó de verdad y
+    // se quedó sin nada por un problema de contabilidad ajeno a él.
+    await db.query('update public.ajustes_orden set empresa_id = null where unica');
+
+    const L = await H.montarEmpresa(db, { email: 'dueno@rotiseria.com', nombre: 'Rotisería del Centro' });
+    await anotar(L.empresaId, S1.codigo);
+    const cobro = await cobrar(L.empresaId, 'negocio', 190000);
+
+    ok('sin empresa de Orden, el ingreso no se anota', cobro.valor.ingreso_anotado, false);
+    ok('y se avisa por qué', /empresa de Orden/.test(cobro.valor.aviso ?? ''), true);
+    ok('pero la comisión se genera igual', cobro.valor.comision_generada, true);
+
+    const c = await comisionDe(L.empresaId);
+    ok('con su monto completo', Number(c.monto), 95000);
+    ok('y sin movimiento que la respalde, que es justo lo que pasó',
+      c.movimiento_id, null);
+
+    ok('sigue siendo una sola por negocio',
+      (await cobrar(L.empresaId, 'negocio', 190000)).valor.comision_generada, false);
+
+    // Y «este ya pagó» también se mide por el importe: que la contabilidad
+    // haya fallado no convierte a un cliente viejo en uno nuevo.
+    const M = await H.montarEmpresa(db, { email: 'dueno@bazar.com', nombre: 'Bazar Luz' });
+    await cobrar(M.empresaId, 'negocio', 60000);
+    rechazado('un cliente que ya pagó no se reclama, aunque el asiento haya fallado',
+      await H.intentar(db, M.uid, () => db.query(
+        'select public.usar_codigo_referido($1,$2)', [M.empresaId, S1.codigo])),
+      'ya pagó');
+
+    await db.query('update public.ajustes_orden set empresa_id = $1 where unica', [ORDEN]);
   }
 
   console.log('\n' + '═'.repeat(62));

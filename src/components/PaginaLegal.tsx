@@ -18,7 +18,7 @@ export function PaginaLegal({
 }) {
   const t = textos();
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen bg-superficie">
       <header className="zona-segura-arriba border-b border-borde">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <Link href="/" className="flex items-center gap-2.5">
@@ -63,7 +63,7 @@ export function Lista({ items }: { items: React.ReactNode[] }) {
     <ul className="space-y-2 pl-1">
       {items.map((item, i) => (
         <li key={i} className="flex items-start gap-2.5">
-          <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-tinta/30" />
+          <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-noche/30" />
           <span>{item}</span>
         </li>
       ))}

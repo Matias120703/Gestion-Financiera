@@ -54,7 +54,7 @@ export function GraficoDiario({ datos, moneda }: { datos: FilaDia[]; moneda: Mon
                 <div className="w-full rounded-t bg-verde/85 transition group-hover:bg-verde" style={{ height: `${Math.max(hv, d.ventas > 0 ? 3 : 0)}%` }} />
                 <div className="w-full rounded-t bg-rojo/35 transition group-hover:bg-rojo/60" style={{ height: `${Math.max(hg, d.gastos > 0 ? 3 : 0)}%` }} />
               </div>
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-tinta px-2.5 py-1.5 text-[11.5px] font-semibold text-white group-hover:block">
+              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-noche px-2.5 py-1.5 text-[11.5px] font-semibold text-white group-hover:block">
                 <span className="block">{fechaLegible(d.fecha, false)}</span>
                 <span className="block text-verde-claro">Vendido {dinero(d.ventas, moneda)}</span>
                 {d.gastos > 0 && <span className="block text-white/60">Gastado {dinero(d.gastos, moneda)}</span>}

@@ -186,7 +186,7 @@ function Miniatura({
         type="button"
         onClick={alBorrar}
         aria-label={etiqueta}
-        className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-tinta/50 shadow ring-1 ring-borde transition hover:text-rojo"
+        className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-superficie text-tinta/50 shadow ring-1 ring-borde transition hover:text-rojo"
       >
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
       </button>

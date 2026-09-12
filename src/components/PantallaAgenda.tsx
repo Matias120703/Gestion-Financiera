@@ -465,7 +465,7 @@ function HorariosLibres({
       {huecos === null ? (
         <p className="py-3 text-center text-[13px] text-tinta/45">{t.comun.cargando}</p>
       ) : huecos.length === 0 ? (
-        <p className="rounded-xl bg-white px-3 py-3 text-center text-[13px] leading-relaxed text-tinta/55">
+        <p className="rounded-xl bg-superficie px-3 py-3 text-center text-[13px] leading-relaxed text-tinta/55">
           {t.agenda.sinHuecos}
         </p>
       ) : (
@@ -476,7 +476,7 @@ function HorariosLibres({
               onClick={() => alElegir(h.inicia)}
               className={elegido === h.inicia
                 ? 'rounded-lg border border-verde bg-verde py-2 text-center text-[13.5px] font-semibold tabular-nums text-white'
-                : 'rounded-lg border border-borde bg-white py-2 text-center text-[13.5px] font-semibold tabular-nums transition hover:border-verde/50'}
+                : 'rounded-lg border border-borde bg-superficie py-2 text-center text-[13.5px] font-semibold tabular-nums transition hover:border-verde/50'}
             >
               {hora(h.inicia)}
             </button>
@@ -643,7 +643,7 @@ function NuevoTurno({
       {dictado && (
         <div className="mb-3 space-y-1.5">
           {dictado.texto && (
-            <p className="rounded-xl bg-white px-3 py-2 text-[12.5px] italic leading-relaxed text-tinta/60">
+            <p className="rounded-xl bg-superficie px-3 py-2 text-[12.5px] italic leading-relaxed text-tinta/60">
               «{dictado.texto}»
             </p>
           )}
@@ -1183,13 +1183,13 @@ function DiasEspeciales({
             <button type="button" disabled={ocupado} onClick={() => setCerrado(true)}
               className={cerrado
                 ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-white'
-                : 'rounded-lg border border-borde bg-white px-3 py-1.5 text-[13px] font-semibold'}>
+                : 'rounded-lg border border-borde bg-superficie px-3 py-1.5 text-[13px] font-semibold'}>
               {t.agenda.cerradoTodoElDia}
             </button>
             <button type="button" disabled={ocupado} onClick={() => setCerrado(false)}
               className={!cerrado
                 ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-white'
-                : 'rounded-lg border border-borde bg-white px-3 py-1.5 text-[13px] font-semibold'}>
+                : 'rounded-lg border border-borde bg-superficie px-3 py-1.5 text-[13px] font-semibold'}>
               {t.agenda.abroEnOtroHorario}
             </button>
           </div>
@@ -1242,7 +1242,7 @@ function DiasEspeciales({
               onChange={(e) => setMotivo(e.target.value)} />
           </div>
 
-          <p className="mt-3 rounded-xl bg-white px-3 py-2.5 text-[12px] leading-relaxed text-tinta/55">
+          <p className="mt-3 rounded-xl bg-superficie px-3 py-2.5 text-[12px] leading-relaxed text-tinta/55">
             {t.agenda.avisoTurnosYaTomados}
           </p>
 

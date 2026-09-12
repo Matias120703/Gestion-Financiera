@@ -128,7 +128,7 @@ export default function PaginaEmpezar() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-noche px-4 py-10">
       <div className="w-full max-w-[520px] aparecer">
         <div className="mb-7 flex items-center gap-2.5 text-white">
           <Marca clase="h-10 w-10" sobreOscuro />
@@ -148,7 +148,7 @@ export default function PaginaEmpezar() {
                 key={p} type="button"
                 onClick={() => { setPestania(p); setError(''); }}
                 className={`rounded-lg py-2 text-sm font-semibold transition ${
-                  pestania === p ? 'bg-white text-tinta shadow-sm' : 'text-tinta/55'
+                  pestania === p ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/55'
                 }`}
               >
                 {p === 'crear' ? t.pantallas.crearEmpresa : t.pantallas.unirmeConCodigo}

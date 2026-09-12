@@ -798,6 +798,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('crea socios por la función', soc.includes("rpc('guardar_socio'"), true);
 
   const pad = fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8');
+  // La primera vez que se cobró un referido de verdad, la comisión no nació y
+  // la pantalla cerró como si nada. Que eso vuelva a pasar en silencio es lo
+  // único que no se puede permitir en un programa de comisiones.
+  ok('si la comisión no se genera, la ficha lo grita', pad.includes('faltoComision'), true);
+  ok('y si se genera, también lo dice', pad.includes('Se generó la comisión de'), true);
   ok('la ficha del cliente anota quién lo trajo', pad.includes("rpc('asignar_referido'"), true);
   ok('y deja desanotarlo si fue un error', pad.includes("rpc('quitar_referido'"), true);
   ok('pero no ofrece quitarlo cuando ya se pagó',
@@ -882,6 +887,81 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el aviso se marca visto para no repetirse',
     fs.readFileSync('src/components/AvisoComision.tsx', 'utf8')
       .includes("rpc('marcar_comisiones_vistas')"), true);
+}
+
+
+// --- El modo oscuro vive en un solo lugar ---
+//
+// La app es de un comerciante que la abre a las once de la noche con la
+// persiana baja. El modo oscuro se hizo dando vuelta la paleta en dos
+// archivos —tailwind.config.ts y globals.css— y NO escribiendo `dark:` en
+// cada pantalla: con cientos de clases repartidas, el que se olvide queda
+// blanco brillante en la cara de alguien.
+//
+// Eso solo se sostiene si nadie vuelve a escribir un color fijo. Estas
+// comprobaciones son la guardia de esa regla, no un detalle de estilo.
+{
+  const fs = require('fs');
+  const path = require('path');
+
+  const conf = fs.readFileSync('tailwind.config.ts', 'utf8');
+  ok('los colores son variables, no hexadecimales', conf.includes('rgb(var(--'), true);
+  ok('la tarjeta tiene su propio color', conf.includes('superficie:'), true);
+
+  const css = fs.readFileSync('src/app/globals.css', 'utf8');
+  ok('la paleta está definida dos veces', css.includes('html.oscuro'), true);
+  ok('y el navegador se entera del tema', css.includes('color-scheme: dark'), true);
+
+  // Sin esto la app abre en claro y salta a oscuro un instante después.
+  const layout = fs.readFileSync('src/app/layout.tsx', 'utf8');
+  ok('el tema se aplica antes de pintar', layout.includes('GUION_TEMA'), true);
+  ok('y se puede elegir desde Ajustes',
+    fs.readFileSync('src/app/(app)/ajustes/page.tsx', 'utf8').includes('<SelectorTema />'), true);
+
+  // El blanco opaco es el que rompe el modo oscuro. Los translúcidos
+  // (`bg-white/10` sobre un fondo oscuro) son correctos y se dejan.
+  const culpables = [];
+  const mirar = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const ruta = path.join(dir, e.name);
+      if (e.isDirectory()) { mirar(ruta); continue; }
+      if (!/\.(tsx|ts|css)$/.test(e.name)) continue;
+      const texto = fs.readFileSync(ruta, 'utf8');
+      if (/(bg|border|divide)-white(?![\/0-9a-z-])/.test(texto)) {
+        culpables.push(ruta.replace(/\\/g, '/'));
+      }
+    }
+  };
+  mirar('src');
+  ok('ningún fondo blanco fijo: la tarjeta es «superficie»', culpables, []);
+}
+
+// --- Lo demás del cuaderno de esta vuelta ---
+{
+  const fs = require('fs');
+
+  // El turno que se guardaba como gasto.
+  const ruta = fs.readFileSync('src/app/api/capturar/route.ts', 'utf8');
+  ok('un turno sin agenda no se guarda como gasto',
+    ruta.includes("datos.tipo === 'turno' && !acciones.tipos.includes('turno')"), true);
+  ok('y se contesta que acá no hay agenda', ruta.includes("no_disponible: 'agenda'"), true);
+  ok('la captura lo muestra en vez de guardarlo',
+    fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8').includes('datos?.no_disponible'), true);
+
+  // La barra del panel de administración pisaba el reloj del teléfono.
+  ok('el panel de Orden respeta el notch',
+    fs.readFileSync('src/app/admin/page.tsx', 'utf8').includes('zona-segura-arriba'), true);
+
+  // Ver los datos de un socio no puede obligar a entrar a «editar».
+  const soc = fs.readFileSync('src/components/PanelSocios.tsx', 'utf8');
+  ok('el socio tiene ficha propia', soc.includes('function FichaSocio'), true);
+  ok('con sus datos para transferirle', soc.includes('Para transferirle'), true);
+  ok('y cada dato se copia sin transcribirlo', soc.includes('function Copiar'), true);
+
+  // Los datos de cobro, separados como en cualquier formulario de banco.
+  const rec = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
+  ok('el socio carga banco, titular, cuenta y documento',
+    ['p_banco', 'p_titular', 'p_cuenta', 'p_documento'].every((c) => rec.includes(c)), true);
 }
 
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);

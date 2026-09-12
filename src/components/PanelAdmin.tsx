@@ -34,7 +34,7 @@ const FILTROS: { valor: Filtro; texto: string }[] = [
  * es cuestión de tiempo que alguien muestre «vence hoy» en verde.
  */
 function urgencia(dias: number | null) {
-  if (dias === null) return { texto: 'Sin fecha', clase: 'bg-arena text-tinta/60', punto: 'bg-tinta/25' };
+  if (dias === null) return { texto: 'Sin fecha', clase: 'bg-arena text-tinta/60', punto: 'bg-noche/25' };
   if (dias < 0) return { texto: `Venció hace ${Math.abs(dias)} d`, clase: 'bg-rojo-claro text-rojo', punto: 'bg-rojo' };
   if (dias === 0) return { texto: 'Vence hoy', clase: 'bg-rojo-claro text-rojo', punto: 'bg-rojo' };
   if (dias <= 3) return { texto: `Faltan ${dias} d`, clase: 'bg-ambar-claro text-ambar', punto: 'bg-ambar' };
@@ -140,7 +140,7 @@ export function PanelAdmin({
       </section>
 
       {/* ---------------- La lista ---------------- */}
-      <section className="rounded-2xl border border-borde bg-white">
+      <section className="rounded-2xl border border-borde bg-superficie">
         <div className="flex flex-col gap-3 border-b border-borde p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-1.5">
             {FILTROS.map((f) => (
@@ -295,7 +295,7 @@ function MisFinanzas({
         )}
 
         {misEmpresas.length === 0 ? (
-          <p className="mt-4 rounded-xl bg-white px-3.5 py-2.5 text-[13px] text-tinta/60">
+          <p className="mt-4 rounded-xl bg-superficie px-3.5 py-2.5 text-[13px] text-tinta/60">
             Todavía no tenés ninguna empresa. Creá la tuya en Orden y volvé acá para elegirla.
           </p>
         ) : (
@@ -356,7 +356,7 @@ function MisFinanzas({
       </div>
 
       {finanzas.deuda_total > 0 && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-borde bg-white px-4 py-3">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-borde bg-superficie px-4 py-3">
           <div>
             <p className="text-[13px] font-semibold text-tinta/55">Lo que debés</p>
             <p className="mt-0.5 text-[19px] font-bold tabular-nums">{dinero(finanzas.deuda_total, m)}</p>
@@ -381,7 +381,7 @@ function Metrica({ titulo, valor, detalle, tono }: {
     : tono === 'rojo' ? 'text-rojo'
     : 'text-tinta';
   return (
-    <div className="rounded-2xl border border-borde bg-white p-4">
+    <div className="rounded-2xl border border-borde bg-superficie p-4">
       <p className="text-[11.5px] font-semibold uppercase tracking-wide text-tinta/45">{titulo}</p>
       <p className={`mt-1.5 text-[22px] font-bold leading-none tabular-nums ${color}`}>{valor}</p>
       <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{detalle}</p>
@@ -426,6 +426,7 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
   const [trabajando, setTrabajando] = useState('');
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
+  const [logro, setLogro] = useState('');
 
   async function correr(nombre: string, fn: () => Promise<{ data?: any; error: any }>) {
     setTrabajando(nombre);
@@ -433,9 +434,36 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
     try {
       const { data, error: e } = await fn();
       if (e) throw e;
+
+      /**
+       * La primera vez que se cobró un referido de verdad, la comisión no se
+       * generó —la empresa de Orden estaba borrada y el ingreso no se pudo
+       * anotar— y esta pantalla no dijo una palabra: mostró el aviso de
+       * contabilidad y cerró como si todo hubiera salido bien.
+       *
+       * La 063 hizo que la comisión ya no dependa del asiento. Esto es lo
+       * otro que faltaba: que si aun así no nace, se vea. Un programa donde
+       * la comisión puede no generarse en silencio no es un programa, es una
+       * promesa que a veces se cumple.
+       */
+      const faltoComision = data && 'comision_generada' in data
+        && referido !== null && referido.comision === null && data.comision_generada === false;
+
+      const texto = [
+        faltoComision ? `Ojo: NO se generó la comisión de ${referido!.socio}.` : '',
+        data?.aviso ? String(data.aviso) : '',
+      ].filter(Boolean).join(' ');
+
       // Un aviso no es un fallo: la cuenta se activó igual. Pero hay que
       // decirlo, o el ingreso propio se pierde sin que nadie se entere.
-      if (data?.aviso) { setAviso(String(data.aviso)); setTrabajando(''); return; }
+      if (texto) { setAviso(texto); setTrabajando(''); return; }
+
+      if (data?.comision_generada) {
+        setLogro(`Se generó la comisión de ${referido?.socio ?? 'quien lo trajo'}. La vas a ver en Socios, en «Por pagar».`);
+        setTrabajando('');
+        return;
+      }
+
       onHecho();
     } catch (e: any) {
       setError(mensajeDeError(e, 'No se pudo hacer el cambio.'));
@@ -509,15 +537,15 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
       onClick={onCerrar}
     >
       <div
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-xl overflow-y-auto overscroll-contain rounded-t-3xl bg-white shadow-tarjeta aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[90vh] w-full max-w-xl overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie shadow-tarjeta aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ---- cabecera pegada arriba: el nombre no se pierde al bajar ---- */}
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-borde bg-white/95 px-5 py-4 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-borde bg-superficie/95 px-5 py-4 backdrop-blur">
           <div className="min-w-0">
             <h2 className="truncate text-[18px] font-bold tracking-tight">{cuenta.nombre}</h2>
             <p className="mt-0.5 truncate text-[13px] text-tinta/55">
@@ -537,8 +565,8 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
           <div className="rounded-2xl bg-arena p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className={`pastilla ${u.clase}`}>{u.texto}</span>
-              <span className="pastilla bg-white text-tinta/60">{NOMBRE_PLAN[cuenta.plan] ?? cuenta.plan}</span>
-              <span className="pastilla bg-white text-tinta/60">
+              <span className="pastilla bg-superficie text-tinta/60">{NOMBRE_PLAN[cuenta.plan] ?? cuenta.plan}</span>
+              <span className="pastilla bg-superficie text-tinta/60">
                 {cuenta.tipo_cuenta === 'personal' ? 'Personal' : 'Comercio'}
               </span>
             </div>
@@ -599,6 +627,17 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
                 className="mt-2 text-[12.5px] font-semibold text-ambar underline"
               >
                 Entendido, cerrar
+              </button>
+            </div>
+          )}
+          {logro && (
+            <div className="rounded-xl bg-verde-claro px-3.5 py-2.5">
+              <p className="text-[13px] font-medium text-verde-fuerte">{logro}</p>
+              <button
+                type="button" onClick={onHecho}
+                className="mt-2 text-[12.5px] font-semibold text-verde-fuerte underline"
+              >
+                Listo, cerrar
               </button>
             </div>
           )}

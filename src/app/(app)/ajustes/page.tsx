@@ -7,7 +7,7 @@ import type { Miembro } from '@/lib/tipos';
 import { fechaLegible } from '@/lib/formato';
 import { textos } from '@/i18n';
 import { FICHA } from '@/i18n/idiomas';
-import { SelectorIdioma, AjustesDeAvisos } from '@/components/Preferencias';
+import { SelectorIdioma, SelectorTema, AjustesDeAvisos } from '@/components/Preferencias';
 import { SelectorZona } from '@/components/SelectorZona';
 import { ListaEquipo, RotarCodigo } from '@/components/Equipo';
 import { TarjetaPlan } from '@/components/TarjetaPlan';
@@ -185,6 +185,7 @@ export default async function PaginaAjustes() {
         <Seccion titulo={t.ajustes.idioma}>
           <div className="space-y-5 px-4 pb-5 pt-3">
             <SelectorIdioma />
+            <SelectorTema />
             <SelectorZona empresaId={ctx.empresa.id} zona={ctx.zonaHoraria} puedeEditar={ctx.esAdmin} />
           </div>
         </Seccion>

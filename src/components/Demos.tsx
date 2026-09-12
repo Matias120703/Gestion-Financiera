@@ -59,7 +59,7 @@ function Video({
 
   return (
     <figure className="tarjeta overflow-hidden">
-      <div className="relative bg-tinta">
+      <div className="relative bg-noche">
         <video
           ref={ref}
           className="aspect-[9/16] w-full object-contain"
@@ -78,9 +78,9 @@ function Video({
             type="button"
             onClick={arrancar}
             aria-label={`Ver el video: ${titulo}`}
-            className="absolute inset-0 grid place-items-center bg-tinta/25 transition hover:bg-tinta/10"
+            className="absolute inset-0 grid place-items-center bg-noche/25 transition hover:bg-noche/10"
           >
-            <span className="grid h-16 w-16 place-items-center rounded-full bg-white/95 shadow-tarjeta">
+            <span className="grid h-16 w-16 place-items-center rounded-full bg-superficie/95 shadow-tarjeta">
               <svg viewBox="0 0 24 24" className="ml-1 h-7 w-7 text-verde-fuerte" fill="currentColor">
                 <path d="M8 5.5v13l11-6.5z" />
               </svg>

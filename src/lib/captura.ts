@@ -229,6 +229,25 @@ export function instrucciones(
    - "ficha.notas": algo que quieran recordar de esa persona ("prefiere los martes"). Si no, null.` : '',
     tiposAccion ? 'En "turno", "producto" y "cliente": "monto" va en 0, "items" vacío y todo el objeto "deuda" en null. '
       + 'Y en cualquier tipo, los objetos "turno", "producto" y "ficha" que no son del tipo elegido van con todo en null.' : '',
+
+    /*
+     * LO QUE ESTA CUENTA NO TIENE, SE DICE. NO SE CONVIERTE EN OTRA COSA.
+     *
+     * Pasó de verdad: «tengo un nuevo turno mañana a las ocho, un corte para
+     * Juan» se guardó como un GASTO de cero en una cuenta sin agenda. El
+     * modelo no tenía «turno» entre los tipos, así que eligió el que más se
+     * parecía, y el sistema lo dejó pasar.
+     *
+     * Un turno que se guarda como gasto no es un error de transcripción: es
+     * un número inventado en las finanzas de alguien. Así que se pide el tipo
+     * igual —la respuesta lo admite— y el sistema contesta que acá no hay
+     * agenda, que es la verdad y encima dice dónde se activa.
+     */
+    !conTurnos ? `AGENDAR UN TURNO — esta cuenta NO tiene agenda.
+   Si igual te piden anotar un turno, una cita, una hora o una reserva para alguien
+   ("tengo un turno mañana a las ocho", "agendame a Juan el viernes", "reservale la hora a Marta"),
+   devolvé tipo "turno" lo mismo, con TODO el resto en null y "monto" en 0.
+   NUNCA lo conviertas en gasto, venta ni ingreso: no se cobró ni se pagó nada.` : '',
   ].filter(Boolean).join('\n\n');
   const listaDeudores = deudores.length
     ? deudores.slice(0, 60).map((d) => `- ${d.nombre} | id=${d.id} | debe=${d.saldo}`).join('\n')
@@ -418,6 +437,11 @@ ${reglaFiado}
    ${moneda !== 'PYG' ? `- OJO: la moneda es ${moneda}, los montos chicos SÍ pueden ser literales.` : ''}
 
 5. "items" SIEMPRE va vacío: []. Acá no hay productos. Y "turno", "producto" y "ficha" van siempre con todo en null: en una cuenta personal no hay agenda, ni catálogo, ni clientes.
+
+   UNA SOLA EXCEPCIÓN: si te piden anotar un turno, una cita o una hora para alguien
+   ("tengo un turno mañana a las ocho", "agendame a Juan el viernes"), devolvé tipo
+   "turno" con todo lo demás en null y "monto" en 0. NO lo guardes como gasto: no se
+   pagó nada. El sistema avisa que una cuenta personal no tiene agenda.
 
 6. FECHA
    - Sin referencia temporal → hoy (${hoy}).

@@ -113,7 +113,7 @@ export default async function Portada({
   const ahorroPro = mesesGratis(proMes, proAnio);
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen bg-superficie">
 
       {/* ================================================================
           LA PRIMERA PANTALLA
@@ -236,7 +236,7 @@ export default async function Portada({
               <div className="relative rounded-[2.4rem] border border-white/12 bg-white/[.06] p-2.5 shadow-2xl backdrop-blur-sm">
                 <div className="overflow-hidden rounded-[1.9rem] bg-arena">
                   {/* barra de la app */}
-                  <div className="flex items-center justify-between bg-white px-4 py-3">
+                  <div className="flex items-center justify-between bg-superficie px-4 py-3">
                     <span className="flex items-center gap-2">
                       <Marca clase="h-6 w-6" />
                       <span className="text-[13px] font-bold tracking-tight text-tinta">Perfumería Aurora</span>
@@ -246,7 +246,7 @@ export default async function Portada({
 
                   <div className="space-y-2.5 p-3.5">
                     {/* el número que importa */}
-                    <div className="rounded-2xl border border-borde bg-white p-4">
+                    <div className="rounded-2xl border border-borde bg-superficie p-4">
                       <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">Te quedó hoy</p>
                       <p className="mt-1 text-[27px] font-bold tracking-tight tabular-nums text-verde-fuerte">
                         Gs. 2.150.000
@@ -266,7 +266,7 @@ export default async function Portada({
                     </div>
 
                     {/* cómo se cargó: hablando */}
-                    <div className="rounded-2xl border border-borde bg-white p-3.5">
+                    <div className="rounded-2xl border border-borde bg-superficie p-3.5">
                       <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">Lo cargaste así</p>
                       <div className="mt-2 flex items-start gap-2">
                         <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-verde-claro">
@@ -475,7 +475,7 @@ export default async function Portada({
                 href={m === 'PYG' ? '/#precios' : `/?moneda=${m}#precios`}
                 aria-current={m === moneda ? 'true' : undefined}
                 className={`rounded-lg px-3 py-1.5 text-[12.5px] font-bold transition ${
-                  m === moneda ? 'bg-tinta text-white' : 'text-tinta/50 hover:text-tinta'
+                  m === moneda ? 'bg-noche text-white' : 'text-tinta/50 hover:text-tinta'
                 }`}
               >
                 {m === 'PYG' ? 'Gs.' : 'US$'}

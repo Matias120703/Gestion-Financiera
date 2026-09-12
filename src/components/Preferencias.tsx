@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useIdioma, useTextos, aplicarIdioma } from '@/i18n/cliente';
 import { FICHA, IDIOMAS, type Idioma, IDIOMA_UNICO } from '@/i18n/idiomas';
+import { aplicarTema, guardarTema, leerTema, type Tema } from '@/lib/tema';
 import { mensajeDeError } from '@/lib/errores';
 import type { Preferencias as Prefs } from '@/lib/tipos';
 
@@ -344,8 +345,94 @@ function Interruptor({
           onChange={(e) => alCambiar(e.target.checked)}
         />
         <span className="block h-6 w-11 rounded-full bg-borde transition peer-checked:bg-verde" />
-        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-superficie shadow transition peer-checked:translate-x-5" />
       </span>
     </label>
   );
 }
+
+/**
+ * CLARO, OSCURO O COMO EL TELÉFONO.
+ *
+ * Tres opciones y no un interruptor, porque «como el sistema» es el que hace
+ * que la app se ponga oscura sola a la noche sin que nadie toque nada. Es el
+ * que viene puesto.
+ *
+ * Vive en el navegador y no en la cuenta: es de ESTE aparato. La misma
+ * persona puede querer la app clara en la computadora del local y oscura en
+ * el celular de noche, y guardarlo en la cuenta le impondría una sola
+ * respuesta a los dos.
+ */
+export function SelectorTema() {
+  const [tema, setTema] = useState<Tema>('sistema');
+
+  // El valor real se lee después del montaje: en el servidor no hay
+  // localStorage, y pintar una opción distinta de la guardada rompe la
+  // hidratación. El tema en sí ya se aplicó antes, desde el guion del layout.
+  useEffect(() => { setTema(leerTema()); }, []);
+
+  // Con «como el sistema» hay que seguir escuchando: si el teléfono cambia a
+  // oscuro a las siete de la tarde, la app tiene que acompañarlo sin recargar.
+  useEffect(() => {
+    if (tema !== 'sistema') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const alCambiar = () => aplicarTema('sistema');
+    mq.addEventListener('change', alCambiar);
+    return () => mq.removeEventListener('change', alCambiar);
+  }, [tema]);
+
+  const OPCIONES: { valor: Tema; texto: string; icono: React.ReactNode }[] = [
+    {
+      valor: 'claro', texto: 'Claro',
+      icono: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazoTema}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+        </svg>
+      ),
+    },
+    {
+      valor: 'oscuro', texto: 'Oscuro',
+      icono: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazoTema}>
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+        </svg>
+      ),
+    },
+    {
+      valor: 'sistema', texto: 'Como el teléfono',
+      icono: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazoTema}>
+          <rect x="4" y="3" width="16" height="18" rx="2.5" /><path d="M10 18h4" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <p className="etiqueta">Colores</p>
+      <div className="flex flex-wrap gap-2">
+        {OPCIONES.map((o) => (
+          <button
+            key={o.valor}
+            type="button"
+            onClick={() => { setTema(o.valor); guardarTema(o.valor); }}
+            className={o.valor === tema ? 'chip-encendido' : 'chip-apagado'}
+          >
+            <span className="mr-1.5 inline-block align-[-2px]" aria-hidden>{o.icono}</span>
+            {o.texto}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[12.5px] leading-relaxed text-tinta/45">
+        Es de este aparato: podés tenerla clara en la computadora del local y oscura en el celular.
+      </p>
+    </div>
+  );
+}
+
+const trazoTema = {
+  fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
+  strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+};

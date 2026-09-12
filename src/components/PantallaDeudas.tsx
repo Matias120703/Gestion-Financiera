@@ -625,11 +625,11 @@ function FormularioPago({
 function Hoja({ children, onCerrar }: { children: React.ReactNode; onCerrar: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4"
       onClick={onCerrar}
     >
       <div
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 shadow-tarjeta aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 shadow-tarjeta aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />

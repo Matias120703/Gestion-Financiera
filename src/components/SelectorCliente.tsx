@@ -121,7 +121,7 @@ export function SelectorCliente({
         )}
 
         {hayLista && (
-          <ul className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-borde bg-white shadow-tarjeta">
+          <ul className="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-borde bg-superficie shadow-tarjeta">
             {sugerencias.map((s) => (
               <li key={s.id}>
                 <button

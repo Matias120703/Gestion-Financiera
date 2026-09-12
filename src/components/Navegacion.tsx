@@ -275,7 +275,7 @@ export function NavLateral({
   const t = useTextos();
   const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, esAdmin);
   return (
-    <aside className="hidden w-[232px] shrink-0 flex-col border-r border-borde bg-white lg:flex">
+    <aside className="hidden w-[232px] shrink-0 flex-col border-r border-borde bg-superficie lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
         <Marca clase="h-9 w-9" />
         <div className="min-w-0">
@@ -360,7 +360,7 @@ export function NavInferior({
     <>
       {abierto && (
         <div
-          className="fixed inset-0 z-40 bg-tinta/45 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-40 bg-noche/45 backdrop-blur-[2px] lg:hidden"
           onClick={() => setAbierto(false)}
         >
           {/*
@@ -371,7 +371,7 @@ export function NavInferior({
             desplaza adentro.
           */}
           <div
-            className="absolute inset-x-0 bottom-0 flex max-h-[78vh] flex-col rounded-t-3xl bg-white pt-4 shadow-tarjeta aparecer"
+            className="absolute inset-x-0 bottom-0 flex max-h-[78vh] flex-col rounded-t-3xl bg-superficie pt-4 shadow-tarjeta aparecer"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-borde" />
@@ -446,7 +446,7 @@ export function NavInferior({
         </div>
       )}
 
-      <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 border-t border-borde bg-white/95 backdrop-blur lg:hidden">
+      <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 border-t border-borde bg-superficie/95 backdrop-blur lg:hidden">
         {/*
           Las columnas son las que HAY, no cinco fijas.
 
@@ -527,7 +527,7 @@ export function BarraSuperior({
   }
 
   return (
-    <header className="zona-segura-arriba sticky top-0 z-30 border-b border-borde bg-white/90 backdrop-blur">
+    <header className="zona-segura-arriba sticky top-0 z-30 border-b border-borde bg-superficie/90 backdrop-blur">
       <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-7">
         <div className="flex min-w-0 items-center gap-2.5">
           {/* Solo en celular: en pantalla grande el logo esta en la barra
@@ -542,7 +542,7 @@ export function BarraSuperior({
             type="button" onClick={() => setAbierto((v) => !v)}
             className="flex items-center gap-2 rounded-xl border border-borde px-2.5 py-1.5 text-[13px] font-semibold hover:bg-arena"
           >
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-tinta text-[11px] font-bold text-white">
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-noche text-[11px] font-bold text-white">
               {(nombreUsuario || 'U').charAt(0).toUpperCase()}
             </span>
             <span className="hidden max-w-[130px] truncate sm:inline">{empresa.nombre}</span>
@@ -552,7 +552,7 @@ export function BarraSuperior({
           {abierto && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setAbierto(false)} />
-              <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-borde bg-white shadow-tarjeta aparecer">
+              <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-borde bg-superficie shadow-tarjeta aparecer">
                 <div className="border-b border-borde px-4 py-3">
                   <p className="text-[13px] font-bold">{nombreUsuario || t.nav.miCuenta}</p>
                   {/* El código de invitación NO se muestra acá: vive en Ajustes y

@@ -75,7 +75,7 @@ export function TarjetaRecomendar({ encabezado }: { encabezado: string }) {
       {estado === 'listo' ? (
         <>
           <p className="text-[14.5px] font-bold leading-snug">Listo, este es tu enlace</p>
-          <p className="mt-1 break-all rounded-xl bg-white px-3 py-2 text-[13px] font-semibold">
+          <p className="mt-1 break-all rounded-xl bg-superficie px-3 py-2 text-[13px] font-semibold">
             {enlace}
           </p>
           <div className="mt-2.5 grid grid-cols-2 gap-2">

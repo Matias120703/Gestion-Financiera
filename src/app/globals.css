@@ -2,7 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
+/*
+ * ============================================================
+ * LA PALETA, DOS VECES
+ * ============================================================
+ *
+ * Acá está todo el modo oscuro. No hay un solo `dark:` repartido por las
+ * pantallas: los colores de tailwind.config.ts apuntan a estas variables, así
+ * que dar vuelta el tema es cambiar estos doce números.
+ *
+ * Van en RGB sin `rgb()` a propósito: es lo que le permite a Tailwind
+ * componerles la opacidad (`text-tinta/45`, `bg-verde/10`).
+ *
+ * CÓMO SE ELIGIÓ EL OSCURO
+ *
+ * No es gris: es el mismo verde de la marca bajado hasta el fondo, igual que
+ * la portada. Y no es negro puro — sobre negro absoluto, el texto blanco
+ * vibra y cansa; #0d1714 deja descansar la vista.
+ *
+ * El orden de las superficies se invierte, y tiene que invertirse entero: en
+ * claro la página es gris muy claro y la tarjeta es blanca (la tarjeta
+ * «sube»); en oscuro la página es casi negra y la tarjeta es más clara. Si se
+ * invirtiera solo una, las tarjetas desaparecerían contra el fondo.
+ *
+ * Los tintes (`verde-claro`, `rojo-claro`, `ambar-claro`) son fondos de
+ * pastillas y avisos: en claro son casi blancos, en oscuro son el mismo color
+ * apagado y profundo, con su texto al revés —claro sobre oscuro—.
+ */
+:root {
+  color-scheme: light;
+
+  --tinta:        13 27 22;
+  --tinta-suave:  27 47 38;
+  --arena:        246 247 245;
+  --superficie:   255 255 255;
+  --borde:        227 231 228;
+  --verde:        23 121 90;
+  --verde-claro:  230 244 238;
+  --verde-fuerte: 15 92 68;
+  --rojo:         192 57 43;
+  --rojo-claro:   253 236 235;
+  --ambar:        183 121 31;
+  --ambar-claro:  253 245 227;
+}
+
+html.oscuro {
+  color-scheme: dark;
+
+  --tinta:        226 236 231;
+  --tinta-suave:  186 203 194;
+  --arena:        13 23 20;
+  --superficie:   24 34 30;
+  --borde:        45 60 53;
+  /* El verde de la marca no se lee sobre casi negro: se sube hasta que sí. */
+  --verde:        32 154 113;
+  --verde-claro:  18 48 38;
+  --verde-fuerte: 78 209 157;
+  --rojo:         233 121 106;
+  --rojo-claro:   60 29 26;
+  --ambar:        226 168 71;
+  --ambar-claro:  55 41 17;
+}
 
 html, body { height: 100%; }
 
@@ -44,7 +104,7 @@ body {
 
 @layer components {
   .tarjeta {
-    @apply rounded-2xl border border-borde bg-white shadow-tarjeta;
+    @apply rounded-2xl border border-borde bg-superficie shadow-tarjeta;
   }
 
   .boton {
@@ -52,7 +112,7 @@ body {
            transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
   .boton-principal { @apply boton bg-verde text-white hover:bg-verde-fuerte; }
-  .boton-suave     { @apply boton border border-borde bg-white text-tinta hover:bg-arena; }
+  .boton-suave     { @apply boton border border-borde bg-superficie text-tinta hover:bg-arena; }
   .boton-peligro   { @apply boton bg-rojo text-white hover:opacity-90; }
   .boton-texto     { @apply text-sm font-semibold text-verde hover:underline; }
 
@@ -61,7 +121,7 @@ body {
    * con menos de 16px. Con 15px la pantalla saltaba en cada campo.
    */
   .campo {
-    @apply w-full rounded-xl border border-borde bg-white px-3.5 py-2.5 text-[16px] text-tinta
+    @apply w-full rounded-xl border border-borde bg-superficie px-3.5 py-2.5 text-[16px] text-tinta
            outline-none transition placeholder:text-tinta/35
            focus:border-verde focus:ring-2 focus:ring-verde/15;
   }
@@ -72,7 +132,7 @@ body {
     @apply inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl border px-4
            text-[14px] font-semibold transition active:scale-[.97];
   }
-  .chip-apagado { @apply chip border-borde bg-white text-tinta/60; }
+  .chip-apagado { @apply chip border-borde bg-superficie text-tinta/60; }
   .chip-encendido { @apply chip border-verde bg-verde text-white; }
 
   /* Botón de icono con área táctil de verdad (44px), no de 24. */

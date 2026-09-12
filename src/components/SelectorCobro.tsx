@@ -63,7 +63,7 @@ export function SelectorCobro({
             type="button"
             onClick={() => ir('moneda', m)}
             className={`rounded-lg px-2.5 py-1.5 text-[12.5px] font-bold transition ${
-              m === moneda ? 'bg-tinta text-white' : 'text-tinta/45 hover:bg-arena'
+              m === moneda ? 'bg-noche text-white' : 'text-tinta/45 hover:bg-arena'
             }`}
           >
             {m}

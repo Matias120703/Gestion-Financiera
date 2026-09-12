@@ -374,7 +374,7 @@ export function PantallaVenta({
       {/* --------------------------- barra de cobro (celular) --------------------------- */}
       {carrito.length > 0 && (
         <div className="zona-segura-abajo fixed inset-x-0 bottom-[68px] z-40 lg:hidden">
-          <div className="subir mx-3 overflow-hidden rounded-2xl bg-tinta shadow-[0_14px_38px_-10px_rgba(13,27,22,.75)]">
+          <div className="subir mx-3 overflow-hidden rounded-2xl bg-noche shadow-[0_14px_38px_-10px_rgba(13,27,22,.75)]">
             {/* Método de cobro: visible siempre, un toque para cambiarlo. */}
             <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pb-1 pt-3">
               {METODOS.map((m) => (
@@ -420,8 +420,8 @@ export function PantallaVenta({
       )}
 
       {detalleAbierto && (
-        <div className="fixed inset-0 z-[60] flex items-end bg-tinta/45 backdrop-blur-[2px] lg:hidden" onClick={() => setDetalleAbierto(false)}>
-          <div className="zona-segura-abajo max-h-[88vh] w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-4 aparecer" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-end bg-noche/45 backdrop-blur-[2px] lg:hidden" onClick={() => setDetalleAbierto(false)}>
+          <div className="zona-segura-abajo max-h-[88vh] w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-4 aparecer" onClick={(e) => e.stopPropagation()}>
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde" />
             <Carrito
               carrito={carrito} moneda={moneda} dec={dec} total={total} subtotal={subtotal}
@@ -656,9 +656,9 @@ function DialogoLibre({
   const [conCosto, setConCosto] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
       <form
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[88vh] w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => { e.preventDefault(); if (precio > 0) onAgregar(nombre.trim(), precio, conCosto ? costo : 0); }}
       >

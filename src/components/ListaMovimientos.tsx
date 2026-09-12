@@ -151,7 +151,7 @@ export function ListaMovimientos({
             <button
               key={f.valor} type="button" onClick={() => setFiltro(f.valor)}
               className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                filtro === f.valor ? 'border-verde bg-verde text-white' : 'border-borde bg-white text-tinta/60'
+                filtro === f.valor ? 'border-verde bg-verde text-white' : 'border-borde bg-superficie text-tinta/60'
               }`}
             >
               {f.texto}

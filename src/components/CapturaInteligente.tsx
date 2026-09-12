@@ -83,6 +83,8 @@ export function BotonCaptura({
   const [paso, setPaso] = useState('');
   const [origen, setOrigen] = useState<Origen>('texto');
   const [sinCupo, setSinCupo] = useState(false);
+  /** Pidió algo que esta cuenta no tiene (un turno sin agenda). */
+  const [sinLugar, setSinLugar] = useState<{ aviso: string; dicho: string } | null>(null);
   /**
    * Las deudas ya cargadas, para poder elegir a cuál se le imputa un pago.
    *
@@ -119,6 +121,7 @@ export function BotonCaptura({
     setTexto('');
     setError('');
     setSinCupo(false);
+    setSinLugar(null);
     setBorrador(null);
     // El cliente elegido es de ESTA captura. Si se quedara, la próxima venta
     // saldría a nombre de quien fue el último, sin que nadie lo eligiera.
@@ -146,6 +149,16 @@ export function BotonCaptura({
       }
 
       if (!r.ok) throw new Error(datos?.error ?? 'No se pudo interpretar.');
+
+      // Pidió algo que esta cuenta no tiene —un turno sin agenda—. Antes eso
+      // terminaba guardado como un gasto de cero. Se dice, con la
+      // transcripción a la vista para que se entienda qué se entendió.
+      if (datos?.no_disponible) {
+        setSinLugar({ aviso: String(datos.aviso ?? ''), dicho: String(datos.transcripcion ?? '') });
+        setModo('menu');
+        return;
+      }
+
       const interpretado = normalizar(datos as CapturaInterpretada);
 
       // Un turno se revisa en la agenda, en el formulario de siempre: con los
@@ -518,9 +531,9 @@ export function BotonCaptura({
       </button>
 
       {abierto && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
           <div
-            className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 shadow-tarjeta aparecer sm:rounded-3xl"
+            className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 shadow-tarjeta aparecer sm:rounded-3xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* ---------------- MENÚ ---------------- */}
@@ -536,6 +549,27 @@ export function BotonCaptura({
                     ? 'Contale al sistema lo que pasó. Él lo ordena y vos confirmás.'
                     : 'Contale lo que pasó o lo que querés anotar: una venta, un gasto, un turno, un cliente, algo nuevo del catálogo. Él lo ordena y vos confirmás.'}
                 </p>
+
+                {/* Pidió algo que esta cuenta no tiene. Se muestra lo que
+                    entendió, porque lo primero que piensa cualquiera es «no me
+                    escuchó bien» — y sí escuchó bien, lo que falta es la
+                    agenda. */}
+                {sinLugar && (
+                  <div className="mt-4 rounded-xl bg-ambar-claro px-3.5 py-3">
+                    {sinLugar.dicho && (
+                      <p className="mb-2 text-[13px] italic leading-relaxed text-tinta/55">
+                        «{sinLugar.dicho}»
+                      </p>
+                    )}
+                    <p className="text-[13px] font-medium leading-relaxed text-ambar">{sinLugar.aviso}</p>
+                    <button
+                      type="button" onClick={() => setSinLugar(null)}
+                      className="mt-2 text-[12.5px] font-bold text-ambar underline"
+                    >
+                      Entendido
+                    </button>
+                  </div>
+                )}
 
                 {error && (
                   <div className={`mt-4 rounded-xl px-3 py-2.5 text-[13px] font-medium ${

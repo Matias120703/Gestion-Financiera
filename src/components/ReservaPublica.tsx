@@ -125,7 +125,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
           </p>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-borde bg-white p-4">
+        <div className="mt-4 rounded-2xl border border-borde bg-superficie p-4">
           <p className="text-[13.5px] font-semibold">Guardá este enlace</p>
           <p className="mt-1 text-[13px] leading-relaxed text-tinta/55">
             Es lo único que necesitás si después no podés venir. Cancelar a tiempo le deja el
@@ -146,7 +146,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
   return (
     <Marco datos={datos}>
       {profesionales.length === 0 ? (
-        <div className="rounded-2xl border border-borde bg-white p-5 text-center">
+        <div className="rounded-2xl border border-borde bg-superficie p-5 text-center">
           <p className="text-[15px] leading-relaxed text-tinta/60">
             Todavía no hay horarios cargados para reservar por acá. Escribile al local directamente.
           </p>
@@ -165,7 +165,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                     className={`rounded-xl border p-3 text-left text-[14.5px] font-semibold transition ${
                       profesional?.id === p.id
                         ? 'border-verde bg-verde-claro text-verde-fuerte'
-                        : 'border-borde bg-white hover:border-verde/40'
+                        : 'border-borde bg-superficie hover:border-verde/40'
                     }`}
                   >
                     {p.nombre}
@@ -187,7 +187,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                     className={`flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${
                       servicio?.id === s.id
                         ? 'border-verde bg-verde-claro'
-                        : 'border-borde bg-white hover:border-verde/40'
+                        : 'border-borde bg-superficie hover:border-verde/40'
                     }`}
                   >
                     <span className="min-w-0">
@@ -220,7 +220,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                       type="button"
                       onClick={() => { setDia(d); setHora(''); }}
                       className={`shrink-0 rounded-xl border px-3 py-2 text-center transition ${
-                        dia === d ? 'border-verde bg-verde-claro text-verde-fuerte' : 'border-borde bg-white'
+                        dia === d ? 'border-verde bg-verde-claro text-verde-fuerte' : 'border-borde bg-superficie'
                       }`}
                     >
                       <span className="block text-[11px] uppercase tracking-wide text-tinta/45">
@@ -249,7 +249,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                         className={`rounded-lg border py-2.5 text-center text-[14px] font-semibold tabular-nums transition ${
                           hora === h
                             ? 'border-verde bg-verde text-white'
-                            : 'border-borde bg-white hover:border-verde/50'
+                            : 'border-borde bg-superficie hover:border-verde/50'
                         }`}
                       >
                         {horaLegible(h)}
@@ -340,7 +340,7 @@ function Marco({ datos, children }: { datos: AgendaPublica; children: React.Reac
 
 function Bloque({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-borde bg-white p-4">
+    <section className="rounded-2xl border border-borde bg-superficie p-4">
       <h2 className="mb-3 text-[15px] font-bold tracking-tight">{titulo}</h2>
       {children}
     </section>

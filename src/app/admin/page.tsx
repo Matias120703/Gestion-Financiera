@@ -51,10 +51,13 @@ export default async function PaginaAdmin() {
 
   return (
     <div className="min-h-screen bg-arena/40">
-      <header className="sticky top-0 z-20 border-b border-borde bg-white/95 backdrop-blur">
+      {/* `zona-segura-arriba` como en la barra de la app (Navegacion.tsx): sin
+          eso, en el celular instalado el reloj y la señal del sistema quedan
+          encima del título. Se veía «12:25» pisando «Administración». */}
+      <header className="zona-segura-arriba sticky top-0 z-20 border-b border-borde bg-superficie/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 lg:px-7">
           <div className="flex items-center gap-2.5">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-tinta text-[13px] font-black text-white">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-noche text-[13px] font-black text-white">
               o
             </span>
             <div className="min-w-0">

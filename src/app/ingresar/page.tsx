@@ -68,7 +68,7 @@ function Formulario() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-noche px-4 py-10">
       <div className="w-full max-w-[400px] aparecer">
         <Link href="/" className="mb-7 flex items-center gap-2.5 text-white">
           <Marca clase="h-10 w-10" sobreOscuro />
@@ -137,7 +137,7 @@ function Formulario() {
 
 export default function PaginaIngresar() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-tinta" />}>
+    <Suspense fallback={<main className="min-h-screen bg-noche" />}>
       <Formulario />
     </Suspense>
   );

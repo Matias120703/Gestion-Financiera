@@ -159,6 +159,31 @@ grupo('6 · La voz sirve para todo: turnos, catálogo y clientes');
     persona.includes('"turno", "producto" y "ficha" van siempre con todo en null'), true);
 }
 
+// --- Lo que esta cuenta no tiene, se dice (no se convierte en gasto) ---
+//
+// Pasó de verdad: «tengo un nuevo turno mañana a las ocho, un corte para
+// Juan», dicho en una cuenta sin agenda, terminó guardado como un GASTO de
+// cero: el modelo no tenía «turno» entre los tipos y eligió el que más se
+// parecía. Un turno guardado como gasto es un número inventado en las
+// finanzas de alguien.
+{
+  const sinAgenda = instrucciones(HOY, 'PYG', [], [], false, [], FIJOS);
+  ok('sin agenda, igual se pide devolver el tipo turno',
+    sinAgenda.includes('devolvé tipo "turno" lo mismo'), true);
+  ok('y se prohíbe convertirlo en plata',
+    sinAgenda.includes('NUNCA lo conviertas en gasto, venta ni ingreso'), true);
+
+  const conAgenda = instrucciones(HOY, 'PYG', [], [], false, [], FIJOS, [], [], {
+    tipos: ['turno'], bloqueTurnos: 'TURNOS — ejemplo',
+  });
+  ok('con agenda esa regla no aparece: sería ruido',
+    conAgenda.includes('esta cuenta NO tiene agenda'), false);
+
+  const persona2 = instrucciones(HOY, 'PYG', [], [], true);
+  ok('y en una cuenta personal también se avisa, en vez de inventar un gasto',
+    persona2.includes('UNA SOLA EXCEPCIÓN'), true);
+}
+
 console.log('\n' + '═'.repeat(62));
 if (fallos > 0) {
   console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL PROMPT FALLARON`);

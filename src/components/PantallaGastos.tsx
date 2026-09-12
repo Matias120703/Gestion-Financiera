@@ -129,7 +129,7 @@ export function PantallaGastos({
             <button
               key={t} type="button" onClick={() => { setTipo(t); setCategoria(t === 'gasto' ? 'Mercadería' : 'Otros ingresos'); }}
               className={`rounded-lg py-2 text-[13.5px] font-bold transition ${
-                tipo === t ? 'bg-white shadow-sm ' + (t === 'gasto' ? 'text-rojo' : 'text-verde-fuerte') : 'text-tinta/50'
+                tipo === t ? 'bg-superficie shadow-sm ' + (t === 'gasto' ? 'text-rojo' : 'text-verde-fuerte') : 'text-tinta/50'
               }`}
             >
               {t === 'gasto' ? 'Salió plata' : 'Entró plata'}

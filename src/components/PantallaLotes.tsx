@@ -271,7 +271,7 @@ function TarjetaLote({
               <ul className="max-h-56 space-y-1 overflow-y-auto">
                 {sueltos.map((m) => (
                   <li key={m.id}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-white px-2.5 py-1.5">
+                    className="flex items-center justify-between gap-3 rounded-lg bg-superficie px-2.5 py-1.5">
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-medium">
                         {m.descripcion || m.categoria}

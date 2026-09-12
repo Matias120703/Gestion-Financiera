@@ -77,7 +77,7 @@ export function ListaEquipo({
       <ul className="divide-y divide-borde">
         {miembros.map((m) => (
           <li key={m.id} className="flex items-center gap-3 px-4 py-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-tinta text-[13px] font-bold text-white">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-noche text-[13px] font-bold text-white">
               {m.nombre.charAt(0).toUpperCase()}
             </span>
 

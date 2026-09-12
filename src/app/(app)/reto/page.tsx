@@ -76,7 +76,7 @@ export default async function PaginaReto() {
     return (
       <div className="space-y-5">
         <div className="tarjeta overflow-hidden">
-          <div className="bg-tinta px-5 py-6 text-white">
+          <div className="bg-noche px-5 py-6 text-white">
             <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">{t.pantallas.retoEnCurso}</p>
             <h2 className="mt-1.5 text-[22px] font-bold tracking-tight">{activo.nombre}</h2>
             <p className="mt-1 text-[13.5px] text-white/50">
@@ -127,7 +127,7 @@ export default async function PaginaReto() {
     <div className="space-y-5">
       {/* ------------------------- cabecera del reto ------------------------- */}
       <div className="tarjeta overflow-hidden">
-        <div className="bg-tinta px-5 py-6 text-white">
+        <div className="bg-noche px-5 py-6 text-white">
           <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">
             {terminó ? 'Reto terminado' : yaEmpezó ? 'Reto en curso' : 'Reto por empezar'}
           </p>

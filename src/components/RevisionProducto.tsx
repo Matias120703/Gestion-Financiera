@@ -132,7 +132,7 @@ export function RevisionProducto({
 
   const segmento = (activo: boolean) =>
     `rounded-lg px-2 py-2 text-center text-[13px] font-semibold transition ${
-      activo ? 'bg-white text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
+      activo ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
 
   return (
     <div className="max-h-[78vh] overflow-y-auto scroll-limpio">

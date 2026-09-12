@@ -121,7 +121,7 @@ function Marco({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-arena">
       <div className="mx-auto max-w-md px-4 pb-16 pt-10">
-        <div className="rounded-2xl border border-borde bg-white p-5">{children}</div>
+        <div className="rounded-2xl border border-borde bg-superficie p-5">{children}</div>
         <p className="mt-8 text-center text-[11.5px] text-tinta/35">Turnos con Orden</p>
       </div>
     </div>

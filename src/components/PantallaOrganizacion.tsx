@@ -447,7 +447,7 @@ function FormularioFijo({
   const valido = nombre.trim() !== '' && Number(importe.replace(',', '.')) > 0;
 
   return (
-    <div className="mt-3 space-y-3 rounded-xl border border-borde bg-white p-3">
+    <div className="mt-3 space-y-3 rounded-xl border border-borde bg-superficie p-3">
       <div>
         <label className="etiqueta" htmlFor="fijo-nombre">{t.organizacion.queEs}</label>
         <input
@@ -557,7 +557,7 @@ function FormularioIngreso({
     && !enElFuturo;
 
   return (
-    <div className="mt-3 space-y-3 rounded-xl border border-verde/30 bg-white p-3">
+    <div className="mt-3 space-y-3 rounded-xl border border-verde/30 bg-superficie p-3">
       <p className="text-[12.5px] leading-relaxed text-tinta/60">
         {t.organizacion.registrarIngresoDetalle}
       </p>
@@ -887,7 +887,7 @@ function FormularioSalida({
               {t.organizacion.categoriaPropia}
             </button>
           ) : (
-            <div className="mt-3 rounded-xl border border-borde bg-white p-3">
+            <div className="mt-3 rounded-xl border border-borde bg-superficie p-3">
               <p className="text-[12.5px] leading-relaxed text-tinta/55">
                 {t.organizacion.categoriaPropiaDetalle}
               </p>

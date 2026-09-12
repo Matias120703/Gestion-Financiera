@@ -37,7 +37,7 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
           <button
             key={r} type="button" onClick={() => aplicar(r)}
             className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
-              clave === r ? 'border-verde bg-verde text-white' : 'border-borde bg-white text-tinta/60 hover:border-verde/50'
+              clave === r ? 'border-verde bg-verde text-white' : 'border-borde bg-superficie text-tinta/60 hover:border-verde/50'
             }`}
           >
             {ETIQUETAS_RANGO[r as keyof typeof ETIQUETAS_RANGO]}
@@ -46,7 +46,7 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
         <button
           type="button" onClick={() => setAbierto((v) => !v)}
           className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
-            clave === 'personalizado' ? 'border-verde bg-verde text-white' : 'border-borde bg-white text-tinta/60 hover:border-verde/50'
+            clave === 'personalizado' ? 'border-verde bg-verde text-white' : 'border-borde bg-superficie text-tinta/60 hover:border-verde/50'
           }`}
         >
           Elegir fechas

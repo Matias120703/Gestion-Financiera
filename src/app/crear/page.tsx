@@ -185,7 +185,7 @@ export default function PaginaCrear() {
   const rubroNombre = LISTA_RUBROS.find((r) => r.clave === datos.rubro)?.nombre ?? '';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-tinta px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-noche px-4 py-10">
       <div className="w-full max-w-[520px] aparecer">
         <Link href="/" className="mb-7 flex items-center gap-2.5 text-white">
           <Marca clase="h-10 w-10" sobreOscuro />

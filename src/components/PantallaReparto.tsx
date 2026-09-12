@@ -529,7 +529,7 @@ function Equipo({
                   quien quería cambiar cómo le paga no encontraba por dónde. */}
               <button
                 type="button" onClick={() => { setCreando(false); setEditando(p); }} disabled={ocupado}
-                className="inline-flex shrink-0 items-center rounded-xl border border-borde bg-white px-3 py-1.5 text-[13px] font-semibold text-tinta/70 hover:bg-arena"
+                className="inline-flex shrink-0 items-center rounded-xl border border-borde bg-superficie px-3 py-1.5 text-[13px] font-semibold text-tinta/70 hover:bg-arena"
               >
                 {t.reparto.editar}
               </button>
@@ -643,7 +643,7 @@ function FormularioProfesional({
             <label
               key={o.clave}
               className={`flex cursor-pointer gap-2.5 rounded-xl border p-3 ${
-                reparto === o.clave ? 'border-verde bg-verde-claro' : 'border-borde bg-white'
+                reparto === o.clave ? 'border-verde bg-verde-claro' : 'border-borde bg-superficie'
               }`}
             >
               <input
@@ -673,7 +673,7 @@ function FormularioProfesional({
       )}
 
       {cambioElPago && (
-        <p className="rounded-xl bg-white px-3 py-2 text-[12.5px] leading-snug text-tinta/60">
+        <p className="rounded-xl bg-superficie px-3 py-2 text-[12.5px] leading-snug text-tinta/60">
           {t.reparto.cambioDesdeAhora}
         </p>
       )}

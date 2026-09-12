@@ -138,7 +138,7 @@ export function PantallaProductos({
               aria-selected={pestana === tp}
               onClick={() => { setPestana(tp); setBusqueda(''); }}
               className={`flex-1 rounded-lg px-3 py-2 text-[14px] font-bold transition ${
-                pestana === tp ? 'bg-white text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'
+                pestana === tp ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'
               }`}
             >
               {tp === 'servicios' ? 'Servicios' : 'Productos'}
@@ -427,13 +427,13 @@ function DialogoProducto({
   }
 
   const opcion = (activa: boolean) =>
-    `rounded-lg px-3 py-2 text-left transition ${activa ? 'bg-white text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
+    `rounded-lg px-3 py-2 text-left transition ${activa ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
       <form
         onSubmit={guardar}
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[19px] font-bold tracking-tight">{b.id ? `Editar ${que}` : `Nuevo ${que}`}</h2>

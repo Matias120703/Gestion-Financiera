@@ -4,6 +4,8 @@ import { idiomaActual, textos } from '@/i18n';
 import { ProveedorIdioma } from '@/i18n/cliente';
 import { RegistrarServiceWorker } from '@/components/RegistrarServiceWorker';
 import { CapturarRef } from '@/components/CapturarRef';
+import { SeguirTema } from '@/components/SeguirTema';
+import { GUION_TEMA } from '@/lib/tema';
 
 export const metadata: Metadata = {
   title: 'Orden · Gestión financiera',
@@ -31,9 +33,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang={idioma}>
+      <head>
+        {/* El tema se aplica antes de pintar nada. Ver src/lib/tema.ts: si
+            esto fuera un efecto de React, cada apertura de la app arrancaría
+            en blanco y se pondría oscura un instante después. */}
+        <script dangerouslySetInnerHTML={{ __html: GUION_TEMA }} />
+      </head>
       <body>
         <ProveedorIdioma idioma={idioma}>
           <CapturarRef />
+          <SeguirTema />
           {children}
           <RegistrarServiceWorker sinConexion={t.sinConexion.titulo} />
         </ProveedorIdioma>

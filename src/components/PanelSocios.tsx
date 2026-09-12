@@ -63,8 +63,8 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
   const [abierto, setAbierto] = useState(false);
   const [nuevo, setNuevo] = useState(false);
   const [editando, setEditando] = useState<SocioAdmin | null>(null);
-  /** A quiénes trajo cada uno: se abre desde su fila. */
-  const [viendo, setViendo] = useState<string>('');
+  /** El socio abierto: sus datos para transferirle y a quiénes trajo. */
+  const [viendo, setViendo] = useState<SocioAdmin | null>(null);
 
   const traidosDe = useMemo(() => {
     const mapa = new Map<string, ReferidoAdmin[]>();
@@ -122,7 +122,7 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
       </div>
 
       {/* ---------------- las comisiones ---------------- */}
-      <div className="rounded-2xl border border-borde bg-white">
+      <div className="rounded-2xl border border-borde bg-superficie">
         <div className="flex flex-wrap gap-1.5 border-b border-borde p-4">
           {FILTROS.map((f) => (
             <button
@@ -152,7 +152,7 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
       </div>
 
       {/* ---------------- la lista de socios ---------------- */}
-      <div className="rounded-2xl border border-borde bg-white">
+      <div className="rounded-2xl border border-borde bg-superficie">
         <button
           type="button" onClick={() => setAbierto(!abierto)}
           className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
@@ -176,82 +176,55 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
           ) : (
             <ul className="divide-y divide-borde border-t border-borde">
               {socios.map((s) => (
-                <li key={s.id} className="px-4 py-3.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-2 text-[14.5px] font-bold">
+                <li key={s.id}>
+                  {/* La fila entera abre la ficha. Antes había que entrar a
+                      «Editar» para leer un número de cuenta, que es mirar un
+                      dato pasando por la pantalla de cambiarlo. */}
+                  <button
+                    type="button" onClick={() => setViendo(s)}
+                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-arena/60"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2 text-[14.5px] font-bold">
                         <span className="truncate">{s.nombre}</span>
                         {!s.activo && <span className="pastilla bg-arena text-tinta/55">desactivado</span>}
-                      </p>
-                      <p className="mt-0.5 truncate text-[12.5px] text-tinta/50">
-                        {s.telefono || 'sin teléfono'}
-                        {s.cobra_en ? ` · cobra en ${s.cobra_en}` : ''}
-                      </p>
-                      <p className="mt-1 text-[12.5px] text-tinta/45">
-                        {s.traidos} {s.traidos === 1 ? 'negocio traído' : 'negocios traídos'} ·{' '}
-                        {s.pagaron} {s.pagaron === 1 ? 'pagó' : 'pagaron'}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[12.5px] text-tinta/50">
+                        {s.telefono || 'sin telefono'}
+                        {s.cobra_en ? ` · ${s.cobra_en}` : ''}
+                      </span>
+                      <span className="mt-1 block text-[12.5px] text-tinta/45">
+                        {s.traidos} {s.traidos === 1 ? 'negocio traido' : 'negocios traidos'} ·{' '}
+                        {s.pagaron} {s.pagaron === 1 ? 'pago' : 'pagaron'}
                         {num(s.por_pagar) > 0 && (
                           <span className="font-semibold text-ambar">
                             {' '}· {dinero(num(s.por_pagar), moneda)} por pagar
                           </span>
                         )}
-                      </p>
-                      {s.traidos > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setViendo(viendo === s.id ? '' : s.id)}
-                          className="mt-1.5 text-[12.5px] font-semibold text-verde-fuerte hover:underline"
-                        >
-                          {viendo === s.id ? 'Ocultar a quiénes trajo' : 'Ver a quiénes trajo'}
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1.5">
-                      <Codigo codigo={s.codigo} />
-                      <button
-                        type="button" onClick={() => setEditando(s)}
-                        className="text-[12.5px] font-semibold text-verde-fuerte hover:underline"
-                      >
-                        Editar
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* En qué se suscribieron los que trajo: sin esto, «trajo
-                      cuatro» no dice si trajo cuatro clientes o cuatro
-                      cuentas gratis que no van a pagar nunca. */}
-                  {viendo === s.id && (
-                    <ul className="mt-2.5 space-y-1.5 rounded-xl bg-arena p-3">
-                      {(traidosDe.get(s.id) ?? []).map((r) => (
-                        <li key={r.empresa_id} className="flex items-center justify-between gap-3 text-[12.5px]">
-                          <span className="min-w-0 truncate">
-                            <span className="font-semibold">{r.negocio}</span>
-                            <span className="text-tinta/45">
-                              {' '}· {fechaCorta(r.desde)} · {r.origen === 'link' ? 'por su enlace' : 'a mano'}
-                            </span>
-                          </span>
-                          <span className="shrink-0 text-right">
-                            <span className={`pastilla ${
-                              r.paga ? 'bg-verde-claro text-verde-fuerte' : 'bg-white text-tinta/50'
-                            }`}>
-                              {r.paga ? NOMBRE_PLAN[r.plan] ?? r.plan : 'sin pagar'}
-                            </span>
-                            {num(r.monto) > 0 && (
-                              <span className="ml-1.5 font-semibold tabular-nums">
-                                {dinero(num(r.monto), moneda)}
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                      </span>
+                    </span>
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-tinta/25" {...trazo}>
+                      <path d="m9 6 6 6-6 6" />
+                    </svg>
+                  </button>
                 </li>
               ))}
             </ul>
           )
         )}
       </div>
+
+      {viendo && (
+        <FichaSocio
+          socio={viendo}
+          traidos={traidosDe.get(viendo.id) ?? []}
+          comisiones={comisiones.filter((c) => c.socio_id === viendo.id)}
+          moneda={moneda}
+          onCerrar={() => setViendo(null)}
+          onEditar={() => { setEditando(viendo); setViendo(null); }}
+          onHecho={() => { setViendo(null); router.refresh(); }}
+        />
+      )}
 
       {(nuevo || editando) && (
         <FormularioSocio
@@ -493,11 +466,11 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-tinta/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
       onClick={onCerrar}
     >
       <div
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white shadow-tarjeta aparecer sm:rounded-3xl"
+        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie shadow-tarjeta aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-borde px-5 py-4">
@@ -642,7 +615,7 @@ function Tarjeta({ titulo, valor, detalle, tono }: {
   titulo: string; valor: string; detalle: string; tono?: 'ambar';
 }) {
   return (
-    <div className="rounded-2xl border border-borde bg-white p-4">
+    <div className="rounded-2xl border border-borde bg-superficie p-4">
       <p className="text-[11.5px] font-semibold uppercase tracking-wide text-tinta/45">{titulo}</p>
       <p className={`mt-1.5 text-[20px] font-bold leading-none tabular-nums ${
         tono === 'ambar' ? 'text-ambar' : 'text-tinta'
@@ -651,5 +624,214 @@ function Tarjeta({ titulo, valor, detalle, tono }: {
       </p>
       <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{detalle}</p>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- la ficha
+
+/**
+ * LA FICHA DEL SOCIO: PARA MIRAR, NO PARA CAMBIAR.
+ *
+ * Antes, para leer el número de cuenta de alguien había que entrar a
+ * «Editar». O sea: para mirar un dato había que pasar por la pantalla de
+ * cambiarlo, con todos los campos abiertos y el botón de guardar esperando un
+ * toque en falso. Eso no es un atajo, es una trampa.
+ *
+ * Acá está todo lo que hace falta para transferirle, cada dato con su botón
+ * de copiar —un número de cuenta no se transcribe a mano, se copia—, y abajo
+ * lo que trajo y lo que se le debe. Editar sigue existiendo, en su lugar: un
+ * botón aparte, para cuando de verdad hay que cambiar algo.
+ */
+function FichaSocio({ socio, traidos, comisiones, moneda, onCerrar, onEditar, onHecho }: {
+  socio: SocioAdmin;
+  traidos: ReferidoAdmin[];
+  comisiones: ComisionAdmin[];
+  moneda: string;
+  onCerrar: () => void;
+  onEditar: () => void;
+  onHecho: () => void;
+}) {
+  const porPagar = comisiones.filter((c) => c.estado === 'por_pagar');
+  const wa = (socio.telefono || '').replace(/\D/g, '');
+
+  const datos = [
+    { etiqueta: 'Banco o billetera', valor: socio.banco },
+    { etiqueta: 'A nombre de', valor: socio.titular },
+    { etiqueta: 'Cuenta o alias', valor: socio.cuenta },
+    { etiqueta: 'CI o RUC', valor: socio.documento },
+  ].filter((d) => (d.valor ?? '').trim() !== '');
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
+      onClick={onCerrar}
+    >
+      <div
+        className="zona-segura-abajo max-h-[90vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie shadow-tarjeta aparecer sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-borde bg-superficie/95 px-5 py-4 backdrop-blur">
+          <div className="min-w-0">
+            <h2 className="truncate text-[18px] font-bold tracking-tight">{socio.nombre}</h2>
+            <p className="mt-0.5 flex items-center gap-2 text-[12.5px] text-tinta/55">
+              <span>socio desde {fechaCorta(socio.creado)}</span>
+              {!socio.activo && <span className="pastilla bg-arena text-tinta/55">desactivado</span>}
+            </p>
+          </div>
+          <button
+            type="button" onClick={onCerrar} aria-label="Cerrar"
+            className="icono-toque shrink-0 text-tinta/40 hover:bg-arena"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          {/* Cuánto se le debe: es lo primero que se viene a mirar acá. */}
+          <div className="grid grid-cols-2 gap-3">
+            <Tarjeta
+              titulo="Por pagar"
+              valor={dinero(num(socio.por_pagar), moneda)}
+              detalle={num(socio.por_pagar) > 0
+                ? `${porPagar.length} ${porPagar.length === 1 ? 'comisión' : 'comisiones'}`
+                : 'nada pendiente'}
+              tono={num(socio.por_pagar) > 0 ? 'ambar' : undefined}
+            />
+            <Tarjeta
+              titulo="Ya cobró"
+              valor={dinero(num(socio.pagado), moneda)}
+              detalle={`${socio.traidos} ${socio.traidos === 1 ? 'traído' : 'traídos'} · ${socio.pagaron} pagaron`}
+            />
+          </div>
+
+          {/* ---- para transferirle ---- */}
+          <div className="rounded-2xl border border-borde p-4">
+            <p className="titulo-seccion mb-2.5">Para transferirle</p>
+
+            {datos.length === 0 ? (
+              <p className="rounded-xl bg-ambar-claro px-3 py-2.5 text-[12.5px] leading-snug text-ambar">
+                {socio.cobra_en
+                  ? <>Solo dejó escrito: <strong>{socio.cobra_en}</strong>. Pedile el banco, el titular y la cédula.</>
+                  : 'Todavía no cargó sus datos. Los completa él, desde «Recomendar».'}
+              </p>
+            ) : (
+              <dl className="space-y-2.5">
+                {datos.map((d) => (
+                  <div key={d.etiqueta} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">
+                        {d.etiqueta}
+                      </dt>
+                      <dd className="truncate text-[14.5px] font-semibold">{d.valor}</dd>
+                    </div>
+                    <Copiar texto={d.valor} />
+                  </div>
+                ))}
+              </dl>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-borde pt-3">
+              <Codigo codigo={socio.codigo} />
+              {socio.email && <span className="truncate text-[12.5px] text-tinta/50">{socio.email}</span>}
+            </div>
+
+            {wa ? (
+              <a
+                href={`https://wa.me/${wa}`}
+                target="_blank" rel="noopener noreferrer"
+                className="boton-suave mt-3 flex w-full items-center justify-center gap-2 py-2.5 text-[13.5px]"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
+                  <path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 21l2.2-5.2A8.5 8.5 0 1 1 21 11.5Z" />
+                </svg>
+                Escribirle por WhatsApp
+              </a>
+            ) : (
+              <p className="mt-3 text-[12.5px] text-tinta/45">Sin teléfono cargado.</p>
+            )}
+          </div>
+
+          {/* Lo que hay que pagarle, con el botón acá mismo: si ya estás
+              mirando su número de cuenta, ese es el momento de marcarla. */}
+          {porPagar.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-ambar/30 bg-ambar-claro/30">
+              <p className="titulo-seccion px-4 pt-3.5">Comisiones por pagar</p>
+              <ul className="divide-y divide-borde/60">
+                {porPagar.map((c) => (
+                  <FilaComision key={c.id} comision={c} moneda={moneda} onHecho={onHecho} />
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* ---- a quiénes trajo ---- */}
+          <div className="overflow-hidden rounded-2xl border border-borde">
+            <p className="titulo-seccion px-4 pt-3.5">A quiénes trajo</p>
+            {traidos.length === 0 ? (
+              <p className="px-4 py-5 text-[13px] text-tinta/45">Todavía a nadie.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-borde">
+                {traidos.map((r) => (
+                  <li key={r.empresa_id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13.5px] font-semibold">{r.negocio}</span>
+                      <span className="mt-0.5 block text-[12px] text-tinta/45">
+                        {fechaCorta(r.desde)} · {r.origen === 'link' ? 'por su enlace' : 'anotado a mano'}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className={`pastilla ${
+                        r.paga ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/50'
+                      }`}>
+                        {r.paga ? NOMBRE_PLAN[r.plan] ?? r.plan : 'sin pagar'}
+                      </span>
+                      {num(r.monto) > 0 && (
+                        <span className="mt-0.5 block text-[12.5px] font-semibold tabular-nums">
+                          {dinero(num(r.monto), moneda)}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {socio.notas && (
+            <div className="rounded-2xl bg-arena p-4">
+              <p className="titulo-seccion mb-1">Notas</p>
+              <p className="text-[13px] leading-relaxed text-tinta/70">{socio.notas}</p>
+            </div>
+          )}
+
+          <button type="button" onClick={onEditar} className="boton-suave w-full py-2.5 text-[13.5px]">
+            Editar sus datos
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Copiar un dato suelto: un número de cuenta no se transcribe, se copia. */
+function Copiar({ texto }: { texto: string }) {
+  const [copiado, setCopiado] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(texto);
+          setCopiado(true);
+          setTimeout(() => setCopiado(false), 1600);
+        } catch {
+          // Sin portapapeles el dato igual está a la vista.
+        }
+      }}
+      className="shrink-0 rounded-lg bg-arena px-2.5 py-1.5 text-[12px] font-semibold text-tinta/60 hover:bg-borde/40"
+    >
+      {copiado ? 'copiado' : 'copiar'}
+    </button>
   );
 }

@@ -354,8 +354,12 @@ export interface SocioAdmin {
   /** Lo que comparte para que le atribuyan los clientes que trae. No cambia. */
   codigo: string;
   activo: boolean;
-  /** Banco, billetera o alias. Texto libre: es para leerlo al transferir. */
+  /** Línea de un vistazo, armada con el banco y la cuenta (064). */
   cobra_en: string;
+  banco: string;
+  titular: string;
+  cuenta: string;
+  documento: string;
   notas: string;
   tiene_cuenta: boolean;
   creado: string;
@@ -376,6 +380,10 @@ export interface ComisionAdmin {
   socio: string;
   telefono: string;
   cobra_en: string;
+  banco: string;
+  titular: string;
+  cuenta: string;
+  documento: string;
   empresa_id: string;
   negocio: string;
   /** Lo que pagó el cliente. La comisión sale de acá, no del precio de lista. */
@@ -424,6 +432,10 @@ export type PanelSocio =
       codigo: string;
       nombre: string;
       cobra_en: string;
+      banco: string;
+      titular: string;
+      cuenta: string;
+      documento: string;
       activo: boolean;
       traidos: number;
       pagaron: number;

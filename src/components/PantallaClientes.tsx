@@ -418,11 +418,11 @@ function FilaCliente({
 
               {tieneAgenda && (
                 <div className="grid grid-cols-2 gap-2 text-[13px]">
-                  <div className="rounded-xl bg-white px-3 py-2.5">
+                  <div className="rounded-xl bg-superficie px-3 py-2.5">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">Dejó en total</p>
                     <p className="mt-0.5 font-bold tabular-nums">{plata(c.gastado)}</p>
                   </div>
-                  <div className="rounded-xl bg-white px-3 py-2.5">
+                  <div className="rounded-xl bg-superficie px-3 py-2.5">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">Próximo turno</p>
                     <p className="mt-0.5 font-bold">{proximo || 'ninguno'}</p>
                   </div>
@@ -441,14 +441,14 @@ function FilaCliente({
                 {debe > 0 && (
                   <Link
                     href="/fiado"
-                    className="inline-flex items-center rounded-xl border border-borde bg-white px-3.5 py-2 text-[13.5px] font-semibold text-tinta/70 hover:bg-arena"
+                    className="inline-flex items-center rounded-xl border border-borde bg-superficie px-3.5 py-2 text-[13.5px] font-semibold text-tinta/70 hover:bg-arena"
                   >
                     Cobrarle {plata(debe)}
                   </Link>
                 )}
                 <button
                   type="button" onClick={() => setEditando(true)}
-                  className="inline-flex items-center rounded-xl border border-borde bg-white px-3.5 py-2 text-[13.5px] font-semibold text-tinta/70 hover:bg-arena"
+                  className="inline-flex items-center rounded-xl border border-borde bg-superficie px-3.5 py-2 text-[13.5px] font-semibold text-tinta/70 hover:bg-arena"
                 >
                   Editar
                 </button>

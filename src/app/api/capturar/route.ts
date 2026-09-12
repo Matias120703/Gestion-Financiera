@@ -319,6 +319,28 @@ export async function POST(request: Request) {
     // El saneo también lo aplica, no solo el prompt: una instrucción se puede
     // ignorar, esto no. Si igual devolviera 'venta' en una cuenta personal,
     // acá se convierte en el ingreso que en realidad era.
+    /**
+     * UN TURNO NO SE GUARDA COMO GASTO.
+     *
+     * Pasó de verdad: «tengo un nuevo turno mañana a las ocho, un corte de
+     * cabello para Juan», dicho en una cuenta sin agenda, se guardó como un
+     * Gasto de cero. El tipo no existía en esta cuenta, cayó en el último
+     * caso del `else` de abajo, y nadie dijo nada.
+     *
+     * Eso no es una captura imprecisa: es un movimiento inventado en las
+     * finanzas de alguien. Si lo que pidió no existe acá, se dice y no se
+     * guarda nada.
+     */
+    if (datos.tipo === 'turno' && !acciones.tipos.includes('turno')) {
+      return NextResponse.json({
+        no_disponible: 'agenda',
+        transcripcion,
+        aviso: esPersonal
+          ? 'Eso es un turno, y una cuenta personal no tiene agenda. La agenda es de las cuentas de negocio con rubro «Servicios y oficios».'
+          : 'Eso es un turno, y este negocio no tiene agenda. La agenda viene con el rubro «Servicios y oficios», que se elige al crear la cuenta.',
+      });
+    }
+
     const tipo = TIPOS.includes(datos.tipo)
       ? datos.tipo
       : (esPersonal && datos.tipo === 'venta') ? 'ingreso' : 'gasto';

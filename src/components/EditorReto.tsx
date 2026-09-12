@@ -142,7 +142,7 @@ function FormularioReto({
             <button
               key={v} type="button" onClick={() => setMedida(v)}
               className={`rounded-lg py-2 text-[13px] font-bold transition ${
-                medida === v ? 'bg-white text-tinta shadow-sm' : 'text-tinta/50'
+                medida === v ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50'
               }`}
             >
               {v === 'ventas' ? 'Lo vendido' : 'Ganancia neta'}

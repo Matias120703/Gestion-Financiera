@@ -103,9 +103,9 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
         <Cuadro titulo="Ya cobraste" valor={dinero(num(panel.pagado), 'PYG')} detalle="en total" />
       </div>
 
-      <DondeCobro actual={panel.cobra_en} />
+      <DondeCobro datos={panel} />
 
-      <div className="rounded-2xl border border-borde bg-white">
+      <div className="rounded-2xl border border-borde bg-superficie">
         <p className="border-b border-borde px-4 py-3 text-[14.5px] font-bold">Los que trajiste</p>
         {panel.referidos.length === 0 ? (
           <p className="px-4 py-10 text-center text-[13.5px] leading-relaxed text-tinta/45">
@@ -189,7 +189,7 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
   const mensaje = `Te paso Orden, lo uso para anotar las ventas y los gastos del negocio y ver la ganancia del día. Entrá por acá: ${enlace}`;
 
   return (
-    <div className="rounded-2xl border border-borde bg-white p-4">
+    <div className="rounded-2xl border border-borde bg-superficie p-4">
       <p className="etiqueta">Tu enlace</p>
       <p className="mt-1 break-all rounded-xl bg-arena px-3 py-2.5 text-[13.5px] font-semibold">
         {enlace}
@@ -228,19 +228,47 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
   );
 }
 
-/** Dónde le transferimos. Lo escribe el socio: es su plata y su banco. */
-function DondeCobro({ actual }: { actual: string }) {
+/**
+ * Dónde le transferimos.
+ *
+ * Eran cuatro datos metidos en una sola línea de texto: «Banco Familiar,
+ * alias 0984158986». Al momento de pagar había que leer esa frase y adivinar
+ * qué parte era el banco, cuál el alias y a nombre de quién estaba la cuenta
+ * —y faltaba la cédula, que todos los bancos de acá piden igual—.
+ *
+ * Ahora son los mismos cuatro campos que pide cualquier formulario de
+ * transferencia, en el mismo orden en que se llenan.
+ *
+ * Ninguno es obligatorio: alguien puede tener solo una billetera, y exigirle
+ * un número de cuenta que no tiene lo dejaría sin poder guardar nada.
+ */
+function DondeCobro({ datos }: {
+  datos: { banco: string; titular: string; cuenta: string; documento: string; cobra_en: string };
+}) {
   const router = useRouter();
-  const [valor, setValor] = useState(actual);
+  const [banco, setBanco] = useState(datos.banco);
+  const [titular, setTitular] = useState(datos.titular);
+  const [cuenta, setCuenta] = useState(datos.cuenta);
+  const [documento, setDocumento] = useState(datos.documento);
   const [guardando, setGuardando] = useState(false);
   const [listo, setListo] = useState(false);
   const [error, setError] = useState('');
+
+  const cambio = banco !== datos.banco || titular !== datos.titular
+    || cuenta !== datos.cuenta || documento !== datos.documento;
+
+  // Lo que había escrito antes de que esto fueran cuatro campos. Se muestra
+  // hasta que complete los nuevos: borrarlo sería perderle el único dato que
+  // teníamos para pagarle.
+  const viejo = !banco && !cuenta && datos.cobra_en ? datos.cobra_en : '';
 
   async function guardar() {
     setGuardando(true);
     setError('');
     try {
-      const { error: e } = await clienteNavegador().rpc('guardar_donde_cobro', { p_cobra_en: valor });
+      const { error: e } = await clienteNavegador().rpc('guardar_donde_cobro', {
+        p_banco: banco, p_titular: titular, p_cuenta: cuenta, p_documento: documento,
+      });
       if (e) throw e;
       setListo(true);
       setTimeout(() => setListo(false), 2000);
@@ -253,25 +281,64 @@ function DondeCobro({ actual }: { actual: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-borde bg-white p-4">
-      <label className="etiqueta">Dónde te transferimos</label>
-      <input
-        className="campo mt-1" value={valor} onChange={(e) => setValor(e.target.value)}
-        placeholder="Banco y número de cuenta, o tu billetera"
-      />
-      <p className="mt-1.5 text-[12.5px] leading-snug text-tinta/50">
-        Escribilo como lo necesitamos para pagarte. Si está vacío, te lo vamos a tener que pedir.
+    <div className="rounded-2xl border border-borde bg-superficie p-4">
+      <p className="text-[14.5px] font-bold">Dónde te transferimos</p>
+      <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/50">
+        Completalo una vez. Cuando te toque cobrar, no te lo vamos a tener que pedir.
       </p>
-      {error && (
-        <p className="mt-2 rounded-xl bg-rojo-claro px-3 py-2 text-[12.5px] font-medium text-rojo">{error}</p>
+
+      {viejo && (
+        <p className="mt-3 rounded-xl bg-arena px-3 py-2 text-[12.5px] leading-snug text-tinta/55">
+          Antes habías escrito: <span className="font-semibold text-tinta">{viejo}</span>
+        </p>
       )}
+
+      <div className="mt-3 space-y-3">
+        <Campo
+          etiqueta="Banco o billetera" valor={banco} onChange={setBanco}
+          ejemplo="Banco Familiar, Ueno, Tigo Money…"
+        />
+        <Campo
+          etiqueta="A nombre de" valor={titular} onChange={setTitular}
+          ejemplo="Como figura en la cuenta"
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Campo
+            etiqueta="Cuenta o alias" valor={cuenta} onChange={setCuenta}
+            ejemplo="Número o alias"
+          />
+          <Campo
+            etiqueta="CI o RUC" valor={documento} onChange={setDocumento}
+            ejemplo="Del titular"
+          />
+        </div>
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2 text-[12.5px] font-medium text-rojo">{error}</p>
+      )}
+
       <button
-        type="button" onClick={guardar} disabled={guardando || valor === actual}
-        className="boton-suave mt-2.5 w-full py-2.5 text-[13.5px]"
+        type="button" onClick={guardar} disabled={guardando || !cambio}
+        className="boton-principal mt-3.5 w-full py-2.5 text-[14px]"
       >
-        {guardando ? 'Guardando…' : listo ? 'Guardado' : 'Guardar'}
+        {guardando ? 'Guardando…' : listo ? 'Guardado' : 'Guardar mis datos'}
       </button>
     </div>
+  );
+}
+
+function Campo({ etiqueta, valor, onChange, ejemplo }: {
+  etiqueta: string; valor: string; onChange: (v: string) => void; ejemplo: string;
+}) {
+  return (
+    <label className="block">
+      <span className="etiqueta">{etiqueta}</span>
+      <input
+        className="campo mt-1 py-2.5 text-[14.5px]" value={valor}
+        onChange={(e) => onChange(e.target.value)} placeholder={ejemplo}
+      />
+    </label>
   );
 }
 
@@ -279,7 +346,7 @@ function Cuadro({ titulo, valor, detalle, tono }: {
   titulo: string; valor: string; detalle: string; tono?: 'verde';
 }) {
   return (
-    <div className="rounded-2xl border border-borde bg-white p-4">
+    <div className="rounded-2xl border border-borde bg-superficie p-4">
       <p className="text-[11.5px] font-semibold uppercase tracking-wide text-tinta/45">{titulo}</p>
       <p className={`mt-1.5 text-[20px] font-bold leading-none tabular-nums ${
         tono === 'verde' ? 'text-verde-fuerte' : 'text-tinta'
