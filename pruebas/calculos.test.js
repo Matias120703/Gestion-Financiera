@@ -382,12 +382,15 @@ ok('tieneSeccion contesta igual que la ficha',
 
   // Lo que se rompió: un número fijo de columnas para una cantidad de
   // botones que varía. Mientras las columnas se calculen, no puede volver.
-  const desde = nav.indexOf("<nav className=\"zona-segura-abajo");
+  // Se busca por sus clases y no por cómo empieza la etiqueta: la barra pasó a
+  // armar la clase con una plantilla (para esconderse con el menú abierto) y
+  // buscar `className="` ya no la encontraba.
+  const desde = nav.indexOf('zona-segura-abajo fixed inset-x-0 bottom-0');
   const barra = nav.slice(desde, desde + 900);
   // Se miran solo las CLASES y no el texto crudo: el comentario que explica
   // este arreglo nombra el problema viejo, y buscarlo a secas lo encontraría
   // ahí y daría por rota una barra que está bien.
-  const clases = (barra.match(/className="[^"]*"/g) ?? []).join(' ');
+  const clases = (barra.match(/className=("[^"]*"|{`[^`]*`})/g) ?? []).join(' ');
   ok('las columnas de la barra no están escritas a mano',
     /grid-cols-\d/.test(clases), false);
   ok('se calculan a partir de los botones que hay',
@@ -1001,8 +1004,14 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('la barra de abajo nunca arrastra la pantalla', nav.includes('bottom-0 z-50 touch-none'), true);
   ok('y la captura igual', cap.includes('flex touch-none items-center') && cap.includes('touch-pan-y overflow-y-auto'), true);
 
-  ok('el menú flota centrado, no pegado abajo',
-    nav.includes('items-center justify-center overscroll-none px-4 pb-24'), true);
+  ok('el menú flota centrado, por encima de todo',
+    nav.includes('fixed inset-0 z-[60] flex touch-none items-center justify-center'), true);
+  // La solución que eligió el dueño a la barra que «se levantaba»: mientras
+  // el menú está abierto la barra no está, y se sale con la X. Lo que no
+  // está, no se puede mover.
+  ok('con el menú abierto la barra de abajo desaparece', nav.includes("${abierto ? 'hidden' : ''}"), true);
+  ok('y se sale con una X', nav.includes('aria-label={t.comun.cerrar}'), true);
+  ok('el bloqueo no le toca el overflow a la raíz', fondo.includes("raiz.style.overflow = 'hidden'"), false);
   ok('la captura también', cap.includes('items-center justify-center overscroll-none bg-noche/70'), true);
 
   // Una sola luz, y es donde estás AHORA: con el menú abierto estás en el

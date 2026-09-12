@@ -22,7 +22,8 @@ import { useEffect } from 'react';
  *
  * LO QUE HACE AHORA
  *
- *   · `overflow: hidden` en html y body: frena la rueda del mouse.
+ *   · `overflow: hidden` en el body, NO en la raíz: frena la rueda del
+ *     mouse sin achicar la pantalla del iPhone instalado.
  *   · `overscroll-behavior: none` en html y body: le quita a la pantalla el
  *     rebote elástico, que es lo que movía cuadros y barra como un bloque.
  *   · Y el gesto se deja pasar SOLO si lo que está bajo el dedo todavía se
@@ -40,13 +41,14 @@ export function useBloquearFondo(activo: boolean): void {
     const raiz = document.documentElement;
     const body = document.body;
     const antes = {
-      raizOverflow: raiz.style.overflow,
       bodyOverflow: body.style.overflow,
       raizRebote: raiz.style.overscrollBehavior,
       bodyRebote: body.style.overscrollBehavior,
     };
 
-    raiz.style.overflow = 'hidden';
+    // A la raíz NO se le pone `overflow: hidden`: en la app instalada del
+    // iPhone eso achica la pantalla, y quedaba una franja negra debajo de
+    // todo. Al body sí, que no cambia el tamaño de nada.
     body.style.overflow = 'hidden';
     raiz.style.overscrollBehavior = 'none';
     body.style.overscrollBehavior = 'none';
@@ -87,7 +89,6 @@ export function useBloquearFondo(activo: boolean): void {
     document.addEventListener('touchmove', frenar, { passive: false });
 
     return () => {
-      raiz.style.overflow = antes.raizOverflow;
       body.style.overflow = antes.bodyOverflow;
       raiz.style.overscrollBehavior = antes.raizRebote;
       body.style.overscrollBehavior = antes.bodyRebote;

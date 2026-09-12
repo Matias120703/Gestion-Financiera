@@ -380,7 +380,11 @@ export function NavInferior({
     <>
       {abierto && (
         <div
-          className="fixed inset-0 z-40 flex touch-none items-center justify-center overscroll-none px-4 pb-24 pt-6 bg-noche/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-[60] flex touch-none items-center justify-center overscroll-none px-4 bg-noche/80 backdrop-blur-sm lg:hidden"
+          style={{
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+          }}
           onClick={() => setAbierto(false)}
         >
           {/*
@@ -394,9 +398,23 @@ export function NavInferior({
             className="flex max-h-full w-full max-w-sm flex-col aparecer"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="shrink-0 px-1 pb-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">
-              {t.nav.todasLasSecciones}
-            </p>
+            <div className="flex shrink-0 items-center justify-between gap-3 px-1 pb-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/55">
+                {t.nav.todasLasSecciones}
+              </p>
+              {/* La salida. Con la barra escondida, sin esto la única forma
+                  de volver sería tocar el fondo, y eso no lo adivina nadie. */}
+              <button
+                type="button"
+                onClick={() => setAbierto(false)}
+                aria-label={t.comun.cerrar}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20 active:scale-95"
+              >
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" {...trazo}>
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
 
             {/*
               El relleno de abajo tiene que dejar pasar la barra de navegación
@@ -466,7 +484,7 @@ export function NavInferior({
         </div>
       )}
 
-      <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 touch-none border-t border-borde bg-superficie/95 backdrop-blur lg:hidden">
+      <nav className={`zona-segura-abajo fixed inset-x-0 bottom-0 z-50 touch-none border-t border-borde bg-superficie/95 backdrop-blur lg:hidden ${abierto ? 'hidden' : ''}`}>
         {/*
           Las columnas son las que HAY, no cinco fijas.
 
