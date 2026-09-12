@@ -990,10 +990,20 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el bloqueo no mueve nada de lugar', fondo.includes("position = 'fixed'"), false);
   ok('y corta el gesto, que es lo único que el iPhone respeta',
     fondo.includes("addEventListener('touchmove'") && fondo.includes('passive: false'), true);
+  // Lo que faltaba la segunda vez: con los cuadros ya contra su borde, el
+  // gesto pasaba, iOS se lo daba a la pantalla y cuadros y barra rebotaban
+  // juntos como una sola cosa.
+  ok('mira si lo de adelante ya llegó a su borde', fondo.includes('enElTope') && fondo.includes('enElFondo'), true);
+  ok('y le saca el rebote a la pantalla', fondo.includes("overscrollBehavior = 'none'"), true);
+  // Y desde CSS, que en el iPhone llega antes que el JavaScript.
+  ok('el velo del menú no deja arrastrar', nav.includes('flex touch-none items-center'), true);
+  ok('solo los cuadros se desplazan', nav.includes('touch-pan-y grid-cols-3'), true);
+  ok('la barra de abajo nunca arrastra la pantalla', nav.includes('bottom-0 z-50 touch-none'), true);
+  ok('y la captura igual', cap.includes('flex touch-none items-center') && cap.includes('touch-pan-y overflow-y-auto'), true);
 
-  ok('el menú es una tarjeta centrada, no una hoja pegada abajo',
-    nav.includes('items-center justify-center px-4 pb-24'), true);
-  ok('la captura también', cap.includes('items-center justify-center bg-noche/70'), true);
+  ok('el menú flota centrado, no pegado abajo',
+    nav.includes('items-center justify-center overscroll-none px-4 pb-24'), true);
+  ok('la captura también', cap.includes('items-center justify-center overscroll-none bg-noche/70'), true);
 
   // Una sola luz, y es donde estás AHORA: con el menú abierto estás en el
   // menú, no en el panel de atrás.

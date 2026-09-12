@@ -380,7 +380,7 @@ export function NavInferior({
     <>
       {abierto && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center px-4 pb-24 pt-6 bg-noche/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 flex touch-none items-center justify-center overscroll-none px-4 pb-24 pt-6 bg-noche/70 backdrop-blur-sm lg:hidden"
           onClick={() => setAbierto(false)}
         >
           {/*
@@ -405,7 +405,7 @@ export function NavInferior({
               cuadro queda tapado justo cuando alguien lo va a tocar.
             */}
             <div
-              className="grid min-h-0 grid-cols-3 gap-2.5 overflow-y-auto overscroll-contain p-1"
+              className="grid min-h-0 touch-pan-y grid-cols-3 gap-2.5 overflow-y-auto overscroll-contain p-1"
             >
               {todos.map((i) => {
                 const on = activo(ruta, i.href);
@@ -466,7 +466,7 @@ export function NavInferior({
         </div>
       )}
 
-      <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 border-t border-borde bg-superficie/95 backdrop-blur lg:hidden">
+      <nav className="zona-segura-abajo fixed inset-x-0 bottom-0 z-50 touch-none border-t border-borde bg-superficie/95 backdrop-blur lg:hidden">
         {/*
           Las columnas son las que HAY, no cinco fijas.
 

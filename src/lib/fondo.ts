@@ -3,30 +3,35 @@
 import { useEffect } from 'react';
 
 /**
- * MIENTRAS HAY ALGO ADELANTE, EL FONDO NO SE MUEVE.
+ * MIENTRAS HAY ALGO ADELANTE, SE MUEVE SOLO ESO.
  *
- * Sin esto, deslizar adentro de una hoja abierta arrastra también la página de
- * atrás: se cierra el menú, o uno vuelve y el panel quedó en otro lado sin
- * haberlo tocado. Se siente como que la pantalla se resbala.
+ * Sin esto, deslizar adentro del menú arrastra también la página de atrás, y
+ * en el iPhone arrastra algo peor: la pantalla entera. Los cuadros y la barra
+ * de abajo se van juntos, como si fueran una sola cosa, y al soltar la barra
+ * queda levantada con una franja vacía debajo.
  *
- * POR QUÉ NO SE FIJA EL BODY, QUE ES LO QUE TODO EL MUNDO HACE
+ * LO QUE YA SE PROBÓ Y NO SIRVIÓ, PARA NO VOLVER AHÍ
  *
- * Se hizo así primero —`position: fixed` con el desplazamiento compensado en
- * `top`— y en el celular la barra de abajo se levantaba, dejando una franja
- * vacía debajo. Es lo que pasa cuando el body sale del flujo: la altura de la
- * página deja de ser la de la pantalla y lo que estaba pegado abajo queda
- * colgado en el aire.
+ *   1. Fijar el body (`position: fixed` + `top`). Es la receta de siempre, y
+ *      levantaba la barra: el body sale del flujo y lo que estaba pegado
+ *      abajo queda colgado.
+ *   2. Cortar el gesto solo cuando el dedo NO está sobre algo desplazable.
+ *      Casi: pero si los cuadros ya estaban en su borde y el dedo seguía
+ *      empujando, el gesto se dejaba pasar, iOS lo encadenaba a la pantalla y
+ *      rebotaba todo junto.
  *
- * Así que acá no se mueve nada de lugar. Son dos cosas, y hacen falta las dos:
+ * LO QUE HACE AHORA
  *
- *   · `overflow: hidden` frena la rueda del mouse y la barra de desplazamiento
- *     en la computadora;
- *   · el iPhone ignora eso y sigue arrastrando la página con el dedo, así que
- *     además se corta el gesto: se cancela todo `touchmove` que no venga de
- *     adentro de algo que de verdad se pueda desplazar.
+ *   · `overflow: hidden` en html y body: frena la rueda del mouse.
+ *   · `overscroll-behavior: none` en html y body: le quita a la pantalla el
+ *     rebote elástico, que es lo que movía cuadros y barra como un bloque.
+ *   · Y el gesto se deja pasar SOLO si lo que está bajo el dedo todavía se
+ *     puede desplazar EN ESA DIRECCIÓN. Arriba de todo y tirando para abajo,
+ *     o abajo de todo y tirando para arriba, se corta: ahí es exactamente
+ *     donde iOS pasaba el movimiento a la pantalla.
  *
- * Esa comprobación de «algo que se pueda desplazar» es la que deja vivo el
- * scroll de la propia hoja. Sin ella, el menú tampoco se podría deslizar.
+ * Nada de esto cambia la posición de ningún elemento. La barra no se entera
+ * de que el menú está abierto, que es justamente lo que tiene que pasar.
  */
 export function useBloquearFondo(activo: boolean): void {
   useEffect(() => {
@@ -34,30 +39,59 @@ export function useBloquearFondo(activo: boolean): void {
 
     const raiz = document.documentElement;
     const body = document.body;
-    const antes = { raiz: raiz.style.overflow, body: body.style.overflow };
+    const antes = {
+      raizOverflow: raiz.style.overflow,
+      bodyOverflow: body.style.overflow,
+      raizRebote: raiz.style.overscrollBehavior,
+      bodyRebote: body.style.overscrollBehavior,
+    };
 
     raiz.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
+    raiz.style.overscrollBehavior = 'none';
+    body.style.overscrollBehavior = 'none';
+
+    let inicioY = 0;
+    const alTocar = (e: TouchEvent) => {
+      inicioY = e.touches[0]?.clientY ?? 0;
+    };
 
     const frenar = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY ?? inicioY;
+      // El dedo baja → el contenido quiere ir hacia arriba (scrollTop baja).
+      const dedoBaja = y > inicioY;
+
       let el = e.target as HTMLElement | null;
-      while (el && el !== body) {
+      while (el && el !== body && el !== raiz) {
         const estilo = getComputedStyle(el);
-        const desliza = /(auto|scroll)/.test(estilo.overflowY)
+        const desplazable = /(auto|scroll)/.test(estilo.overflowY)
           && el.scrollHeight > el.clientHeight + 1;
-        if (desliza) return;
+
+        if (desplazable) {
+          const enElTope = el.scrollTop <= 0;
+          const enElFondo = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+          // Todavía hay para dónde ir: el gesto es de este elemento.
+          if ((dedoBaja && !enElTope) || (!dedoBaja && !enElFondo)) return;
+          // Está contra el borde: si pasara, iOS se lo daría a la pantalla.
+          break;
+        }
         el = el.parentElement;
       }
-      // `cancelable` es falso cuando el navegador ya arrancó el gesto: si se
-      // llamara igual, la consola se llena de avisos y no sirve de nada.
+
+      // `cancelable` es falso cuando el navegador ya arrancó el gesto: llamarlo
+      // igual solo llena la consola de avisos.
       if (e.cancelable) e.preventDefault();
     };
 
+    document.addEventListener('touchstart', alTocar, { passive: true });
     document.addEventListener('touchmove', frenar, { passive: false });
 
     return () => {
-      raiz.style.overflow = antes.raiz;
-      body.style.overflow = antes.body;
+      raiz.style.overflow = antes.raizOverflow;
+      body.style.overflow = antes.bodyOverflow;
+      raiz.style.overscrollBehavior = antes.raizRebote;
+      body.style.overscrollBehavior = antes.bodyRebote;
+      document.removeEventListener('touchstart', alTocar);
       document.removeEventListener('touchmove', frenar);
     };
   }, [activo]);
