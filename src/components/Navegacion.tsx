@@ -9,6 +9,7 @@ import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
 import { fichaDe, palabra, type Seccion } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
+import { useBloquearFondo } from '@/lib/fondo';
 import type { Textos } from '@/i18n/diccionarios';
 
 export interface ItemNav { href: Seccion; texto: string; icono: React.ReactNode }
@@ -355,6 +356,9 @@ export function NavInferior({
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
 
+  // Mientras el menú está adelante, la página de atrás no se mueve.
+  useBloquearFondo(abierto);
+
   const enBarra = barraDe(tipo, rubro, esAdmin);
   const todos = itemsDe(t, tipo, rubro, esAdmin);
   // El orden de la barra manda sobre el orden del menú: en personal, Deudas
@@ -376,7 +380,7 @@ export function NavInferior({
     <>
       {abierto && (
         <div
-          className="fixed inset-0 z-40 bg-noche/45 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-40 flex items-center justify-center px-4 pb-24 pt-6 bg-noche/70 backdrop-blur-sm lg:hidden"
           onClick={() => setAbierto(false)}
         >
           {/*
@@ -387,10 +391,9 @@ export function NavInferior({
             desplaza adentro.
           */}
           <div
-            className="absolute inset-x-0 bottom-0 flex max-h-[78vh] flex-col rounded-t-3xl bg-superficie pt-4 shadow-tarjeta aparecer"
+            className="flex max-h-full w-full max-w-sm flex-col overflow-hidden rounded-3xl border border-borde bg-superficie pt-4 shadow-tarjeta aparecer"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-borde" />
             <p className="titulo-seccion shrink-0 px-5 pb-2">{t.nav.todasLasSecciones}</p>
 
             {/*
@@ -400,8 +403,7 @@ export function NavInferior({
               cuadro queda tapado justo cuando alguien lo va a tocar.
             */}
             <div
-              className="grid min-h-0 grid-cols-3 gap-1.5 overflow-y-auto overscroll-contain px-4"
-              style={{ paddingBottom: 'calc(84px + env(safe-area-inset-bottom))' }}
+              className="grid min-h-0 grid-cols-3 gap-2 overflow-y-auto overscroll-contain px-3 pb-5"
             >
               {todos.map((i) => {
                 const on = activo(ruta, i.href);
@@ -410,7 +412,7 @@ export function NavInferior({
                     key={i.href}
                     href={i.href}
                     onClick={() => setAbierto(false)}
-                    className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                    className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
                       on ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
                     }`}
                   >
@@ -423,7 +425,7 @@ export function NavInferior({
               <Link
                 href="/plan"
                 onClick={() => setAbierto(false)}
-                className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
                   activo(ruta, '/plan') ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
                 }`}
               >
@@ -437,7 +439,7 @@ export function NavInferior({
               <Link
                 href="/recomendar"
                 onClick={() => setAbierto(false)}
-                className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
                   activo(ruta, '/recomendar') ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/65'
                 }`}
               >
@@ -449,7 +451,7 @@ export function NavInferior({
                 <Link
                   href="/admin"
                   onClick={() => setAbierto(false)}
-                  className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
+                  className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight transition active:scale-95 ${
                     activo(ruta, '/admin') ? 'bg-verde-claro text-verde-fuerte' : 'bg-noche text-white'
                   }`}
                 >
@@ -500,7 +502,7 @@ export function NavInferior({
             aria-expanded={abierto}
             aria-label={t.nav.todasLasSecciones}
             className={`flex flex-col items-center gap-1 px-1 py-2.5 text-center text-[10.5px] font-bold leading-tight transition ${
-              abierto || enOtraSeccion ? 'text-verde-fuerte' : 'text-tinta/40'
+              enOtraSeccion ? 'text-verde-fuerte' : 'text-tinta/40'
             }`}
           >
             {Ico.mas}

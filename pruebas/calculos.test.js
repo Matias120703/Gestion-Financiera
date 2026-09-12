@@ -967,5 +967,32 @@ ok('un rubro desconocido no rompe: cae en comercio',
     ['p_banco', 'p_titular', 'p_cuenta', 'p_documento'].every((c) => rec.includes(c)), true);
 }
 
+// --- Las hojas de adelante no arrastran lo de atrás ---
+//
+// Deslizar adentro del menú «Más» movía también la página de abajo: se salía
+// del menú, o uno volvía y el panel había quedado en otro lado sin haberlo
+// tocado. Se sentía como que la pantalla se resbala.
+//
+// Y el botón «Más» se prendía por estar abierto, así que en el panel quedaban
+// dos luces al mismo tiempo. Una barra donde se prenden dos cosas ya no dice
+// dónde estás, que es lo único que tiene que decir.
+{
+  const fs = require('fs');
+  const nav = fs.readFileSync('src/components/Navegacion.tsx', 'utf8');
+  const cap = fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8');
+
+  ok('el menú no deja mover el fondo', nav.includes('useBloquearFondo(abierto)'), true);
+  ok('la captura tampoco', cap.includes('useBloquearFondo('), true);
+  ok('y el bloqueo funciona en el iPhone, no solo con overflow',
+    fs.readFileSync('src/lib/fondo.ts', 'utf8').includes("position = 'fixed'"), true);
+
+  ok('el menú es una tarjeta centrada, no una hoja pegada abajo',
+    nav.includes('items-center justify-center px-4 pb-24'), true);
+  ok('la captura también', cap.includes('items-center justify-center bg-noche/70'), true);
+
+  ok('abrir el menú no prende una segunda luz en la barra',
+    nav.includes('abierto || enOtraSeccion'), false);
+}
+
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);

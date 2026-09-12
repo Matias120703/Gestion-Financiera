@@ -18,6 +18,7 @@ import { mensajeDeError } from '@/lib/errores';
 import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
 import { comprimirFoto } from '@/lib/imagen';
 import { useTextos } from '@/i18n/cliente';
+import { useBloquearFondo } from '@/lib/fondo';
 
 type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
 
@@ -98,6 +99,9 @@ export function BotonCaptura({
    * se anota el gasto. Quien lleva la contabilidad fina lo desmarca.
    */
   const [crearGasto, setCrearGasto] = useState(true);
+
+  // Con la hoja adelante, el panel de atrás se queda quieto.
+  useBloquearFondo(modo !== 'cerrado');
 
   const grabadora = useRef<MediaRecorder | null>(null);
   const trozos = useRef<Blob[]>([]);
@@ -531,9 +535,9 @@ export function BotonCaptura({
       </button>
 
       {abierto && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-noche/70 px-4 pb-24 pt-6 backdrop-blur-sm sm:pb-6" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
           <div
-            className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 shadow-tarjeta aparecer sm:rounded-3xl"
+            className="max-h-full w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-borde bg-superficie p-5 shadow-tarjeta aparecer"
             onClick={(e) => e.stopPropagation()}
           >
             {/* ---------------- MENÚ ---------------- */}
