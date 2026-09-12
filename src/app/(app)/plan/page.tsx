@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos } from '@/i18n';
 import { FICHA } from '@/i18n/idiomas';
@@ -212,6 +213,23 @@ export default async function PaginaPlan({
           );
         })}
       </div>
+
+      {/* Va con los precios porque es parte de la cuenta: el que está
+          mirando cuánto le sale tiene que saber que puede recuperar parte
+          trayendo a otro. Está en todos los planes, también en la prueba. */}
+      <Link
+        href="/recomendar"
+        className="flex items-center justify-between gap-3 rounded-2xl border border-verde/30 bg-verde-claro/30 p-4 transition hover:bg-verde-claro/50"
+      >
+        <span className="min-w-0">
+          <span className="block text-[14.5px] font-bold">Podés bajar lo que pagás</span>
+          <span className="mt-0.5 block text-[13px] leading-relaxed text-tinta/65">
+            Traé un negocio con tu enlace y te llevás la mitad de su primer pago. Está en todos
+            los planes, incluso mientras probás.
+          </span>
+        </span>
+        <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">Ver →</span>
+      </Link>
 
       {whatsapp && (
         <div className="tarjeta p-4">

@@ -6,6 +6,7 @@ import { precio } from '@/lib/formato';
 import { textos, idiomaActual } from '@/i18n';
 import Demos from '@/components/Demos';
 import { Marca } from '@/components/Marca';
+import { BotonTema } from '@/components/BotonTema';
 import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
@@ -164,10 +165,11 @@ export default async function Portada({
               <Marca clase="h-9 w-9" sobreOscuro />
               <span className="text-[17px] font-bold tracking-tight">Orden</span>
             </div>
-            <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3 sm:gap-5">
               <a href="#precios" className="hidden text-[13.5px] font-semibold text-white/60 transition hover:text-white sm:block">
                 Precios
               </a>
+              <BotonTema />
               <Link
                 href="/ingresar"
                 className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-[13.5px] font-semibold
@@ -557,6 +559,17 @@ export default async function Portada({
             la paga una sola persona: el dueño del negocio. Ellos entran con su cuenta, cargan lo
             suyo y listo.
           </p>
+
+          {/* Se aclara acá, en los precios, porque es donde alguien está
+              haciendo la cuenta de cuánto le sale. Que la comisión esté en
+              todos los planes —y también mientras prueba— cambia esa cuenta. */}
+          <p className="mt-3 rounded-xl bg-arena px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
+            <strong className="text-tinta">Recomendar está en todos los planes</strong>, incluso
+            mientras probás gratis: si traés un negocio, te llevás la mitad de su primer pago.{' '}
+            <a href="#recomendar" className="font-semibold text-verde-fuerte hover:underline">
+              Cómo funciona
+            </a>
+          </p>
         </div>
 
         {/* ---- personal ---- */}
@@ -611,6 +624,65 @@ export default async function Portada({
           <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
             Empezar la prueba gratis
           </Link>
+        </div>
+      </section>
+
+      {/* ---------------- Ganar recomendando ----------------
+          Va DESPUÉS de los precios y no antes: el que todavía no sabe cuánto
+          cuesta no puede entender qué significa «la mitad del primer pago».
+          Y va en la portada, y no escondido adentro, porque para muchos es
+          la razón por la que van a hablar de Orden con otro. */}
+      <section id="recomendar" className="scroll-mt-4 border-t border-borde bg-arena">
+        <div className="mx-auto max-w-6xl px-5 py-14">
+          <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+            <div>
+              <p className="titulo-seccion">Un extra</p>
+              <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
+                Traé un negocio y llevate la mitad de su primer pago
+              </h2>
+              <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
+                Conocés gente que todavía anota sus ventas en un cuaderno. Si entra con tu
+                enlace y paga su primer mes,{' '}
+                <strong className="text-tinta">la mitad de ese pago es tuya</strong>. Se cobra
+                una sola vez por cada negocio, y no hay tope: podés traer uno o veinte.
+              </p>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
+                  Empezar la prueba gratis
+                </Link>
+                <span className="text-[13px] font-medium text-tinta/45">
+                  Tu enlace está adentro, en «Recomendar».
+                </span>
+              </div>
+            </div>
+
+            {/* Los tres pasos. Sin adornos: es una promesa de plata y lo que
+                importa es que se entienda cuándo se cobra y cuándo no. */}
+            <ol className="grid gap-3 sm:grid-cols-3 lg:gap-4">
+              <Paso
+                numero="1"
+                titulo="Compartís tu enlace"
+                texto="Cada cuenta tiene el suyo. Se manda por WhatsApp en un toque."
+              />
+              <Paso
+                numero="2"
+                titulo="Esa persona paga su primer mes"
+                texto="Mientras prueba gratis no pasa nada. Se cuenta cuando paga de verdad."
+              />
+              <Paso
+                numero="3"
+                titulo="Te transferimos la mitad"
+                texto="A tu banco o tu billetera. Vos ponés los datos una vez."
+              />
+            </ol>
+          </div>
+
+          <p className="mt-8 max-w-3xl text-[13.5px] leading-relaxed text-tinta/50">
+            Lo que ese negocio pague de ahí en adelante ya no entra: la comisión es por el
+            primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes.
+            Tampoco vale traerte a vos mismo ni al negocio donde trabajás.
+          </p>
         </div>
       </section>
 
@@ -789,5 +861,18 @@ function Plan({
         {llamado}
       </Link>
     </div>
+  );
+}
+
+/** Un paso del programa de recomendar. Tres, y ninguno con letra chica. */
+function Paso({ numero, titulo, texto }: { numero: string; titulo: string; texto: string }) {
+  return (
+    <li className="tarjeta p-4">
+      <span className="grid h-7 w-7 place-items-center rounded-full bg-verde text-[13px] font-black text-white">
+        {numero}
+      </span>
+      <p className="mt-2.5 text-[14.5px] font-bold leading-snug tracking-tight">{titulo}</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-tinta/55">{texto}</p>
+    </li>
   );
 }

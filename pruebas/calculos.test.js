@@ -994,5 +994,31 @@ ok('un rubro desconocido no rompe: cae en comercio',
     nav.includes('abierto || enOtraSeccion'), false);
 }
 
+// --- La portada cuenta lo de recomendar, y deja elegir los colores ---
+//
+// El programa de socios no sirve de nada si la gente se entera adentro: el
+// que lo va a compartir todavía no entró. Y la aclaración va CON los precios,
+// porque es donde alguien está haciendo la cuenta de cuánto le sale.
+{
+  const fs = require('fs');
+  const portada = fs.readFileSync('src/app/page.tsx', 'utf8');
+
+  ok('la portada tiene el sol y la luna', portada.includes('<BotonTema />'), true);
+  ok('y cuenta cómo se gana recomendando', portada.includes('id="recomendar"'), true);
+  ok('con los tres pasos', portada.split('<Paso').length - 1, 3);
+  ok('diciendo que se cobra una sola vez y no todos los meses',
+    portada.includes('una sola vez por cada negocio'), true);
+  ok('los precios aclaran que está en todos los planes',
+    portada.includes('Recomendar está en todos los planes'), true);
+  ok('y la pantalla de planes de adentro también lleva ahí',
+    fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8').includes('href="/recomendar"'), true);
+
+  // Dos íconos, no tres: «como el teléfono» es una preferencia y vive en
+  // Ajustes. Acá se elige a propósito.
+  const boton = fs.readFileSync('src/components/BotonTema.tsx', 'utf8');
+  ok('el botón de la portada no ofrece «como el sistema»',
+    boton.includes("elegir('sistema')"), false);
+}
+
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);
