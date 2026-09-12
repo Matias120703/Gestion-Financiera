@@ -983,8 +983,13 @@ ok('un rubro desconocido no rompe: cae en comercio',
 
   ok('el menú no deja mover el fondo', nav.includes('useBloquearFondo(abierto)'), true);
   ok('la captura tampoco', cap.includes('useBloquearFondo('), true);
-  ok('y el bloqueo funciona en el iPhone, no solo con overflow',
-    fs.readFileSync('src/lib/fondo.ts', 'utf8').includes("position = 'fixed'"), true);
+  // Fijar el body es lo que levantaba la barra de abajo y dejaba una franja
+  // vacía debajo: la página sale del flujo y lo que estaba pegado al borde
+  // queda colgado en el aire. No se vuelve a ese camino.
+  const fondo = fs.readFileSync('src/lib/fondo.ts', 'utf8');
+  ok('el bloqueo no mueve nada de lugar', fondo.includes("position = 'fixed'"), false);
+  ok('y corta el gesto, que es lo único que el iPhone respeta',
+    fondo.includes("addEventListener('touchmove'") && fondo.includes('passive: false'), true);
 
   ok('el menú es una tarjeta centrada, no una hoja pegada abajo',
     nav.includes('items-center justify-center px-4 pb-24'), true);

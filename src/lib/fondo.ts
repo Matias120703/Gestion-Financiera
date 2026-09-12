@@ -6,41 +6,59 @@ import { useEffect } from 'react';
  * MIENTRAS HAY ALGO ADELANTE, EL FONDO NO SE MUEVE.
  *
  * Sin esto, deslizar adentro de una hoja abierta arrastra también la página de
- * atrás: se cierra el menú, o peor, uno vuelve y el panel quedó en otro lado
- * sin haberlo tocado. Se siente como que la pantalla se resbala.
+ * atrás: se cierra el menú, o uno vuelve y el panel quedó en otro lado sin
+ * haberlo tocado. Se siente como que la pantalla se resbala.
  *
- * `overflow: hidden` en el body no alcanza en el iPhone —Safari lo ignora y
- * sigue arrastrando la página—. Lo que sí funciona es fijar el body y
- * compensar el desplazamiento con `top`, que es la razón de que esto sea más
- * largo de lo que parece que debería.
+ * POR QUÉ NO SE FIJA EL BODY, QUE ES LO QUE TODO EL MUNDO HACE
  *
- * Al cerrar se vuelve exactamente a donde estaba: sin el `scrollTo` final, la
- * página salta al principio y la persona pierde el lugar donde venía leyendo.
+ * Se hizo así primero —`position: fixed` con el desplazamiento compensado en
+ * `top`— y en el celular la barra de abajo se levantaba, dejando una franja
+ * vacía debajo. Es lo que pasa cuando el body sale del flujo: la altura de la
+ * página deja de ser la de la pantalla y lo que estaba pegado abajo queda
+ * colgado en el aire.
+ *
+ * Así que acá no se mueve nada de lugar. Son dos cosas, y hacen falta las dos:
+ *
+ *   · `overflow: hidden` frena la rueda del mouse y la barra de desplazamiento
+ *     en la computadora;
+ *   · el iPhone ignora eso y sigue arrastrando la página con el dedo, así que
+ *     además se corta el gesto: se cancela todo `touchmove` que no venga de
+ *     adentro de algo que de verdad se pueda desplazar.
+ *
+ * Esa comprobación de «algo que se pueda desplazar» es la que deja vivo el
+ * scroll de la propia hoja. Sin ella, el menú tampoco se podría deslizar.
  */
 export function useBloquearFondo(activo: boolean): void {
   useEffect(() => {
     if (!activo) return;
 
-    const y = window.scrollY;
+    const raiz = document.documentElement;
     const body = document.body;
-    const antes = {
-      position: body.style.position,
-      top: body.style.top,
-      width: body.style.width,
-      overflow: body.style.overflow,
-    };
+    const antes = { raiz: raiz.style.overflow, body: body.style.overflow };
 
-    body.style.position = 'fixed';
-    body.style.top = `-${y}px`;
-    body.style.width = '100%';
+    raiz.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
 
+    const frenar = (e: TouchEvent) => {
+      let el = e.target as HTMLElement | null;
+      while (el && el !== body) {
+        const estilo = getComputedStyle(el);
+        const desliza = /(auto|scroll)/.test(estilo.overflowY)
+          && el.scrollHeight > el.clientHeight + 1;
+        if (desliza) return;
+        el = el.parentElement;
+      }
+      // `cancelable` es falso cuando el navegador ya arrancó el gesto: si se
+      // llamara igual, la consola se llena de avisos y no sirve de nada.
+      if (e.cancelable) e.preventDefault();
+    };
+
+    document.addEventListener('touchmove', frenar, { passive: false });
+
     return () => {
-      body.style.position = antes.position;
-      body.style.top = antes.top;
-      body.style.width = antes.width;
-      body.style.overflow = antes.overflow;
-      window.scrollTo(0, y);
+      raiz.style.overflow = antes.raiz;
+      body.style.overflow = antes.body;
+      document.removeEventListener('touchmove', frenar);
     };
   }, [activo]);
 }
