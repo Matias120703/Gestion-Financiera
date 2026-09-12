@@ -845,8 +845,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el socio dice dónde cobra', rec.includes("rpc('guardar_donde_cobro'"), true);
   ok('la pantalla no calcula comisiones', /porcentaje\s*\/\s*100|\*\s*0\.5/.test(rec), false);
   ok('y dice que se cobra una sola vez', rec.includes('una sola vez'), true);
-  ok('hay cómo llegar desde el menú',
-    fs.readFileSync('src/components/Navegacion.tsx', 'utf8').includes('href="/recomendar"'), true);
+  // En los DOS menús. Estuvo solo en el del celular: en la computadora, que
+  // es donde se trabaja sentado, la pantalla existía y no había cómo llegar.
+  const nav = fs.readFileSync('src/components/Navegacion.tsx', 'utf8');
+  ok('hay cómo llegar desde el menú del celular y desde la barra lateral',
+    nav.split('href="/recomendar"').length - 1, 2);
 }
 
 // --- Se pide en el momento, no en un menú (062) ---

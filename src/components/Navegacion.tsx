@@ -297,6 +297,22 @@ export function NavLateral({
           </Link>
         ))}
 
+        {/* Recomendar no es una sección del negocio: es un extra de la
+            persona. Va abajo de todo, después de una línea, y en la barra del
+            celular está en el mismo lugar —el menú «Más»—. Estuvo solo en el
+            celular por un descuido: en la computadora, que es donde se trabaja
+            sentado, no aparecía. */}
+        <div className="my-2 border-t border-borde" />
+        <Link
+          href="/recomendar"
+          className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-semibold transition ${
+            activo(ruta, '/recomendar') ? 'bg-verde-claro text-verde-fuerte' : 'text-tinta/60 hover:bg-arena hover:text-tinta'
+          }`}
+        >
+          {Ico.recomendar}
+          Recomendar
+        </Link>
+
         {administraOrden && (
           <>
             {/* Separado del resto: no es una sección del negocio, es otra
