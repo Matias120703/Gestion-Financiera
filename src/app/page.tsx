@@ -698,6 +698,7 @@ export default async function Portada({
             </span>
           </div>
           <nav className="flex flex-wrap gap-x-5 gap-y-2 text-[13.5px] font-semibold text-tinta/50">
+            <Link href="/instalar" className="hover:text-tinta">Cómo instalar Orden</Link>
             <Link href="/privacidad" className="hover:text-tinta">Privacidad</Link>
             <Link href="/terminos" className="hover:text-tinta">Términos</Link>
             <Link href="/ingresar" className="hover:text-tinta">{t.nav.miCuenta}</Link>

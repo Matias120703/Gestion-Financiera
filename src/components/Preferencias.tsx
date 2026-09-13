@@ -7,6 +7,8 @@ import { useIdioma, useTextos, aplicarIdioma } from '@/i18n/cliente';
 import { FICHA, IDIOMAS, type Idioma, IDIOMA_UNICO } from '@/i18n/idiomas';
 import { aplicarTema, guardarTema, leerTema, type Tema } from '@/lib/tema';
 import { mensajeDeError } from '@/lib/errores';
+import { GuiaInstalar } from '@/components/GuiaInstalar';
+import Link from 'next/link';
 import type { Preferencias as Prefs } from '@/lib/tipos';
 
 /**
@@ -283,7 +285,20 @@ function BotonPush() {
           {trabajando ? t.comun.cargando : t.ajustes.activarPush}
         </button>
       )}
-      {esIphoneSinInstalar() && <p className="mt-2 text-[12px] leading-relaxed text-tinta/45">{t.ajustes.pushIphone}</p>}
+      {esIphoneSinInstalar() && (
+        <div className="mt-3 border-t border-borde pt-3">
+          <p className="text-[13px] font-semibold text-tinta/70">{t.ajustes.pushIphone}</p>
+          <div className="mt-3">
+            <GuiaInstalar compacta />
+          </div>
+          <p className="mt-3 text-[12px] text-tinta/40">
+            <Link href="/instalar" target="_blank" className="font-semibold text-verde-fuerte hover:underline">
+              Ver esta guía en su propia página →
+            </Link>
+            {' '}(para mandársela a alguien)
+          </p>
+        </div>
+      )}
     </div>
   );
 }

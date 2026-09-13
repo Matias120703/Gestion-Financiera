@@ -1053,5 +1053,45 @@ ok('un rubro desconocido no rompe: cae en comercio',
     boton.includes("elegir('sistema')"), false);
 }
 
+// --- Cómo instalar Orden (agregar a la pantalla de inicio) ---
+//
+// En iPhone, los avisos push NO FUNCIONAN sin este paso — es una regla de
+// Apple, no de Orden. Antes había una sola frase suelta y nadie sabía qué
+// hacer con ella. Ahora hay una guía con pasos, en dos lugares que comparten
+// el mismo componente para no desactualizarse por separado.
+{
+  const fs = require('fs');
+
+  ok('existe la página pública, compartible por enlace',
+    fs.existsSync('src/app/instalar/page.tsx'), true);
+
+  const guia = fs.readFileSync('src/components/GuiaInstalar.tsx', 'utf8');
+  ok('la guía distingue iPhone de Android', guia.includes("'iphone' | 'android'"), true);
+  ok('y dice el paso que más se salta: abrirla desde el ícono nuevo',
+    guia.includes('no desde'), true);
+
+  const pub = fs.readFileSync('src/app/instalar/page.tsx', 'utf8');
+  ok('la página pública usa el mismo componente que Ajustes',
+    pub.includes('<GuiaInstalar'), true);
+  ok('es estática: no exige haber iniciado sesión', pub.includes("dynamic = 'force-static'"), true);
+
+  const prefs = fs.readFileSync('src/components/Preferencias.tsx', 'utf8');
+  ok('en Ajustes, la guía aparece en el momento exacto en que hace falta',
+    prefs.includes('esIphoneSinInstalar() && (') && prefs.includes('<GuiaInstalar compacta'), true);
+  ok('y desde ahí se puede compartir el enlace suelto',
+    prefs.includes('href="/instalar"'), true);
+
+  // La primera vez que se probó, el enlace a la guía mandaba al login: la
+  // página no estaba en la lista de públicas del middleware. Un enlace para
+  // compartir que pide sesión no sirve para nada.
+  ok('la guía se abre sin haber iniciado sesión',
+    fs.readFileSync('src/middleware.ts', 'utf8').includes("'/instalar'"), true);
+  // En los iOS nuevos Safari esconde «Compartir» adentro de «···».
+  ok('la guía de iPhone contempla Compartir escondido en los tres puntos',
+    guia.includes('tres puntos «···»'), true);
+  ok('la web de presentación enlaza la guía',
+    fs.readFileSync('src/app/page.tsx', 'utf8').includes('href="/instalar"'), true);
+}
+
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);

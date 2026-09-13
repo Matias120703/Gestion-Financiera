@@ -17,6 +17,12 @@ const PUBLICAS = [
   // dos no fueran públicas, el enlace del correo lo rebotaría al login y el
   // circuito no cerraría nunca.
   '/recuperar', '/clave-nueva',
+  // La guía para agregar Orden a la pantalla de inicio. Existe para
+  // mandársela por WhatsApp a alguien que dice «no me llegan los avisos»,
+  // y muchas veces esa persona todavía no inició sesión en ese teléfono:
+  // si pasara por el control de sesión, el enlace la tiraba al login y la
+  // guía no la veía nunca. Así pasó la primera vez que se probó.
+  '/instalar',
   // La página de reservas y el enlace del turno. Quien entra ahí es un
   // cliente del barbero, no un usuario de Orden: mandarlo a un login sería
   // pedirle que se registre en un sistema del que no tiene por qué enterarse,
