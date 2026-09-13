@@ -7,6 +7,7 @@ import { textos, idiomaActual } from '@/i18n';
 import Demos from '@/components/Demos';
 import { Marca } from '@/components/Marca';
 import { BotonTema } from '@/components/BotonTema';
+import { GuiaInstalar } from '@/components/GuiaInstalar';
 import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
@@ -163,9 +164,18 @@ export default async function Portada({
           <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
             <div className="flex items-center gap-2.5">
               <Marca clase="h-9 w-9" sobreOscuro />
-              <span className="text-[17px] font-bold tracking-tight">Orden</span>
+              {/* En los teléfonos más angostos (menos de 360 px) la palabra se
+                  esconde y queda el ícono: con «Instalar», los colores y
+                  «Entrar», no entraba todo y se pisaban. */}
+              <span className="hidden text-[17px] font-bold tracking-tight min-[360px]:inline">Orden</span>
             </div>
             <div className="flex items-center gap-3 sm:gap-5">
+              {/* Visible también en el celular, a diferencia de «Precios»: esta
+                  guía es justamente para quien está mirando desde un teléfono,
+                  y ahí la sección queda al final de una página muy larga. */}
+              <a href="#instalar" className="text-[13.5px] font-semibold text-white/60 transition hover:text-white">
+                Instalar
+              </a>
               <a href="#precios" className="hidden text-[13.5px] font-semibold text-white/60 transition hover:text-white sm:block">
                 Precios
               </a>
@@ -685,6 +695,43 @@ export default async function Portada({
             mitad de lo que esa persona paga, traer un negocio deja más que traer una cuenta
             personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.
           </p>
+        </div>
+      </section>
+
+      {/* ---------------- Instalar en el celular ----------------
+          Estaba solo como un enlace chiquito en el pie, a otra página, y así
+          no lo encontraba nadie. Va como sección propia, con la guía adentro
+          y un acceso arriba al lado de «Precios».
+
+          Es el mismo componente que se ve en /instalar y en Ajustes: se
+          corrige en un solo lugar. */}
+      <section id="instalar" className="scroll-mt-4 border-t border-borde">
+        <div className="mx-auto max-w-6xl px-5 py-14">
+          <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-start">
+            <div>
+              <p className="titulo-seccion">En tu celular</p>
+              <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
+                Cómo poner Orden en tu pantalla de inicio
+              </h2>
+              <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
+                Orden no se descarga de ninguna tienda: se agrega desde el navegador y queda con
+                su ícono, como cualquier aplicación. Se abre más rápido, ocupa toda la pantalla, y
+                en iPhone es <strong className="text-tinta">la única forma de que te lleguen los
+                avisos</strong> —es una regla del teléfono, no de Orden—.
+              </p>
+              <p className="mt-4 text-[14px] leading-relaxed text-tinta/50">
+                ¿Se lo querés pasar a alguien?{' '}
+                <Link href="/instalar" className="font-semibold text-verde-fuerte hover:underline">
+                  Esta guía tiene su propia página
+                </Link>
+                , para mandarla por WhatsApp.
+              </p>
+            </div>
+
+            <div className="tarjeta p-5">
+              <GuiaInstalar />
+            </div>
+          </div>
         </div>
       </section>
 

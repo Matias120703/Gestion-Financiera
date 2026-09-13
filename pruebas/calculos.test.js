@@ -1089,8 +1089,15 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // En los iOS nuevos Safari esconde «Compartir» adentro de «···».
   ok('la guía de iPhone contempla Compartir escondido en los tres puntos',
     guia.includes('tres puntos «···»'), true);
+  // Primero quedó como un enlace chiquito en el pie, a otra página, y el
+  // dueño no la encontró. Tiene que ser una sección visible de la portada,
+  // con la guía adentro y un acceso arriba.
+  const portadaInst = fs.readFileSync('src/app/page.tsx', 'utf8');
+  ok('la portada tiene la sección de instalar, con la guía adentro',
+    portadaInst.includes('id="instalar"') && portadaInst.includes('<GuiaInstalar />'), true);
+  ok('y un acceso arriba, al lado de Precios', portadaInst.includes('href="#instalar"'), true);
   ok('la web de presentación enlaza la guía',
-    fs.readFileSync('src/app/page.tsx', 'utf8').includes('href="/instalar"'), true);
+    portadaInst.includes('href="/instalar"'), true);
 }
 
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
