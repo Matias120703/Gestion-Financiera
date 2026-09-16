@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { enlaceDeSocio } from '@/lib/referido';
+import { useTextos } from '@/i18n/cliente';
+import { Rico } from '@/components/Rico';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -38,6 +40,7 @@ const trazo = {
  * hacerlo.
  */
 export function TarjetaRecomendar({ encabezado }: { encabezado: string }) {
+  const r = useTextos().recomendar;
   const [estado, setEstado] = useState<'ofrecido' | 'generando' | 'listo' | 'oculto'>('ofrecido');
   const [codigo, setCodigo] = useState('');
   const [copiado, setCopiado] = useState(false);
@@ -68,13 +71,13 @@ export function TarjetaRecomendar({ encabezado }: { encabezado: string }) {
   if (estado === 'oculto') return null;
 
   const enlace = codigo ? enlaceDeSocio(codigo) : '';
-  const mensaje = `Te paso Orden, lo uso para anotar las ventas y los gastos del negocio y ver la ganancia del día. Entrá por acá: ${enlace}`;
+  const mensaje = r.mensajeWhatsApp(enlace);
 
   return (
     <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
       {estado === 'listo' ? (
         <>
-          <p className="text-[14.5px] font-bold leading-snug">Listo, este es tu enlace</p>
+          <p className="text-[14.5px] font-bold leading-snug">{r.listoTuEnlace}</p>
           <p className="mt-1 break-all rounded-xl bg-superficie px-3 py-2 text-[13px] font-semibold">
             {enlace}
           </p>
@@ -90,7 +93,7 @@ export function TarjetaRecomendar({ encabezado }: { encabezado: string }) {
               }}
               className="boton-suave py-2.5 text-[13.5px]"
             >
-              {copiado ? 'Copiado' : 'Copiar'}
+              {copiado ? r.copiado : r.copiar}
             </button>
             <a
               href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`}
@@ -100,32 +103,31 @@ export function TarjetaRecomendar({ encabezado }: { encabezado: string }) {
               <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
                 <path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 21l2.2-5.2A8.5 8.5 0 1 1 21 11.5Z" />
               </svg>
-              Mandar
+              {r.mandar}
             </a>
           </div>
           <Link href="/recomendar" className="mt-2.5 block text-center text-[12.5px] font-semibold text-verde-fuerte hover:underline">
-            Ver cómo va →
+            {r.verComoVa}
           </Link>
         </>
       ) : (
         <>
           <p className="text-[14.5px] font-bold leading-snug">{encabezado}</p>
           <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/65">
-            ¿Conocés a alguien que todavía anota esto en un cuaderno? Si entra con tu enlace y paga
-            su primer mes, <strong className="text-tinta">la mitad de ese pago es tuya</strong>.
+            <Rico texto={r.conocesAAlguien} negrita="text-tinta" />
           </p>
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button" onClick={aceptar} disabled={estado === 'generando'}
               className="boton-principal px-4 py-2 text-[13.5px]"
             >
-              {estado === 'generando' ? 'Un segundo…' : 'Mandar mi enlace'}
+              {estado === 'generando' ? r.unSegundo : r.mandarMiEnlace}
             </button>
             <button
               type="button" onClick={ahoraNo}
               className="px-3 py-2 text-[13px] font-semibold text-tinta/45 hover:text-tinta/70"
             >
-              Ahora no
+              {r.ahoraNo}
             </button>
           </div>
         </>

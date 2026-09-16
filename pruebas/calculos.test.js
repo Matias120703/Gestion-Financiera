@@ -874,7 +874,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el código se pide, no se reparte solo', rec.includes("rpc('mi_codigo_socio')"), true);
   ok('el socio dice dónde cobra', rec.includes("rpc('guardar_donde_cobro'"), true);
   ok('la pantalla no calcula comisiones', /porcentaje\s*\/\s*100|\*\s*0\.5/.test(rec), false);
-  ok('y dice que se cobra una sola vez', rec.includes('una sola vez'), true);
+  // La promesa vive en el diccionario desde que la pantalla habla portugués.
+  ok('y dice que se cobra una sola vez',
+    rec.includes('r.promesaUnaVez') && fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('**una sola vez**'), true);
   // En los DOS menús. Estuvo solo en el del celular: en la computadora, que
   // es donde se trabaja sentado, la pantalla existía y no había cómo llegar.
   const nav = fs.readFileSync('src/components/Navegacion.tsx', 'utf8');

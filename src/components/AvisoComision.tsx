@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
+import { useTextos } from '@/i18n/cliente';
+import { Rico } from '@/components/Rico';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -28,6 +30,7 @@ export type Novedad = { hay: boolean; cuantos?: number; total?: number; negocio?
  * va a transferir, no algo que él vendió.
  */
 export function AvisoComision({ novedad }: { novedad: Novedad }) {
+  const r = useTextos().recomendar;
   const [visible, setVisible] = useState(novedad.hay);
 
   if (!visible) return null;
@@ -51,22 +54,21 @@ export function AvisoComision({ novedad }: { novedad: Novedad }) {
       <div className="min-w-0 flex-1">
         <p className="text-[14.5px] font-bold leading-snug">
           {cuantos === 1
-            ? `${novedad.negocio} pagó su primer mes`
-            : `${cuantos} de los que trajiste pagaron su primer mes`}
+            ? r.pagoSuPrimerMes(novedad.negocio ?? '')
+            : r.variosPagaron(cuantos)}
         </p>
         <p className="mt-0.5 text-[13.5px] leading-relaxed text-tinta/65">
-          Te tocan <strong className="text-tinta">{dinero(total, 'PYG')}</strong>. Te los
-          transferimos en estos días.
+          <Rico texto={r.teTocan(dinero(total, 'PYG'))} negrita="text-tinta" />
         </p>
         <div className="mt-2.5 flex items-center gap-3">
           <Link href="/recomendar" className="text-[13px] font-semibold text-verde-fuerte hover:underline">
-            Ver mis referidos →
+            {r.verMisReferidos}
           </Link>
           <button
             type="button" onClick={listo}
             className="text-[13px] font-semibold text-tinta/45 hover:text-tinta/70"
           >
-            Listo
+            {r.listo}
           </button>
         </div>
       </div>

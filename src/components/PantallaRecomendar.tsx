@@ -7,6 +7,8 @@ import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceDeSocio } from '@/lib/referido';
 import type { PanelSocio } from '@/lib/tipos';
+import { useTextos, useLocale } from '@/i18n/cliente';
+import { Rico } from '@/components/Rico';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -15,9 +17,9 @@ const trazo = {
 
 const num = (v: unknown) => Number(v ?? 0);
 
-function fechaCorta(iso: string | null) {
+function fechaCorta(iso: string | null, locale: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('es-PY', { day: '2-digit', month: 'short', year: '2-digit' });
+  return new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: '2-digit' });
 }
 
 /**
@@ -33,6 +35,9 @@ function fechaCorta(iso: string | null) {
  * muestra lo que hay.
  */
 export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
+  const t = useTextos();
+  const r = t.recomendar;
+  const locale = useLocale();
   const router = useRouter();
   const [pidiendo, setPidiendo] = useState(false);
   const [error, setError] = useState('');
@@ -45,7 +50,7 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
       if (e) throw e;
       router.refresh();
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo generar tu código.'));
+      setError(mensajeDeError(e, r.noSeGeneroCodigo));
     } finally {
       setPidiendo(false);
     }
@@ -62,10 +67,10 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
           type="button" onClick={pedirCodigo} disabled={pidiendo}
           className="boton-principal w-full py-3 text-[15px]"
         >
-          {pidiendo ? 'Generando…' : 'Quiero mi enlace'}
+          {pidiendo ? r.generando : r.quieroMiEnlace}
         </button>
         <p className="text-center text-[12.5px] text-tinta/45">
-          No te compromete a nada. Es un enlace tuyo, lo usás si querés.
+          {r.noTeCompromete}
         </p>
       </div>
     );
@@ -76,31 +81,29 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
   return (
     <div className="mx-auto max-w-2xl space-y-4 py-2">
       <div>
-        <h1 className="text-[20px] font-bold tracking-tight">Recomendá Orden</h1>
+        <h1 className="text-[20px] font-bold tracking-tight">{r.titulo}</h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
-          Pasá tu enlace. Cuando alguien crea su cuenta con él y paga su primer mes, la mitad de
-          ese pago es tuya.
+          {r.bajada}
         </p>
       </div>
 
       {!panel.activo && (
         <p className="rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-          Tu código está pausado: por ahora no suma referidos nuevos. Escribinos y lo vemos.
+          {r.pausado}
         </p>
       )}
 
       <Compartir enlace={enlace} codigo={panel.codigo} />
 
       <div className="grid grid-cols-2 gap-3">
-        <Cuadro titulo="Trajiste" valor={String(panel.traidos)} detalle={
-          panel.traidos === 1 ? 'cuenta creada con tu enlace' : 'cuentas creadas con tu enlace'} />
-        <Cuadro titulo="Pagaron" valor={String(panel.pagaron)} detalle="de esas cuentas" />
+        <Cuadro titulo={r.trajiste} valor={String(panel.traidos)} detalle={r.cuentasCreadas(panel.traidos)} />
+        <Cuadro titulo={r.pagaron} valor={String(panel.pagaron)} detalle={r.deEsasCuentas} />
         <Cuadro
-          titulo="Te deben" valor={dinero(num(panel.por_pagar), 'PYG')}
-          detalle={num(panel.por_pagar) > 0 ? 'se paga por transferencia' : 'nada pendiente'}
+          titulo={r.teDeben} valor={dinero(num(panel.por_pagar), 'PYG')}
+          detalle={num(panel.por_pagar) > 0 ? r.porTransferencia : r.nadaPendiente}
           tono={num(panel.por_pagar) > 0 ? 'verde' : undefined}
         />
-        <Cuadro titulo="Ya cobraste" valor={dinero(num(panel.pagado), 'PYG')} detalle="en total" />
+        <Cuadro titulo={r.yaCobraste} valor={dinero(num(panel.pagado), 'PYG')} detalle={r.enTotal} />
       </div>
 
       <PedirCobro panel={panel} />
@@ -108,31 +111,31 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
       <DondeCobro datos={panel} />
 
       <div className="rounded-2xl border border-borde bg-superficie">
-        <p className="border-b border-borde px-4 py-3 text-[14.5px] font-bold">Los que trajiste</p>
+        <p className="border-b border-borde px-4 py-3 text-[14.5px] font-bold">{r.losQueTrajiste}</p>
         {panel.referidos.length === 0 ? (
           <p className="px-4 py-10 text-center text-[13.5px] leading-relaxed text-tinta/45">
-            Todavía nadie entró con tu enlace.<br />
-            Mandáselo a alguien que anota sus ventas en un cuaderno.
+            {r.nadieEntro}<br />
+            {r.mandaselo}
           </p>
         ) : (
           <ul className="divide-y divide-borde">
-            {panel.referidos.map((r, i) => {
-              const estado = r.estado === 'pagada' ? { texto: 'ya te lo pagamos', clase: 'bg-verde-claro text-verde-fuerte' }
-                : r.estado === 'por_pagar' ? { texto: 'te lo vamos a pagar', clase: 'bg-ambar-claro text-ambar' }
-                : r.estado === 'anulada' ? { texto: 'se anuló el pago', clase: 'bg-arena text-tinta/55' }
-                : { texto: 'todavía no pagó', clase: 'bg-arena text-tinta/55' };
+            {panel.referidos.map((ref, i) => {
+              const estado = ref.estado === 'pagada' ? { texto: r.estadoPagada, clase: 'bg-verde-claro text-verde-fuerte' }
+                : ref.estado === 'por_pagar' ? { texto: r.estadoPorPagar, clase: 'bg-ambar-claro text-ambar' }
+                : ref.estado === 'anulada' ? { texto: r.estadoAnulada, clase: 'bg-arena text-tinta/55' }
+                : { texto: r.estadoSinPagar, clase: 'bg-arena text-tinta/55' };
 
               return (
-                <li key={`${r.negocio}-${i}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                <li key={`${ref.negocio}-${i}`} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[14px] font-semibold">{r.negocio}</p>
+                    <p className="truncate text-[14px] font-semibold">{ref.negocio}</p>
                     <p className="mt-0.5 text-[12.5px] text-tinta/45">
-                      entró el {fechaCorta(r.desde)}
+                      {r.entroEl(fechaCorta(ref.desde, locale))}
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    {num(r.monto) > 0 && (
-                      <p className="text-[14px] font-bold tabular-nums">{dinero(num(r.monto), 'PYG')}</p>
+                    {num(ref.monto) > 0 && (
+                      <p className="text-[14px] font-bold tabular-nums">{dinero(num(ref.monto), 'PYG')}</p>
                     )}
                     <span className={`pastilla mt-0.5 ${estado.clase}`}>{estado.texto}</span>
                   </div>
@@ -150,25 +153,22 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
 
 /** La promesa, entera y sin letra chica. */
 function Promesa({ chica = false }: { chica?: boolean }) {
+  const r = useTextos().recomendar;
   return (
     <div className={`rounded-2xl border border-verde/30 bg-verde-claro/25 ${chica ? 'p-4' : 'p-5'}`}>
       {!chica && (
         <>
-          <h1 className="text-[20px] font-bold tracking-tight">Recomendá Orden y ganá</h1>
+          <h1 className="text-[20px] font-bold tracking-tight">{r.promesaTitulo}</h1>
           <p className="mt-1.5 text-[14px] leading-relaxed text-tinta/70">
-            Conocés negocios que anotan todo en un cuaderno. Pasales tu enlace: cuando uno crea su
-            cuenta y paga su primer mes, <strong className="text-tinta">la mitad de ese pago es
-            tuya</strong>.
+            <Rico texto={r.promesaBajada} negrita="text-tinta" />
           </p>
         </>
       )}
       <ul className={`${chica ? '' : 'mt-3'} space-y-1.5 text-[13px] leading-relaxed text-tinta/65`}>
-        <li>· Se cobra <strong className="text-tinta">una sola vez</strong> por cada negocio, sobre
-          su primer pago. Lo que pague después ya no entra.</li>
-        <li>· Se cobra cuando el negocio <strong className="text-tinta">paga de verdad</strong>, no
-          cuando crea la cuenta ni cuando prueba gratis.</li>
-        <li>· Te lo transferimos a donde nos digas. No hay tope: podés traer uno o veinte.</li>
-        <li>· No vale traerte a vos mismo ni al negocio donde trabajás.</li>
+        <li><Rico texto={r.promesaUnaVez} negrita="text-tinta" /></li>
+        <li><Rico texto={r.promesaDeVerdad} negrita="text-tinta" /></li>
+        <li>{r.promesaSinTope}</li>
+        <li>{r.promesaNoVale}</li>
       </ul>
     </div>
   );
@@ -176,6 +176,7 @@ function Promesa({ chica = false }: { chica?: boolean }) {
 
 /** El enlace y el código, listos para pegar en un WhatsApp. */
 function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
+  const r = useTextos().recomendar;
   const [copiado, setCopiado] = useState('');
 
   async function copiar(texto: string, cual: string) {
@@ -188,11 +189,11 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
     }
   }
 
-  const mensaje = `Te paso Orden, lo uso para anotar las ventas y los gastos del negocio y ver la ganancia del día. Entrá por acá: ${enlace}`;
+  const mensaje = r.mensajeWhatsApp(enlace);
 
   return (
     <div className="rounded-2xl border border-borde bg-superficie p-4">
-      <p className="etiqueta">Tu enlace</p>
+      <p className="etiqueta">{r.tuEnlace}</p>
       <p className="mt-1 break-all rounded-xl bg-arena px-3 py-2.5 text-[13.5px] font-semibold">
         {enlace}
       </p>
@@ -202,7 +203,7 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
           type="button" onClick={() => copiar(enlace, 'enlace')}
           className="boton-suave py-2.5 text-[13.5px]"
         >
-          {copiado === 'enlace' ? 'Copiado' : 'Copiar enlace'}
+          {copiado === 'enlace' ? r.copiado : r.copiarEnlace}
         </button>
         <a
           href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`}
@@ -212,19 +213,19 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
           <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
             <path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 21l2.2-5.2A8.5 8.5 0 1 1 21 11.5Z" />
           </svg>
-          Mandar por WhatsApp
+          {r.mandarPorWhatsApp}
         </a>
       </div>
 
       <p className="mt-3 text-[12.5px] leading-snug text-tinta/50">
-        Si prefiere escribirlo a mano, tu código es{' '}
+        {r.siPrefiereEscribirlo}{' '}
         <button
           type="button" onClick={() => copiar(codigo, 'codigo')}
           className="font-bold tracking-wider text-tinta underline decoration-dotted"
         >
-          {copiado === 'codigo' ? '¡copiado!' : codigo}
+          {copiado === 'codigo' ? r.codigoCopiado : codigo}
         </button>
-        . Lo puede poner al crear su cuenta.
+        {r.loPuedePoner}
       </p>
     </div>
   );
@@ -252,6 +253,8 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
  * es una promesa vacía.
  */
 function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true }> }) {
+  const r = useTextos().recomendar;
+  const locale = useLocale();
   const router = useRouter();
   const [pidiendo, setPidiendo] = useState(false);
   const [error, setError] = useState('');
@@ -269,13 +272,13 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
     setPidiendo(true);
     setError('');
     try {
-      const r = await fetch('/api/socio/cobrar', { method: 'POST' });
-      const datos = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(datos?.error || 'No se pudo pedir el cobro.');
+      const respuesta = await fetch('/api/socio/cobrar', { method: 'POST' });
+      const datos = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) throw new Error(datos?.error || r.noSePidioCobro);
       setListo(true);
       router.refresh();
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo pedir el cobro.'));
+      setError(mensajeDeError(e, r.noSePidioCobro));
     } finally {
       setPidiendo(false);
     }
@@ -284,15 +287,13 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
   if (listo || yaPidio) {
     return (
       <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
-        <p className="text-[14.5px] font-bold text-verde-fuerte">Tu cobro está pedido</p>
+        <p className="text-[14.5px] font-bold text-verde-fuerte">{r.cobroPedido}</p>
         <p className="mt-1 text-[13px] leading-relaxed text-tinta/65">
-          Vas a recibir {dinero(monto, 'PYG')} dentro de las{' '}
-          <strong className="text-tinta">24 a 48 horas hábiles</strong>, en la cuenta que dejaste
-          más abajo. Si cae fin de semana o feriado, se cuenta desde el día hábil siguiente.
+          <Rico texto={r.vasARecibir(dinero(monto, 'PYG'))} negrita="text-tinta" />
         </p>
         {panel.cobro_pedido_el && (
           <p className="mt-2 text-[12.5px] text-tinta/45">
-            Lo pediste el {fechaCorta(panel.cobro_pedido_el)}.
+            {r.loPedisteEl(fechaCorta(panel.cobro_pedido_el, locale))}
           </p>
         )}
       </div>
@@ -303,18 +304,16 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
     <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[14.5px] font-bold">Tenés {dinero(monto, 'PYG')} para cobrar</p>
+          <p className="text-[14.5px] font-bold">{r.tenesParaCobrar(dinero(monto, 'PYG'))}</p>
           <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/60">
-            {sinDatos
-              ? 'Primero completá abajo dónde te transferimos.'
-              : 'Lo pedís y te lo transferimos en 24 a 48 horas hábiles.'}
+            {sinDatos ? r.primeroCompleta : r.loPedis}
           </p>
         </div>
         <button
           type="button" onClick={pedir} disabled={pidiendo || sinDatos}
           className="boton-principal shrink-0 px-4 py-2.5 text-[14px]"
         >
-          {pidiendo ? 'Pidiendo…' : 'Pedir mi cobro'}
+          {pidiendo ? r.pidiendo : r.pedirMiCobro}
         </button>
       </div>
 
@@ -344,6 +343,8 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
 function DondeCobro({ datos }: {
   datos: { banco: string; titular: string; cuenta: string; documento: string; cobra_en: string };
 }) {
+  const t = useTextos();
+  const r = t.recomendar;
   const router = useRouter();
   const [banco, setBanco] = useState(datos.banco);
   const [titular, setTitular] = useState(datos.titular);
@@ -373,7 +374,7 @@ function DondeCobro({ datos }: {
       setTimeout(() => setListo(false), 2000);
       router.refresh();
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -381,34 +382,34 @@ function DondeCobro({ datos }: {
 
   return (
     <div className="rounded-2xl border border-borde bg-superficie p-4">
-      <p className="text-[14.5px] font-bold">Dónde te transferimos</p>
+      <p className="text-[14.5px] font-bold">{r.dondeTransferimos}</p>
       <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/50">
-        Completalo una vez. Cuando te toque cobrar, no te lo vamos a tener que pedir.
+        {r.completaloUnaVez}
       </p>
 
       {viejo && (
         <p className="mt-3 rounded-xl bg-arena px-3 py-2 text-[12.5px] leading-snug text-tinta/55">
-          Antes habías escrito: <span className="font-semibold text-tinta">{viejo}</span>
+          {r.antesHabiasEscrito} <span className="font-semibold text-tinta">{viejo}</span>
         </p>
       )}
 
       <div className="mt-3 space-y-3">
         <Campo
-          etiqueta="Banco o billetera" valor={banco} onChange={setBanco}
-          ejemplo="Banco Familiar, Ueno, Tigo Money…"
+          etiqueta={r.banco} valor={banco} onChange={setBanco}
+          ejemplo={r.bancoEjemplo}
         />
         <Campo
-          etiqueta="A nombre de" valor={titular} onChange={setTitular}
-          ejemplo="Como figura en la cuenta"
+          etiqueta={r.titular} valor={titular} onChange={setTitular}
+          ejemplo={r.titularEjemplo}
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo
-            etiqueta="Cuenta o alias" valor={cuenta} onChange={setCuenta}
-            ejemplo="Número o alias"
+            etiqueta={r.cuenta} valor={cuenta} onChange={setCuenta}
+            ejemplo={r.cuentaEjemplo}
           />
           <Campo
-            etiqueta="CI o RUC" valor={documento} onChange={setDocumento}
-            ejemplo="Del titular"
+            etiqueta={r.documento} valor={documento} onChange={setDocumento}
+            ejemplo={r.documentoEjemplo}
           />
         </div>
       </div>
@@ -421,7 +422,7 @@ function DondeCobro({ datos }: {
         type="button" onClick={guardar} disabled={guardando || !cambio}
         className="boton-principal mt-3.5 w-full py-2.5 text-[14px]"
       >
-        {guardando ? 'Guardando…' : listo ? 'Guardado' : 'Guardar mis datos'}
+        {guardando ? t.comun.guardando : listo ? r.guardado : r.guardarMisDatos}
       </button>
     </div>
   );

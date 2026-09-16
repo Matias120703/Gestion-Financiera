@@ -1053,6 +1053,96 @@ export const es = {
     sinTurnos: 'Todavía no tiene turnos.',
   },
 
+  /**
+   * RECOMENDAR · lo que ve el socio de sí mismo.
+   *
+   * La promesa se dice entera, incluido lo que NO pasa. Ver el comentario de
+   * PantallaRecomendar antes de acortar cualquiera de estos textos.
+   */
+  recomendar: {
+    noSeGeneroCodigo: 'No se pudo generar tu código.',
+    generando: 'Generando…',
+    quieroMiEnlace: 'Quiero mi enlace',
+    noTeCompromete: 'No te compromete a nada. Es un enlace tuyo, lo usás si querés.',
+    titulo: 'Recomendá Orden',
+    bajada: 'Pasá tu enlace. Cuando alguien crea su cuenta con él y paga su primer mes, la mitad de ese pago es tuya.',
+    pausado: 'Tu código está pausado: por ahora no suma referidos nuevos. Escribinos y lo vemos.',
+    trajiste: 'Trajiste',
+    cuentasCreadas: (n: number): string => (n === 1 ? 'cuenta creada con tu enlace' : 'cuentas creadas con tu enlace'),
+    pagaron: 'Pagaron',
+    deEsasCuentas: 'de esas cuentas',
+    teDeben: 'Te deben',
+    porTransferencia: 'se paga por transferencia',
+    nadaPendiente: 'nada pendiente',
+    yaCobraste: 'Ya cobraste',
+    enTotal: 'en total',
+    losQueTrajiste: 'Los que trajiste',
+    nadieEntro: 'Todavía nadie entró con tu enlace.',
+    mandaselo: 'Mandáselo a alguien que anota sus ventas en un cuaderno.',
+    estadoPagada: 'ya te lo pagamos',
+    estadoPorPagar: 'te lo vamos a pagar',
+    estadoAnulada: 'se anuló el pago',
+    estadoSinPagar: 'todavía no pagó',
+    entroEl: (fecha: string) => `entró el ${fecha}`,
+
+    promesaTitulo: 'Recomendá Orden y ganá',
+    promesaBajada: 'Conocés negocios que anotan todo en un cuaderno. Pasales tu enlace: cuando uno crea su cuenta y paga su primer mes, **la mitad de ese pago es tuya**.',
+    promesaUnaVez: '· Se cobra **una sola vez** por cada negocio, sobre su primer pago. Lo que pague después ya no entra.',
+    promesaDeVerdad: '· Se cobra cuando el negocio **paga de verdad**, no cuando crea la cuenta ni cuando prueba gratis.',
+    promesaSinTope: '· Te lo transferimos a donde nos digas. No hay tope: podés traer uno o veinte.',
+    promesaNoVale: '· No vale traerte a vos mismo ni al negocio donde trabajás.',
+
+    mensajeWhatsApp: (enlace: string) => `Te paso Orden, lo uso para anotar las ventas y los gastos del negocio y ver la ganancia del día. Entrá por acá: ${enlace}`,
+    tuEnlace: 'Tu enlace',
+    copiado: 'Copiado',
+    copiarEnlace: 'Copiar enlace',
+    mandarPorWhatsApp: 'Mandar por WhatsApp',
+    siPrefiereEscribirlo: 'Si prefiere escribirlo a mano, tu código es',
+    codigoCopiado: '¡copiado!',
+    loPuedePoner: '. Lo puede poner al crear su cuenta.',
+
+    noSePidioCobro: 'No se pudo pedir el cobro.',
+    cobroPedido: 'Tu cobro está pedido',
+    vasARecibir: (monto: string) => `Vas a recibir ${monto} dentro de las **24 a 48 horas hábiles**, en la cuenta que dejaste más abajo. Si cae fin de semana o feriado, se cuenta desde el día hábil siguiente.`,
+    loPedisteEl: (fecha: string) => `Lo pediste el ${fecha}.`,
+    tenesParaCobrar: (monto: string) => `Tenés ${monto} para cobrar`,
+    primeroCompleta: 'Primero completá abajo dónde te transferimos.',
+    loPedis: 'Lo pedís y te lo transferimos en 24 a 48 horas hábiles.',
+    pidiendo: 'Pidiendo…',
+    pedirMiCobro: 'Pedir mi cobro',
+
+    dondeTransferimos: 'Dónde te transferimos',
+    completaloUnaVez: 'Completalo una vez. Cuando te toque cobrar, no te lo vamos a tener que pedir.',
+    antesHabiasEscrito: 'Antes habías escrito:',
+    banco: 'Banco o billetera',
+    bancoEjemplo: 'Banco Familiar, Ueno, Tigo Money…',
+    titular: 'A nombre de',
+    titularEjemplo: 'Como figura en la cuenta',
+    cuenta: 'Cuenta o alias',
+    cuentaEjemplo: 'Número o alias',
+    documento: 'CI o RUC',
+    documentoEjemplo: 'Del titular',
+    guardado: 'Guardado',
+    guardarMisDatos: 'Guardar mis datos',
+
+    // La tarjeta que lo ofrece al cerrar el día o al pagar.
+    listoTuEnlace: 'Listo, este es tu enlace',
+    copiar: 'Copiar',
+    mandar: 'Mandar',
+    verComoVa: 'Ver cómo va →',
+    conocesAAlguien: '¿Conocés a alguien que todavía anota esto en un cuaderno? Si entra con tu enlace y paga su primer mes, **la mitad de ese pago es tuya**.',
+    unSegundo: 'Un segundo…',
+    mandarMiEnlace: 'Mandar mi enlace',
+    ahoraNo: 'Ahora no',
+
+    // El aviso del panel cuando un traído paga.
+    pagoSuPrimerMes: (negocio: string) => `${negocio} pagó su primer mes`,
+    variosPagaron: (n: number) => `${n} de los que trajiste pagaron su primer mes`,
+    teTocan: (monto: string) => `Te tocan **${monto}**. Te los transferimos en estos días.`,
+    verMisReferidos: 'Ver mis referidos →',
+    listo: 'Listo',
+  },
+
   /** EL HISTORIAL y el diálogo de anular. */
   movimientos: {
     filtroTodo: 'Todo',
