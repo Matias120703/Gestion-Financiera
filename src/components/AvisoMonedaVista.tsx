@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { estaConvertida, simboloDe, fechaLegible, type Vista } from '@/lib/formato';
+import { textos, idiomaActual, FICHA } from '@/i18n';
+import { Rico } from '@/components/Rico';
 
 /**
  * «Estás mirando en otra moneda.»
@@ -21,21 +23,23 @@ import { estaConvertida, simboloDe, fechaLegible, type Vista } from '@/lib/forma
  */
 export function AvisoMonedaVista({ vista }: { vista: Vista }) {
   if (!estaConvertida(vista)) return null;
+  const a = textos().ajustes;
+  const locale = FICHA[idiomaActual()].locale;
 
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5
                     rounded-xl border border-borde bg-arena px-4 py-2.5">
       <p className="text-[13px] leading-snug text-tinta/70">
-        Estás viendo en <strong className="text-tinta">{simboloDe(vista.moneda)}</strong>
+        <Rico texto={a.estasViendoEnCorto(simboloDe(vista.moneda))} negrita="text-tinta" />
         {vista.cotizacion != null && (
-          <> · 1 {simboloDe(vista.moneda)} = {vista.cotizacion.toLocaleString('es-PY')} {simboloDe(vista.propia)}</>
+          <> · 1 {simboloDe(vista.moneda)} = {vista.cotizacion.toLocaleString(locale)} {simboloDe(vista.propia)}</>
         )}
         {vista.desde && (
-          <span className="text-tinta/45"> · cargado el {fechaLegible(vista.desde.slice(0, 10))}</span>
+          <span className="text-tinta/45"> · {a.cargadoEl(fechaLegible(vista.desde.slice(0, 10), true, locale))}</span>
         )}
       </p>
       <Link href="/ajustes" className="text-[12.5px] font-semibold text-verde-fuerte hover:underline">
-        Cambiar
+        {a.cambiar}
       </Link>
     </div>
   );

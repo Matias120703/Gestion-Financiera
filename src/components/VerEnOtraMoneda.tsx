@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { fechaLegible, simboloDe } from '@/lib/formato';
+import { useTextos, useLocale } from '@/i18n/cliente';
+import { Rico } from '@/components/Rico';
 
 const MONEDAS = ['USD', 'BRL', 'ARS', 'EUR', 'PYG'] as const;
 
@@ -36,6 +38,9 @@ export function VerEnOtraMoneda({
   cotizacionAt: string | null;
   puedeEditar: boolean;
 }) {
+  const t = useTextos();
+  const a = t.ajustes;
+  const locale = useLocale();
   const router = useRouter();
   const [moneda, setMoneda] = useState(monedaVista ?? '');
   const [cambio, setCambio] = useState(cotizacion != null ? String(cotizacion) : '');
@@ -50,9 +55,9 @@ export function VerEnOtraMoneda({
     setError(''); setMensaje('');
     const n = Number(cambio.replace(',', '.'));
     if (!apagar) {
-      if (!moneda) { setError('Elegí en qué moneda querés ver tus números.'); return; }
+      if (!moneda) { setError(a.elegiMoneda); return; }
       if (!Number.isFinite(n) || n <= 0) {
-        setError('Poné a cuánto está el cambio. Sin eso no se puede convertir nada.');
+        setError(a.poneElCambio);
         return;
       }
     }
@@ -65,11 +70,11 @@ export function VerEnOtraMoneda({
       });
       if (e) throw e;
       if (apagar) { setMoneda(''); setCambio(''); }
-      setMensaje(apagar ? `Volviste a ver en ${simboloDe(monedaPropia)}` : 'Guardado.');
+      setMensaje(apagar ? a.volvisteA(simboloDe(monedaPropia)) : a.guardadoPunto);
       router.refresh();
       setTimeout(() => setMensaje(''), 3000);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -78,29 +83,24 @@ export function VerEnOtraMoneda({
   return (
     <div className="space-y-3">
       <p className="text-[13px] leading-relaxed text-tinta/60">
-        Tus datos siguen guardados en <strong className="text-tinta">{simboloDe(monedaPropia)}</strong>.
-        Esto solo cambia cómo los ves en el panel, el cierre, los movimientos y los reportes.
-        {' '}<strong className="text-tinta">Donde cargás plata seguís escribiendo
-        en {simboloDe(monedaPropia)}</strong>, para que no se guarde un número en una moneda
-        y se lea en otra.
+        <Rico texto={a.monedaExplicacion(simboloDe(monedaPropia))} negrita="text-tinta" />
       </p>
 
       {activa && (
         <p className="rounded-xl bg-verde-claro/50 px-3 py-2.5 text-[13px] leading-relaxed text-tinta/75">
-          Ahora estás viendo en <strong className="text-tinta">{simboloDe(monedaVista!)}</strong>,
-          al cambio <strong className="text-tinta">{Number(cotizacion).toLocaleString('es-PY')}</strong>
-          {cotizacionAt && <> · cargado el {fechaLegible(cotizacionAt.slice(0, 10))}</>}
+          <Rico texto={a.estasViendoEn(simboloDe(monedaVista!), Number(cotizacion).toLocaleString(locale))} negrita="text-tinta" />
+          {cotizacionAt && <> · {a.cargadoEl(fechaLegible(cotizacionAt.slice(0, 10), true, locale))}</>}
         </p>
       )}
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="etiqueta">Ver en</span>
+          <span className="etiqueta">{a.verEn}</span>
           <select
             className="campo" disabled={!puedeEditar || guardando}
             value={moneda} onChange={(e) => setMoneda(e.target.value)}
           >
-            <option value="">{simboloDe(monedaPropia)} (mi moneda)</option>
+            <option value="">{a.miMoneda(simboloDe(monedaPropia))}</option>
             {opciones.map((m) => (
               <option key={m} value={m}>{simboloDe(m)}</option>
             ))}
@@ -109,7 +109,7 @@ export function VerEnOtraMoneda({
 
         <label className="block">
           <span className="etiqueta">
-            {moneda ? `1 ${simboloDe(moneda)} = cuántos ${simboloDe(monedaPropia)}` : 'A cuánto está'}
+            {moneda ? a.cuantosPor(simboloDe(moneda), simboloDe(monedaPropia)) : a.aCuantoEsta}
           </span>
           <input
             type="number" min={0} step="any" inputMode="decimal"
@@ -130,7 +130,7 @@ export function VerEnOtraMoneda({
             disabled={guardando || !moneda}
             className="boton-principal flex-1 py-2.5 disabled:opacity-40"
           >
-            {guardando ? 'Guardando…' : 'Ver en esta moneda'}
+            {guardando ? t.comun.guardando : a.verEnEstaMoneda}
           </button>
           {activa && (
             <button
@@ -138,7 +138,7 @@ export function VerEnOtraMoneda({
               disabled={guardando}
               className="boton-texto px-4 text-tinta/55"
             >
-              Volver a {simboloDe(monedaPropia)}
+              {a.volverA(simboloDe(monedaPropia))}
             </button>
           )}
         </div>

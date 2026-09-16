@@ -901,6 +901,15 @@ export const es = {
    * son los de los menús del teléfono en ese idioma: si no coinciden
    * letra por letra con lo que la persona ve, no los encuentra.
    */
+  /** La página pública /instalar, alrededor de la guía. */
+  instalarPagina: {
+    metaTitulo: 'Cómo instalar Orden · Orden',
+    metaDescripcion: 'Agregá Orden a tu pantalla de inicio para que te lleguen los avisos.',
+    titulo: 'Cómo agregar Orden a tu pantalla de inicio',
+    bajada: 'Son cuatro pasos, y en iPhone hace falta hacerlo para que te lleguen los avisos —es una regla del teléfono, no de Orden—. En Android no es obligatorio, pero la app se abre más rápido y sin la barra del navegador arriba.',
+    volver: 'Volver a Orden →',
+  },
+
   instalarGuia: {
     iphone1: 'Abrí Orden en **Safari** y tocá el ícono de **Compartir** (el cuadrado con la flecha hacia arriba) en la barra de Safari. Si no lo ves, tocá primero los **tres puntos «···»** y ahí aparece.',
     iphone2: 'Deslizá la lista de opciones y tocá **«Agregar a inicio»**.',
@@ -1570,6 +1579,16 @@ export const es = {
     podesBajar: 'Podés bajar lo que pagás',
     podesBajarDetalle: 'Traé un negocio con tu enlace y te llevás la mitad de su primer pago. Está en todos los planes, incluso mientras probás.',
     ver: 'Ver →',
+
+    // El mensaje que se abre en WhatsApp para pagar: lo manda la persona,
+    // así que va en su idioma.
+    alAnio: 'al año',
+    alMes: 'al mes',
+    mensajeSuscribirme: (negocio: string, plan: string, precio: string, cada: string) =>
+      `Hola! Quiero suscribirme a Orden.\n\nNegocio: ${negocio}\nPlan: ${plan}\nPrecio: ${precio} ${cada}\n\n¿Cómo hago la transferencia?`,
+    pedirCotizacion: 'Pedir cotización',
+    mensajeCotizar: (negocio: string) =>
+      `Hola! Quiero el plan Premium de Orden.\n\nNegocio: ${negocio}\n\n¿Cuánto me saldría? Somos ___ personas cargando.`,
   },
 
   ajustes: {
@@ -1650,6 +1669,22 @@ export const es = {
     temaOscuro: 'Oscuro',
     temaSistema: 'Como el teléfono',
     temaDeEsteAparato: 'Es de este aparato: podés tenerla clara en la computadora del local y oscura en el celular.',
+
+    // ---- ver en otra moneda ----
+    elegiMoneda: 'Elegí en qué moneda querés ver tus números.',
+    poneElCambio: 'Poné a cuánto está el cambio. Sin eso no se puede convertir nada.',
+    volvisteA: (moneda: string) => `Volviste a ver en ${moneda}`,
+    monedaExplicacion: (propia: string) => `Tus datos siguen guardados en **${propia}**. Esto solo cambia cómo los ves en el panel, el cierre, los movimientos y los reportes. **Donde cargás plata seguís escribiendo en ${propia}**, para que no se guarde un número en una moneda y se lea en otra.`,
+    estasViendoEn: (moneda: string, cambio: string) => `Ahora estás viendo en **${moneda}**, al cambio **${cambio}**`,
+    cargadoEl: (fecha: string) => `cargado el ${fecha}`,
+    verEn: 'Ver en',
+    miMoneda: (moneda: string) => `${moneda} (mi moneda)`,
+    cuantosPor: (una: string, propia: string) => `1 ${una} = cuántos ${propia}`,
+    aCuantoEsta: 'A cuánto está',
+    verEnEstaMoneda: 'Ver en esta moneda',
+    volverA: (moneda: string) => `Volver a ${moneda}`,
+    estasViendoEnCorto: (moneda: string) => `Estás viendo en **${moneda}**`,
+    cambiar: 'Cambiar',
   },
 
   deudas: {

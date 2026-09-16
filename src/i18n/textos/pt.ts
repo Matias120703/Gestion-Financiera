@@ -878,6 +878,14 @@ export const pt: Textos = {
 
   // Os nomes entre aspas são os dos menus do iPhone e do Android em
   // português do Brasil.
+  instalarPagina: {
+    metaTitulo: 'Como instalar o Orden · Orden',
+    metaDescripcion: 'Adicione o Orden à tela de início pra receber os avisos.',
+    titulo: 'Como adicionar o Orden à tela de início',
+    bajada: 'São quatro passos, e no iPhone é preciso fazer pra receber os avisos — é uma regra do telefone, não do Orden. No Android não é obrigatório, mas o app abre mais rápido e sem a barra do navegador em cima.',
+    volver: 'Voltar pro Orden →',
+  },
+
   instalarGuia: {
     iphone1: 'Abra o Orden no **Safari** e toque no ícone de **Compartilhar** (o quadrado com a seta pra cima) na barra do Safari. Se não aparecer, toque primeiro nos **três pontinhos «···»** e ele aparece ali.',
     iphone2: 'Role a lista de opções e toque em **«Adicionar à Tela de Início»**.',
@@ -1521,6 +1529,14 @@ export const pt: Textos = {
     podesBajar: 'Você pode pagar menos',
     podesBajarDetalle: 'Traga um negócio com seu link e fique com metade do primeiro pagamento dele. Está em todos os planos, inclusive enquanto você testa.',
     ver: 'Ver →',
+
+    alAnio: 'por ano',
+    alMes: 'por mês',
+    mensajeSuscribirme: (negocio: string, plan: string, precio: string, cada: string) =>
+      `Olá! Quero assinar o Orden.\n\nNegócio: ${negocio}\nPlano: ${plan}\nPreço: ${precio} ${cada}\n\nComo faço a transferência?`,
+    pedirCotizacion: 'Pedir orçamento',
+    mensajeCotizar: (negocio: string) =>
+      `Olá! Quero o plano Premium do Orden.\n\nNegócio: ${negocio}\n\nQuanto sairia? Somos ___ pessoas lançando.`,
   },
 
   ajustes: {
@@ -1596,6 +1612,21 @@ export const pt: Textos = {
     temaOscuro: 'Escuro',
     temaSistema: 'Igual ao celular',
     temaDeEsteAparato: 'É deste aparelho: você pode deixar claro no computador do local e escuro no celular.',
+
+    elegiMoneda: 'Escolha em que moeda você quer ver seus números.',
+    poneElCambio: 'Coloque a cotação. Sem isso não dá pra converter nada.',
+    volvisteA: (moneda: string) => `Você voltou a ver em ${moneda}`,
+    monedaExplicacion: (propia: string) => `Seus dados continuam guardados em **${propia}**. Isto só muda como você vê no painel, no fechamento, nos lançamentos e nos relatórios. **Onde você lança dinheiro continua escrevendo em ${propia}**, pra que um número não seja salvo numa moeda e lido em outra.`,
+    estasViendoEn: (moneda: string, cambio: string) => `Agora você está vendo em **${moneda}**, com cotação de **${cambio}**`,
+    cargadoEl: (fecha: string) => `lançada em ${fecha}`,
+    verEn: 'Ver em',
+    miMoneda: (moneda: string) => `${moneda} (minha moeda)`,
+    cuantosPor: (una: string, propia: string) => `1 ${una} = quantos ${propia}`,
+    aCuantoEsta: 'Cotação',
+    verEnEstaMoneda: 'Ver nesta moeda',
+    volverA: (moneda: string) => `Voltar pra ${moneda}`,
+    estasViendoEnCorto: (moneda: string) => `Você está vendo em **${moneda}**`,
+    cambiar: 'Mudar',
   },
 
   deudas: {

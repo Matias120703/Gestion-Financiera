@@ -1116,7 +1116,10 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const pub = fs.readFileSync('src/app/instalar/page.tsx', 'utf8');
   ok('la página pública usa el mismo componente que Ajustes',
     pub.includes('<GuiaInstalar'), true);
-  ok('es estática: no exige haber iniciado sesión', pub.includes("dynamic = 'force-static'"), true);
+  // Era estática; pasó a dinámica para salir en el idioma de quien la abre.
+  // Lo que importa de verdad es que no pida sesión.
+  ok('no exige haber iniciado sesión',
+    !pub.includes('contextoObligatorio') && !pub.includes('getUser') && !pub.includes('redirect('), true);
 
   const prefs = fs.readFileSync('src/components/Preferencias.tsx', 'utf8');
   ok('en Ajustes, la guía aparece en el momento exacto en que hace falta',

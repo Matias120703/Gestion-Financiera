@@ -1,5 +1,7 @@
 'use client';
 
+import { useTextos } from '@/i18n/cliente';
+
 /**
  * Suscribirse es abrir un WhatsApp, no cargar una tarjeta.
  *
@@ -17,7 +19,7 @@
  * el camino de la pasarela. Nunca un botón que no lleva a ningún lado.
  */
 export function BotonSuscribirme({
-  whatsapp, empresa, plan, precio, periodo, etiqueta = 'Suscribirme',
+  whatsapp, empresa, plan, precio, periodo, etiqueta,
 }: {
   /** Solo dígitos, con código de país. Sin esto no se dibuja nada. */
   whatsapp: string | null;
@@ -28,14 +30,11 @@ export function BotonSuscribirme({
   periodo: 'mensual' | 'anual';
   etiqueta?: string;
 }) {
+  const t = useTextos();
   if (!whatsapp) return null;
 
-  const cada = periodo === 'anual' ? 'al año' : 'al mes';
-  const mensaje = `Hola! Quiero suscribirme a Orden.\n\n`
-    + `Negocio: ${empresa}\n`
-    + `Plan: ${plan}\n`
-    + `Precio: ${precio} ${cada}\n\n`
-    + `¿Cómo hago la transferencia?`;
+  const cada = periodo === 'anual' ? t.plan.alAnio : t.plan.alMes;
+  const mensaje = t.plan.mensajeSuscribirme(empresa, plan, precio, cada);
 
   return (
     <a
@@ -48,7 +47,7 @@ export function BotonSuscribirme({
            strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 21l2.2-5.2A8.5 8.5 0 1 1 21 11.5Z" />
       </svg>
-      {etiqueta}
+      {etiqueta ?? t.plan.suscribirme}
     </a>
   );
 }
@@ -58,17 +57,16 @@ export function BotonSuscribirme({
  * que no se puede mandar un número — se manda la pregunta.
  */
 export function BotonCotizar({
-  whatsapp, empresa, etiqueta = 'Pedir cotización',
+  whatsapp, empresa, etiqueta,
 }: {
   whatsapp: string | null;
   empresa: string;
   etiqueta?: string;
 }) {
+  const t = useTextos();
   if (!whatsapp) return null;
 
-  const mensaje = `Hola! Quiero el plan Premium de Orden.\n\n`
-    + `Negocio: ${empresa}\n\n`
-    + `¿Cuánto me saldría? Somos ___ personas cargando.`;
+  const mensaje = t.plan.mensajeCotizar(empresa);
 
   return (
     <a
@@ -77,7 +75,7 @@ export function BotonCotizar({
       rel="noopener noreferrer"
       className="boton-suave flex w-full items-center justify-center gap-2"
     >
-      {etiqueta}
+      {etiqueta ?? t.plan.pedirCotizacion}
     </a>
   );
 }
