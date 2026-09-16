@@ -1,5 +1,5 @@
 /**
- * Idiomas que entiende Orden: español e inglés, los dos completos.
+ * Idiomas que entiende Orden: español y portugués, los dos completos.
  *
  * POR QUÉ DOS Y NO SEIS
  *
@@ -17,7 +17,16 @@
  * DICCIONARIOS. Ninguna pantalla se toca.
  */
 
-export const IDIOMAS = ['es', 'pt', 'en'] as const;
+/**
+ * PORTUGUÉS SÍ, INGLÉS NO (2026-09-16)
+ *
+ * El portugués volvió porque hay a quién: los brasileños que trabajan en
+ * Paraguay, muchos de ellos agrónomos. El inglés salió de la lista por la
+ * razón inversa: nadie lo usa, y tenerlo acá obligaba a escribir cada texto
+ * nuevo tres veces. Sus textos siguen en `textos/en.ts`, apoyados en español
+ * para lo que les falta, por si algún día hay a quién ofrecérselo.
+ */
+export const IDIOMAS = ['es', 'pt'] as const;
 export type Idioma = (typeof IDIOMAS)[number];
 
 /**
@@ -37,7 +46,7 @@ export const IDIOMA_UNICO: Idioma | null = 'es';
 
 export const IDIOMA_POR_DEFECTO: Idioma = 'es';
 /** Al que caen las traducciones incompletas. */
-export const IDIOMA_DE_RESPALDO: Idioma = 'en';
+export const IDIOMA_DE_RESPALDO: Idioma = 'es';
 
 export interface FichaIdioma {
   /** Cómo lo llaman quienes lo hablan. Nunca "Spanish" en la lista de idiomas. */
@@ -50,7 +59,6 @@ export interface FichaIdioma {
 export const FICHA: Record<Idioma, FichaIdioma> = {
   es: { nombre: 'Español', locale: 'es-PY', bandera: '🇵🇾' },
   pt: { nombre: 'Português', locale: 'pt-BR', bandera: '🇧🇷' },
-  en: { nombre: 'English', locale: 'en-US', bandera: '🇺🇸' },
 };
 
 export const COOKIE_IDIOMA = 'orden_idioma';
@@ -89,7 +97,7 @@ export function idiomaDeCabecera(cabecera: string | null | undefined): Idioma | 
 export const MONEDA_SUGERIDA: Record<Idioma, string> = {
   // Portugués sugiere guaraníes y no reales: quien lo elige es, por ahora,
   // un brasileño que trabaja en Paraguay y factura acá.
-  es: 'PYG', pt: 'PYG', en: 'USD',
+  es: 'PYG', pt: 'PYG',
 };
 
 /**
@@ -100,5 +108,5 @@ export const MONEDA_SUGERIDA: Record<Idioma, string> = {
 export const MONEDA_DE_COBRO: Record<Idioma, string> = {
   // Mismo razonamiento: el portugués se agregó para los brasileños de
   // Paraguay, que pagan la suscripción en guaraníes como cualquier cliente.
-  es: 'PYG', pt: 'PYG', en: 'USD',
+  es: 'PYG', pt: 'PYG',
 };

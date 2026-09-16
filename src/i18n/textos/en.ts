@@ -1,13 +1,15 @@
 /**
- * English. Complete, and the fallback for every other language: what pt, de,
- * fr or it haven't translated yet falls back here, never to a raw key.
+ * English. NOT OFFERED since 2026-09-16 (see `IDIOMAS` in idiomas.ts).
  *
- * The type comes from `es`, so a key added there and forgotten here is a
- * compile error, not a blank space someone finds in production.
+ * Kept because it is real translation work that would be a shame to lose.
+ * It is a partial dictionary on purpose: new texts are written in Spanish
+ * and Portuguese only. If English is ever offered again, merge it over
+ * Spanish with `fusionar(es, en)` and translate what is missing first.
  */
 import type { Textos } from './es';
+import type { Parcial } from '../fusionar';
 
-export const en: Textos = {
+export const en: Parcial<Textos> = {
   comun: {
     guardar: 'Save',
     cancelar: 'Cancel',

@@ -1,5 +1,5 @@
 /**
- * Los dos diccionarios.
+ * Los diccionarios que se ofrecen: español y portugués.
  *
  * Este archivo NO importa nada del servidor a propósito: lo usan tanto las
  * páginas de servidor como los componentes del navegador. Si acá entrara
@@ -7,7 +7,6 @@
  * llevaría medio Next.js puesto y fallaría al compilar.
  */
 import { es, type Textos } from './textos/es';
-import { en } from './textos/en';
 import { pt } from './textos/pt';
 import { IDIOMA_POR_DEFECTO, esIdioma, type Idioma, IDIOMA_UNICO } from './idiomas';
 
@@ -20,7 +19,7 @@ export type { Textos };
  * y convenga arrancarlo apoyado en inglés mientras se completa. Hoy no hace
  * falta: los dos que hay están al 100%.
  */
-export const DICCIONARIOS: Record<Idioma, Textos> = { es, pt, en };
+export const DICCIONARIOS: Record<Idioma, Textos> = { es, pt };
 
 export function diccionario(idioma: Idioma | string | null | undefined): Textos {
   // Con un idioma único manda ese, aunque en las preferencias de alguien

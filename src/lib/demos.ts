@@ -37,7 +37,9 @@ export type Demo = {
   titulo: string;
   /** Una línea explicando por qué eso le sirve a quien mira. */
   detalle: string;
-  /** Lo mismo en inglés, para cuando se traduzca la portada. */
+  /** Lo mismo en portugués, para quien ve la portada en portugués. */
+  pt?: { titulo: string; detalle: string };
+  /** En inglés, que hoy no se ofrece (ver IDIOMAS). */
   en?: { titulo: string; detalle: string };
 };
 
@@ -47,6 +49,10 @@ export const DEMOS: Demo[] = [
     portada: '2-cargar-hablando.jpg',
     titulo: 'Contale una venta hablando',
     detalle: 'Decís «vendí dos perfumes a 45 mil» y sale armada: el producto de tu catálogo, la cantidad, el precio y el stock ya descontado.',
+    pt: {
+      titulo: 'Conte uma venda falando',
+      detalle: 'Você diz «vendi dois perfumes a 45 mil» e ela sai pronta: o produto do seu catálogo, a quantidade, o preço e o estoque já baixado.',
+    },
     en: {
       titulo: 'Log a sale by talking',
       detalle: 'You say «I sold two perfumes at 45 thousand» and it comes back complete: the product from your catalogue, the amount, the price and the stock already deducted.',
@@ -57,6 +63,10 @@ export const DEMOS: Demo[] = [
     portada: '1-cargar-gasto.jpg',
     titulo: 'Un gasto, en siete segundos',
     detalle: 'El monto, en qué fue, y listo. Sin formularios de veinte campos ni categorías que adivinar.',
+    pt: {
+      titulo: 'Uma despesa, em sete segundos',
+      detalle: 'O valor, com o que foi, e pronto. Sem formulário de vinte campos nem categoria pra adivinhar.',
+    },
     en: {
       titulo: 'An expense, in seven seconds',
       detalle: 'The amount, what it was for, done. No twenty-field forms and no categories to guess.',
@@ -67,6 +77,10 @@ export const DEMOS: Demo[] = [
     portada: '3-reportes-excel.jpg',
     titulo: 'Tu Excel, cuando lo necesites',
     detalle: 'Cinco hojas con el resumen, los productos, los movimientos, los gastos y el día por día. Se baja al celular y se abre donde quieras.',
+    pt: {
+      titulo: 'Seu Excel, quando você precisar',
+      detalle: 'Cinco abas com o resumo, os produtos, os lançamentos, as despesas e o dia a dia. Baixa no celular e abre onde você quiser.',
+    },
     en: {
       titulo: 'Your spreadsheet, whenever you need it',
       detalle: 'Five sheets: summary, products, entries, expenses and a day-by-day view. It downloads to your phone and opens anywhere.',

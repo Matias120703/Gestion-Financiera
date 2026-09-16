@@ -28,7 +28,7 @@ export default function Demos({ idioma }: { idioma: Idioma }) {
   return (
     <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {DEMOS.map((demo) => {
-        const texto = idioma === 'en' && demo.en ? demo.en : demo;
+        const texto = (idioma !== 'es' && demo[idioma]) || demo;
         return (
           <Video
             key={demo.archivo}
