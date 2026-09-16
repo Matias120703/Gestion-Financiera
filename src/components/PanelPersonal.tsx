@@ -76,6 +76,14 @@ export function PanelPersonal({
                 {t.organizacion.porDia(plata(resumen.por_dia))}
               </p>
             )}
+            {/* Cobrar un fiado no es «entró» (056), pero sí es plata real que
+                ya está adentro de Disponible (065). Sin esta línea, esa
+                plata aparecía de la nada y nadie sabía de dónde salió. */}
+            {resumen.fiado_cobrado_en_el_ciclo > 0 && (
+              <p className="mt-2 text-[12.5px] leading-relaxed text-tinta/55">
+                {t.panelPersonal.cobrasteDeFiado(plata(resumen.fiado_cobrado_en_el_ciclo))}
+              </p>
+            )}
           </>
         )}
       </section>
@@ -99,6 +107,15 @@ export function PanelPersonal({
             ? t.panelPersonal.venceEl(fechaLegible(deudas.proximo_vencimiento, false, locale))
             : undefined}
         />
+        {/* Lo que le deben, aparte de lo que debe: son dos cosas distintas y
+            mezclarlas en un solo número confundiría cuál suma y cuál resta. */}
+        {resumen.fiado_pendiente > 0 && (
+          <Cuadro
+            titulo={t.panelPersonal.teDeben}
+            valor={corto(resumen.fiado_pendiente)}
+            tono="bueno"
+          />
+        )}
       </div>
 
       {/* ---------- 2. De dónde vino ---------- */}

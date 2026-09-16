@@ -457,6 +457,11 @@ export const es = {
     guardado: 'Ahorro',
     esteMes: (monto: string) => `+${monto} este período`,
     venceEl: (fecha: string) => `próximo vencimiento: ${fecha}`,
+    teDeben: 'Te deben',
+    // Cobrar un fiado no es un ingreso —ya se explicó por qué en la 056— pero
+    // sí es plata real que ahora tenés en el bolsillo. Esta nota es lo único
+    // que le avisa a la persona que ese número ya está adentro de «Disponible».
+    cobrasteDeFiado: (monto: string) => `De eso, ${monto} entraron porque te pagaron algo que te debían.`,
 
     deDondeVino: 'Origen de tus ingresos',
     organizar: 'Administrar',

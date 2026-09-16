@@ -408,6 +408,8 @@ export const en: Textos = {
     guardado: 'Savings',
     esteMes: (monto: string) => `+${monto} this period`,
     venceEl: (fecha: string) => `next due: ${fecha}`,
+    teDeben: "You're owed",
+    cobrasteDeFiado: (monto: string) => `Of that, ${monto} came in because someone paid you back.`,
 
     deDondeVino: 'Where your income comes from',
     organizar: 'Manage',

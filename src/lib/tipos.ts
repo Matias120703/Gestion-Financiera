@@ -799,6 +799,14 @@ export interface ResumenPersonal {
   ahorrado_en_el_ciclo: number;
   /** Lo acumulado de siempre, sumando todos los fondos. */
   ahorro_total: number;
+  /**
+   * Lo cobrado de fiado en este ciclo. No es un ingreso —esa plata ya
+   * había salido antes—, pero sí suma a `disponible`: es plata real en
+   * el bolsillo (065).
+   */
+  fiado_cobrado_en_el_ciclo: number;
+  /** Lo que le deben en total, sumando a todos. */
+  fiado_pendiente: number;
   de_donde_vino: EntradaPorCategoria[];
   esperado: number;
   /** La suma de todos los gastos fijos del mes, se hayan pagado o no. */
