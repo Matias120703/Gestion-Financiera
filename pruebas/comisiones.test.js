@@ -649,6 +649,88 @@ async function principal() {
     await db.query('update public.ajustes_orden set empresa_id = $1 where unica', [ORDEN]);
   }
 
+  // =====================================================================
+  grupo('14 · El socio pide su cobro (066)');
+  // =====================================================================
+  {
+    // Antes de esto la comisión quedaba en «te deben» esperando a que alguien
+    // de administración se acordara de mirar el panel. El socio no tenía
+    // botón y nosotros no teníamos aviso.
+    const pedir = (uid) => H.intentar(db, uid, () =>
+      db.query('select public.solicitar_cobro() j').then((r) => r.rows[0].j));
+    const panelDe = (uid) => H.intentar(db, uid, () =>
+      db.query('select public.mi_panel_socio() j').then((r) => r.rows[0].j));
+
+    const pedroUid = await H.crearUsuario(db, 'pedro@correo.com');
+    const P = (await guardarSocio({ nombre: 'Pedro Cañete', email: 'pedro@correo.com' })).valor;
+    await db.query('update public.socios set user_id = $1 where id = $2', [pedroUid, P.id]);
+
+    // Sin nada por cobrar no hay pedido: un botón de cobrar en cero es una
+    // promesa vacía.
+    rechazado('sin comisiones no se puede pedir nada', await pedir(pedroUid), 'nada por cobrar');
+
+    const N = await H.montarEmpresa(db, { email: 'dueno@pizzeria.com', nombre: 'Pizzería Sur' });
+    await anotar(N.empresaId, P.codigo);
+    await cobrar(N.empresaId, 'pro', 190000);
+
+    // Pedir sin decir a dónde transferir deja a administración con un aviso
+    // que no puede resolver, y al socio esperando una plata que nadie sabe
+    // mandar. Se frena en la base, no en la pantalla.
+    rechazado('sin datos bancarios tampoco', await pedir(pedroUid), 'dónde te transferimos');
+
+    await H.intentar(db, pedroUid, () => db.query(
+      'select public.guardar_donde_cobro($1,$2,$3,$4)',
+      ['Banco Familiar', 'Pedro Cañete', '123456', '4567890']));
+
+    const primero = await pedir(pedroUid);
+    aceptado('con los datos cargados, el pedido entra', primero);
+    ok('dice cuánto se le debe', Number(primero.valor.total), 95000);
+    ok('y sobre cuántas comisiones', primero.valor.comisiones, 1);
+    ok('marca una como pedida', primero.valor.nuevas, 1);
+    ok('así que hay que avisar', primero.valor.ya_estaba, false);
+    ok('y dice a dónde transferirle', primero.valor.donde, '123456');
+
+    // Tocar el botón cinco veces no manda cinco avisos.
+    const segundo = await pedir(pedroUid);
+    ok('pedirlo de nuevo no vuelve a marcar nada', segundo.valor.nuevas, 0);
+    ok('y avisa que ya estaba pedido', segundo.valor.ya_estaba, true);
+    ok('sin mover la fecha del pedido original',
+      segundo.valor.pedido_el, primero.valor.pedido_el);
+
+    ok('el socio lo ve en su pantalla',
+      (await panelDe(pedroUid)).valor.cobro_pedido_el !== null, true);
+
+    const enPanel = await comoJefe(() => db.query(
+      'select public.listar_comisiones($1,$2::uuid,$3) j', ['por_pagar', P.id, 200],
+    ).then((r) => r.rows[0].j));
+    ok('y la administración ve que lo pidió',
+      enPanel.valor.every((c) => c.solicitada_at !== null), true);
+
+    // Una comisión nueva que llega DESPUÉS del pedido no queda marcada: es
+    // plata que todavía no pidió, y tiene que poder pedirla.
+    const O = await H.montarEmpresa(db, { email: 'dueno@libreria.com', nombre: 'Librería Norte' });
+    await anotar(O.empresaId, P.codigo);
+    await cobrar(O.empresaId, 'pro', 190000);
+    const tercero = await pedir(pedroUid);
+    ok('una comisión posterior se puede pedir aparte', tercero.valor.nuevas, 1);
+    ok('y el total ya son las dos', Number(tercero.valor.total), 190000);
+
+    // Pagarle una saca ese pedido del camino: queda pendiente solo la otra.
+    await pagar((await comisionDe(N.empresaId)).id);
+    const luego = await panelDe(pedroUid);
+    ok('pagada una, queda pendiente la otra', Number(luego.valor.por_pagar), 95000);
+
+    // Un socio pausado no puede pedir: si quedó afuera del programa, tiene
+    // que enterarse por el mensaje y no esperando una transferencia.
+    await guardarSocio({ id: P.id, nombre: 'Pedro Cañete', activo: false });
+    rechazado('un socio pausado no puede pedir', await pedir(pedroUid), 'pausado');
+
+    // Y nadie puede pedir el cobro de otro: se resuelve de auth.uid().
+    const ajenoUid = await H.crearUsuario(db, 'ajeno@correo.com');
+    rechazado('quien no es socio no puede pedir nada',
+      await pedir(ajenoUid), 'código de recomendación');
+  }
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE COMISIONES FALLARON`);

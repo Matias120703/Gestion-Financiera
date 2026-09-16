@@ -103,6 +103,8 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
         <Cuadro titulo="Ya cobraste" valor={dinero(num(panel.pagado), 'PYG')} detalle="en total" />
       </div>
 
+      <PedirCobro panel={panel} />
+
       <DondeCobro datos={panel} />
 
       <div className="rounded-2xl border border-borde bg-superficie">
@@ -224,6 +226,103 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
         </button>
         . Lo puede poner al crear su cuenta.
       </p>
+    </div>
+  );
+}
+
+/**
+ * PEDIR EL COBRO.
+ *
+ * Antes de esto, la comisión aparecía como «te deben» y ahí se quedaba
+ * esperando a que alguien de administración se acordara de mirar el panel.
+ * Alguien que trae un cliente, ve su plata en pantalla y no pasa nada
+ * durante dos semanas, no vuelve a recomendar nunca más.
+ *
+ * El botón hace dos cosas: deja el pedido anotado en la base y le manda un
+ * push a la administración en el momento. Y le deja al socio la única
+ * respuesta que quiere: cuándo la va a tener.
+ *
+ * LO QUE SE PROMETE SE PROMETE ENTERO
+ *
+ * «24 a 48 horas hábiles», dicho así, con la palabra hábiles a la vista. Un
+ * pedido hecho un viernes a la noche se paga el martes, y es mejor que eso
+ * lo sepa antes de esperarlo el sábado.
+ *
+ * El botón no aparece si no hay nada por cobrar. Un botón de cobrar en cero
+ * es una promesa vacía.
+ */
+function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true }> }) {
+  const router = useRouter();
+  const [pidiendo, setPidiendo] = useState(false);
+  const [error, setError] = useState('');
+  const [listo, setListo] = useState(false);
+
+  const monto = num(panel.por_pagar);
+  if (monto <= 0) return null;
+
+  // Sin datos bancarios el pedido no se puede resolver, así que la base lo
+  // rechaza (066). Se dice acá antes de que toque, no después.
+  const sinDatos = !panel.cuenta.trim() && !panel.cobra_en.trim();
+  const yaPidio = Boolean(panel.cobro_pedido_el);
+
+  async function pedir() {
+    setPidiendo(true);
+    setError('');
+    try {
+      const r = await fetch('/api/socio/cobrar', { method: 'POST' });
+      const datos = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datos?.error || 'No se pudo pedir el cobro.');
+      setListo(true);
+      router.refresh();
+    } catch (e: any) {
+      setError(mensajeDeError(e, 'No se pudo pedir el cobro.'));
+    } finally {
+      setPidiendo(false);
+    }
+  }
+
+  if (listo || yaPidio) {
+    return (
+      <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
+        <p className="text-[14.5px] font-bold text-verde-fuerte">Tu cobro está pedido</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-tinta/65">
+          Vas a recibir {dinero(monto, 'PYG')} dentro de las{' '}
+          <strong className="text-tinta">24 a 48 horas hábiles</strong>, en la cuenta que dejaste
+          más abajo. Si cae fin de semana o feriado, se cuenta desde el día hábil siguiente.
+        </p>
+        {panel.cobro_pedido_el && (
+          <p className="mt-2 text-[12.5px] text-tinta/45">
+            Lo pediste el {fechaCorta(panel.cobro_pedido_el)}.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[14.5px] font-bold">Tenés {dinero(monto, 'PYG')} para cobrar</p>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/60">
+            {sinDatos
+              ? 'Primero completá abajo dónde te transferimos.'
+              : 'Lo pedís y te lo transferimos en 24 a 48 horas hábiles.'}
+          </p>
+        </div>
+        <button
+          type="button" onClick={pedir} disabled={pidiendo || sinDatos}
+          className="boton-principal shrink-0 px-4 py-2.5 text-[14px]"
+        >
+          {pidiendo ? 'Pidiendo…' : 'Pedir mi cobro'}
+        </button>
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2 text-[12.5px] font-medium text-rojo">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

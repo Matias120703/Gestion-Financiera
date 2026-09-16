@@ -306,6 +306,14 @@ function FilaComision({ comision, moneda, onHecho }: {
           {comision.estado === 'por_pagar' && comision.cobra_en && (
             <p className="mt-1 truncate text-[12px] text-tinta/45">Cobra en {comision.cobra_en}</p>
           )}
+          {/* Pidió que se le transfiera (066). Va destacado y no como una
+              línea gris más: es lo único de esta lista que tiene a alguien
+              esperando del otro lado, con un plazo prometido. */}
+          {comision.estado === 'por_pagar' && comision.solicitada_at && (
+            <p className="mt-1.5 rounded-xl bg-ambar-claro px-2.5 py-1.5 text-[12px] font-semibold text-ambar">
+              Pidió su cobro el {fechaCorta(comision.solicitada_at)} · se prometió en 24 a 48 h hábiles
+            </p>
+          )}
           {comision.estado === 'por_pagar' && comision.ingreso_anulado && (
             <p className="mt-1.5 rounded-xl bg-rojo-claro px-2.5 py-1.5 text-[12px] font-medium text-rojo">
               El cobro que la generó está anulado: no hay que transferir nada.

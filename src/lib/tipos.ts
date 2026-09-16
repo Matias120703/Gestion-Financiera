@@ -393,6 +393,8 @@ export interface ComisionAdmin {
   estado: EstadoComision;
   creado: string;
   pagada_at: string | null;
+  /** Cuándo el socio pidió que se le transfiera (066). Null = no lo pidió. */
+  solicitada_at: string | null;
   medio: string;
   nota: string;
   /** El cobro que la generó se anuló: no hay que transferir nada. */
@@ -441,6 +443,12 @@ export type PanelSocio =
       pagaron: number;
       por_pagar: number;
       pagado: number;
+      /**
+       * Cuándo pidió que se le transfiera lo pendiente (066). Null = no lo
+       * pidió todavía. Es el pedido MÁS VIEJO sin pagar: es el que dice hace
+       * cuánto está esperando.
+       */
+      cobro_pedido_el: string | null;
       referidos: {
         negocio: string;
         desde: string;
