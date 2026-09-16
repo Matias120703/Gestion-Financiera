@@ -622,8 +622,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
 
   // Eliminar, con lo que significa en cada lado (058).
   ok('el cliente se elimina desde su ficha', cli.includes("rpc('eliminar_cliente'"), true);
+  // La frase vive en el diccionario desde que la pantalla habla portugués:
+  // se mira que la pantalla la use y que el texto siga diciendo qué hacer.
   ok('a quien debe se lo manda a Fiado antes',
-    cli.includes('primero cobrale o borrá su deuda'), true);
+    cli.includes('t.clientes.primeroCobrale(')
+      && fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('primero cobrale o borrá su deuda'), true);
   ok('y eliminar clientes es del administrador',
     fs.readFileSync('src/app/(app)/clientes/page.tsx', 'utf8').includes('puedeEliminar={ctx.esAdmin}'), true);
   ok('lo del catálogo se elimina desde el formulario', pro.includes("rpc('eliminar_producto'"), true);
