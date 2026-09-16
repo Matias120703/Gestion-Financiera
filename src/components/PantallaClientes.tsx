@@ -4,35 +4,28 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { useLocale } from '@/i18n/cliente';
+import { useLocale, useTextos } from '@/i18n/cliente';
+import type { Textos } from '@/i18n/diccionarios';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
 import type { ClienteLista, TurnoCliente } from '@/lib/tipos';
 
-const ESTADOS: Record<string, string> = {
-  pendiente: 'Reservado',
-  confirmada: 'Confirmado',
-  atendida: 'Atendido',
-  cancelada: 'Cancelado',
-  no_vino: 'No vino',
-};
-
 function diasDesde(iso: string | null): number | null {
   if (!iso) return null;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Math.floor((Date.now() - ms) / 86_400_000));
 }
 
-function haceTanto(iso: string | null): string {
+function haceTanto(t: Textos, iso: string | null): string {
   const d = diasDesde(iso);
   if (d == null) return '';
-  if (d === 0) return 'hoy';
-  if (d === 1) return 'ayer';
-  if (d < 60) return `hace ${d} días`;
-  return `hace ${Math.round(d / 30)} meses`;
+  if (d === 0) return t.clientes.hoy;
+  if (d === 1) return t.clientes.ayer;
+  if (d < 60) return t.clientes.haceDias(d);
+  return t.clientes.haceMeses(Math.round(d / 30));
 }
 
 /**
@@ -65,6 +58,7 @@ export function PantallaClientes({
   puedeEliminar: boolean;
 }) {
   const router = useRouter();
+  const t = useTextos();
   const locale = useLocale();
   const plata = (n: number) => dinero(n, moneda, true, locale);
 
@@ -97,15 +91,15 @@ export function PantallaClientes({
       <div className="grid grid-cols-2 gap-3">
         <Indicador
           destacado
-          titulo="Clientes"
+          titulo={t.clientes.titulo}
           valor={String(clientes.length)}
-          detalle={clientes.length === 1 ? 'cargado' : 'cargados'}
+          detalle={t.clientes.cargados(clientes.length)}
         />
         <Link href="/fiado" className="block">
           <Indicador
-            titulo="Te deben"
+            titulo={t.clientes.teDeben}
             valor={plata(totalDeben)}
-            detalle={cuantosDeben === 0 ? 'nadie te debe' : `${cuantosDeben} ${cuantosDeben === 1 ? 'cliente' : 'clientes'} · ver fiado`}
+            detalle={cuantosDeben === 0 ? t.clientes.nadieTeDebe : t.clientes.debenVerFiado(cuantosDeben)}
           />
         </Link>
       </div>
@@ -119,13 +113,13 @@ export function PantallaClientes({
       <div className="flex gap-2">
         <input
           className="campo flex-1"
-          placeholder="Buscar por nombre o teléfono"
+          placeholder={t.clientes.buscar}
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
         />
         {!nuevo && (
           <button type="button" className="boton-principal shrink-0 px-4" onClick={() => setNuevo(true)}>
-            Agregar
+            {t.clientes.agregar}
           </button>
         )}
       </div>
@@ -133,7 +127,7 @@ export function PantallaClientes({
       {nuevo && (
         <FormularioCliente
           empresaId={empresaId}
-          titulo="Cliente nuevo"
+          titulo={t.clientes.nuevo}
           onCerrar={() => setNuevo(false)}
           onListo={listo}
         />
@@ -142,13 +136,11 @@ export function PantallaClientes({
       <div className="tarjeta overflow-hidden">
         {clientes.length === 0 ? (
           <Vacio
-            titulo="Todavía no hay clientes"
-            detalle={tieneAgenda
-              ? 'Cada vez que alguien reserve un turno con su teléfono, queda cargado acá solo.'
-              : 'Cuando vendas algo fiado, el cliente queda cargado acá solo. También lo podés agregar a mano.'}
+            titulo={t.clientes.sinClientes}
+            detalle={tieneAgenda ? t.clientes.sinClientesAgenda : t.clientes.sinClientesFiado}
           />
         ) : visibles.length === 0 ? (
-          <Vacio titulo="Nadie coincide" detalle={`No hay ningún cliente con «${busca.trim()}».`} />
+          <Vacio titulo={t.clientes.nadieCoincide} detalle={t.clientes.ningunoCon(busca.trim())} />
         ) : (
           <ul className="divide-y divide-borde">
             {visibles.map((c) => (
@@ -193,6 +185,7 @@ function FormularioCliente({
   /** Su próximo turno ya escrito, para avisar que no se cancela. */
   proximo?: string;
 }) {
+  const t = useTextos();
   const [nombre, setNombre] = useState(c?.nombre ?? '');
   const [telefono, setTelefono] = useState(c?.telefono ?? '');
   const [notas, setNotas] = useState(c?.notas ?? '');
@@ -216,9 +209,9 @@ function FormularioCliente({
     try {
       const { error: err } = await clienteNavegador().rpc('eliminar_cliente', { p_cliente: c.id });
       if (err) throw err;
-      onListo(`${c.nombre} ya no está en tu lista.`);
+      onListo(t.clientes.yaNoEsta(c.nombre));
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo eliminar.'));
+      setError(mensajeDeError(e, t.clientes.noSePudoEliminar));
       setConfirmar(false);
     } finally {
       setEliminando(false);
@@ -239,9 +232,9 @@ function FormularioCliente({
         ...(c ? { p_id: c.id } : {}),
       });
       if (err) throw err;
-      onListo(c ? 'Guardado.' : `${nombre.trim()} quedó cargado.`);
+      onListo(c ? t.clientes.guardado : t.clientes.quedoCargado(nombre.trim()));
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -252,11 +245,11 @@ function FormularioCliente({
       <p className="titulo-seccion">{titulo}</p>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="etiqueta">Nombre</span>
+          <span className="etiqueta">{t.clientes.nombre}</span>
           <input className="campo" maxLength={80} value={nombre} onChange={(e) => setNombre(e.target.value)} />
         </label>
         <label className="block">
-          <span className="etiqueta">Teléfono</span>
+          <span className="etiqueta">{t.clientes.telefono}</span>
           <input
             className="campo" inputMode="tel" maxLength={40} placeholder="0981 234 567"
             value={telefono} onChange={(e) => setTelefono(e.target.value)}
@@ -264,22 +257,22 @@ function FormularioCliente({
         </label>
       </div>
       <label className="block">
-        <span className="etiqueta">Notas <span className="font-normal text-tinta/40">· opcional</span></span>
+        <span className="etiqueta">{t.clientes.notas} <span className="font-normal text-tinta/40">{t.clientes.opcional}</span></span>
         <input
-          className="campo" maxLength={1000} placeholder="Prefiere los martes, es alérgica a…"
+          className="campo" maxLength={1000} placeholder={t.clientes.notasEjemplo}
           value={notas} onChange={(e) => setNotas(e.target.value)}
         />
       </label>
       {!c && (
         <p className="text-[12px] leading-snug text-tinta/45">
-          Si ese teléfono ya es de otro cliente, no se duplica: se actualiza el que ya estaba.
+          {t.clientes.noSeDuplica}
         </p>
       )}
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
       <div className="flex gap-2">
-        <button type="button" className="boton-texto px-4" onClick={onCerrar}>Cancelar</button>
+        <button type="button" className="boton-texto px-4" onClick={onCerrar}>{t.comun.cancelar}</button>
         <button className="boton-principal flex-1 py-2.5 disabled:opacity-40" disabled={!puede}>
-          {guardando ? 'Guardando…' : 'Guardar'}
+          {guardando ? t.comun.guardando : t.comun.guardar}
         </button>
       </div>
 
@@ -288,18 +281,17 @@ function FormularioCliente({
       {c && puedeEliminar && (
         confirmar ? (
           <div className="space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
-            <p className="text-[13.5px] font-bold text-rojo">¿Eliminar a {c.nombre}?</p>
+            <p className="text-[13.5px] font-bold text-rojo">{t.clientes.eliminarPregunta(c.nombre)}</p>
             <p className="text-[12.5px] leading-snug text-tinta/65">
-              Deja de aparecer en tu lista y al elegir cliente. Lo que ya pasó con {c.nombre} queda
-              en tu historial.{proximo && ` Su turno del ${proximo} no se cancela.`}
+              {t.clientes.eliminarDetalle(c.nombre)}{proximo && ` ${t.clientes.turnoNoSeCancela(proximo)}`}
             </p>
             <div className="flex gap-2">
-              <button type="button" className="boton-texto px-4" onClick={() => setConfirmar(false)}>No</button>
+              <button type="button" className="boton-texto px-4" onClick={() => setConfirmar(false)}>{t.clientes.no}</button>
               <button
                 type="button" onClick={eliminar} disabled={eliminando}
                 className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
               >
-                {eliminando ? 'Eliminando…' : 'Sí, eliminar'}
+                {eliminando ? t.clientes.eliminando : t.clientes.siEliminar}
               </button>
             </div>
           </div>
@@ -307,8 +299,8 @@ function FormularioCliente({
           // A quien te debe no se lo elimina: el libro de fiado cuelga de su
           // ficha. La base lo frena igual (058); acá se dice qué hacer antes.
           <p className="border-t border-borde pt-3 text-[12.5px] leading-snug text-tinta/50">
-            Para eliminar a {c.nombre}, primero cobrale o borrá su deuda de {plata ? plata(debe) : debe} en{' '}
-            <Link href="/fiado" className="font-semibold text-verde-fuerte underline">Fiado</Link>.
+            {t.clientes.primeroCobrale(c.nombre, plata ? plata(debe) : String(debe))}{' '}
+            <Link href="/fiado" className="font-semibold text-verde-fuerte underline">{t.nav.fiado}</Link>.
           </p>
         ) : (
           <div className="border-t border-borde pt-3">
@@ -316,7 +308,7 @@ function FormularioCliente({
               type="button" onClick={() => setConfirmar(true)}
               className="text-[13px] font-semibold text-rojo/80 hover:text-rojo"
             >
-              Eliminar cliente
+              {t.clientes.eliminarCliente}
             </button>
           </div>
         )
@@ -341,6 +333,7 @@ function FilaCliente({
   onAbrir: () => void;
   onListo: (mensaje: string) => void;
 }) {
+  const t = useTextos();
   const [editando, setEditando] = useState(false);
   const [turnos, setTurnos] = useState<TurnoCliente[] | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -348,7 +341,7 @@ function FilaCliente({
 
   const primero = c.nombre.trim().split(/\s+/)[0] || c.nombre;
   const whatsapp = c.telefono
-    ? enlaceWhatsApp(c.telefono, zona, `Hola ${primero}! Te escribo de ${negocio}.`)
+    ? enlaceWhatsApp(c.telefono, zona, t.clientes.saludo(primero, negocio))
     : '';
 
   async function verTurnos() {
@@ -361,7 +354,7 @@ function FilaCliente({
       if (err) throw err;
       setTurnos(Array.isArray(data) ? (data as TurnoCliente[]) : []);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo leer el historial.'));
+      setError(mensajeDeError(e, t.clientes.noSeLeyoHistorial));
     } finally {
       setCargando(false);
     }
@@ -370,7 +363,7 @@ function FilaCliente({
   const detalle = [
     c.telefono,
     tieneAgenda && c.visitas > 0
-      ? `${c.visitas} ${c.visitas === 1 ? 'visita' : 'visitas'} · la última ${haceTanto(c.ultima_visita)}`
+      ? t.clientes.visitas(c.visitas, haceTanto(t, c.ultima_visita))
       : '',
   ].filter(Boolean).join(' · ');
 
@@ -393,7 +386,7 @@ function FilaCliente({
         </div>
         {debe > 0 && (
           <span className="shrink-0 rounded-full bg-rojo-claro px-2.5 py-1 text-[12px] font-bold tabular-nums text-rojo">
-            debe {plata(debe)}
+            {t.clientes.debe(plata(debe))}
           </span>
         )}
       </button>
@@ -404,7 +397,7 @@ function FilaCliente({
             <FormularioCliente
               empresaId={empresaId}
               c={c}
-              titulo="Editar cliente"
+              titulo={t.clientes.editar}
               onCerrar={() => setEditando(false)}
               onListo={(m) => { setEditando(false); onListo(m); }}
               puedeEliminar={puedeEliminar}
@@ -419,12 +412,12 @@ function FilaCliente({
               {tieneAgenda && (
                 <div className="grid grid-cols-2 gap-2 text-[13px]">
                   <div className="rounded-xl bg-superficie px-3 py-2.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">Dejó en total</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">{t.clientes.dejoEnTotal}</p>
                     <p className="mt-0.5 font-bold tabular-nums">{plata(c.gastado)}</p>
                   </div>
                   <div className="rounded-xl bg-superficie px-3 py-2.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">Próximo turno</p>
-                    <p className="mt-0.5 font-bold">{proximo || 'ninguno'}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">{t.clientes.proximoTurno}</p>
+                    <p className="mt-0.5 font-bold">{proximo || t.clientes.ninguno}</p>
                   </div>
                 </div>
               )}
@@ -443,14 +436,14 @@ function FilaCliente({
                     href="/fiado"
                     className="inline-flex items-center rounded-xl border border-borde bg-superficie px-3.5 py-2 text-[13.5px] font-semibold text-tinta/70 hover:bg-arena"
                   >
-                    Cobrarle {plata(debe)}
+                    {t.clientes.cobrarle(plata(debe))}
                   </Link>
                 )}
                 <button
                   type="button" onClick={() => setEditando(true)}
                   className="inline-flex items-center rounded-xl border border-borde bg-superficie px-3.5 py-2 text-[13.5px] font-semibold text-tinta/70 hover:bg-arena"
                 >
-                  Editar
+                  {t.clientes.editarBoton}
                 </button>
               </div>
 
@@ -458,9 +451,9 @@ function FilaCliente({
 
               {tieneAgenda && (
                 <div>
-                  <p className="etiqueta">Turnos</p>
-                  {cargando && <p className="text-[12.5px] text-tinta/45">Cargando…</p>}
-                  {turnos && turnos.length === 0 && <p className="text-[12.5px] text-tinta/45">Todavía no tiene turnos.</p>}
+                  <p className="etiqueta">{t.clientes.turnos}</p>
+                  {cargando && <p className="text-[12.5px] text-tinta/45">{t.comun.cargando}</p>}
+                  {turnos && turnos.length === 0 && <p className="text-[12.5px] text-tinta/45">{t.clientes.sinTurnos}</p>}
                   {turnos && turnos.length > 0 && (
                     <ul className="mt-1 space-y-1.5">
                       {turnos.map((tu) => (
@@ -471,7 +464,7 @@ function FilaCliente({
                             {tu.profesional ? ` · ${tu.profesional}` : ''}
                           </span>
                           <span className="shrink-0 text-tinta/55">
-                            {ESTADOS[tu.estado] ?? tu.estado}
+                            {t.clientes.estados[tu.estado] ?? tu.estado}
                             {Number(tu.monto) > 0 ? ` · ${plata(Number(tu.monto))}` : ''}
                           </span>
                         </li>

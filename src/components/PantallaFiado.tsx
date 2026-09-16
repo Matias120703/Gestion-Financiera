@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { useLocale } from '@/i18n/cliente';
+import { useLocale, useTextos } from '@/i18n/cliente';
+import { metodoVisible } from '@/i18n/nombres';
+import type { Textos } from '@/i18n/diccionarios';
 import { dinero, fechaLegible } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
@@ -11,12 +13,8 @@ import { Indicador, Vacio } from '@/components/Piezas';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import type { DeudorFiado, LineaFiado, ResumenFiado } from '@/lib/tipos';
 
-const METODOS = [
-  { valor: 'efectivo', texto: 'Efectivo' },
-  { valor: 'transferencia', texto: 'Transferencia' },
-  { valor: 'tarjeta', texto: 'Tarjeta' },
-  { valor: 'otro', texto: 'Otro' },
-];
+/** Cómo se cobra un fiado. Se guarda el código; se lee con `metodoVisible`. */
+const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'otro'];
 
 const NADIE: ClienteElegido = { id: null, nombre: '', telefono: '' };
 
@@ -27,11 +25,11 @@ const NADIE: ClienteElegido = { id: null, nombre: '', telefono: '' };
  * 800.000 desde hace cuatro meses» son dos situaciones distintas, y la
  * segunda es la que hay que ir a cobrar.
  */
-function hace(dias: number | null): string {
+function hace(t: Textos, dias: number | null): string {
   if (dias == null) return '';
-  if (dias <= 0) return 'desde hoy';
-  if (dias === 1) return 'desde ayer';
-  return `hace ${dias} días`;
+  if (dias <= 0) return t.fiado.desdeHoy;
+  if (dias === 1) return t.fiado.desdeAyer;
+  return t.fiado.haceDias(dias);
 }
 
 /**
@@ -59,6 +57,7 @@ export function PantallaFiado({
   resumen: ResumenFiado;
 }) {
   const router = useRouter();
+  const t = useTextos();
   const locale = useLocale();
   const plata = (n: number) => dinero(n, moneda, true, locale);
 
@@ -69,9 +68,7 @@ export function PantallaFiado({
   const masViejo = resumen.clientes.reduce<DeudorFiado | null>(
     (m, d) => ((d.dias ?? -1) > (m?.dias ?? -1) ? d : m), null);
 
-  const quienes = esPersonal
-    ? (resumen.cuantos === 1 ? '1 persona' : `${resumen.cuantos} personas`)
-    : (resumen.cuantos === 1 ? '1 cliente' : `${resumen.cuantos} clientes`);
+  const quienes = esPersonal ? t.fiado.personas(resumen.cuantos) : t.fiado.clientes(resumen.cuantos);
 
   function listo(mensaje: string) {
     setAviso(mensaje);
@@ -86,14 +83,14 @@ export function PantallaFiado({
       <div className="grid grid-cols-2 gap-3">
         <Indicador
           destacado
-          titulo="Te deben"
+          titulo={t.fiado.teDeben}
           valor={plata(resumen.total)}
-          detalle={resumen.cuantos > 0 ? quienes : 'nadie te debe nada'}
+          detalle={resumen.cuantos > 0 ? quienes : t.fiado.nadieTeDebeNada}
         />
         <Indicador
-          titulo="Lo más viejo"
-          valor={masViejo ? hace(masViejo.dias) : '—'}
-          detalle={masViejo ? masViejo.nombre : 'sin deudas pendientes'}
+          titulo={t.fiado.loMasViejo}
+          valor={masViejo ? hace(t, masViejo.dias) : '—'}
+          detalle={masViejo ? masViejo.nombre : t.fiado.sinDeudasPendientes}
         />
       </div>
 
@@ -113,17 +110,15 @@ export function PantallaFiado({
         />
       ) : (
         <button type="button" className="boton-principal w-full py-3" onClick={() => setNuevo(true)}>
-          {esPersonal ? 'Anotar que alguien te debe' : 'Anotar un fiado'}
+          {esPersonal ? t.fiado.anotarQueTeDeben : t.fiado.anotarFiado}
         </button>
       )}
 
       <div className="tarjeta overflow-hidden">
         {resumen.clientes.length === 0 ? (
           <Vacio
-            titulo="Nadie te debe nada"
-            detalle={esPersonal
-              ? 'Cuando le prestes plata a alguien, anotalo acá y no te olvidás.'
-              : 'Cuando vendas algo «Fiado», aparece acá solo. También lo podés anotar a mano.'}
+            titulo={t.fiado.nadieTeDebeTitulo}
+            detalle={esPersonal ? t.fiado.vacioPersonal : t.fiado.vacioNegocio}
           />
         ) : (
           <ul className="divide-y divide-borde">
@@ -148,8 +143,8 @@ export function PantallaFiado({
 
       <p className="text-[12.5px] leading-relaxed text-tinta/45">
         {esPersonal
-          ? 'Lo que te devuelven no cuenta como ingreso: es tu propia plata que vuelve.'
-          : 'Una venta fiada cuenta como venta el día que se lleva la mercadería. Cobrarla acá baja lo que te deben, pero no la suma otra vez: si lo hiciera, tu ganancia contaría la misma venta dos veces.'}
+          ? t.fiado.notaPersonal
+          : t.fiado.notaNegocio}
       </p>
     </div>
   );
@@ -165,6 +160,7 @@ function FormularioNuevo({
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
 }) {
+  const t = useTextos();
   const [elegido, setElegido] = useState<ClienteElegido>(NADIE);
   const [monto, setMonto] = useState('');
   const [concepto, setConcepto] = useState('');
@@ -183,7 +179,7 @@ function FormularioNuevo({
       // La ficha se crea recién acá: una por cada nombre a medio escribir
       // llenaría la lista de «J», «Ju», «Jua».
       const clienteId = await asegurarCliente(empresaId, elegido);
-      if (!clienteId) throw new Error('Escribí a quién.');
+      if (!clienteId) throw new Error(t.fiado.escribiAQuien);
 
       const { error: err } = await clienteNavegador().rpc('anotar_fiado', {
         p_empresa: empresaId,
@@ -192,9 +188,9 @@ function FormularioNuevo({
         p_concepto: concepto.trim(),
       });
       if (err) throw err;
-      onListo(`Anotado: ${elegido.nombre.trim()} te debe ${plata(n)} más.`);
+      onListo(t.fiado.anotado(elegido.nombre.trim(), plata(n)));
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo anotar.'));
+      setError(mensajeDeError(e, t.fiado.noSePudoAnotar));
     } finally {
       setGuardando(false);
     }
@@ -202,20 +198,20 @@ function FormularioNuevo({
 
   return (
     <form onSubmit={guardar} className="tarjeta space-y-3 p-4 aparecer">
-      <p className="titulo-seccion">{esPersonal ? 'Alguien te debe' : 'Anotar un fiado'}</p>
+      <p className="titulo-seccion">{esPersonal ? t.fiado.alguienTeDebe : t.fiado.anotarFiado}</p>
 
       <SelectorCliente
         empresaId={empresaId}
         valor={elegido}
         alElegir={setElegido}
-        etiqueta="¿Quién te debe?"
+        etiqueta={t.fiado.quienTeDebe}
         pedirTelefono
         obligatorio
       />
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="etiqueta">Cuánto</span>
+          <span className="etiqueta">{t.fiado.cuanto}</span>
           <input
             type="number" min={0} step="any" inputMode="decimal"
             className="campo tabular-nums" placeholder="500000"
@@ -223,10 +219,10 @@ function FormularioNuevo({
           />
         </label>
         <label className="block">
-          <span className="etiqueta">Por qué <span className="font-normal text-tinta/40">· opcional</span></span>
+          <span className="etiqueta">{t.fiado.porQue} <span className="font-normal text-tinta/40">{t.fiado.opcional}</span></span>
           <input
             className="campo" maxLength={200}
-            placeholder={esPersonal ? 'Le presté' : 'Mercadería'}
+            placeholder={esPersonal ? t.fiado.lePreste : t.fiado.mercaderia}
             value={concepto} onChange={(e) => setConcepto(e.target.value)}
           />
         </label>
@@ -235,9 +231,9 @@ function FormularioNuevo({
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
       <div className="flex gap-2">
-        <button type="button" className="boton-texto px-4" onClick={onCerrar}>Cancelar</button>
+        <button type="button" className="boton-texto px-4" onClick={onCerrar}>{t.comun.cancelar}</button>
         <button className="boton-principal flex-1 py-2.5 disabled:opacity-40" disabled={!puede}>
-          {guardando ? 'Guardando…' : 'Anotar'}
+          {guardando ? t.comun.guardando : t.fiado.anotar}
         </button>
       </div>
     </form>
@@ -261,6 +257,7 @@ function FilaDeudor({
 }) {
   // Se propone todo lo que debe: es lo que se cobra casi siempre, y si pagó
   // una parte se corrige un número en vez de escribirlo de cero.
+  const t = useTextos();
   const [monto, setMonto] = useState(String(d.saldo));
   const [metodo, setMetodo] = useState('efectivo');
   const [libro, setLibro] = useState<LineaFiado[] | null>(null);
@@ -274,8 +271,8 @@ function FilaDeudor({
 
   const primero = d.nombre.trim().split(/\s+/)[0] || d.nombre;
   const mensaje = esPersonal
-    ? `Hola ${primero}! Te recuerdo lo que quedó pendiente: ${plata(d.saldo)}. Cuando puedas, avisame. ¡Gracias!`
-    : `Hola ${primero}! Te escribo de ${negocio}. Quedó pendiente ${plata(d.saldo)}. Cuando puedas, avisame. ¡Gracias!`;
+    ? t.fiado.mensajePersonal(primero, plata(d.saldo))
+    : t.fiado.mensajeNegocio(primero, negocio, plata(d.saldo));
   const whatsapp = d.telefono ? enlaceWhatsApp(d.telefono, zona, mensaje) : '';
 
   async function verLibro() {
@@ -288,7 +285,7 @@ function FilaDeudor({
       if (err) throw err;
       setLibro(Array.isArray(data) ? (data as LineaFiado[]) : []);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo leer el detalle.'));
+      setError(mensajeDeError(e, t.fiado.noSeLeyoDetalle));
     } finally {
       setCargando(false);
     }
@@ -305,10 +302,10 @@ function FilaDeudor({
       });
       if (err) throw err;
       onListo(n >= d.saldo
-        ? `${d.nombre} te pagó todo.`
-        : `Cobraste ${plata(n)} a ${d.nombre}. Todavía te debe ${plata(d.saldo - n)}.`);
+        ? t.fiado.pagoTodo(d.nombre)
+        : t.fiado.cobrasteParte(plata(n), d.nombre, plata(d.saldo - n)));
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo cobrar.'));
+      setError(mensajeDeError(e, t.fiado.noSePudoCobrar));
     } finally {
       setGuardando(false);
     }
@@ -316,16 +313,16 @@ function FilaDeudor({
 
   async function borrar(l: LineaFiado) {
     const pregunta = l.tipo === 'fio'
-      ? `¿Borrar lo anotado (${plata(Number(l.monto))})?`
-      : `¿Borrar este pago de ${plata(Number(l.monto))}? Vuelve a deberlo.`;
+      ? t.fiado.borrarFiado(plata(Number(l.monto)))
+      : t.fiado.borrarPago(plata(Number(l.monto)));
     if (!window.confirm(pregunta)) return;
     setError('');
     try {
       const { error: err } = await clienteNavegador().rpc('borrar_linea_fiado', { p_linea: l.id });
       if (err) throw err;
-      onListo('Borrado.');
+      onListo(t.fiado.borrado);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo borrar.'));
+      setError(mensajeDeError(e, t.fiado.noSePudoBorrar));
     }
   }
 
@@ -339,7 +336,7 @@ function FilaDeudor({
         <div className="min-w-0">
           <p className="truncate text-[15px] font-bold">{d.nombre}</p>
           <p className={`text-[12.5px] ${viejo ? 'font-semibold text-rojo' : 'text-tinta/45'}`}>
-            {hace(d.dias)}{d.telefono ? ` · ${d.telefono}` : ''}
+            {hace(t, d.dias)}{d.telefono ? ` · ${d.telefono}` : ''}
           </p>
         </div>
         <p className="shrink-0 text-[16px] font-bold tabular-nums">{plata(d.saldo)}</p>
@@ -349,7 +346,7 @@ function FilaDeudor({
         <div className="space-y-3 border-t border-borde bg-arena/40 px-4 py-4 aparecer">
           <form onSubmit={cobrar} className="flex flex-wrap items-end gap-2">
             <label className="block min-w-[9rem] flex-1">
-              <span className="etiqueta">Te pagó</span>
+              <span className="etiqueta">{t.fiado.tePago}</span>
               <input
                 type="number" min={0} step="any" inputMode="decimal"
                 className="campo tabular-nums"
@@ -357,19 +354,19 @@ function FilaDeudor({
               />
             </label>
             <label className="block">
-              <span className="etiqueta">Cómo</span>
+              <span className="etiqueta">{t.fiado.como}</span>
               <select className="campo" value={metodo} onChange={(e) => setMetodo(e.target.value)}>
-                {METODOS.map((m) => <option key={m.valor} value={m.valor}>{m.texto}</option>)}
+                {METODOS.map((m) => <option key={m} value={m}>{metodoVisible(t, m)}</option>)}
               </select>
             </label>
             <button className="boton-principal px-5 py-2.5 disabled:opacity-40" disabled={!puede}>
-              {guardando ? 'Cobrando…' : 'Cobrar'}
+              {guardando ? t.fiado.cobrando : t.fiado.cobrar}
             </button>
           </form>
 
           {n > d.saldo && (
             <p className="text-[12.5px] font-medium text-rojo">
-              Te debe {plata(d.saldo)}. No se le puede cobrar más que eso.
+              {t.fiado.noMasQueEso(plata(d.saldo))}
             </p>
           )}
 
@@ -378,22 +375,22 @@ function FilaDeudor({
               href={whatsapp} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-xl border border-verde/40 px-3.5 py-2 text-[13.5px] font-semibold text-verde-fuerte hover:bg-verde-claro"
             >
-              Recordarle por WhatsApp
+              {t.fiado.recordarlePorWhatsApp}
             </a>
           )}
 
           {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
           <div>
-            <p className="etiqueta">Detalle</p>
-            {cargando && <p className="text-[12.5px] text-tinta/45">Cargando…</p>}
-            {libro && libro.length === 0 && <p className="text-[12.5px] text-tinta/45">Sin movimientos.</p>}
+            <p className="etiqueta">{t.fiado.detalle}</p>
+            {cargando && <p className="text-[12.5px] text-tinta/45">{t.comun.cargando}</p>}
+            {libro && libro.length === 0 && <p className="text-[12.5px] text-tinta/45">{t.fiado.sinMovimientos}</p>}
             {libro && libro.length > 0 && (
               <ul className="mt-1 space-y-1.5">
                 {libro.map((l) => (
                   <li key={l.id} className="flex items-center justify-between gap-3 text-[13px]">
                     <span className="min-w-0 truncate text-tinta/65">
-                      {fechaLegible(l.fecha, false, locale)} · {l.concepto || (l.tipo === 'fio' ? 'Fiado' : 'Pago')}
+                      {fechaLegible(l.fecha, false, locale)} · {l.concepto || (l.tipo === 'fio' ? t.fiado.lineaFiado : t.fiado.lineaPago)}
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <span className={`font-semibold tabular-nums ${l.tipo === 'cobro' ? 'text-verde-fuerte' : 'text-tinta'}`}>
@@ -405,7 +402,7 @@ function FilaDeudor({
                         <button
                           type="button" onClick={() => borrar(l)}
                           className="rounded-md px-1 text-tinta/35 hover:bg-rojo-claro hover:text-rojo"
-                          aria-label="Borrar esta línea"
+                          aria-label={t.fiado.borrarLinea}
                         >
                           ✕
                         </button>
