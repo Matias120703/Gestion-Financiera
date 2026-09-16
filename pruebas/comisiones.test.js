@@ -790,6 +790,81 @@ async function principal() {
         .then((r) => r.rows[0].n), 1);
   }
 
+  // =====================================================================
+  grupo('16 · El código del enlace no se pierde en silencio (068)');
+  // =====================================================================
+  {
+    // Lo que pasó el 2026-09-16: el socio estaba pausado, alguien entró con
+    // su enlace, pagó, y la comisión no apareció por ningún lado.
+    const usar = (uid, empresa, codigo) => H.intentar(db, uid, () =>
+      db.query('select public.usar_codigo_referido($1,$2) j', [empresa, codigo]).then((r) => r.rows[0].j));
+    const guardarRechazo = (uid, empresa, codigo, motivo) => H.intentar(db, uid, () =>
+      db.query('select public.guardar_codigo_rechazado($1,$2,$3) j', [empresa, codigo, motivo]).then((r) => r.rows[0].j));
+    const rechazados = () => comoJefe(() =>
+      db.query('select public.listar_codigos_rechazados() j').then((r) => r.rows[0].j));
+
+    const M = (await guardarSocio({ nombre: 'Matías del enlace' })).valor;
+    await guardarSocio({ id: M.id, nombre: 'Matías del enlace', activo: false });
+
+    const Q = await H.montarEmpresa(db, { email: 'dueno@finanzas.com', nombre: 'Finanzas' });
+    const intento = await usar(Q.uid, Q.empresaId, M.codigo);
+    rechazado('con el socio pausado, el enlace se rechaza', intento, 'ya no está activo');
+
+    // La pantalla guarda el rechazo en vez de tirarlo.
+    const ajeno = await H.montarEmpresa(db, { email: 'dueno@otro.com', nombre: 'Otro negocio' });
+    rechazado('nadie guarda un rechazo en la cuenta de otro',
+      await guardarRechazo(ajeno.uid, Q.empresaId, M.codigo, 'x'), 'Solo el dueño');
+    aceptado('el dueño de la cuenta sí', await guardarRechazo(Q.uid, Q.empresaId, M.codigo, intento.error));
+    await guardarRechazo(Q.uid, Q.empresaId, 'OTRO1234', 'probó otro después');
+
+    const lista = (await rechazados()).valor;
+    const suyo = lista.find((x) => x.empresa_id === Q.empresaId);
+    ok('la administración lo ve en la ficha', !!suyo, true);
+    ok('con el código con el que llegó, no el que probó después', suyo?.codigo, M.codigo);
+    ok('y a quién pertenece', suyo?.socio, 'Matías del enlace');
+    ok('y que ese socio está pausado', suyo?.socio_activo, false);
+
+    // Se le cobra sin que nadie lo haya anotado: no nace comisión.
+    await cobrar(Q.empresaId, 'pro', 60000);
+    await cobrar(Q.empresaId, 'pro', 60000);
+    ok('sin referido, el cobro no generó comisión', await comisionDe(Q.empresaId), null);
+
+    // Anotarlo con el socio pausado explica qué hacer.
+    rechazado('pausado, el panel dice cómo seguir', await anotar(Q.empresaId, M.codigo), 'Activalo en «Socios»');
+
+    await guardarSocio({ id: M.id, nombre: 'Matías del enlace', activo: true });
+    const r = await anotar(Q.empresaId, M.codigo);
+    aceptado('reactivado, se anota', r);
+    ok('queda como que vino por el enlace', await db.query(
+      'select origen from public.referidos where empresa_id = $1', [Q.empresaId]).then((x) => x.rows[0].origen), 'link');
+    ok('y avisa que se generó la comisión', r.valor.comision_generada, true);
+    const c = await comisionDe(Q.empresaId);
+    ok('por el PRIMER pago, no por los dos', Number(c.base), 60000);
+    ok('la mitad', Number(c.monto), 30000);
+    ok('queda escrito por qué nació tarde', /código fue rechazado/.test(c.nota), true);
+    ok('y el rechazo ya no figura', (await rechazados()).valor.some((x) => x.empresa_id === Q.empresaId), false);
+
+    // La regla del grupo 4 sigue intacta: sin rechazo que lo pruebe, anotar
+    // tarde a un cliente que ya pagó no inventa comisiones viejas.
+    const V2 = await H.montarEmpresa(db, { email: 'dueno@viejo.com', nombre: 'Cliente viejo' });
+    await cobrar(V2.empresaId, 'pro', 60000);
+    const tarde = await anotar(V2.empresaId, M.codigo);
+    ok('sin rechazo guardado, no hay comisión retroactiva', await comisionDe(V2.empresaId), null);
+    ok('y el aviso de que ya pagó aparece aunque no haya asiento', /ya pagó 1 vez/.test(tarde.valor.aviso ?? ''), true);
+
+    // Con otro código anotado, el rechazo no regala nada a quien no trajo.
+    const W2 = await H.montarEmpresa(db, { email: 'dueno@cruzado.com', nombre: 'Cruzado' });
+    await guardarRechazo(W2.uid, W2.empresaId, M.codigo, 'ya no está activo');
+    await cobrar(W2.empresaId, 'pro', 60000);
+    await anotar(W2.empresaId, S2.codigo);
+    ok('si se anota a otra persona, no sale comisión del primer pago',
+      await comisionDe(W2.empresaId), null);
+
+    // Si ya hay referido, un rechazo posterior no se guarda.
+    ok('con referido anotado, el rechazo se ignora',
+      (await guardarRechazo(Q.uid, Q.empresaId, 'ZZZZ9999', 'x')).valor.guardado, false);
+  }
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE COMISIONES FALLARON`);

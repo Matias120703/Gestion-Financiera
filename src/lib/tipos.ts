@@ -402,6 +402,22 @@ export interface ComisionAdmin {
 }
 
 /** Quién trajo a un negocio, para la ficha de ese cliente en el panel. */
+/**
+ * Una cuenta que llegó con el enlace de un socio y cuyo código se rechazó
+ * al registrarse (068). Mientras nadie la anote, figura en su ficha.
+ */
+export interface CodigoRechazado {
+  empresa_id: string;
+  codigo: string;
+  /** Lo que contestó la base al rechazarlo, tal cual. */
+  motivo: string;
+  intentado_at: string;
+  /** null si el código no es de ningún socio (lo escribieron mal). */
+  socio_id: string | null;
+  socio: string | null;
+  socio_activo: boolean | null;
+}
+
 export interface ReferidoAdmin {
   empresa_id: string;
   negocio: string;

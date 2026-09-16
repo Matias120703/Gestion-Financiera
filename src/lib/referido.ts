@@ -68,18 +68,28 @@ type ConRpc = {
  * NUNCA rompe el registro. Si el código venció, ya lo usó otro o la base lo
  * rechaza por lo que sea, la persona no se entera: acaba de crear su cuenta y
  * lo último que necesita es un error rojo sobre un programa de comisiones que
- * ni sabe que existe. Quien sí se tiene que enterar es el socio, y lo ve en su
- * panel: si el referido no aparece, no entró por su enlace.
+ * ni sabe que existe.
  *
- * Se borra aunque haya fallado: el código vale para una cuenta, no para todas
- * las que esa persona cree de acá en adelante.
+ * PERO EL RECHAZO SE GUARDA (068). Acá decía que «si el referido no aparece,
+ * no entró por su enlace», y era falso: el 2026-09-16 alguien entró con el
+ * enlace de un socio pausado, pagó, y no quedó ni rastro de que había venido
+ * por él. Además supabase-js no tira cuando la base dice que no: devuelve
+ * `{ error }`, así que el `catch` de antes nunca se enteraba de nada. Ahora
+ * el rechazo queda anotado y la administración lo ve en la ficha de la
+ * cuenta, con un botón para anotarlo cuando se resuelva.
+ *
+ * Se borra del navegador aunque haya fallado: el código vale para una cuenta,
+ * no para todas las que esa persona cree de acá en adelante.
  */
 export async function aplicarRef(cliente: ConRpc, empresaId: string): Promise<void> {
   const codigo = leerRef();
   if (!codigo) return;
   limpiarRef();
   try {
-    await cliente.rpc('usar_codigo_referido', { p_empresa: empresaId, p_codigo: codigo });
+    const { error } = await cliente.rpc('usar_codigo_referido', { p_empresa: empresaId, p_codigo: codigo });
+    if (!error) return;
+    const motivo = (error as { message?: string })?.message ?? '';
+    await cliente.rpc('guardar_codigo_rechazado', { p_empresa: empresaId, p_codigo: codigo, p_motivo: motivo });
   } catch {
     // Ver el comentario de arriba: esto no puede frenar un registro.
   }

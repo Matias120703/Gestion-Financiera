@@ -1,7 +1,7 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
 import type {
-  ComisionAdmin, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, SocioAdmin,
+  CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, SocioAdmin,
 } from './tipos';
 
 /**
@@ -80,6 +80,13 @@ export async function traerReferidos(): Promise<ReferidoAdmin[]> {
   const supabase = clienteServidor();
   const { data } = await supabase.rpc('listar_referidos', { p_limite: 500 });
   return Array.isArray(data) ? (data as ReferidoAdmin[]) : [];
+}
+
+/** Las cuentas que llegaron con un enlace y no quedaron anotadas (068). */
+export async function traerCodigosRechazados(): Promise<CodigoRechazado[]> {
+  const supabase = clienteServidor();
+  const { data } = await supabase.rpc('listar_codigos_rechazados');
+  return Array.isArray(data) ? (data as CodigoRechazado[]) : [];
 }
 
 /** Las empresas propias, para poder elegir cuál representa a Orden. */

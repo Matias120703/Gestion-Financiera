@@ -7,7 +7,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import type {
-  AccionAdmin, ComisionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
+  AccionAdmin, CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
   ResumenPanel, SocioAdmin, TipoCuenta,
 } from '@/lib/tipos';
 import { PanelSocios } from './PanelSocios';
@@ -81,7 +81,7 @@ function planesQueVan(tipo: TipoCuenta): { valor: PlanEfectivo; texto: string }[
 }
 
 export function PanelAdmin({
-  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, whatsapp,
+  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], whatsapp,
 }: {
   cuentas: CuentaAdmin[];
   resumen: ResumenPanel;
@@ -90,6 +90,8 @@ export function PanelAdmin({
   socios: SocioAdmin[];
   comisiones: ComisionAdmin[];
   referidos: ReferidoAdmin[];
+  /** Cuentas que llegaron con un enlace y cuyo código se rechazó (068). */
+  rechazados?: CodigoRechazado[];
   whatsapp: string | null;
 }) {
   const router = useRouter();
@@ -98,6 +100,10 @@ export function PanelAdmin({
   const porEmpresa = useMemo(
     () => new Map(referidos.map((r) => [r.empresa_id, r])),
     [referidos],
+  );
+  const rechazoPorEmpresa = useMemo(
+    () => new Map(rechazados.map((r) => [r.empresa_id, r])),
+    [rechazados],
   );
   const [filtro, setFiltro] = useState<Filtro>('atencion');
   const [busqueda, setBusqueda] = useState('');
@@ -271,6 +277,7 @@ export function PanelAdmin({
         <FichaCuenta
           cuenta={abierta}
           referido={porEmpresa.get(abierta.empresa_id) ?? null}
+          rechazado={rechazoPorEmpresa.get(abierta.empresa_id) ?? null}
           whatsapp={whatsapp}
           onCerrar={() => setAbierta(null)}
           onHecho={() => { setAbierta(null); router.refresh(); }}
@@ -420,10 +427,12 @@ function Metrica({ titulo, valor, detalle, tono }: {
 
 // ---------------------------------------------------------------- ficha
 
-function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
+function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho }: {
   cuenta: CuentaAdmin;
   /** Quién trajo este negocio, si alguien lo trajo. Ver migración 060. */
   referido: ReferidoAdmin | null;
+  /** Si llegó con un enlace y el código se rechazó al registrarse (068). */
+  rechazado: CodigoRechazado | null;
   whatsapp: string | null;
   onCerrar: () => void;
   onHecho: () => void;
@@ -487,6 +496,14 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
       const faltoComision = data && 'comision_generada' in data
         && referido !== null && referido.comision === null && data.comision_generada === false;
 
+      // Un código que se había perdido y se recuperó con su comisión es una
+      // buena noticia, no un aviso: va en verde.
+      if (data?.por_enlace && data?.comision_generada) {
+        setLogro(`${String(data.aviso)} La vas a ver en Socios, en «Por pagar».`);
+        setTrabajando('');
+        return;
+      }
+
       const texto = [
         faltoComision ? `Ojo: NO se generó la comisión de ${referido!.socio}.` : '',
         data?.aviso ? String(data.aviso) : '',
@@ -546,8 +563,10 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
   const deshacer = () => correr('deshaciendo', async () =>
     clienteNavegador().rpc('deshacer_ultimo_cambio', { p_empresa: cuenta.empresa_id }));
 
-  const anotarSocio = () => correr('anotando', async () => clienteNavegador().rpc('asignar_referido', {
-    p_empresa: cuenta.empresa_id, p_codigo: codigoSocio, p_nota: '',
+  // Recibe el código en vez de leerlo del estado: el botón de «anotarlo»
+  // de un código rechazado lo pasa directo, sin esperar un re-render.
+  const anotarSocio = (codigo: string = codigoSocio) => correr('anotando', async () => clienteNavegador().rpc('asignar_referido', {
+    p_empresa: cuenta.empresa_id, p_codigo: codigo, p_nota: '',
   }));
 
   const desanotarSocio = () => correr('desanotando', async () =>
@@ -726,6 +745,7 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
           {/* ---- quién lo trajo ---- */}
           <QuienLoTrajo
             referido={referido}
+            rechazado={rechazado}
             codigo={codigoSocio}
             onCodigo={setCodigoSocio}
             anotar={anotarSocio}
@@ -935,11 +955,12 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
  * mismo cliente, la respuesta no puede depender de quién reclame más fuerte—,
  * así que este formulario desaparece en cuanto hay alguien anotado.
  */
-function QuienLoTrajo({ referido, codigo, onCodigo, anotar, desanotar, trabajando, ocupado }: {
+function QuienLoTrajo({ referido, rechazado, codigo, onCodigo, anotar, desanotar, trabajando, ocupado }: {
   referido: ReferidoAdmin | null;
+  rechazado: CodigoRechazado | null;
   codigo: string;
   onCodigo: (v: string) => void;
-  anotar: () => void;
+  anotar: (codigo?: string) => void;
   desanotar: () => void;
   trabajando: string;
   ocupado: boolean;
@@ -948,6 +969,36 @@ function QuienLoTrajo({ referido, codigo, onCodigo, anotar, desanotar, trabajand
     return (
       <div className="rounded-2xl border border-borde p-4">
         <p className="titulo-seccion mb-1">Quién lo trajo</p>
+
+        {/* Llegó con un enlace y el código se rechazó al registrarse. Antes
+            esto no dejaba rastro: el socio perdía la comisión y nadie sabía
+            por qué (068). */}
+        {rechazado && (
+          <div className="mb-3 rounded-xl border border-ambar/30 bg-ambar-claro/40 p-3">
+            <p className="text-[13px] font-semibold text-ambar">
+              Entró con el enlace de {rechazado.socio ?? 'un código que no existe'} ({rechazado.codigo}), pero no se anotó.
+            </p>
+            <p className="mt-1 text-[12.5px] leading-snug text-tinta/60">
+              La base dijo: «{rechazado.motivo || 'sin motivo'}».
+              {rechazado.socio && rechazado.socio_activo === false
+                && ` ${rechazado.socio} está desactivado: activalo en «Socios» y volvé a esta ficha.`}
+            </p>
+            {rechazado.socio && rechazado.socio_activo !== false && (
+              <>
+                <button
+                  type="button" onClick={() => anotar(rechazado.codigo)} disabled={ocupado}
+                  className="boton-principal mt-2.5 w-full py-2.5 text-[13.5px]"
+                >
+                  {trabajando === 'anotando' ? 'Anotando…' : `Anotarlo a ${rechazado.socio}`}
+                </button>
+                <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">
+                  Como entró con su enlace antes de pagar, si ya pagó se genera la comisión por su primer pago.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         <p className="mb-3 text-[12.5px] leading-snug text-tinta/50">
           Si alguien te trajo este cliente, poné su código. Cuando el cliente pague, la comisión se
           genera sola y aparece en «Socios».
@@ -958,7 +1009,7 @@ function QuienLoTrajo({ referido, codigo, onCodigo, anotar, desanotar, trabajand
             value={codigo} onChange={(e) => onCodigo(e.target.value.trim().toUpperCase())}
           />
           <button
-            className="boton-suave shrink-0 px-4" onClick={anotar}
+            className="boton-suave shrink-0 px-4" onClick={() => anotar()}
             disabled={ocupado || codigo.trim().length < 4}
           >
             {trabajando === 'anotando' ? 'Anotando…' : 'Anotar'}

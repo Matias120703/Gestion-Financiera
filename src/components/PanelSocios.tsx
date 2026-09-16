@@ -589,7 +589,8 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
                 <span className="text-[13.5px]">
                   Sigue activo
                   <span className="block text-[12px] text-tinta/50">
-                    Desactivado no recibe negocios nuevos. Lo que ya cobró no se toca.
+                    Desactivado no recibe negocios nuevos: quien entre con su enlace no queda
+                    anotado, aunque el enlace ya esté circulando. Lo que ya cobró no se toca.
                   </span>
                 </span>
               </label>

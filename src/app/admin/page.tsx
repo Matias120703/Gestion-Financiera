@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import {
-  esSuperadmin, traerComisiones, traerCuentas, traerFinanzasOrden, traerMisEmpresas,
-  traerReferidos, traerResumenPanel, traerSocios,
+  esSuperadmin, traerCodigosRechazados, traerComisiones, traerCuentas, traerFinanzasOrden,
+  traerMisEmpresas, traerReferidos, traerResumenPanel, traerSocios,
 } from '@/lib/admin';
 import { PanelAdmin } from '@/components/PanelAdmin';
 
@@ -36,7 +36,7 @@ export default async function PaginaAdmin() {
 
   if (!(await esSuperadmin())) redirect('/panel');
 
-  const [cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos] = await Promise.all([
+  const [cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados] = await Promise.all([
     traerCuentas(),
     traerResumenPanel(),
     traerFinanzasOrden(),
@@ -44,6 +44,7 @@ export default async function PaginaAdmin() {
     traerSocios(),
     traerComisiones(),
     traerReferidos(),
+    traerCodigosRechazados(),
   ]);
 
   // Sin número configurado el botón de WhatsApp simplemente no aparece.
@@ -80,6 +81,7 @@ export default async function PaginaAdmin() {
           socios={socios}
           comisiones={comisiones}
           referidos={referidos}
+          rechazados={rechazados}
           whatsapp={whatsapp}
         />
       </main>
