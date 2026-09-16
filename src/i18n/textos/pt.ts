@@ -595,6 +595,36 @@ export const pt: Textos = {
     noSePudoAnular: 'Não foi possível cancelar.',
   },
 
+  movimientos: {
+    filtroTodo: 'Tudo',
+    filtroVentas: 'Vendas',
+    filtroGastos: 'Despesas',
+    filtroIngresos: 'Outras entradas',
+    noSeCargoHistorial: 'Não conseguimos carregar o histórico. Pode ser a conexão. Tente de novo.',
+    noSeTrajoMas: 'Não conseguimos trazer mais lançamentos. Tente de novo.',
+    mostrarAnuladas: 'Mostrar os cancelados (não somam em nenhum total)',
+    productos: (n: number) => (n === 1 ? '1 produto' : `${n} produtos`),
+    descuentoCorto: (monto: string) => `desc. ${monto}`,
+    porIA: 'IA',
+    queda: (monto: string) => `sobra ${monto}`,
+    anularEste: 'Cancelar este lançamento',
+    subtotalYDescuento: (subtotal: string, descuento: string) => `Subtotal ${subtotal} · desconto ${descuento}`,
+    anuladaEl: (fecha: string | null) => (fecha ? `Cancelado em ${fecha}` : 'Cancelado'),
+    stockDevuelto: 'O estoque foi devolvido.',
+    verMas: 'Ver mais lançamentos',
+    deTotal: (vistos: string, total: string) => `${vistos} de ${total} lançamentos do período.`,
+
+    motivosVenta: ['O cliente devolveu', 'Lancei errado', 'Foi lançado duas vezes', 'A venda não saiu'],
+    motivosOtro: ['Lancei errado', 'Foi lançado duas vezes', 'Não era isso'],
+    anularPregunta: (tipo: string) => (tipo === 'venta'
+      ? 'Cancelar esta venda?' : tipo === 'gasto' ? 'Cancelar esta despesa?' : 'Cancelar esta entrada?'),
+    unidades: (n: number) => (n === 1 ? '1 unidade' : `${n} unidades`),
+    alStock: 'ao estoque.',
+    opcional: '(opcional)',
+    anulando: 'Cancelando…',
+    siAnular: 'Sim, cancelar',
+  },
+
   pantallas: {
     primerPaso: 'Primeiro passo',
     empecemos: 'Vamos começar.',

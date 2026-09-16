@@ -606,6 +606,37 @@ export const es = {
     noSePudoAnular: 'No se pudo anular.',
   },
 
+  /** EL HISTORIAL y el diálogo de anular. */
+  movimientos: {
+    filtroTodo: 'Todo',
+    filtroVentas: 'Ventas',
+    filtroGastos: 'Gastos',
+    filtroIngresos: 'Otros ingresos',
+    noSeCargoHistorial: 'No pudimos cargar el historial. Puede ser la conexión. Probá de nuevo.',
+    noSeTrajoMas: 'No pudimos traer más movimientos. Probá de nuevo.',
+    mostrarAnuladas: 'Mostrar las anuladas (no suman en ningún total)',
+    productos: (n: number) => (n === 1 ? '1 producto' : `${n} productos`),
+    descuentoCorto: (monto: string) => `desc. ${monto}`,
+    porIA: 'IA',
+    queda: (monto: string) => `queda ${monto}`,
+    anularEste: 'Anular este movimiento',
+    subtotalYDescuento: (subtotal: string, descuento: string) => `Subtotal ${subtotal} · descuento ${descuento}`,
+    anuladaEl: (fecha: string | null) => (fecha ? `Anulada el ${fecha}` : 'Anulada'),
+    stockDevuelto: 'El stock fue devuelto.',
+    verMas: 'Ver más movimientos',
+    deTotal: (vistos: string, total: string) => `${vistos} de ${total} movimientos del periodo.`,
+
+    motivosVenta: ['El cliente devolvió', 'Me equivoqué al cargar', 'Se cargó dos veces', 'No se concretó'],
+    motivosOtro: ['Me equivoqué al cargar', 'Se cargó dos veces', 'No correspondía'],
+    anularPregunta: (tipo: string): string => (tipo === 'venta'
+      ? '¿Anular esta venta?' : tipo === 'gasto' ? '¿Anular este gasto?' : '¿Anular este ingreso?'),
+    unidades: (n: number) => (n === 1 ? '1 unidad' : `${n} unidades`),
+    alStock: 'al stock.',
+    opcional: '(opcional)',
+    anulando: 'Anulando…',
+    siAnular: 'Sí, anular',
+  },
+
   /** Lo que queda: pantallas que también estaban escritas en español a mano. */
   pantallas: {
     // ---- crear cuenta ----

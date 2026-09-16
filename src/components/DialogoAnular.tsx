@@ -1,12 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useTextos } from '@/i18n/cliente';
+import { useTextos, useLocale } from '@/i18n/cliente';
 import { type Moneda, dinero, fechaLegible } from '@/lib/formato';
 import type { Movimiento } from '@/lib/tipos';
-
-const MOTIVOS_VENTA = ['El cliente devolvió', 'Me equivoqué al cargar', 'Se cargó dos veces', 'No se concretó'];
-const MOTIVOS_OTRO = ['Me equivoqué al cargar', 'Se cargó dos veces', 'No correspondía'];
 
 /**
  * Anular no borra: deja el movimiento en el historial marcado como anulado,
@@ -21,6 +18,7 @@ export function DialogoAnular({
   onConfirmar: (motivo: string) => Promise<void>;
 }) {
   const t = useTextos();
+  const locale = useLocale();
   const [motivo, setMotivo] = useState('');
   const [trabajando, setTrabajando] = useState(false);
   const [error, setError] = useState('');
@@ -36,12 +34,12 @@ export function DialogoAnular({
     try {
       await onConfirmar(motivo.trim());
     } catch (e: any) {
-      setError(e?.message ?? 'No se pudo anular.');
+      setError(e?.message ?? t.gastos.noSePudoAnular);
       setTrabajando(false);
     }
   }
 
-  const sugerencias = esVenta ? MOTIVOS_VENTA : MOTIVOS_OTRO;
+  const sugerencias = esVenta ? t.movimientos.motivosVenta : t.movimientos.motivosOtro;
 
   return (
     <div
@@ -53,13 +51,13 @@ export function DialogoAnular({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-[19px] font-bold tracking-tight">
-          ¿Anular {esVenta ? 'esta venta' : movimiento.tipo === 'gasto' ? 'este gasto' : 'este ingreso'}?
+          {t.movimientos.anularPregunta(movimiento.tipo)}
         </h2>
 
         <div className="mt-3 rounded-xl bg-arena p-3.5">
-          <p className="text-[14px] font-semibold">{movimiento.descripcion || 'Sin descripción'}</p>
+          <p className="text-[14px] font-semibold">{movimiento.descripcion || t.gastos.sinDescripcion}</p>
           <p className="mt-0.5 text-[13px] text-tinta/55">
-            {fechaLegible(movimiento.fecha)} · {dinero(Number(movimiento.monto), moneda)}
+            {fechaLegible(movimiento.fecha, true, locale)} · {dinero(Number(movimiento.monto), moneda)}
           </p>
         </div>
 
@@ -67,13 +65,13 @@ export function DialogoAnular({
           <li>{t.pantallas.anularQueda}</li>
           <li>{t.pantallas.anularDejaSumar}</li>
           {esVenta && unidades > 0 && (
-            <li>{t.pantallas.anularVuelven}<strong className="text-tinta">{unidades} unidad{unidades === 1 ? '' : 'es'}</strong> al stock.</li>
+            <li>{t.pantallas.anularVuelven} <strong className="text-tinta">{t.movimientos.unidades(unidades)}</strong> {t.movimientos.alStock}</li>
           )}
           <li>{t.pantallas.anularQuienFue}</li>
         </ul>
 
         <div className="mt-4">
-          <label className="etiqueta" htmlFor="motivo-anulacion">{t.pantallas.motivo}<span className="font-normal text-tinta/35">(opcional)</span></label>
+          <label className="etiqueta" htmlFor="motivo-anulacion">{t.pantallas.motivo}<span className="font-normal text-tinta/35"> {t.movimientos.opcional}</span></label>
           <input
             id="motivo-anulacion" className="campo" maxLength={200} autoFocus
             placeholder={t.pantallas.motivoEjemplo} value={motivo}
@@ -96,7 +94,7 @@ export function DialogoAnular({
         <div className="mt-5 grid grid-cols-2 gap-2.5">
           <button className="boton-suave py-3" onClick={onCerrar} disabled={trabajando}>{t.pantallas.noDejarla}</button>
           <button className="boton-peligro py-3" onClick={confirmar} disabled={trabajando}>
-            {trabajando ? 'Anulando…' : 'Sí, anular'}
+            {trabajando ? t.movimientos.anulando : t.movimientos.siAnular}
           </button>
         </div>
       </div>

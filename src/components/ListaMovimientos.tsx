@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { useTextos } from '@/i18n/cliente';
+import { useTextos, useLocale } from '@/i18n/cliente';
+import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { type Moneda, dinero, numero, fechaLarga } from '@/lib/formato';
@@ -15,11 +16,11 @@ import type { Cursor } from '@/lib/agregados';
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
-const FILTROS: { valor: 'todos' | TipoMovimiento; texto: string }[] = [
-  { valor: 'todos', texto: 'Todo' },
-  { valor: 'venta', texto: 'Ventas' },
-  { valor: 'gasto', texto: 'Gastos' },
-  { valor: 'ingreso', texto: 'Otros ingresos' },
+const FILTROS: { valor: 'todos' | TipoMovimiento; texto: 'filtroTodo' | 'filtroVentas' | 'filtroGastos' | 'filtroIngresos' }[] = [
+  { valor: 'todos', texto: 'filtroTodo' },
+  { valor: 'venta', texto: 'filtroVentas' },
+  { valor: 'gasto', texto: 'filtroGastos' },
+  { valor: 'ingreso', texto: 'filtroIngresos' },
 ];
 
 export function ListaMovimientos({
@@ -46,6 +47,7 @@ export function ListaMovimientos({
   ) => Promise<{ movimientos: Movimiento[]; siguiente: Cursor | null }>;
 }) {
   const t = useTextos();
+  const locale = useLocale();
   const router = useRouter();
   const [filtro, setFiltro] = useState<'todos' | TipoMovimiento>('todos');
   const [busqueda, setBusqueda] = useState('');
@@ -65,7 +67,7 @@ export function ListaMovimientos({
   // Cuando cambian los filtros, volvemos a pedir la página 1 al servidor.
   useEffect(() => {
     if (primeraVez.current) { primeraVez.current = false; return; }
-    const t = setTimeout(() => {
+    const espera = setTimeout(() => {
       startTransition(async () => {
         setError('');
         try {
@@ -80,11 +82,11 @@ export function ListaMovimientos({
           // No tocamos la lista ni el cursor: si dejáramos la lista vacía
           // parecería que no hay movimientos, y lo que pasó es que no pudimos
           // leerlos.
-          setError('No pudimos cargar el historial. Puede ser la conexión. Probá de nuevo.');
+          setError(t.movimientos.noSeCargoHistorial);
         }
       });
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(espera);
   }, [filtro, busqueda, verAnuladas, desde, hasta, cargarPagina]);
 
   // Si el servidor vuelve a renderizar (por ejemplo después de anular),
@@ -109,7 +111,7 @@ export function ListaMovimientos({
       } catch {
         // Importante: NO ponemos el cursor en null. Un error no significa
         // "se terminó el historial"; el botón sigue disponible para reintentar.
-        setError('No pudimos traer más movimientos. Probá de nuevo.');
+        setError(t.movimientos.noSeTrajoMas);
       }
     });
   }
@@ -131,7 +133,7 @@ export function ListaMovimientos({
       p_movimiento: id,
       p_motivo: motivo || null,
     });
-    if (error) throw new Error(mensajeDeError(error, 'No se pudo anular.'));
+    if (error) throw new Error(mensajeDeError(error, t.gastos.noSePudoAnular));
     setAAnular(null);
     router.refresh();
   }
@@ -154,7 +156,7 @@ export function ListaMovimientos({
                 filtro === f.valor ? 'border-verde bg-verde text-white' : 'border-borde bg-superficie text-tinta/60'
               }`}
             >
-              {f.texto}
+              {t.movimientos[f.texto]}
             </button>
           ))}
         </div>
@@ -165,7 +167,7 @@ export function ListaMovimientos({
           type="checkbox" className="h-3.5 w-3.5 accent-[#17795a]"
           checked={verAnuladas} onChange={(e) => setVerAnuladas(e.target.checked)}
         />
-        Mostrar las anuladas (no suman en ningún total)
+        {t.movimientos.mostrarAnuladas}
       </label>
 
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
@@ -183,7 +185,7 @@ export function ListaMovimientos({
             return (
               <div key={fecha} className="tarjeta overflow-hidden">
                 <div className="flex items-baseline justify-between gap-3 border-b border-borde px-4 py-2.5">
-                  <h3 className="text-[13.5px] font-bold capitalize">{fechaLarga(fecha)}</h3>
+                  <h3 className="text-[13.5px] font-bold capitalize">{fechaLarga(fecha, locale)}</h3>
                   <span className={`text-[13px] font-bold tabular-nums ${totalDia >= 0 ? 'text-verde-fuerte' : 'text-rojo'}`}>
                     {totalDia >= 0 ? '+' : '−'} {dinero(Math.abs(totalDia), moneda, false)}
                   </span>
@@ -214,15 +216,15 @@ export function ListaMovimientos({
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className={`block truncate text-[14px] font-semibold ${anulado ? 'text-tinta/40 line-through' : ''}`}>
-                                {m.descripcion || 'Sin descripción'}
+                                {m.descripcion || t.gastos.sinDescripcion}
                               </span>
                               <span className="block truncate text-[12px] text-tinta/45">
                                 {anulado && <span className="font-bold text-rojo">{t.pantallas.anulada} · </span>}
-                                {m.categoria} · {m.metodo_pago}
+                                {categoriaVisible(t, m.categoria)} · {metodoVisible(t, m.metodo_pago)}
                                 {m.contraparte ? ` · ${m.contraparte}` : ''}
-                                {items.length > 0 ? ` · ${items.length} producto${items.length === 1 ? '' : 's'}` : ''}
-                                {Number(m.descuento) > 0 ? ` · desc. ${dinero(Number(m.descuento), moneda, false)}` : ''}
-                                {m.origen !== 'manual' ? ' · IA' : ''}
+                                {items.length > 0 ? ` · ${t.movimientos.productos(items.length)}` : ''}
+                                {Number(m.descuento) > 0 ? ` · ${t.movimientos.descuentoCorto(dinero(Number(m.descuento), moneda, false))}` : ''}
+                                {m.origen !== 'manual' ? ` · ${t.movimientos.porIA}` : ''}
                               </span>
                             </span>
                             <span className="shrink-0 text-right">
@@ -233,7 +235,7 @@ export function ListaMovimientos({
                               </span>
                               {!anulado && m.tipo === 'venta' && Number(m.costo_total) > 0 && (
                                 <span className="block text-[11.5px] font-semibold text-tinta/40">
-                                  queda {dinero(ganancia, moneda, false)}
+                                  {t.movimientos.queda(dinero(ganancia, moneda, false))}
                                 </span>
                               )}
                             </span>
@@ -242,7 +244,7 @@ export function ListaMovimientos({
                           {sePuedeAnular && (
                             <button
                               type="button" onClick={() => setAAnular(m)}
-                              aria-label={t.pantallas.anular} title="Anular este movimiento"
+                              aria-label={t.pantallas.anular} title={t.movimientos.anularEste}
                               className="icono-toque shrink-0 text-tinta/25 transition hover:bg-rojo-claro hover:text-rojo"
                             >
                               <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
@@ -283,16 +285,16 @@ export function ListaMovimientos({
                             {Number(m.descuento) > 0 && (
                               <div className="mt-2 flex justify-between border-t border-borde pt-2 text-[13px]">
                                 <span className="text-tinta/55">
-                                  Subtotal {dinero(Number(m.subtotal), moneda, false)} · descuento {dinero(Number(m.descuento), moneda, false)}
+                                  {t.movimientos.subtotalYDescuento(dinero(Number(m.subtotal), moneda, false), dinero(Number(m.descuento), moneda, false))}
                                 </span>
                                 <span className="font-bold tabular-nums">{dinero(Number(m.monto), moneda, false)}</span>
                               </div>
                             )}
                             {anulado && (
                               <p className="mt-3 rounded-lg bg-rojo-claro px-3 py-2 text-[12.5px] font-medium text-rojo">
-                                Anulada{m.anulado_at ? ` el ${m.anulado_at.slice(0, 10).split('-').reverse().join('/')}` : ''}
+                                {t.movimientos.anuladaEl(m.anulado_at ? m.anulado_at.slice(0, 10).split('-').reverse().join('/') : null)}
                                 {m.motivo_anulacion ? ` · ${m.motivo_anulacion}` : ''}.
-                                {m.tipo === 'venta' && ' El stock fue devuelto.'}
+                                {m.tipo === 'venta' && ` ${t.movimientos.stockDevuelto}`}
                               </p>
                             )}
                             {m.notas && (
@@ -327,14 +329,14 @@ export function ListaMovimientos({
       {(cursor || cargando) && (
         <div className="pt-1 text-center">
           <button type="button" className="boton-suave" onClick={verMas} disabled={cargando}>
-            {cargando ? 'Cargando…' : 'Ver más movimientos'}
+            {cargando ? t.comun.cargando : t.movimientos.verMas}
           </button>
         </div>
       )}
 
       {!error && !cursor && movimientos.length > 0 && total > movimientos.length && (
         <p className="text-center text-[12.5px] text-tinta/45">
-          {numero(movimientos.length)} de {numero(total)} movimientos del periodo.
+          {t.movimientos.deTotal(numero(movimientos.length), numero(total))}
         </p>
       )}
 
