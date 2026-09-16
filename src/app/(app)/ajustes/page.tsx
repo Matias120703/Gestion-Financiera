@@ -55,12 +55,6 @@ export default async function PaginaAjustes() {
     idioma: ctx.idioma, aviso_cierre: true, aviso_semanal: true, hora_cierre: 20,
   }) as Preferencias;
 
-  const ROLES: Record<string, string> = {
-    propietario: 'Propietario',
-    admin: 'Administrador',
-    vendedor: 'Vendedor',
-  };
-
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-2">
@@ -73,7 +67,7 @@ export default async function PaginaAjustes() {
         {/* Va pegado a la moneda del negocio y no perdido en otra pantalla:
             son la misma pregunta —«en qué moneda estoy mirando esto»— y
             separarlas haría que alguien cambie la de arriba buscando esto. */}
-        <Seccion titulo="Ver en otra moneda">
+        <Seccion titulo={t.ajustes.verEnOtraMoneda}>
           <div className="px-4 pb-4 pt-3">
             <VerEnOtraMoneda
               empresaId={ctx.empresa.id}
@@ -99,7 +93,7 @@ export default async function PaginaAjustes() {
                 </>
               ) : (
                 <p className="text-[13.5px] leading-relaxed text-tinta/55">
-                  Solo los administradores pueden ver el código para sumar colaboradores.
+                  {t.ajustes.soloAdminCodigo}
                 </p>
               )}
             </div>
@@ -108,7 +102,7 @@ export default async function PaginaAjustes() {
       </div>
 
       {!esPersonal && (
-        <Seccion titulo={`${t.equipo.titulo} · ${equipo.length} persona${equipo.length === 1 ? '' : 's'}`}>
+        <Seccion titulo={`${t.equipo.titulo} · ${t.ajustes.personas(equipo.length)}`}>
           <ListaEquipo
             miembros={equipo}
             empresaId={ctx.empresa.id}
@@ -227,22 +221,24 @@ export default async function PaginaAjustes() {
               </tr>
             </thead>
             <tbody>
-              {[
-                ['Registrar ventas', true, true, true],
-                ['Registrar gastos e ingresos', true, true, true],
-                ['Anular lo propio del día', true, true, true],
-                ['Anular lo de otros o de días anteriores', true, true, false],
-                ['Ver precio y stock', true, true, true],
-                ['Ver el costo de compra', true, true, false],
-                ['Ver márgenes y ganancias', true, true, false],
-                ['Crear y editar productos', true, true, false],
-                ['Definir la meta del reto', true, true, false],
-                ['Ver el resumen operativo', true, true, true],
-                ['Ver reportes financieros y Excel', true, true, false],
-                ['Ver el código para sumar gente', true, true, false],
-                ['Cambiar datos del negocio y equipo', true, true, false],
-                ['Cambiar el plan de suscripción', false, false, false],
-              ].map(([accion, prop, adm, ven]) => (
+              {/* Quién puede qué, por fila. El texto de cada fila sale del
+                  diccionario por posición (`t.ajustes.permisos[i]`). */}
+              {([
+                [true, true, true],
+                [true, true, true],
+                [true, true, true],
+                [true, true, false],
+                [true, true, true],
+                [true, true, false],
+                [true, true, false],
+                [true, true, false],
+                [true, true, false],
+                [true, true, true],
+                [true, true, false],
+                [true, true, false],
+                [true, true, false],
+                [false, false, false],
+              ] as const).map(([prop, adm, ven], fila) => [t.ajustes.permisos[fila], prop, adm, ven] as const).map(([accion, prop, adm, ven]) => (
                 <tr key={accion as string}>
                   <td className="font-semibold">{accion}</td>
                   {[prop, adm, ven].map((v, i) => (
@@ -256,11 +252,7 @@ export default async function PaginaAjustes() {
           </table>
         </div>
         <p className="px-4 pb-4 pt-3 text-[12.5px] leading-relaxed text-tinta/45">
-          Estos permisos están aplicados en la base de datos, no en los botones. Los costos
-          de compra ni siquiera salen del servidor para un vendedor: le llegan vacíos. Aunque
-          alguien abra la consola del navegador y consulte directamente, no puede recuperarlos.
-          El plan de suscripción no lo cambia nadie desde la aplicación: lo define el sistema
-          de pagos.
+          {t.ajustes.permisosEnLaBase}
         </p>
       </Seccion>
       )}
@@ -268,36 +260,33 @@ export default async function PaginaAjustes() {
       <Seccion titulo={t.pantallas.comoSeCalculan}>
         {esPersonal && (
           <div className="space-y-2.5 px-4 pt-3 text-[13.5px] leading-relaxed text-tinta/65">
-            <p><strong className="text-tinta">{t.pantallas.entro}</strong> = tu sueldo y cualquier otro ingreso del período.</p>
-            <p><strong className="text-tinta">{t.pantallas.salio}</strong> = todos tus gastos.</p>
-            <p><strong className="text-tinta">{t.pantallas.teQuedo}</strong> = lo que entró menos lo que salió.</p>
-            <p><strong className="text-tinta">{t.nav.deudas}</strong> = lo que falta pagar. El saldo solo baja registrando pagos.</p>
+            <p><strong className="text-tinta">{t.pantallas.entro}</strong> = {t.ajustes.calculoEntroPersonal}</p>
+            <p><strong className="text-tinta">{t.pantallas.salio}</strong> = {t.ajustes.calculoSalioPersonal}</p>
+            <p><strong className="text-tinta">{t.pantallas.teQuedo}</strong> = {t.ajustes.calculoQuedoPersonal}</p>
+            <p><strong className="text-tinta">{t.nav.deudas}</strong> = {t.ajustes.calculoDeudasPersonal}</p>
           </div>
         )}
         {!esPersonal && (
         <div className="space-y-2.5 px-4 pb-5 pt-3 text-[13.5px] leading-relaxed text-tinta/65">
-          <p><strong className="text-tinta">{t.panel.vendido}</strong> = lo que realmente cobraste, ya con los descuentos restados.</p>
-          <p><strong className="text-tinta">{t.panel.gananciaBruta}</strong> = ventas − lo que te costó esa mercadería.</p>
-          <p><strong className="text-tinta">{t.panel.gananciaNeta}</strong> = ganancia bruta + otros ingresos − todos los gastos del periodo.</p>
-          <p><strong className="text-tinta">{t.productos.colMargen}</strong> = qué porcentaje de cada venta te queda como ganancia.</p>
+          <p><strong className="text-tinta">{t.panel.vendido}</strong> = {t.ajustes.calculoVendido}</p>
+          <p><strong className="text-tinta">{t.panel.gananciaBruta}</strong> = {t.ajustes.calculoBruta}</p>
+          <p><strong className="text-tinta">{t.panel.gananciaNeta}</strong> = {t.ajustes.calculoNeta}</p>
+          <p><strong className="text-tinta">{t.productos.colMargen}</strong> = {t.ajustes.calculoMargen}</p>
           <p className="pt-1 text-[12.5px] leading-relaxed text-tinta/45">
-            El costo de cada producto se congela en el momento de la venta. Si después cambiás el costo o el
-            precio, tus reportes viejos siguen mostrando los números reales de ese día.
+            {t.ajustes.costoCongelado}
           </p>
           <p className="text-[12.5px] leading-relaxed text-tinta/45">
-            Una operación anulada queda en el historial pero no suma en ningún total, ranking, reto ni hoja de
-            Excel. Si era una venta, el stock vuelve automáticamente.
+            {t.ajustes.anuladaNoSumaNegocio}
           </p>
           <p className="text-[12.5px] leading-relaxed text-tinta/45">
-            Cuando hacés un descuento sobre varios productos, se reparte entre ellos en proporción a lo que
-            pesa cada uno. Por eso la suma del ranking de productos da exactamente lo mismo que el panel.
+            {t.ajustes.descuentoRepartido}
           </p>
         </div>
         )}
         {esPersonal && (
         <div className="space-y-2.5 px-4 pb-5 text-[12.5px] leading-relaxed text-tinta/45">
           <p>
-            Un movimiento anulado queda en el historial pero no suma en ningún total ni en el Excel.
+            {t.ajustes.anuladoNoSumaPersonal}
           </p>
         </div>
         )}

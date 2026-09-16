@@ -21,7 +21,7 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError(''); setMensaje('');
-    if (nombre.trim().length < 2) { setError('El nombre es muy corto.'); return; }
+    if (nombre.trim().length < 2) { setError(t.ajustes.nombreMuyCorto); return; }
     setGuardando(true);
     try {
       const supabase = clienteNavegador();
@@ -31,12 +31,12 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
         .eq('id', empresa.id)
         .select('id');
       if (error) throw error;
-      verificarAfectados(data, 'No se guardó: solo un administrador puede cambiar los datos del negocio.');
-      setMensaje('Guardado.');
+      verificarAfectados(data, t.ajustes.soloAdminDatos);
+      setMensaje(t.ajustes.guardadoPunto);
       router.refresh();
       setTimeout(() => setMensaje(''), 3000);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -59,9 +59,7 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
           <option value="EUR">{t.pantallas.monedaEUR}</option>
         </select>
         <span className="mt-1 block text-[12px] text-tinta/45">
-          En qué moneda cargás. Una vez que tengas movimientos ya no se puede cambiar:
-          reetiquetaría todo tu historial sin convertirlo. Para ver tus números en otra
-          moneda usá «Ver en otra moneda», acá abajo.
+          {t.ajustes.monedaNoSeCambia}
         </span>
       </label>
 
@@ -70,7 +68,7 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
 
       {puedeEditar && (
         <button className="boton-principal w-full py-2.5" disabled={guardando || !cambió}>
-          {guardando ? 'Guardando…' : 'Guardar cambios'}
+          {guardando ? t.comun.guardando : t.ajustes.guardarCambios}
         </button>
       )}
     </form>
@@ -78,6 +76,7 @@ export function EditorEmpresa({ empresa, puedeEditar }: { empresa: Empresa; pued
 }
 
 export function CodigoEquipo({ codigo }: { codigo: string }) {
+  const t = useTextos();
   const [copiado, setCopiado] = useState(false);
 
   async function copiar() {
@@ -93,18 +92,18 @@ export function CodigoEquipo({ codigo }: { codigo: string }) {
   return (
     <div>
       <p className="text-[13.5px] leading-relaxed text-tinta/60">
-        Pasale este código a quien quieras sumar. Va a poder registrar ventas y gastos, pero no cambiar la configuración.
+        {t.ajustes.pasaleElCodigo}
       </p>
       <div className="mt-3 flex items-center gap-2">
         <code className="flex-1 rounded-xl border border-borde bg-arena px-4 py-3 text-center text-[20px] font-bold tracking-[.25em]">
           {codigo}
         </code>
         <button type="button" className="boton-suave h-[50px] shrink-0" onClick={copiar}>
-          {copiado ? '✓ Copiado' : 'Copiar'}
+          {copiado ? t.ajustes.copiado : t.ajustes.copiar}
         </button>
       </div>
       <p className="mt-2.5 text-[12.5px] text-tinta/45">
-        La persona crea su cuenta, elige &laquo;Unirme con código&raquo; y lo pega ahí.
+        {t.ajustes.comoSeUne}
       </p>
     </div>
   );

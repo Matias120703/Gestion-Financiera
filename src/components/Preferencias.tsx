@@ -293,9 +293,9 @@ function BotonPush() {
           </div>
           <p className="mt-3 text-[12px] text-tinta/40">
             <Link href="/instalar" target="_blank" className="font-semibold text-verde-fuerte hover:underline">
-              Ver esta guía en su propia página →
+              {t.ajustes.guiaEnSuPagina}
             </Link>
-            {' '}(para mandársela a alguien)
+            {' '}{t.ajustes.paraMandarla}
           </p>
         </div>
       )}
@@ -379,6 +379,7 @@ function Interruptor({
  * respuesta a los dos.
  */
 export function SelectorTema() {
+  const t = useTextos();
   const [tema, setTema] = useState<Tema>('sistema');
 
   // El valor real se lee después del montaje: en el servidor no hay
@@ -398,7 +399,7 @@ export function SelectorTema() {
 
   const OPCIONES: { valor: Tema; texto: string; icono: React.ReactNode }[] = [
     {
-      valor: 'claro', texto: 'Claro',
+      valor: 'claro', texto: t.ajustes.temaClaro,
       icono: (
         <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazoTema}>
           <circle cx="12" cy="12" r="4" />
@@ -407,7 +408,7 @@ export function SelectorTema() {
       ),
     },
     {
-      valor: 'oscuro', texto: 'Oscuro',
+      valor: 'oscuro', texto: t.ajustes.temaOscuro,
       icono: (
         <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazoTema}>
           <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
@@ -415,7 +416,7 @@ export function SelectorTema() {
       ),
     },
     {
-      valor: 'sistema', texto: 'Como el teléfono',
+      valor: 'sistema', texto: t.ajustes.temaSistema,
       icono: (
         <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazoTema}>
           <rect x="4" y="3" width="16" height="18" rx="2.5" /><path d="M10 18h4" />
@@ -426,7 +427,7 @@ export function SelectorTema() {
 
   return (
     <div>
-      <p className="etiqueta">Colores</p>
+      <p className="etiqueta">{t.ajustes.colores}</p>
       <div className="flex flex-wrap gap-2">
         {OPCIONES.map((o) => (
           <button
@@ -441,7 +442,7 @@ export function SelectorTema() {
         ))}
       </div>
       <p className="mt-2 text-[12.5px] leading-relaxed text-tinta/45">
-        Es de este aparato: podés tenerla clara en la computadora del local y oscura en el celular.
+        {t.ajustes.temaDeEsteAparato}
       </p>
     </div>
   );
