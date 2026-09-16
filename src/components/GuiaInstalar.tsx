@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
+import { Rico } from '@/components/Rico';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -30,6 +32,7 @@ const trazo = {
  */
 export function GuiaInstalar({ compacta = false }: { compacta?: boolean }) {
   const [pestania, setPestania] = useState<'iphone' | 'android'>('iphone');
+  const g = useTextos().instalarGuia;
 
   return (
     <div>
@@ -45,45 +48,17 @@ export function GuiaInstalar({ compacta = false }: { compacta?: boolean }) {
       <ol className={`mt-4 space-y-4 ${compacta ? '' : 'sm:space-y-5'}`}>
         {pestania === 'iphone' ? (
           <>
-            <Paso numero={1} icono={<IconoCompartir />}>
-              Abrí Orden en <strong className="text-tinta">Safari</strong> y tocá el ícono de{' '}
-              <strong className="text-tinta">Compartir</strong> (el cuadrado con la flecha hacia arriba)
-              en la barra de Safari. Si no lo ves, tocá primero los{' '}
-              <strong className="text-tinta">tres puntos «···»</strong> y ahí aparece.
-            </Paso>
-            <Paso numero={2} icono={<IconoAgregar />}>
-              Deslizá la lista de opciones y tocá{' '}
-              <strong className="text-tinta">«Agregar a inicio»</strong>.
-            </Paso>
-            <Paso numero={3} icono={<IconoListo />}>
-              Tocá <strong className="text-tinta">«Agregar»</strong> arriba a la derecha. Va a
-              aparecer un ícono nuevo de Orden en tu pantalla.
-            </Paso>
-            <Paso numero={4} icono={<IconoAbrir />}>
-              <strong className="text-tinta">Abrí Orden desde ese ícono nuevo</strong>, no desde
-              Safari. Recién ahí funcionan los avisos — es la parte que
-              más se salta.
-            </Paso>
+            <Paso numero={1} icono={<IconoCompartir />}><Rico texto={g.iphone1} negrita="text-tinta" /></Paso>
+            <Paso numero={2} icono={<IconoAgregar />}><Rico texto={g.iphone2} negrita="text-tinta" /></Paso>
+            <Paso numero={3} icono={<IconoListo />}><Rico texto={g.iphone3} negrita="text-tinta" /></Paso>
+            <Paso numero={4} icono={<IconoAbrir />}><Rico texto={g.iphone4} negrita="text-tinta" /></Paso>
           </>
         ) : (
           <>
-            <Paso numero={1} icono={<IconoMenu />}>
-              Abrí Orden en <strong className="text-tinta">Chrome</strong> y tocá los{' '}
-              <strong className="text-tinta">tres puntos</strong> arriba a la derecha.
-            </Paso>
-            <Paso numero={2} icono={<IconoAgregar />}>
-              Tocá <strong className="text-tinta">«Instalar aplicación»</strong> o{' '}
-              <strong className="text-tinta">«Agregar a pantalla de inicio»</strong>
-              {' '}—el nombre cambia un poco según la versión de Chrome—.
-            </Paso>
-            <Paso numero={3} icono={<IconoListo />}>
-              Confirmá, y listo: queda un ícono de Orden entre tus aplicaciones.
-            </Paso>
-            <Paso numero={4} icono={<IconoAbrir />}>
-              En Android no hace falta este paso para que lleguen los avisos —ya
-              funcionan desde el navegador—, pero instalada se abre más rápido
-              y ocupa toda la pantalla, sin la barra de Chrome arriba.
-            </Paso>
+            <Paso numero={1} icono={<IconoMenu />}><Rico texto={g.android1} negrita="text-tinta" /></Paso>
+            <Paso numero={2} icono={<IconoAgregar />}><Rico texto={g.android2} negrita="text-tinta" /></Paso>
+            <Paso numero={3} icono={<IconoListo />}><Rico texto={g.android3} negrita="text-tinta" /></Paso>
+            <Paso numero={4} icono={<IconoAbrir />}><Rico texto={g.android4} negrita="text-tinta" /></Paso>
           </>
         )}
       </ol>

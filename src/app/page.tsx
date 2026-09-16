@@ -8,24 +8,27 @@ import Demos from '@/components/Demos';
 import { Marca } from '@/components/Marca';
 import { BotonTema } from '@/components/BotonTema';
 import { GuiaInstalar } from '@/components/GuiaInstalar';
+import { Rico } from '@/components/Rico';
 import { HAY_DEMOS } from '@/lib/demos';
-import { FICHA, MONEDA_DE_COBRO } from '@/i18n/idiomas';
+import { FICHA } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
-import { DIAS_DE_PRUEBA, MONEDAS_DE_COBRO, monedaDeCobro, textoPrueba } from '@/lib/precios';
+import { DIAS_DE_PRUEBA, MONEDAS_DE_COBRO, monedaDeCobro } from '@/lib/precios';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Orden · Sabé cuánto ganás de verdad',
-  description:
-    'Registrá ventas, gastos y deudas hablando, sacando una foto o escribiendo. '
-    + 'Orden calcula tu ganancia real todos los días. Para tu negocio o para tus finanzas personales.',
-  openGraph: {
-    title: 'Orden · Sabé cuánto ganás de verdad',
-    description: 'Registrá ventas, gastos y deudas en segundos. Mirá tu ganancia real todos los días.',
-    type: 'website',
-  },
-};
+/** El título y la descripción, en el idioma de quien abre la portada. */
+export function generateMetadata(): Metadata {
+  const t = textos();
+  return {
+    title: t.portada.metaTitulo,
+    description: t.portada.metaDescripcion,
+    openGraph: {
+      title: t.portada.metaTitulo,
+      description: t.portada.metaDescripcionCorta,
+      type: 'website',
+    },
+  };
+}
 
 /**
  * LA PORTADA
@@ -52,6 +55,9 @@ export const metadata: Metadata = {
  * Sobre el orden: el negocio va primero y ocupa más lugar. No es capricho,
  * es que paga el triple y es donde está la demanda probada. La cuenta
  * personal está bien explicada, pero no le pelea el lugar principal.
+ *
+ * Los textos viven en el diccionario (`portada`), en español y en portugués.
+ * Acá solo queda la estructura.
  */
 export default async function Portada({
   searchParams,
@@ -64,8 +70,13 @@ export default async function Portada({
   if (user) redirect('/panel');
 
   const t = textos();
+  const p = t.portada;
   const idioma = idiomaActual();
   const locale = FICHA[idioma].locale;
+
+  // «8 días» / «8 dias»: el número sale de las constantes, la palabra del idioma.
+  const diasNegocio = p.dias(DIAS_DE_PRUEBA.emprendedor);
+  const diasPersonal = p.dias(DIAS_DE_PRUEBA.personal);
 
   /**
    * En qué moneda se muestran los precios.
@@ -90,10 +101,10 @@ export default async function Portada({
   const precios = (Array.isArray(data) ? data : []) as Precio[];
 
   const precioDe = (tipo: string, plan: string, periodo = 'mensual') =>
-    precios.find((p) => p.tipo_cuenta === tipo && p.plan === plan && p.periodo === periodo) ?? null;
+    precios.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === periodo) ?? null;
 
-  const importe = (p: Precio | null) =>
-    p ? precio(Number(p.importe), moneda, locale) : '—';
+  const importe = (x: Precio | null) =>
+    x ? precio(Number(x.importe), moneda, locale) : '—';
 
   const personalMes = precioDe('personal', 'pro');
   const personalAnio = precioDe('personal', 'pro', 'anual');
@@ -174,10 +185,10 @@ export default async function Portada({
                   guía es justamente para quien está mirando desde un teléfono,
                   y ahí la sección queda al final de una página muy larga. */}
               <a href="#instalar" className="text-[13.5px] font-semibold text-white/60 transition hover:text-white">
-                Instalar
+                {p.instalar}
               </a>
               <a href="#precios" className="hidden text-[13.5px] font-semibold text-white/60 transition hover:text-white sm:block">
-                Precios
+                {p.precios}
               </a>
               <BotonTema />
               <Link
@@ -185,7 +196,7 @@ export default async function Portada({
                 className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-[13.5px] font-semibold
                            text-white backdrop-blur transition hover:border-white/30 hover:bg-white/10"
               >
-                Entrar
+                {p.entrar}
               </Link>
             </div>
           </div>
@@ -200,18 +211,16 @@ export default async function Portada({
                   credencial. Sin ella el titular arranca más arriba y pega
                   más fuerte, que es todo lo que tiene que hacer. */}
               <h1 className="text-[38px] font-bold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
-                ¿Sabés cuánto<br />
-                ganaste{' '}
+                {p.titular1}<br />
+                {p.titular2}{' '}
                 <span className="bg-gradient-to-r from-menta to-menta-suave bg-clip-text text-transparent">
-                  de verdad
+                  {p.titularResaltado}
                 </span>
-                ?
+                {p.titularCierre}
               </h1>
 
               <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-white/65 lg:text-[19px]">
-                No cuánto vendiste: cuánto <strong className="font-semibold text-white">te quedó</strong> después
-                de lo que pagaste por la mercadería y de todos los gastos. Orden lo calcula solo,
-                todos los días, y para cargarlo alcanza con contárselo.
+                <Rico texto={p.bajada} negrita="font-semibold text-white" />
               </p>
 
               <div className="mt-9 flex flex-wrap items-center gap-3">
@@ -220,19 +229,19 @@ export default async function Portada({
                   className="rounded-xl bg-menta px-6 py-3.5 text-[15px] font-bold text-noche shadow-lg
                              shadow-menta/20 transition hover:bg-menta-suave"
                 >
-                  Probar {textoPrueba('emprendedor')} gratis
+                  {p.probarGratis(diasNegocio)}
                 </Link>
                 <a
                   href="#formas"
                   className="rounded-xl border border-white/15 px-6 py-3.5 text-[15px] font-semibold
                              text-white/85 transition hover:border-white/35 hover:text-white"
                 >
-                  Ver cómo funciona
+                  {p.verComoFunciona}
                 </a>
               </div>
 
               <p className="mt-5 text-[13.5px] font-medium text-white/45">
-                Sin tarjeta · Cancelás cuando quieras · Tus datos siguen siendo tuyos si te vas
+                {p.garantias}
               </p>
             </div>
 
@@ -251,35 +260,35 @@ export default async function Portada({
                   <div className="flex items-center justify-between bg-superficie px-4 py-3">
                     <span className="flex items-center gap-2">
                       <Marca clase="h-6 w-6" />
-                      <span className="text-[13px] font-bold tracking-tight text-tinta">Perfumería Aurora</span>
+                      <span className="text-[13px] font-bold tracking-tight text-tinta">{p.demoNegocio}</span>
                     </span>
-                    <span className="text-[11px] font-semibold text-tinta/40">Hoy</span>
+                    <span className="text-[11px] font-semibold text-tinta/40">{t.comun.hoy}</span>
                   </div>
 
                   <div className="space-y-2.5 p-3.5">
                     {/* el número que importa */}
                     <div className="rounded-2xl border border-borde bg-superficie p-4">
-                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">Te quedó hoy</p>
+                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">{p.demoTeQuedoHoy}</p>
                       <p className="mt-1 text-[27px] font-bold tracking-tight tabular-nums text-verde-fuerte">
                         Gs. 2.150.000
                       </p>
                       <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-verde-claro px-2 py-0.5
                                     text-[11px] font-bold text-verde-fuerte">
-                        ↑ 18 % <span className="font-medium text-tinta/45">que el martes pasado</span>
+                        ↑ 18 % <span className="font-medium text-tinta/45">{p.demoComparado}</span>
                       </p>
                       <div className="mt-3 flex gap-4 border-t border-borde pt-2.5">
                         <span className="text-[11.5px] font-semibold text-tinta/50">
-                          Entró <b className="ml-1 tabular-nums text-tinta">2.600.000</b>
+                          {p.entro} <b className="ml-1 tabular-nums text-tinta">2.600.000</b>
                         </span>
                         <span className="text-[11.5px] font-semibold text-tinta/50">
-                          Salió <b className="ml-1 tabular-nums text-rojo">150.000</b>
+                          {p.salio} <b className="ml-1 tabular-nums text-rojo">150.000</b>
                         </span>
                       </div>
                     </div>
 
                     {/* cómo se cargó: hablando */}
                     <div className="rounded-2xl border border-borde bg-superficie p-3.5">
-                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">Lo cargaste así</p>
+                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">{p.demoLoCargasteAsi}</p>
                       <div className="mt-2 flex items-start gap-2">
                         <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-verde-claro">
                           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-verde-fuerte" fill="none"
@@ -289,7 +298,7 @@ export default async function Portada({
                           </svg>
                         </span>
                         <p className="text-[12.5px] leading-snug text-tinta/70">
-                          «Vendí dos perfumes a ciento cincuenta mil cada uno»
+                          {p.demoDictado}
                         </p>
                       </div>
                       <p className="mt-2.5 flex items-center gap-1.5 border-t border-borde pt-2 text-[11.5px] font-semibold text-verde-fuerte">
@@ -297,7 +306,7 @@ export default async function Portada({
                              strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
                           <path d="m5 13 4 4L19 7" />
                         </svg>
-                        Cargado · stock descontado
+                        {p.demoCargado}
                       </p>
                     </div>
                   </div>
@@ -314,10 +323,10 @@ export default async function Portada({
             justamente lo que esta franja viene a dar. */}
         <div className="relative border-t border-white/10 bg-noche-hondo/60">
           <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-5 lg:grid-cols-4">
-            <Dato valor="1.600+" texto="comprobaciones automáticas corren antes de cada cambio" />
-            <Dato valor="0" texto="datos tuyos que ve otro negocio: lo impide la base, no la pantalla" />
-            <Dato valor="Sin señal" texto="se instala como app y abre igual cuando se corta internet" />
-            <Dato valor={textoPrueba('emprendedor')} texto="de prueba, sin cargar una tarjeta en ningún lado" />
+            <Dato valor="1.600+" texto={p.datoPruebas} />
+            <Dato valor="0" texto={p.datoAjenos} />
+            <Dato valor={p.datoSinSenalValor} texto={p.datoSinSenal} />
+            <Dato valor={diasNegocio} texto={p.datoPrueba} />
           </div>
         </div>
       </section>
@@ -327,47 +336,34 @@ export default async function Portada({
       <section id="formas" className="border-y border-borde bg-arena scroll-mt-4">
         <div className="mx-auto max-w-6xl px-5 py-14">
           <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
-            Dos formas de usar Orden. Elegís al crear la cuenta.
+            {p.formasTitulo}
           </h2>
           <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
-            Es el mismo sistema, pero no te mostramos pantallas que no vas a usar. Si tenés un
-            negocio vas a ver ventas y productos; si es para vos, no aparecen en ningún lado.
+            {p.formasBajada}
           </p>
 
           <div className="mt-8 grid gap-4 lg:grid-cols-2">
             <Forma
-              etiqueta="La más usada"
+              etiqueta={p.laMasUsada}
               destacado
-              titulo="Para tu negocio"
-              para="Almacén, perfumería, delivery, taller, tienda de ropa"
-              detalle="Todo lo que necesitás para saber si el mes cerró bien, y para que tus vendedores carguen sin ver lo que no tienen que ver."
-              prueba={`${textoPrueba('emprendedor')} de prueba`}
-              boton="Crear la cuenta de mi negocio"
+              titulo={p.paraTuNegocio}
+              para={p.paraTuNegocioQuien}
+              detalle={p.paraTuNegocioDetalle}
+              prueba={p.dePrueba(diasNegocio)}
+              sinTarjeta={p.sinTarjeta}
+              boton={p.crearCuentaNegocio}
               para_link="/crear?para=negocio"
-              puntos={[
-                'Ventas con productos, precios y stock que se descuenta solo',
-                'La ganancia real: se calcula con el costo que tenía el producto el día que lo vendiste',
-                'Vendedores con su propia cuenta — y vos ves quién cargó cada venta',
-                'Tus costos y tus deudas no los ve un vendedor. Lo impide la base de datos, no la pantalla',
-                'Gastos, otros ingresos y deudas del negocio',
-                'Excel de cinco hojas y cierre del día',
-              ]}
+              puntos={p.puntosNegocio}
             />
             <Forma
-              titulo="Para vos"
-              para="Sueldo, gastos del día a día, tarjetas y préstamos"
-              detalle="Lo mismo, sin la parte de comercio. Pensado para saber cuánto te queda y, sobre todo, cuánto debés."
-              prueba={`${textoPrueba('personal')} de prueba`}
-              boton="Crear mi cuenta personal"
+              titulo={p.paraVos}
+              para={p.paraVosQuien}
+              detalle={p.paraVosDetalle}
+              prueba={p.dePrueba(diasPersonal)}
+              sinTarjeta={p.sinTarjeta}
+              boton={p.crearCuentaPersonal}
               para_link="/crear?para=personal"
-              puntos={[
-                'Tu sueldo y cualquier ingreso extra',
-                'Los gastos del día a día, cargados hablando',
-                'Tus deudas: tarjeta, préstamo, lo que le debés a alguien',
-                'Cuándo vence cada cuota y cuánto falta para saldarla',
-                'Sin ventas ni productos: esas pantallas no existen para vos',
-                'El mismo Excel y el mismo cierre del día',
-              ]}
+              puntos={p.puntosPersonal}
             />
           </div>
         </div>
@@ -376,30 +372,29 @@ export default async function Portada({
       {/* ---------------- Cómo se carga ---------------- */}
       <section className="mx-auto max-w-6xl px-5 py-14">
         <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
-          Cargar una venta te tiene que llevar menos que cobrarla.
+          {p.cargarTitulo}
         </h2>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           <Modo
-            titulo="Contáselo hablando"
-            detalle="«Vendí dos perfumes a 150 mil cada uno». Lo entiende, lo ordena y te lo muestra para que confirmes."
+            titulo={p.modoVoz}
+            detalle={p.modoVozDetalle}
             icono={<path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" />}
           />
           <Modo
-            titulo="Sacale una foto"
-            detalle="Al ticket o a la factura. Lee el monto y guarda la foto pegada al movimiento, para cuando la necesites."
+            titulo={p.modoFoto}
+            detalle={p.modoFotoDetalle}
             icono={<path d="M3.5 8.5h3l1.5-2.5h8L17.5 8.5h3v10h-17z M12 13m-3.2 0a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0" />}
           />
           <Modo
-            titulo="O escribilo"
-            detalle="Como se lo contarías a alguien. Sin formularios de veinte campos ni categorías que adivinar."
+            titulo={p.modoTexto}
+            detalle={p.modoTextoDetalle}
             icono={<path d="M4 6h16M4 12h16M4 18h10" />}
           />
         </div>
 
         <p className="mt-6 max-w-2xl text-[14.5px] leading-relaxed text-tinta/60">
-          Las deudas también. Decí <em>«debo cinco millones de la tarjeta»</em> y queda cargada
-          como deuda — no como plata que entró.
+          <Rico texto={p.deudasTambien} />
         </p>
       </section>
 
@@ -411,11 +406,10 @@ export default async function Portada({
         <section className="border-t border-borde">
           <div className="mx-auto max-w-6xl px-5 py-14">
             <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
-              Así se ve por dentro.
+              {p.demosTitulo}
             </h2>
             <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
-              Grabado de la app de verdad, sin retoques. Los videos no tienen audio
-              y no se descargan hasta que los apretás.
+              {p.demosBajada}
             </p>
             <Demos idioma={idioma} />
           </div>
@@ -428,20 +422,13 @@ export default async function Portada({
           <div className="grid gap-10 lg:grid-cols-2">
             <div>
               <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
-                Y a la noche, en diez segundos, sabés cómo te fue.
+                {p.nocheTitulo}
               </h2>
               <p className="mt-4 text-[15.5px] leading-relaxed text-tinta/65">
-                El cierre del día te muestra cuánto entró, cuánto salió y cuánto te quedó.
-                Comparado con el mismo día de la semana pasada, para que sepas si fue un
-                buen día <em>para vos</em> y no contra un promedio que no significa nada.
+                <Rico texto={p.nocheBajada} />
               </p>
               <ul className="mt-6 space-y-3">
-                {[
-                  'La ganancia se calcula con el costo que tenía el producto el día que lo vendiste, no con el de hoy.',
-                  'Un vendedor puede cargar ventas sin ver nunca tus costos ni tus márgenes.',
-                  'Excel de cinco hojas, listo para imprimir o mandar.',
-                  'Se instala como app en el celular y abre aunque te quedes sin señal.',
-                ].map((linea) => (
+                {p.nochePuntos.map((linea) => (
                   <li key={linea} className="flex items-start gap-2.5 text-[14.5px] leading-relaxed text-tinta/70">
                     <svg viewBox="0 0 24 24" className="mt-1 h-4 w-4 shrink-0 text-verde"
                          fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
@@ -456,15 +443,15 @@ export default async function Portada({
             {/* Muestra de lo que se ve adentro. No es una captura de pantalla:
                 es la pantalla real, con números de ejemplo. */}
             <div className="tarjeta self-start p-5">
-              <p className="titulo-seccion">Cierre del día</p>
-              <p className="mt-1 text-[19px] font-bold tracking-tight">martes 12 de agosto</p>
+              <p className="titulo-seccion">{p.cierreDelDia}</p>
+              <p className="mt-1 text-[19px] font-bold tracking-tight">{p.cierreFecha}</p>
               <div className="mt-4 divide-y divide-borde">
-                <Fila etiqueta="Entró" valor="Gs. 2.600.000" tono="text-verde-fuerte" />
-                <Fila etiqueta="Salió" valor="Gs. 150.000" tono="text-rojo" />
-                <Fila etiqueta="Te quedó" valor="Gs. 2.150.000" tono="text-verde-fuerte" grande />
+                <Fila etiqueta={p.entro} valor="Gs. 2.600.000" tono="text-verde-fuerte" />
+                <Fila etiqueta={p.salio} valor="Gs. 150.000" tono="text-rojo" />
+                <Fila etiqueta={p.teQuedo} valor="Gs. 2.150.000" tono="text-verde-fuerte" grande />
               </div>
               <p className="mt-4 text-[13px] font-semibold text-verde-fuerte">
-                18 % más <span className="font-normal text-tinta/50">que el mismo día de la semana pasada</span>
+                {p.cierreMas} <span className="font-normal text-tinta/50">{p.cierreComparado}</span>
               </p>
             </div>
           </div>
@@ -474,7 +461,7 @@ export default async function Portada({
       {/* ---------------- Precios ---------------- */}
       <section id="precios" className="mx-auto max-w-6xl px-5 py-14 scroll-mt-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">Cuánto cuesta</h2>
+          <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">{p.cuantoCuesta}</h2>
 
           {/* Enlaces y no botones: la portada la lee gente que todavía no
               decidió nada, y un enlace anda antes de que cargue un solo
@@ -497,9 +484,7 @@ export default async function Portada({
         </div>
 
         <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
-          Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día
-          no querés seguir, <strong className="text-tinta">no te quedás sin tus datos</strong>:
-          seguís entrando, viendo todo tu historial y bajando tu Excel cuando quieras.
+          <Rico texto={p.preciosBajada} negrita="text-tinta" />
         </p>
 
         {moneda !== 'PYG' && (
@@ -508,76 +493,58 @@ export default async function Portada({
              ya eligió el plan: enterarse tarde de cómo se paga es de las
              cosas que hacen abandonar. */
           <p className="mt-3 max-w-2xl rounded-xl bg-arena px-4 py-3 text-[13.5px] leading-relaxed text-tinta/65">
-            Los precios en dólares son de referencia. Se cobra por transferencia y lo
-            arreglamos por WhatsApp: escribinos y te decimos cómo pagar desde tu país.
+            {p.preciosDolares}
           </p>
         )}
 
         {/* ---- negocio ---- */}
         <div className="mt-10">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-[18px] font-bold tracking-tight">Para tu negocio</h3>
-            <span className="text-[13.5px] font-semibold text-tinta/45">{textoPrueba('emprendedor')} de prueba</span>
+            <h3 className="text-[18px] font-bold tracking-tight">{p.paraTuNegocio}</h3>
+            <span className="text-[13.5px] font-semibold text-tinta/45">{p.dePrueba(diasNegocio)}</span>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Plan
               destacado
               nombre="Pro"
-              llamado={`Empezar los ${textoPrueba('emprendedor')}`}
+              llamado={p.empezarLos(diasNegocio)}
               enlace="/crear?para=negocio"
               precio={importe(proMes)}
-              porMes
-              para="Para el negocio con hasta 2 vendedores"
-              puntos={[
-                'Voz, foto y texto: 600 cargas por mes',
-                'Vos y hasta 2 vendedores, cada uno con su cuenta',
-                'Comprobantes guardados y Excel de cinco hojas',
-                'Deudas del negocio con sus vencimientos',
-              ]}
-              nota={ahorroPro > 0 && proAnio
-                ? `O ${importe(proAnio)} al año: ${ahorroPro} ${ahorroPro === 1 ? 'mes' : 'meses'} de regalo.`
-                : undefined}
+              porMes={p.porMes}
+              para={p.proPara}
+              puntos={p.proPuntos}
+              nota={ahorroPro > 0 && proAnio ? p.alAnio(importe(proAnio), ahorroPro) : undefined}
             />
             <Plan
               nombre="Premium"
-              llamado={`Empezar los ${textoPrueba('emprendedor')}`}
+              llamado={p.empezarLos(diasNegocio)}
               enlace="/crear?para=negocio"
               precio={importe(premiumMes)}
-              porMes
-              desde
-              para="Para el local con más gente cargando"
+              porMes={p.porMes}
+              desde={p.desde}
+              para={p.premiumPara}
               /* Acá decía «sin tope de vendedores» y la base cortaba en 15.
                  Desde la 048 el tope lo escribimos negocio por negocio al
                  cobrar, así que ahora se puede decir la verdad: los que
                  pagues. Prometer «sin tope» le reventaba en la cara al que
                  ya había pagado, que es el peor momento para una sorpresa. */
-              puntos={[
-                'Todo lo de Pro, con los vendedores que necesites',
-                'Voz, foto y texto: 3.000 cargas por mes',
-                'Roles: quién ve los costos lo decidís vos',
-                'Pagás por vendedor: sumás uno cuando entra, y listo',
-              ]}
-              nota={vendedorExtra
-                ? `Cada vendedor arriba de los 2 de Pro suma ${vendedorExtra} al mes. Escribinos y te pasamos el número exacto.`
-                : undefined}
+              puntos={p.premiumPuntos}
+              nota={vendedorExtra ? p.vendedorExtra(vendedorExtra) : undefined}
             />
           </div>
 
           <p className="mt-4 rounded-xl bg-verde-claro/40 px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
-            <strong className="text-tinta">Tus vendedores no pagan nada.</strong> La suscripción
-            la paga una sola persona: el dueño del negocio. Ellos entran con su cuenta, cargan lo
-            suyo y listo.
+            <Rico texto={p.vendedoresNoPagan} negrita="text-tinta" />
           </p>
 
           {/* Se aclara acá, en los precios, porque es donde alguien está
               haciendo la cuenta de cuánto le sale. Que la comisión esté en
               todos los planes —y también mientras prueba— cambia esa cuenta. */}
           <p className="mt-3 rounded-xl bg-arena px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
-            <strong className="text-tinta">Recomendar está en todos los planes</strong>, incluso
-            mientras probás gratis: si traés un negocio, te llevás la mitad de su primer pago.{' '}
+            <Rico texto={p.recomendarEnPlanes} negrita="text-tinta" />{' '}
             <a href="#recomendar" className="font-semibold text-verde-fuerte hover:underline">
-              Cómo funciona
+              {p.comoFunciona}
             </a>
           </p>
         </div>
@@ -585,35 +552,25 @@ export default async function Portada({
         {/* ---- personal ---- */}
         <div className="mt-12">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-[18px] font-bold tracking-tight">Para vos</h3>
-            <span className="text-[13.5px] font-semibold text-tinta/45">{textoPrueba('personal')} de prueba</span>
+            <h3 className="text-[18px] font-bold tracking-tight">{p.paraVos}</h3>
+            <span className="text-[13.5px] font-semibold text-tinta/45">{p.dePrueba(diasPersonal)}</span>
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <Plan
-              nombre="Personal"
-              llamado={`Empezar los ${textoPrueba('personal')}`}
+              nombre={p.personalNombre}
+              llamado={p.empezarLos(diasPersonal)}
               enlace="/crear?para=personal"
               precio={importe(personalMes)}
-              porMes
-              para="Un solo plan, sin versiones ni letra chica"
-              puntos={[
-                'Sueldo, ingresos extra y gastos del día a día',
-                'Tarjetas, préstamos y lo que le debés a alguien',
-                'Voz, foto y texto: 600 cargas por mes',
-                'Avisos de cuándo vence cada cuota',
-              ]}
-              nota={ahorroPersonal > 0 && personalAnio
-                ? `O ${importe(personalAnio)} al año: ${ahorroPersonal} ${ahorroPersonal === 1 ? 'mes' : 'meses'} de regalo.`
-                : undefined}
+              porMes={p.porMes}
+              para={p.personalPara}
+              puntos={p.personalPuntos}
+              nota={ahorroPersonal > 0 && personalAnio ? p.alAnio(importe(personalAnio), ahorroPersonal) : undefined}
             />
             <div className="tarjeta flex flex-col justify-center p-5">
-              <h4 className="text-[15px] font-bold tracking-tight">¿Por qué cuesta menos?</h4>
+              <h4 className="text-[15px] font-bold tracking-tight">{p.porQueMenosTitulo}</h4>
               <p className="mt-2 text-[14px] leading-relaxed text-tinta/65">
-                Porque no recibís lo mismo. A un comercio, Orden le dice cuánta plata ganó de
-                verdad, y eso se paga solo. A vos te dice cuánto debés y cuándo vence la cuota:
-                te sirve, pero no te genera un guaraní. Cobrarte igual sería no haber entendido
-                a ninguno de los dos.
+                {p.porQueMenos}
               </p>
             </div>
           </div>
@@ -621,18 +578,15 @@ export default async function Portada({
 
         {/* ---- cómo se paga ---- */}
         <div className="mt-10 rounded-2xl border border-borde p-5">
-          <h3 className="text-[15px] font-bold tracking-tight">Cómo se paga</h3>
+          <h3 className="text-[15px] font-bold tracking-tight">{p.comoSePagaTitulo}</h3>
           <p className="mt-2 max-w-3xl text-[14px] leading-relaxed text-tinta/65">
-            Por transferencia. Cuando se te termina la prueba, tocás <em>Suscribirme</em> y se
-            abre un WhatsApp con nosotros para arreglarlo. Nada de cargar una tarjeta en un
-            formulario: hablás con una persona, transferís y te activamos la cuenta. Si tenés
-            varios vendedores, ahí mismo te pasamos el precio exacto.
+            <Rico texto={p.comoSePaga} />
           </p>
         </div>
 
         <div className="mt-8">
           <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
-            Empezar la prueba gratis
+            {p.empezarPrueba}
           </Link>
         </div>
       </section>
@@ -646,24 +600,20 @@ export default async function Portada({
         <div className="mx-auto max-w-6xl px-5 py-14">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center">
             <div>
-              <p className="titulo-seccion">Un extra</p>
+              <p className="titulo-seccion">{p.unExtra}</p>
               <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
-                Traé a alguien a Orden y llevate la mitad de su primer pago
+                {p.recomendarTitulo}
               </h2>
               <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
-                Puede ser un negocio que todavía anota sus ventas en un cuaderno, o una persona
-                que no sabe en qué se le va el sueldo: las dos cuentas valen igual. Si entra con
-                tu enlace y paga su primer mes,{' '}
-                <strong className="text-tinta">la mitad de ese pago es tuya</strong> —sea el plan
-                que sea—. Una sola vez por cada cuenta, y sin tope: podés traer uno o veinte.
+                <Rico texto={p.recomendarBajada} negrita="text-tinta" />
               </p>
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
-                  Empezar la prueba gratis
+                  {p.empezarPrueba}
                 </Link>
                 <span className="text-[13px] font-medium text-tinta/45">
-                  Tu enlace está adentro, en «Recomendar».
+                  {p.tuEnlaceAdentro}
                 </span>
               </div>
             </div>
@@ -671,29 +621,14 @@ export default async function Portada({
             {/* Los tres pasos. Sin adornos: es una promesa de plata y lo que
                 importa es que se entienda cuándo se cobra y cuándo no. */}
             <ol className="grid gap-3 sm:grid-cols-3 lg:gap-4">
-              <Paso
-                numero="1"
-                titulo="Compartís tu enlace"
-                texto="Cada cuenta tiene el suyo. Sirve igual para un negocio o para una persona."
-              />
-              <Paso
-                numero="2"
-                titulo="Paga su primer mes"
-                texto="Mientras prueba gratis no pasa nada. Se cuenta cuando paga de verdad."
-              />
-              <Paso
-                numero="3"
-                titulo="Te transferimos la mitad"
-                texto="A tu banco o tu billetera. Vos ponés los datos una vez."
-              />
+              <Paso numero="1" titulo={p.paso1Titulo} texto={p.paso1} />
+              <Paso numero="2" titulo={p.paso2Titulo} texto={p.paso2} />
+              <Paso numero="3" titulo={p.paso3Titulo} texto={p.paso3} />
             </ol>
           </div>
 
           <p className="mt-8 max-w-3xl text-[13.5px] leading-relaxed text-tinta/50">
-            Lo que esa cuenta pague de ahí en adelante ya no entra: la comisión es por el primer
-            pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la
-            mitad de lo que esa persona paga, traer un negocio deja más que traer una cuenta
-            personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.
+            {p.recomendarLetraChica}
           </p>
         </div>
       </section>
@@ -709,22 +644,19 @@ export default async function Portada({
         <div className="mx-auto max-w-6xl px-5 py-14">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-start">
             <div>
-              <p className="titulo-seccion">En tu celular</p>
+              <p className="titulo-seccion">{p.enTuCelular}</p>
               <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
-                Cómo poner Orden en tu pantalla de inicio
+                {p.instalarTitulo}
               </h2>
               <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
-                Orden no se descarga de ninguna tienda: se agrega desde el navegador y queda con
-                su ícono, como cualquier aplicación. Se abre más rápido, ocupa toda la pantalla, y
-                en iPhone es <strong className="text-tinta">la única forma de que te lleguen los
-                avisos</strong> —es una regla del teléfono, no de Orden—.
+                <Rico texto={p.instalarBajada} negrita="text-tinta" />
               </p>
               <p className="mt-4 text-[14px] leading-relaxed text-tinta/50">
-                ¿Se lo querés pasar a alguien?{' '}
+                {p.pasarGuia}{' '}
                 <Link href="/instalar" className="font-semibold text-verde-fuerte hover:underline">
-                  Esta guía tiene su propia página
+                  {p.guiaPropia}
                 </Link>
-                , para mandarla por WhatsApp.
+                {p.paraMandar}
               </p>
             </div>
 
@@ -745,9 +677,9 @@ export default async function Portada({
             </span>
           </div>
           <nav className="flex flex-wrap gap-x-5 gap-y-2 text-[13.5px] font-semibold text-tinta/50">
-            <Link href="/instalar" className="hover:text-tinta">Cómo instalar Orden</Link>
-            <Link href="/privacidad" className="hover:text-tinta">Privacidad</Link>
-            <Link href="/terminos" className="hover:text-tinta">Términos</Link>
+            <Link href="/instalar" className="hover:text-tinta">{p.pieInstalar}</Link>
+            <Link href="/privacidad" className="hover:text-tinta">{t.pantallas.privacidad}</Link>
+            <Link href="/terminos" className="hover:text-tinta">{t.pantallas.terminos}</Link>
             <Link href="/ingresar" className="hover:text-tinta">{t.nav.miCuenta}</Link>
           </nav>
         </div>
@@ -782,7 +714,9 @@ function Modo({ titulo, detalle, icono }: { titulo: string; detalle: string; ico
         </svg>
       </span>
       <h3 className="mt-3.5 text-[16px] font-bold tracking-tight">{titulo}</h3>
-      <p className="mt-1.5 text-[14px] leading-relaxed text-tinta/60">{detalle}</p>
+      <p className="mt-1.5 text-[14px] leading-relaxed text-tinta/60">
+        <Rico texto={detalle} />
+      </p>
     </div>
   );
 }
@@ -800,13 +734,14 @@ function Fila({
 
 /** Una de las dos formas de usar Orden. Es lo que se elige al crear la cuenta. */
 function Forma({
-  titulo, para, detalle, puntos, prueba, boton, para_link, etiqueta, destacado = false,
+  titulo, para, detalle, puntos, prueba, sinTarjeta, boton, para_link, etiqueta, destacado = false,
 }: {
   titulo: string;
   para: string;
   detalle: string;
   puntos: string[];
   prueba: string;
+  sinTarjeta: string;
   /** Qué dice el botón. Habla de lo que va a pasar, no «Más información». */
   boton: string;
   /** A dónde va, con el tipo de cuenta ya elegido. */
@@ -827,13 +762,13 @@ function Forma({
       <p className="mt-3 text-[14.5px] leading-relaxed text-tinta/65">{detalle}</p>
 
       <ul className="mt-4 flex-1 space-y-2.5">
-        {puntos.map((p) => (
-          <li key={p} className="flex items-start gap-2 text-[14px] leading-snug text-tinta/70">
+        {puntos.map((punto) => (
+          <li key={punto} className="flex items-start gap-2 text-[14px] leading-snug text-tinta/70">
             <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde"
                  fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 13 4 4L19 7" />
             </svg>
-            {p}
+            {punto}
           </li>
         ))}
       </ul>
@@ -848,7 +783,7 @@ function Forma({
         {boton}
       </Link>
       <p className="mt-2.5 text-center text-[12.5px] font-semibold text-verde-fuerte">
-        {prueba} · sin tarjeta
+        {prueba} · {sinTarjeta}
       </p>
     </div>
   );
@@ -856,7 +791,7 @@ function Forma({
 
 function Plan({
   nombre, precio, para, puntos, nota, llamado, enlace,
-  porMes = false, desde = false, destacado = false,
+  porMes, desde, destacado = false,
 }: {
   nombre: string;
   precio: string;
@@ -867,29 +802,30 @@ function Plan({
   llamado: string;
   /** A dónde va, con el tipo de cuenta ya elegido. */
   enlace: string;
-  porMes?: boolean;
-  /** Para Premium: el precio es el primer escalón, no el final. */
-  desde?: boolean;
+  /** El «/ mes» ya traducido; sin él, no se muestra. */
+  porMes?: string;
+  /** Para Premium: el precio es el primer escalón, no el final. Es la palabra «desde». */
+  desde?: string;
   destacado?: boolean;
 }) {
   return (
     <div className={`tarjeta flex flex-col p-5 ${destacado ? 'border-verde/50 ring-1 ring-verde/20' : ''}`}>
       <h3 className="text-[16px] font-bold tracking-tight">{nombre}</h3>
       <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
-        {desde && <span className="text-[13px] font-semibold text-tinta/45">desde</span>}
+        {desde && <span className="text-[13px] font-semibold text-tinta/45">{desde}</span>}
         <span className="text-[26px] font-bold tracking-tight tabular-nums">{precio}</span>
-        {porMes && <span className="text-[13px] font-semibold text-tinta/45">/ mes</span>}
+        {porMes && <span className="text-[13px] font-semibold text-tinta/45">{porMes}</span>}
       </p>
       <p className="mt-1.5 text-[13px] font-semibold text-tinta/50">{para}</p>
 
       <ul className="mt-4 flex-1 space-y-2">
-        {puntos.map((p) => (
-          <li key={p} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
+        {puntos.map((punto) => (
+          <li key={punto} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
             <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde"
                  fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 13 4 4L19 7" />
             </svg>
-            {p}
+            {punto}
           </li>
         ))}
       </ul>

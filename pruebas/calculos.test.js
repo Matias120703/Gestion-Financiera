@@ -791,8 +791,10 @@ ok('un rubro desconocido no rompe: cae en comercio',
     ok('ningún archivo escribe los días de prueba a mano', sospechosos, []);
 
     // Y que los dos lugares que lo muestran de verdad usen el módulo.
+    // Desde que la portada habla portugués, el número sale de DIAS_DE_PRUEBA y
+    // la palabra «días»/«dias» del diccionario.
     ok('la portada lo lee del módulo',
-      fs.readFileSync('src/app/page.tsx', 'utf8').includes('textoPrueba('), true);
+      fs.readFileSync('src/app/page.tsx', 'utf8').includes('DIAS_DE_PRUEBA.'), true);
     ok('y la pantalla de registro también',
       fs.readFileSync('src/components/DatosDelNegocio.tsx', 'utf8').includes('DIAS_DE_PRUEBA.'), true);
   }
@@ -1050,16 +1052,25 @@ ok('un rubro desconocido no rompe: cae en comercio',
 {
   const fs = require('fs');
   const portada = fs.readFileSync('src/app/page.tsx', 'utf8');
+  // Los textos de la portada viven en el diccionario desde que habla
+  // portugués: la estructura se mira en page.tsx y las frases en es.ts.
+  const textosPortada = fs.readFileSync('src/i18n/textos/es.ts', 'utf8');
 
   ok('la portada tiene el sol y la luna', portada.includes('<BotonTema />'), true);
   ok('y cuenta cómo se gana recomendando', portada.includes('id="recomendar"'), true);
   ok('con los tres pasos', portada.split('<Paso').length - 1, 3);
   ok('diciendo que se cobra una sola vez y no todos los meses',
-    portada.includes('Una sola vez por cada cuenta'), true);
+    textosPortada.includes('Una sola vez por cada cuenta'), true);
   ok('se aclara que también vale una persona, no solo un negocio',
-    portada.includes('las dos cuentas valen igual'), true);
+    textosPortada.includes('las dos cuentas valen igual'), true);
   ok('los precios aclaran que está en todos los planes',
-    portada.includes('Recomendar está en todos los planes'), true);
+    textosPortada.includes('Recomendar está en todos los planes'), true);
+  // Desde el candado del 2026-09-15 una cuenta vencida no entra. La portada
+  // lo prometía al revés; se mira el texto que se muestra, no el comentario.
+  const lineaPrecios = textosPortada.split(/\r?\n/).find((l) => l.trim().startsWith('preciosBajada:')) ?? '';
+  ok('la portada ya no promete que se sigue entrando con la cuenta vencida',
+    /seguís entrando|bajando tu Excel/.test(lineaPrecios), false);
+  ok('y dice que los datos no se borran', lineaPrecios.includes('no se borran'), true);
   ok('y la pantalla de planes de adentro también lleva ahí',
     fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8').includes('href="/recomendar"'), true);
 
@@ -1085,7 +1096,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const guia = fs.readFileSync('src/components/GuiaInstalar.tsx', 'utf8');
   ok('la guía distingue iPhone de Android', guia.includes("'iphone' | 'android'"), true);
   ok('y dice el paso que más se salta: abrirla desde el ícono nuevo',
-    guia.includes('no desde'), true);
+    fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('no desde Safari'), true);
+  ok('en portugués también',
+    fs.readFileSync('src/i18n/textos/pt.ts', 'utf8').includes('não pelo Safari'), true);
 
   const pub = fs.readFileSync('src/app/instalar/page.tsx', 'utf8');
   ok('la página pública usa el mismo componente que Ajustes',
@@ -1105,7 +1118,8 @@ ok('un rubro desconocido no rompe: cae en comercio',
     fs.readFileSync('src/middleware.ts', 'utf8').includes("'/instalar'"), true);
   // En los iOS nuevos Safari esconde «Compartir» adentro de «···».
   ok('la guía de iPhone contempla Compartir escondido en los tres puntos',
-    guia.includes('tres puntos «···»'), true);
+    // Los pasos viven en el diccionario desde que la guía habla portugués.
+    fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('tres puntos «···»'), true);
   // Primero quedó como un enlace chiquito en el pie, a otra página, y el
   // dueño no la encontró. Tiene que ser una sección visible de la portada,
   // con la guía adentro y un acceso arriba.

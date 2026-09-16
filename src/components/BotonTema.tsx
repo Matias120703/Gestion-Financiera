@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { guardarTema, leerTema, type Tema } from '@/lib/tema';
+import { useTextos } from '@/i18n/cliente';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -29,19 +30,20 @@ const trazo = {
  */
 export function BotonTema() {
   const [tema, setTema] = useState<Tema>('sistema');
+  const t = useTextos();
 
   // Después del montaje: en el servidor no hay localStorage, y pintar el
   // botón marcado al revés y corregirlo después es peor que no marcarlo.
   useEffect(() => { setTema(leerTema()); }, []);
 
-  const elegir = (t: Tema) => { setTema(t); guardarTema(t); };
+  const elegir = (nuevo: Tema) => { setTema(nuevo); guardarTema(nuevo); };
 
   return (
     <div className="flex items-center gap-0.5 rounded-xl border border-white/15 bg-white/5 p-0.5 backdrop-blur">
       <Icono
         activo={tema === 'claro'}
         onClick={() => elegir('claro')}
-        etiqueta="Colores claros"
+        etiqueta={t.comun.coloresClaros}
       >
         <circle cx="12" cy="12" r="4" />
         <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
@@ -49,7 +51,7 @@ export function BotonTema() {
       <Icono
         activo={tema === 'oscuro'}
         onClick={() => elegir('oscuro')}
-        etiqueta="Colores oscuros"
+        etiqueta={t.comun.coloresOscuros}
       >
         <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
       </Icono>

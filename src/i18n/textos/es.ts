@@ -25,6 +25,8 @@ export const es = {
     ayer: 'Ayer',
     verTodo: 'Ver todo',
     error: 'Algo salió mal',
+    coloresClaros: 'Colores claros',
+    coloresOscuros: 'Colores oscuros',
   },
 
   /**
@@ -581,6 +583,181 @@ export const es = {
     sinCostoServicio: 'Un servicio no tiene costo de compra: lo que se lleva quien lo hace se define en Equipo y reparto.',
     stockActual: 'Stock actual',
     avisarCuandoQuede: 'Avisar cuando quede',
+  },
+
+  /**
+   * LA PORTADA. Es texto de venta: lo lee alguien que todavía no decidió
+   * nada, en un celular. `**negrita**` y `_cursiva_` los dibuja `Rico` en
+   * app/page.tsx: así las frases con énfasis se traducen enteras, sin
+   * partirlas en pedazos que en otro idioma van en otro orden.
+   */
+  portada: {
+    metaTitulo: 'Orden · Sabé cuánto ganás de verdad',
+    metaDescripcion: 'Registrá ventas, gastos y deudas hablando, sacando una foto o escribiendo. Orden calcula tu ganancia real todos los días. Para tu negocio o para tus finanzas personales.',
+    metaDescripcionCorta: 'Registrá ventas, gastos y deudas en segundos. Mirá tu ganancia real todos los días.',
+    dias: (n: number) => `${n} días`,
+
+    instalar: 'Instalar',
+    precios: 'Precios',
+    entrar: 'Entrar',
+
+    titular1: '¿Sabés cuánto',
+    titular2: 'ganaste',
+    titularResaltado: 'de verdad',
+    titularCierre: '?',
+    bajada: 'No cuánto vendiste: cuánto **te quedó** después de lo que pagaste por la mercadería y de todos los gastos. Orden lo calcula solo, todos los días, y para cargarlo alcanza con contárselo.',
+    probarGratis: (dias: string) => `Probar ${dias} gratis`,
+    verComoFunciona: 'Ver cómo funciona',
+    garantias: 'Sin tarjeta · Cancelás cuando quieras · Tus datos siguen siendo tuyos si te vas',
+
+    demoNegocio: 'Perfumería Aurora',
+    demoTeQuedoHoy: 'Te quedó hoy',
+    demoComparado: 'que el martes pasado',
+    demoLoCargasteAsi: 'Lo cargaste así',
+    demoDictado: '«Vendí dos perfumes a ciento cincuenta mil cada uno»',
+    demoCargado: 'Cargado · stock descontado',
+
+    datoPruebas: 'comprobaciones automáticas corren antes de cada cambio',
+    datoAjenos: 'datos tuyos que ve otro negocio: lo impide la base, no la pantalla',
+    datoSinSenalValor: 'Sin señal',
+    datoSinSenal: 'se instala como app y abre igual cuando se corta internet',
+    datoPrueba: 'de prueba, sin cargar una tarjeta en ningún lado',
+
+    formasTitulo: 'Dos formas de usar Orden. Elegís al crear la cuenta.',
+    formasBajada: 'Es el mismo sistema, pero no te mostramos pantallas que no vas a usar. Si tenés un negocio vas a ver ventas y productos; si es para vos, no aparecen en ningún lado.',
+    laMasUsada: 'La más usada',
+    paraTuNegocio: 'Para tu negocio',
+    paraTuNegocioQuien: 'Almacén, perfumería, delivery, taller, tienda de ropa',
+    paraTuNegocioDetalle: 'Todo lo que necesitás para saber si el mes cerró bien, y para que tus vendedores carguen sin ver lo que no tienen que ver.',
+    dePrueba: (dias: string) => `${dias} de prueba`,
+    crearCuentaNegocio: 'Crear la cuenta de mi negocio',
+    puntosNegocio: [
+      'Ventas con productos, precios y stock que se descuenta solo',
+      'La ganancia real: se calcula con el costo que tenía el producto el día que lo vendiste',
+      'Vendedores con su propia cuenta — y vos ves quién cargó cada venta',
+      'Tus costos y tus deudas no los ve un vendedor. Lo impide la base de datos, no la pantalla',
+      'Gastos, otros ingresos y deudas del negocio',
+      'Excel de cinco hojas y cierre del día',
+    ],
+    paraVos: 'Para vos',
+    paraVosQuien: 'Sueldo, gastos del día a día, tarjetas y préstamos',
+    paraVosDetalle: 'Lo mismo, sin la parte de comercio. Pensado para saber cuánto te queda y, sobre todo, cuánto debés.',
+    crearCuentaPersonal: 'Crear mi cuenta personal',
+    puntosPersonal: [
+      'Tu sueldo y cualquier ingreso extra',
+      'Los gastos del día a día, cargados hablando',
+      'Tus deudas: tarjeta, préstamo, lo que le debés a alguien',
+      'Cuándo vence cada cuota y cuánto falta para saldarla',
+      'Sin ventas ni productos: esas pantallas no existen para vos',
+      'El mismo Excel y el mismo cierre del día',
+    ],
+    sinTarjeta: 'sin tarjeta',
+
+    cargarTitulo: 'Cargar una venta te tiene que llevar menos que cobrarla.',
+    modoVoz: 'Contáselo hablando',
+    modoVozDetalle: '«Vendí dos perfumes a 150 mil cada uno». Lo entiende, lo ordena y te lo muestra para que confirmes.',
+    modoFoto: 'Sacale una foto',
+    modoFotoDetalle: 'Al ticket o a la factura. Lee el monto y guarda la foto pegada al movimiento, para cuando la necesites.',
+    modoTexto: 'O escribilo',
+    modoTextoDetalle: 'Como se lo contarías a alguien. Sin formularios de veinte campos ni categorías que adivinar.',
+    deudasTambien: 'Las deudas también. Decí _«debo cinco millones de la tarjeta»_ y queda cargada como deuda — no como plata que entró.',
+
+    demosTitulo: 'Así se ve por dentro.',
+    demosBajada: 'Grabado de la app de verdad, sin retoques. Los videos no tienen audio y no se descargan hasta que los apretás.',
+
+    nocheTitulo: 'Y a la noche, en diez segundos, sabés cómo te fue.',
+    nocheBajada: 'El cierre del día te muestra cuánto entró, cuánto salió y cuánto te quedó. Comparado con el mismo día de la semana pasada, para que sepas si fue un buen día _para vos_ y no contra un promedio que no significa nada.',
+    nochePuntos: [
+      'La ganancia se calcula con el costo que tenía el producto el día que lo vendiste, no con el de hoy.',
+      'Un vendedor puede cargar ventas sin ver nunca tus costos ni tus márgenes.',
+      'Excel de cinco hojas, listo para imprimir o mandar.',
+      'Se instala como app en el celular y abre aunque te quedes sin señal.',
+    ],
+    cierreDelDia: 'Cierre del día',
+    cierreFecha: 'martes 12 de agosto',
+    entro: 'Entró',
+    salio: 'Salió',
+    teQuedo: 'Te quedó',
+    cierreMas: '18 % más',
+    cierreComparado: 'que el mismo día de la semana pasada',
+
+    cuantoCuesta: 'Cuánto cuesta',
+    // Decía «seguís entrando, viendo todo tu historial y bajando tu Excel».
+    // Dejó de ser cierto el 2026-09-15 con el candado de la cuenta vencida.
+    // Lo que sí sigue siendo cierto es que los datos no se borran.
+    preciosBajada: 'Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día no querés seguir, **tus datos no se borran**: quedan guardados, intactos, y vuelven a estar ahí el día que reactivás tu plan.',
+    preciosDolares: 'Los precios en dólares son de referencia. Se cobra por transferencia y lo arreglamos por WhatsApp: escribinos y te decimos cómo pagar desde tu país.',
+    empezarLos: (dias: string) => `Empezar los ${dias}`,
+    proPara: 'Para el negocio con hasta 2 vendedores',
+    proPuntos: [
+      'Voz, foto y texto: 600 cargas por mes',
+      'Vos y hasta 2 vendedores, cada uno con su cuenta',
+      'Comprobantes guardados y Excel de cinco hojas',
+      'Deudas del negocio con sus vencimientos',
+    ],
+    alAnio: (monto: string, meses: number) => `O ${monto} al año: ${meses} ${meses === 1 ? 'mes' : 'meses'} de regalo.`,
+    premiumPara: 'Para el local con más gente cargando',
+    premiumPuntos: [
+      'Todo lo de Pro, con los vendedores que necesites',
+      'Voz, foto y texto: 3.000 cargas por mes',
+      'Roles: quién ve los costos lo decidís vos',
+      'Pagás por vendedor: sumás uno cuando entra, y listo',
+    ],
+    vendedorExtra: (monto: string) => `Cada vendedor arriba de los 2 de Pro suma ${monto} al mes. Escribinos y te pasamos el número exacto.`,
+    vendedoresNoPagan: '**Tus vendedores no pagan nada.** La suscripción la paga una sola persona: el dueño del negocio. Ellos entran con su cuenta, cargan lo suyo y listo.',
+    recomendarEnPlanes: '**Recomendar está en todos los planes**, incluso mientras probás gratis: si traés un negocio, te llevás la mitad de su primer pago.',
+    comoFunciona: 'Cómo funciona',
+    personalNombre: 'Personal',
+    personalPara: 'Un solo plan, sin versiones ni letra chica',
+    personalPuntos: [
+      'Sueldo, ingresos extra y gastos del día a día',
+      'Tarjetas, préstamos y lo que le debés a alguien',
+      'Voz, foto y texto: 600 cargas por mes',
+      'Avisos de cuándo vence cada cuota',
+    ],
+    porQueMenosTitulo: '¿Por qué cuesta menos?',
+    porQueMenos: 'Porque no recibís lo mismo. A un comercio, Orden le dice cuánta plata ganó de verdad, y eso se paga solo. A vos te dice cuánto debés y cuándo vence la cuota: te sirve, pero no te genera un guaraní. Cobrarte igual sería no haber entendido a ninguno de los dos.',
+    comoSePagaTitulo: 'Cómo se paga',
+    comoSePaga: 'Por transferencia. Cuando se te termina la prueba, tocás _Suscribirme_ y se abre un WhatsApp con nosotros para arreglarlo. Nada de cargar una tarjeta en un formulario: hablás con una persona, transferís y te activamos la cuenta. Si tenés varios vendedores, ahí mismo te pasamos el precio exacto.',
+    empezarPrueba: 'Empezar la prueba gratis',
+    desde: 'desde',
+    porMes: '/ mes',
+
+    unExtra: 'Un extra',
+    recomendarTitulo: 'Traé a alguien a Orden y llevate la mitad de su primer pago',
+    recomendarBajada: 'Puede ser un negocio que todavía anota sus ventas en un cuaderno, o una persona que no sabe en qué se le va el sueldo: las dos cuentas valen igual. Si entra con tu enlace y paga su primer mes, **la mitad de ese pago es tuya** —sea el plan que sea—. Una sola vez por cada cuenta, y sin tope: podés traer uno o veinte.',
+    tuEnlaceAdentro: 'Tu enlace está adentro, en «Recomendar».',
+    paso1Titulo: 'Compartís tu enlace',
+    paso1: 'Cada cuenta tiene el suyo. Sirve igual para un negocio o para una persona.',
+    paso2Titulo: 'Paga su primer mes',
+    paso2: 'Mientras prueba gratis no pasa nada. Se cuenta cuando paga de verdad.',
+    paso3Titulo: 'Te transferimos la mitad',
+    paso3: 'A tu banco o tu billetera. Vos ponés los datos una vez.',
+    recomendarLetraChica: 'Lo que esa cuenta pague de ahí en adelante ya no entra: la comisión es por el primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la mitad de lo que esa persona paga, traer un negocio deja más que traer una cuenta personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.',
+
+    enTuCelular: 'En tu celular',
+    instalarTitulo: 'Cómo poner Orden en tu pantalla de inicio',
+    instalarBajada: 'Orden no se descarga de ninguna tienda: se agrega desde el navegador y queda con su ícono, como cualquier aplicación. Se abre más rápido, ocupa toda la pantalla, y en iPhone es **la única forma de que te lleguen los avisos** —es una regla del teléfono, no de Orden—.',
+    pasarGuia: '¿Se lo querés pasar a alguien?',
+    guiaPropia: 'Esta guía tiene su propia página',
+    paraMandar: ', para mandarla por WhatsApp.',
+    pieInstalar: 'Cómo instalar Orden',
+  },
+
+  /**
+   * CÓMO PONER ORDEN EN LA PANTALLA DE INICIO. Los nombres entre comillas
+   * son los de los menús del teléfono en ese idioma: si no coinciden
+   * letra por letra con lo que la persona ve, no los encuentra.
+   */
+  instalarGuia: {
+    iphone1: 'Abrí Orden en **Safari** y tocá el ícono de **Compartir** (el cuadrado con la flecha hacia arriba) en la barra de Safari. Si no lo ves, tocá primero los **tres puntos «···»** y ahí aparece.',
+    iphone2: 'Deslizá la lista de opciones y tocá **«Agregar a inicio»**.',
+    iphone3: 'Tocá **«Agregar»** arriba a la derecha. Va a aparecer un ícono nuevo de Orden en tu pantalla.',
+    iphone4: '**Abrí Orden desde ese ícono nuevo**, no desde Safari. Recién ahí funcionan los avisos — es la parte que más se salta.',
+    android1: 'Abrí Orden en **Chrome** y tocá los **tres puntos** arriba a la derecha.',
+    android2: 'Tocá **«Instalar aplicación»** o **«Agregar a pantalla de inicio»** —el nombre cambia un poco según la versión de Chrome—.',
+    android3: 'Confirmá, y listo: queda un ícono de Orden entre tus aplicaciones.',
+    android4: 'En Android no hace falta este paso para que lleguen los avisos —ya funcionan desde el navegador—, pero instalada se abre más rápido y ocupa toda la pantalla, sin la barra de Chrome arriba.',
   },
 
   /** GASTOS E INGRESOS SUELTOS: la pantalla de cargar a mano. */
