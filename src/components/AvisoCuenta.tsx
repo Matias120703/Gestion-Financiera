@@ -4,16 +4,15 @@ import { textos } from '@/i18n';
 /**
  * La franja que avisa cómo viene la suscripción.
  *
- * Existe por una razón concreta: cuando la cuenta vence, PostgreSQL rechaza
- * todo intento de cargar. Sin este aviso, la persona se enteraría chocando
- * contra un error rojo justo cuando iba a anotar una venta —el peor momento
- * posible— y sin entender qué pasó ni qué hacer.
+ * Cuando la cuenta ya está vencida, esta franja convive con el candado de
+ * pantalla completa (`CandadoCuenta`, en el layout): el candado tapa el
+ * contenido en cualquier pantalla que no sea /plan, y acá se muestra el
+ * mismo mensaje arriba, en /plan, donde la persona ya está viendo cómo
+ * pagar.
  *
  * Aparece en tres estados y en ninguno más:
  *
- *   · VENCIDA. No se puede cargar. Se dice qué SÍ se puede (mirar todo,
- *     bajar el Excel), porque lo primero que piensa alguien al ver un aviso
- *     así es «¿perdí mis datos?».
+ *   · VENCIDA. No se puede usar nada: hay que activar el plan.
  *   · POR VENCER, tres días o menos. Antes de eso sería ruido: quedan
  *     dieciséis pantallas más importantes que un recordatorio de cobro.
  *   · ÚLTIMO DÍA, aparte, porque «mañana» y «en tres días» no se leen igual.

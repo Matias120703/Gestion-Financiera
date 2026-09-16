@@ -3,12 +3,16 @@ import { BarraSuperior, NavInferior, NavLateral } from '@/components/Navegacion'
 import { BotonCaptura } from '@/components/CapturaInteligente';
 import { AvisoCuenta } from '@/components/AvisoCuenta';
 import { AvisoMonedaVista } from '@/components/AvisoMonedaVista';
+import { CandadoCuenta } from '@/components/CandadoCuenta';
 import { ProveedorZona } from '@/lib/zona';
 
 export const dynamic = 'force-dynamic';
 
 export default async function LayoutApp({ children }: { children: React.ReactNode }) {
   const ctx = await contextoObligatorio();
+  // Vencida: no se puede cargar nada. Es la misma señal que ya usa
+  // `AvisoCuenta` para la franja roja; acá además tapa el contenido.
+  const bloqueada = !(ctx.limites?.escritura ?? true);
 
   return (
     // La zona envuelve TODO el layout y no solo `children`: el botón de
@@ -40,20 +44,21 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
                 que no es el de su caja. Va acá por lo mismo que el aviso de
                 cuenta vencida: no es asunto de una pantalla, es del sistema. */}
             <AvisoMonedaVista vista={ctx.vista} />
-            {children}
+            <CandadoCuenta bloqueada={bloqueada}>{children}</CandadoCuenta>
           </div>
         </main>
 
-        {/* `guardaComprobantes` sale del plan que calculó la base, no de una
-            comprobación local. Si estuviera mal, la función `adjuntar()`
-            rechazaría igual: esto solo evita intentar una subida que va a
-            fallar y hacerle perder tiempo a la persona. */}
-        <BotonCaptura
-          empresaId={ctx.empresa.id}
-          moneda={ctx.empresa.moneda}
-          guardaComprobantes={ctx.limites?.adjuntos ?? false}
-          tipoCuenta={ctx.empresa.tipo_cuenta}
-        />
+        {/* Con la cuenta vencida no se ofrece ni el micrófono: activar el
+            plan es la única acción, y mostrar un botón que igual va a
+            rechazar la carga es prometer algo que no se cumple. */}
+        {!bloqueada && (
+          <BotonCaptura
+            empresaId={ctx.empresa.id}
+            moneda={ctx.empresa.moneda}
+            guardaComprobantes={ctx.limites?.adjuntos ?? false}
+            tipoCuenta={ctx.empresa.tipo_cuenta}
+          />
+        )}
         <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} />
       </div>
     </div>

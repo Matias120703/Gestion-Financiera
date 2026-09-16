@@ -47,6 +47,16 @@ export async function GET(request: Request) {
     );
   }
 
+  // Cuenta vencida: nada, ni el Excel. Se confirma contra la base y no
+  // contra el layout, porque esta ruta se puede llamar directo.
+  const { data: puedeCargar } = await supabase.rpc('puede_cargar', { p_empresa: empresa.id });
+  if (!puedeCargar) {
+    return NextResponse.json(
+      { error: 'Tu prueba terminó. Para seguir usando Orden y bajar el Excel hace falta activar tu plan.' },
+      { status: 403 },
+    );
+  }
+
   try {
     // ---- Los números: agregados en PostgreSQL sobre TODO el periodo ----
     // Cada una de estas llamadas devuelve pocas filas, así que ningún tope

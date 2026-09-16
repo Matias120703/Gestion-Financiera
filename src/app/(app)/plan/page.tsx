@@ -19,17 +19,17 @@ export const dynamic = 'force-dynamic';
 /**
  * PLANES Y PRECIOS
  *
- * Dos decisiones que se ven en pantalla y conviene entender:
+ * Decisión de Matías (2026-09-15): vencida la prueba o el plan, no se puede
+ * usar nada de Orden — el candado de pantalla completa (`CandadoCuenta`, en
+ * el layout) tapa el resto de la app y manda para acá. Esta es la única
+ * pantalla que sigue viéndose, porque es adonde hay que venir para pagar.
+ * Los datos no se borran ni se pierden: quedan intactos esperando a que se
+ * active el plan.
  *
- *   · SE MUESTRA LO QUE SE PIERDE, NO LO QUE SE BLOQUEA. Al vencer la
- *     prueba no se le quitan los datos a nadie: se le quita la magia. Por eso
- *     el plan gratis lista "todo tu historial, siempre" en primer lugar. Que
- *     nadie tenga miedo de quedarse afuera de sus propios números.
- *
- *   · EL PRECIO SE ELIGE EN SU MONEDA. Guaraníes para quien lee en español,
- *     dólares para el resto, y se puede cambiar a mano. Ver un precio en una
- *     moneda ajena obliga a hacer una cuenta mental antes de decidir, y esa
- *     cuenta es donde se pierde la venta.
+ * EL PRECIO SE ELIGE EN SU MONEDA. Guaraníes para quien lee en español,
+ * dólares para el resto, y se puede cambiar a mano. Ver un precio en una
+ * moneda ajena obliga a hacer una cuenta mental antes de decidir, y esa
+ * cuenta es donde se pierde la venta.
  */
 export default async function PaginaPlan({
   searchParams,
@@ -138,10 +138,9 @@ export default async function PaginaPlan({
       />
 
       {/* ---------------- Los planes ----------------
-          Ya no aparece una tarjeta «Gratis». Desde la migración 018, gratis
-          dejó de ser un plan y pasa a significar CUENTA VENCIDA: se ve todo y
-          se baja el Excel, pero no se carga nada. Ofrecerlo como si fuera una
-          opción era invitar a elegir el estado de «no poder trabajar». */}
+          Ya no aparece una tarjeta «Gratis». Gratis significa CUENTA
+          VENCIDA: no se puede usar nada de Orden. Ofrecerlo como si fuera
+          una opción era invitar a elegir el estado de «no poder trabajar». */}
       <div className={`grid gap-4 ${planesVisibles.length === 1 ? 'sm:max-w-md' : 'md:grid-cols-2'}`}>
         {planesVisibles.map((plan) => {
           const precio = precioDe(precios, plan, periodo);

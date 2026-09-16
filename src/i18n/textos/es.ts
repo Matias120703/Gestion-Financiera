@@ -706,13 +706,16 @@ export const es = {
 
     // ---- aviso de cuenta ----
     pruebaTermino: 'Se te terminó la prueba',
-    pruebaTerminoDetalle: 'Podés seguir entrando, viendo todo tu historial y bajando tu Excel. Para volver a cargar, activá tu plan.',
+    pruebaTerminoDetalle: 'Para seguir usando Orden hace falta activar tu plan.',
     verPlanes: 'Ver planes',
     ultimoDia: 'Hoy es el último día de tu prueba',
-    ultimoDiaDetalle: 'Mañana vas a poder seguir viendo todo, pero no cargar. Activá tu plan y seguís donde estabas.',
+    ultimoDiaDetalle: 'Mañana se corta el acceso. Activá tu plan y seguís exactamente donde estabas.',
     activarMiPlan: 'Activar mi plan',
     quedanDias: (n: number) => `Te queda${n === 1 ? '' : 'n'} ${n} día${n === 1 ? '' : 's'} de prueba`,
-    quedanDiasDetalle: 'Después vas a poder seguir viendo todo lo tuyo, pero para cargar hace falta activar el plan.',
+    quedanDiasDetalle: 'Cuando termine, hace falta activar el plan para seguir usando Orden.',
+    cuentaBloqueadaTitulo: 'Tu prueba terminó',
+    cuentaBloqueadaDetalle: 'Para seguir usando Orden y ver tus datos hace falta activar un plan. Es un sistema completo, y como cualquier herramienta seria, tiene un precio.',
+    cuentaBloqueadaBoton: 'Activar mi plan',
 
     // ---- varios ----
     desde: 'Desde',
@@ -826,9 +829,9 @@ export const es = {
     ahorroAnual: (n: number) => (n === 1 ? 'Un mes gratis' : `${n} meses gratis`),
     enPrueba: 'Estás probando Orden',
     diasDePrueba: (n: number) => (n === 1 ? 'Te queda 1 día de prueba' : `Te quedan ${n} días de prueba`),
-    pruebaVence: 'Cuando termine, seguís teniendo todos tus datos y podés cargar a mano.',
+    pruebaVence: 'Cuando termine, hace falta activar un plan para seguir usando Orden.',
     vencida: 'Tu plan pagado terminó',
-    vencidaDetalle: 'Tus datos están intactos. Volvé a Pro cuando quieras para recuperar la captura por voz y foto.',
+    vencidaDetalle: 'Tus datos están intactos, esperándote. Activá tu plan para volver a entrar.',
     sinTarjeta: 'Sin tarjeta para probar',
     cancelarCuando: 'Cancelás cuando quieras',
     capturasUsadas: (usadas: number, tope: number) => `${usadas} de ${tope} capturas con IA este mes`,
