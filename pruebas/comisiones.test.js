@@ -731,6 +731,65 @@ async function principal() {
       await pedir(ajenoUid), 'código de recomendación');
   }
 
+  // =====================================================================
+  grupo('15 · Borrar un socio (067)');
+  // =====================================================================
+  {
+    // Desactivar y borrar son cosas distintas, y hasta la 067 solo existía
+    // la primera: la lista únicamente podía crecer.
+    const borrar = (id, nombre) => comoJefe(() => db.query(
+      'select public.borrar_socio($1,$2) j', [id, nombre]).then((r) => r.rows[0].j));
+    const cuantosSocios = () => db.query('select count(*)::int n from public.socios')
+      .then((r) => r.rows[0].n);
+
+    const T = (await guardarSocio({ nombre: 'Cargado por error' })).valor;
+
+    rechazado('solo la administración borra socios',
+      await H.intentar(db, A.uid, () => db.query('select public.borrar_socio($1,$2)',
+        [T.id, 'Cargado por error'])), 'administración de Orden');
+
+    rechazado('el nombre mal escrito no alcanza',
+      await borrar(T.id, 'cargado por error'), 'nombre exacto');
+
+    const antes = await cuantosSocios();
+    aceptado('escrito igual, se va', await borrar(T.id, 'Cargado por error'));
+    ok('y la lista tiene uno menos', await cuantosSocios(), antes - 1);
+    ok('queda constancia de quién era',
+      await db.query(`select detalle ->> 'nombre' as n from public.registro_admin
+                       where accion = 'borrar_socio' order by created_at desc limit 1`)
+        .then((r) => r.rows[0].n), 'Cargado por error');
+
+    rechazado('borrar al que ya no está avisa bien',
+      await borrar(T.id, 'Cargado por error'), 'no existe');
+
+    // Un socio que trajo un negocio NO se borra: ese vínculo es lo que
+    // hace nacer la comisión cuando el cliente paga.
+    const U = (await guardarSocio({ nombre: 'Trajo uno' })).valor;
+    const V = await H.montarEmpresa(db, { email: 'dueno@zapateria.com', nombre: 'Zapatería Este' });
+    await anotar(V.empresaId, U.codigo);
+    rechazado('el que trajo cuentas no se borra', await borrar(U.id, 'Trajo uno'), 'Trajo 1 cuenta');
+
+    // Sacado el referido, sí.
+    await comoJefe(() => db.query('select public.quitar_referido($1)', [V.empresaId]));
+    aceptado('sin el referido, ya se puede', await borrar(U.id, 'Trajo uno'));
+
+    // Con plata de por medio no se borra ni sacando el referido: la
+    // comisión es historial de Orden, no del socio.
+    const W = (await guardarSocio({ nombre: 'Ya cobró algo' })).valor;
+    const X = await H.montarEmpresa(db, { email: 'dueno@cerrajeria.com', nombre: 'Cerrajería Oeste' });
+    await anotar(X.empresaId, W.codigo);
+    await cobrar(X.empresaId, 'pro', 190000);
+    rechazado('con comisiones anotadas no se borra',
+      await borrar(W.id, 'Ya cobró algo'), 'historial de Orden');
+
+    await comoJefe(() => db.query('select public.quitar_referido($1)', [X.empresaId]));
+    rechazado('ni sacándole el referido después',
+      await borrar(W.id, 'Ya cobró algo'), 'historial de Orden');
+    ok('ese sigue en la lista, que es lo que se quería',
+      await db.query('select count(*)::int n from public.socios where id = $1', [W.id])
+        .then((r) => r.rows[0].n), 1);
+  }
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE COMISIONES FALLARON`);

@@ -51,6 +51,35 @@ const NOMBRE_PLAN: Record<string, string> = {
   gratis: 'Vencida', pro: 'Pro', negocio: 'Premium',
 };
 
+/**
+ * Cómo se llama lo que esta cuenta tiene hoy.
+ *
+ * Una cuenta en prueba nace con `plan = 'pro'` en la base —es lo que le
+ * damos gratis esos días— y esta pantalla lo leía tal cual: decía «Pro»
+ * de alguien que no pagó un guaraní. Al ir a activarla el plan ya estaba
+ * en Pro, así que había que elegir Premium para que el select cambiara, y
+ * se terminaba vendiendo un plan que el cliente no pidió.
+ *
+ * Mientras dura la prueba, entonces, lo que manda es la prueba. El plan
+ * de abajo no se muestra: todavía no es de nadie.
+ */
+function comoSeLlama(cuenta: { plan: string; estado: string }) {
+  if (cuenta.estado === 'prueba') return 'En prueba';
+  return NOMBRE_PLAN[cuenta.plan] ?? cuenta.plan;
+}
+
+/**
+ * Qué planes se le pueden vender a esta cuenta.
+ *
+ * Premium es el plan de los negocios: vendedores, productos, lotes. Una
+ * cuenta personal no tiene nada de eso, así que ofrecérselo es ofrecerle
+ * aire. Solo Pro.
+ */
+function planesQueVan(tipo: TipoCuenta): { valor: PlanEfectivo; texto: string }[] {
+  if (tipo === 'personal') return [{ valor: 'pro', texto: 'Pro' }];
+  return [{ valor: 'pro', texto: 'Pro' }, { valor: 'negocio', texto: 'Premium' }];
+}
+
 export function PanelAdmin({
   cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, whatsapp,
 }: {
@@ -205,7 +234,7 @@ export function PanelAdmin({
 
                     <span className="hidden min-w-0 flex-1 lg:block">
                       <span className="block text-[13px] font-semibold text-tinta/70">
-                        {NOMBRE_PLAN[c.plan] ?? c.plan}
+                        {comoSeLlama(c)}
                       </span>
                       <span className="mt-0.5 block text-[12px] text-tinta/45">
                         IA {c.ia_usada}/{c.ia_tope} · {usoIA}%
@@ -400,7 +429,16 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
   onHecho: () => void;
 }) {
   const [codigoSocio, setCodigoSocio] = useState('');
-  const [plan, setPlan] = useState<PlanEfectivo>(cuenta.plan === 'gratis' ? 'pro' : cuenta.plan);
+
+  // Los planes que se le pueden vender a esta cuenta, y el que viene
+  // elegido. Una cuenta personal arranca y termina en Pro: si quedó en
+  // Premium por un error viejo, igual se ofrece Pro y no un plan que no
+  // existe para ella.
+  const planes = planesQueVan(cuenta.tipo_cuenta);
+  const esPersonal = cuenta.tipo_cuenta === 'personal';
+  const [plan, setPlan] = useState<PlanEfectivo>(
+    esPersonal || cuenta.plan === 'gratis' ? 'pro' : cuenta.plan,
+  );
   const [meses, setMeses] = useState(1);
   const [importe, setImporte] = useState('');
   /**
@@ -565,7 +603,7 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
           <div className="rounded-2xl bg-arena p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className={`pastilla ${u.clase}`}>{u.texto}</span>
-              <span className="pastilla bg-superficie text-tinta/60">{NOMBRE_PLAN[cuenta.plan] ?? cuenta.plan}</span>
+              <span className="pastilla bg-superficie text-tinta/60">{comoSeLlama(cuenta)}</span>
               <span className="pastilla bg-superficie text-tinta/60">
                 {cuenta.tipo_cuenta === 'personal' ? 'Personal' : 'Comercio'}
               </span>
@@ -586,13 +624,15 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
               {/* Cuánta gente hay y cuánta entra. Si están al tope hay que
                   verlo acá y no enterarse cuando el cliente reclama que no
                   puede sumar a nadie. */}
-              <Dato
-                etiqueta="Personas"
-                valor={`${cuenta.miembros} de ${cuenta.personas_permitidas}`}
-                detalle={cuenta.tope_vendedores === null
-                  ? 'tope del plan'
-                  : `${cuenta.tope_vendedores} ${cuenta.tope_vendedores === 1 ? 'vendedor pago' : 'vendedores pagos'}`}
-              />
+              {!esPersonal && (
+                <Dato
+                  etiqueta="Personas"
+                  valor={`${cuenta.miembros} de ${cuenta.personas_permitidas}`}
+                  detalle={cuenta.tope_vendedores === null
+                    ? 'tope del plan'
+                    : `${cuenta.tope_vendedores} ${cuenta.tope_vendedores === 1 ? 'vendedor pago' : 'vendedores pagos'}`}
+                />
+              )}
               {cuenta.como_nos_conocio && (
                 <Dato etiqueta="Nos conoció por" valor={cuenta.como_nos_conocio} />
               )}
@@ -701,9 +741,11 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="etiqueta">Plan</label>
-                <select className="campo" value={plan} onChange={(e) => setPlan(e.target.value as PlanEfectivo)}>
-                  <option value="pro">Pro</option>
-                  <option value="negocio">Premium</option>
+                <select
+                  className="campo" value={plan} disabled={planes.length === 1}
+                  onChange={(e) => setPlan(e.target.value as PlanEfectivo)}
+                >
+                  {planes.map((p) => <option key={p.valor} value={p.valor}>{p.texto}</option>)}
                 </select>
               </div>
               <div>
@@ -713,20 +755,25 @@ function FichaCuenta({ cuenta, referido, whatsapp, onCerrar, onHecho }: {
                   value={meses} onChange={(e) => setMeses(Math.max(1, Number(e.target.value) || 1))}
                 />
               </div>
-              <div className="col-span-2">
-                <label className="etiqueta">Cuántos vendedores le habilitás</label>
-                <input
-                  type="number" min={0} max={200} inputMode="numeric" className="campo tabular-nums"
-                  placeholder={cuenta.tope_vendedores === null ? 'lo que diga el plan' : ''}
-                  value={vendedores} onChange={(e) => setVendedores(e.target.value)}
-                />
-                <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">
-                  Sin contar al dueño. 190.000 son 2 vendedores; cada uno de más, 60.000.
-                  {' '}Vacío deja el tope como está
-                  {cuenta.tope_vendedores === null ? ' (hoy: el del plan).' : ` (hoy: ${cuenta.tope_vendedores}).`}
-                  {' '}Escribí <strong className="text-tinta/70">-1</strong> para volver al del plan.
-                </p>
-              </div>
+              {/* Los vendedores son cosa de un negocio. En una cuenta
+                  personal no hay a quién sumar, así que el campo ni
+                  aparece: preguntarlo es hacer dudar al que cobra. */}
+              {!esPersonal && (
+                <div className="col-span-2">
+                  <label className="etiqueta">Cuántos vendedores le habilitás</label>
+                  <input
+                    type="number" min={0} max={200} inputMode="numeric" className="campo tabular-nums"
+                    placeholder={cuenta.tope_vendedores === null ? 'lo que diga el plan' : ''}
+                    value={vendedores} onChange={(e) => setVendedores(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">
+                    Sin contar al dueño. 190.000 son 2 vendedores; cada uno de más, 60.000.
+                    {' '}Vacío deja el tope como está
+                    {cuenta.tope_vendedores === null ? ' (hoy: el del plan).' : ` (hoy: ${cuenta.tope_vendedores}).`}
+                    {' '}Escribí <strong className="text-tinta/70">-1</strong> para volver al del plan.
+                  </p>
+                </div>
+              )}
               <div className="col-span-2">
                 <label className="etiqueta">Cuánto transfirió</label>
                 <input

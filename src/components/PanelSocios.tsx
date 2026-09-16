@@ -447,6 +447,10 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [codigo, setCodigo] = useState('');
+  // Borrar está escondido detrás de un clic y del nombre escrito a mano.
+  // No es desconfianza: es que la lista de socios se mira apurado.
+  const [borrando, setBorrando] = useState(false);
+  const [confirma, setConfirma] = useState('');
 
   async function guardar() {
     setGuardando(true);
@@ -468,6 +472,30 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
       onHecho();
     } catch (e: any) {
       setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setGuardando(false);
+    }
+  }
+
+  /**
+   * Sacar a alguien de la lista para siempre.
+   *
+   * La base (067) es la que decide si se puede: con comisiones anotadas o
+   * con cuentas traídas dice que no y explica por qué. Acá no se repite
+   * esa regla —dos lugares decidiendo lo mismo es un lugar que algún día
+   * va a quedar desactualizado—, solo se muestra lo que contestó.
+   */
+  async function borrar() {
+    setGuardando(true);
+    setError('');
+    try {
+      const { error: e } = await clienteNavegador().rpc('borrar_socio', {
+        p_socio: socio!.id,
+        p_confirmacion: confirma,
+      });
+      if (e) throw e;
+      onHecho();
+    } catch (e: any) {
+      setError(mensajeDeError(e, 'No se pudo borrar.'));
       setGuardando(false);
     }
   }
@@ -577,6 +605,49 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
             >
               {guardando ? 'Guardando…' : socio ? 'Guardar' : 'Crear y darle su código'}
             </button>
+
+            {/* ---- borrar ----
+                Desactivar y borrar son cosas distintas y las dos hacen
+                falta: el que se fue pero trajo clientes se desactiva, y el
+                que se cargó por error se borra. Sin esto, la lista solo
+                crece. */}
+            {socio && (
+              borrando ? (
+                <div className="rounded-xl border border-rojo/30 bg-rojo-claro/30 p-3.5">
+                  <p className="text-[13px] leading-relaxed text-tinta/70">
+                    Se va de la lista para siempre, junto con su código{' '}
+                    <strong className="text-tinta">{socio.codigo}</strong>. Escribí{' '}
+                    <strong className="text-tinta">{socio.nombre}</strong> para confirmar.
+                  </p>
+                  <input
+                    className="campo mt-2.5 py-2.5 text-[14.5px]" value={confirma}
+                    onChange={(e) => setConfirma(e.target.value)} placeholder={socio.nombre}
+                  />
+                  <div className="mt-2.5 flex gap-2">
+                    <button
+                      type="button" onClick={() => { setBorrando(false); setConfirma(''); }}
+                      className="boton-suave flex-1 py-2.5 text-[13.5px]"
+                    >
+                      Mejor no
+                    </button>
+                    <button
+                      type="button" onClick={borrar}
+                      disabled={guardando || confirma.trim() !== socio.nombre}
+                      className="boton-suave flex-1 border-rojo/40 py-2.5 text-[13.5px] text-rojo hover:bg-rojo-claro disabled:opacity-40"
+                    >
+                      {guardando ? 'Borrando…' : 'Borrar'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button" onClick={() => setBorrando(true)} disabled={guardando}
+                  className="w-full py-1 text-[12.5px] font-semibold text-rojo/70 underline"
+                >
+                  Borrar este socio
+                </button>
+              )
+            )}
           </div>
         )}
       </div>
