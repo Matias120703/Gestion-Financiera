@@ -152,7 +152,7 @@ export function BotonCaptura({
         return;
       }
 
-      if (!r.ok) throw new Error(datos?.error ?? 'No se pudo interpretar.');
+      if (!r.ok) throw new Error(datos?.error ?? t.captura.noSePudoInterpretar);
 
       // Pidió algo que esta cuenta no tiene —un turno sin agenda—. Antes eso
       // terminaba guardado como un gasto de cero. Se dice, con la
@@ -190,7 +190,7 @@ export function BotonCaptura({
       setElegido({ id: null, nombre: interpretado.contraparte ?? '', telefono: '' });
       setModo('revisar');
     } catch (e: any) {
-      setError(mensajeDeError(e, 'Algo falló al interpretar.'));
+      setError(mensajeDeError(e, t.captura.fallóInterpretar));
       setModo('menu');
     }
   }
@@ -374,7 +374,7 @@ export function BotonCaptura({
         const d = borrador.deuda ?? DEUDA_VACIA;
         const { error } = await supabase.rpc('crear_deuda', {
           p_empresa: empresaId,
-          p_nombre: borrador.descripcion || 'Deuda',
+          p_nombre: borrador.descripcion || t.captura.tipoDeuda,
           p_tipo: d.clase,
           p_acreedor: d.acreedor ?? '',
           p_monto: borrador.monto,
@@ -413,7 +413,7 @@ export function BotonCaptura({
         const items: ItemInterpretado[] = borrador.items.length > 0
           ? borrador.items
           : [{
-              nombre: borrador.descripcion || 'Venta',
+              nombre: borrador.descripcion || t.captura.tipoVenta,
               cantidad: 1,
               precio_unitario: borrador.monto,
               costo_unitario: 0,
@@ -428,7 +428,7 @@ export function BotonCaptura({
         // para que no llegue como un error del servidor sobre algo que la
         // persona ya dio por confirmado.
         if (borrador.metodo_pago === 'credito' && elegido.nombre.trim().length === 0) {
-          throw new Error('Para fiar hay que decir a quién. Escribí el nombre del cliente.');
+          throw new Error(t.venta.fiarSinNombre);
         }
         const clienteId = borrador.metodo_pago === 'credito'
           ? await asegurarCliente(empresaId, elegido)
@@ -503,7 +503,7 @@ export function BotonCaptura({
       cerrar();
       router.refresh();
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.captura.noSePudoGuardar));
     } finally {
       setGuardando(false);
       setPaso('');
@@ -555,8 +555,8 @@ export function BotonCaptura({
                     personal no hay catálogo ni clientes. */}
                 <p className="mt-1 px-1 text-[14px] leading-relaxed text-white/60">
                   {tipoCuenta === 'personal'
-                    ? 'Contale al sistema lo que pasó. Él lo ordena y vos confirmás.'
-                    : 'Contale lo que pasó o lo que querés anotar: una venta, un gasto, un turno, un cliente, algo nuevo del catálogo. Él lo ordena y vos confirmás.'}
+                    ? t.captura.contaleLoQuePasoPersonal
+                    : t.captura.contaleLoQuePasoNegocio}
                 </p>
 
                 {/* Pidió algo que esta cuenta no tiene. Se muestra lo que
@@ -575,7 +575,7 @@ export function BotonCaptura({
                       type="button" onClick={() => setSinLugar(null)}
                       className="mt-2 text-[12.5px] font-bold text-ambar underline"
                     >
-                      Entendido
+                      {t.captura.entendido}
                     </button>
                   </div>
                 )}
@@ -600,8 +600,8 @@ export function BotonCaptura({
                   <Opcion
                     titulo={t.captura.porVoz}
                     detalle={tipoCuenta === 'personal'
-                      ? '&laquo;Pagué el súper, 250 mil&raquo;'
-                      : '&laquo;Vendí dos perfumes&raquo; · &laquo;Juan, mañana a las tres&raquo;'}
+                      ? t.captura.ejemploVozPersonal
+                      : t.captura.ejemploVozNegocio}
                     onClick={empezarGrabacion}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" /><path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" /></svg>}
                   />
@@ -790,12 +790,12 @@ function Revision({
   }
 
   const etiquetaTipo: Record<TipoCaptura, string> = {
-    venta: 'Venta', gasto: 'Gasto', ingreso: 'Otro ingreso',
-    deuda: 'Deuda', pago_deuda: 'Pago de deuda',
+    venta: t.captura.tipoVenta, gasto: t.captura.tipoGasto, ingreso: t.captura.tipoOtroIngreso,
+    deuda: t.captura.tipoDeuda, pago_deuda: t.captura.tipoPagoDeuda,
     // Estos se revisan en su propia pantalla (RevisionFiado, RevisionProducto,
     // RevisionCliente) o en la agenda; acá están para que el tipo cierre.
-    fiado: 'Te deben', cobro_fiado: 'Te pagaron',
-    turno: 'Turno', producto: 'Catálogo', cliente: 'Cliente',
+    fiado: t.captura.tipoTeDeben, cobro_fiado: t.captura.tipoTePagaron,
+    turno: t.captura.tipoTurno, producto: t.captura.tipoCatalogo, cliente: t.venta.cliente,
   };
 
   // La deuda se pinta en ámbar y no en rojo: no es plata que se fue, es plata
@@ -888,7 +888,7 @@ function Revision({
               empresaId={empresaId}
               valor={elegido}
               alElegir={setElegido}
-              etiqueta="¿A quién se lo fiás?"
+              etiqueta={t.captura.aQuienSeLoFias}
               pedirTelefono
               obligatorio
             />

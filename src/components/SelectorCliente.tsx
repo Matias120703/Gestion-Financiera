@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { useTextos } from '@/i18n/cliente';
 
 export interface ClienteElegido {
   id: string | null;
@@ -35,7 +36,7 @@ interface Sugerencia { id: string; nombre: string; telefono: string }
  * que ninguno: hace que dos personas distintas terminen en la misma ficha.
  */
 export function SelectorCliente({
-  empresaId, valor, alElegir, pedirTelefono = false, etiqueta = 'Cliente', obligatorio = false,
+  empresaId, valor, alElegir, pedirTelefono = false, etiqueta, obligatorio = false,
   placeholder, ayudaTelefono,
 }: {
   empresaId: string;
@@ -49,6 +50,7 @@ export function SelectorCliente({
   /** Para qué se pide el teléfono. Cambia según dónde se usa. */
   ayudaTelefono?: string;
 }) {
+  const t = useTextos();
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([]);
   const [abierto, setAbierto] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
@@ -59,7 +61,7 @@ export function SelectorCliente({
   useEffect(() => {
     if (valor.id || valor.nombre.trim().length < 2) { setSugerencias([]); return; }
     let vigente = true;
-    const t = setTimeout(async () => {
+    const espera = setTimeout(async () => {
       try {
         const { data } = await clienteNavegador().rpc('buscar_clientes', {
           p_empresa: empresaId, p_texto: valor.nombre, p_limite: 6,
@@ -67,7 +69,7 @@ export function SelectorCliente({
         if (vigente) setSugerencias(Array.isArray(data) ? data : []);
       } catch { if (vigente) setSugerencias([]); }
     }, 250);
-    return () => { vigente = false; clearTimeout(t); };
+    return () => { vigente = false; clearTimeout(espera); };
   }, [valor.nombre, valor.id, empresaId]);
 
   // Cerrar al tocar afuera. Sin esto la lista queda tapando el total.
@@ -85,14 +87,14 @@ export function SelectorCliente({
     <div className="space-y-2.5">
       <div className="relative" ref={caja}>
         <span className="etiqueta">
-          {etiqueta}
+          {etiqueta ?? t.venta.cliente}
           {obligatorio && <span className="ml-1 text-rojo">*</span>}
         </span>
 
         <div className="relative">
           <input
             className="campo py-2.5 pr-9"
-            placeholder={placeholder ?? (obligatorio ? 'Nombre de quien se lleva fiado' : 'Opcional')}
+            placeholder={placeholder ?? (obligatorio ? t.venta.nombreQuienFia : t.venta.opcional)}
             value={valor.nombre}
             onFocus={() => setAbierto(true)}
             onChange={(e) => {
@@ -107,7 +109,7 @@ export function SelectorCliente({
               type="button"
               onClick={() => alElegir({ id: null, nombre: '', telefono: '' })}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-1.5 py-1 text-tinta/40 hover:bg-arena hover:text-tinta"
-              aria-label="Quitar el cliente"
+              aria-label={t.venta.quitarCliente}
             >
               ✕
             </button>
@@ -116,7 +118,7 @@ export function SelectorCliente({
 
         {valor.id && (
           <p className="mt-1 text-[12px] font-semibold text-verde-fuerte">
-            ✓ Cliente ya registrado{valor.telefono ? ` · ${valor.telefono}` : ''}
+            {t.venta.clienteRegistrado}{valor.telefono ? ` · ${valor.telefono}` : ''}
           </p>
         )}
 
@@ -145,7 +147,7 @@ export function SelectorCliente({
 
       {pedirTelefono && !valor.id && (
         <label className="block aparecer">
-          <span className="etiqueta">Teléfono</span>
+          <span className="etiqueta">{t.venta.telefono}</span>
           <input
             className="campo py-2.5"
             inputMode="tel"
@@ -154,7 +156,7 @@ export function SelectorCliente({
             onChange={(e) => alElegir({ ...valor, telefono: e.target.value })}
           />
           <span className="mt-1 block text-[12px] leading-snug text-tinta/45">
-            {ayudaTelefono ?? 'Para poder ubicarlo cuando haya que cobrarle. Si no lo tenés, dejalo vacío.'}
+            {ayudaTelefono ?? t.venta.telefonoParaCobrar}
           </span>
         </label>
       )}

@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { useTextos } from '@/i18n/cliente';
+import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
+import type { Textos } from '@/i18n/diccionarios';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -46,14 +48,21 @@ interface LineaCarrito {
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
-/** Efectivo primero: es lo más frecuente y queda preseleccionado. */
-const METODOS: { valor: string; corto: string; largo: string }[] = [
-  { valor: 'efectivo', corto: 'Efectivo', largo: 'Efectivo' },
-  { valor: 'transferencia', corto: 'Transfer.', largo: 'Transferencia' },
-  { valor: 'tarjeta', corto: 'Tarjeta', largo: 'Tarjeta' },
-  { valor: 'credito', corto: 'Fiado', largo: 'Fiado / crédito' },
-  { valor: 'otro', corto: 'Otro', largo: 'Otro' },
-];
+/**
+ * Efectivo primero: es lo más frecuente y queda preseleccionado.
+ *
+ * Se arma con el diccionario: el código que se guarda es siempre el mismo,
+ * lo que cambia con el idioma es cómo se lee en el botón.
+ */
+function metodosDe(t: Textos): { valor: string; corto: string; largo: string }[] {
+  return [
+    { valor: 'efectivo', corto: metodoVisible(t, 'efectivo'), largo: metodoVisible(t, 'efectivo') },
+    { valor: 'transferencia', corto: t.venta.metodoTransferCorto, largo: metodoVisible(t, 'transferencia') },
+    { valor: 'tarjeta', corto: metodoVisible(t, 'tarjeta'), largo: metodoVisible(t, 'tarjeta') },
+    { valor: 'credito', corto: t.venta.metodoFiadoCorto, largo: t.venta.metodoFiadoLargo },
+    { valor: 'otro', corto: metodoVisible(t, 'otro'), largo: metodoVisible(t, 'otro') },
+  ];
+}
 
 export function PantallaVenta({
   empresaId, moneda, productos, frecuentes = [],
@@ -65,6 +74,7 @@ export function PantallaVenta({
   frecuentes?: string[];
 }) {
   const t = useTextos();
+  const METODOS = metodosDe(t);
   const zona = useZona();
   const router = useRouter();
   const dec = decimalesDe(moneda);
@@ -162,7 +172,7 @@ export function PantallaVenta({
       {
         clave: `libre-${Date.now()}`,
         producto_id: null,
-        nombre: nombre || 'Venta suelta',
+        nombre: nombre || t.venta.ventaSuelta,
         cantidad: 1,
         precio_unitario: precio,
         costo_unitario: costo,
@@ -202,7 +212,7 @@ export function PantallaVenta({
       // base lo rechaza; esto lo dice antes, en la pantalla, para que no
       // llegue como un error del servidor después de armar todo el carrito.
       if (metodo === 'credito' && elegido.nombre.trim().length === 0) {
-        setError('Para fiar hay que decir a quién. Escribí el nombre del cliente.');
+        setError(t.venta.fiarSinNombre);
         setGuardando(false);
         return;
       }
@@ -233,10 +243,10 @@ export function PantallaVenta({
       });
       if (error) throw error;
 
-      setExito(`Venta registrada · ${dinero(montoCobrado, moneda)}`);
+      setExito(t.venta.ventaRegistrada(dinero(montoCobrado, moneda)));
       setAvisoStock(
         negativos.length > 0
-          ? `${negativos.map((l) => l.nombre).join(', ')} quedó con stock negativo.`
+          ? t.venta.stockNegativo(negativos.map((l) => l.nombre).join(', '))
           : '',
       );
       limpiar();
@@ -244,7 +254,7 @@ export function PantallaVenta({
       router.refresh();
       setTimeout(() => { setExito(''); setAvisoStock(''); }, 3400);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo registrar la venta.'));
+      setError(mensajeDeError(e, t.venta.noSeRegistro));
     } finally {
       setGuardando(false);
     }
@@ -265,7 +275,7 @@ export function PantallaVenta({
             </span>
             <div className="min-w-0">
               <p className="text-[15.5px] font-bold leading-tight">{exito}</p>
-              {avisoStock && <p className="mt-0.5 text-[12.5px] leading-snug text-white/85">Ojo: {avisoStock}</p>}
+              {avisoStock && <p className="mt-0.5 text-[12.5px] leading-snug text-white/85">{t.venta.ojo} {avisoStock}</p>}
             </div>
           </div>
         </div>
@@ -284,7 +294,7 @@ export function PantallaVenta({
             />
           </div>
           <button type="button" className="boton-suave min-h-[48px] shrink-0 px-4" onClick={() => setLibreAbierto(true)}>
-            + Suelto
+            {t.venta.suelto}
           </button>
         </div>
 
@@ -295,7 +305,7 @@ export function PantallaVenta({
                 key={c} type="button" onClick={() => setCategoria(c)}
                 className={categoria === c ? 'chip-encendido' : 'chip-apagado'}
               >
-                {c === 'todas' ? 'Todas' : c}
+                {c === 'todas' ? t.venta.todas : categoriaVisible(t, c)}
               </button>
             ))}
           </div>
@@ -332,7 +342,7 @@ export function PantallaVenta({
                     </span>
                   )}
                   <span className="line-clamp-2 text-[14px] font-bold leading-snug">
-                    {esFrecuente && <span className="mr-1 text-verde" aria-label="de los que más vendés">★</span>}
+                    {esFrecuente && <span className="mr-1 text-verde" aria-label={t.venta.masVendido}>★</span>}
                     {p.nombre}
                   </span>
                   <span className="mt-2 block">
@@ -343,7 +353,7 @@ export function PantallaVenta({
                       <span className={`mt-0.5 block text-[11.5px] font-semibold ${
                         agotado ? 'text-rojo' : Number(p.stock) <= Number(p.stock_minimo) ? 'text-ambar' : 'text-tinta/40'
                       }`}>
-                        {agotado ? 'sin stock' : `${numero(Number(p.stock))} en stock`}
+                        {agotado ? t.venta.sinStock : t.venta.enStock(numero(Number(p.stock)))}
                       </span>
                     )}
                   </span>
@@ -396,7 +406,7 @@ export function PantallaVenta({
                 className="flex min-w-0 flex-1 flex-col justify-center rounded-xl px-3 py-1.5 text-left transition active:bg-white/10"
               >
                 <span className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wider text-white/45">
-                  {numero(unidades)} {unidades === 1 ? 'producto' : 'productos'}
+                  {t.venta.productosEnCarrito(unidades, numero(unidades))}
                   <svg viewBox="0 0 24 24" className="h-3 w-3" {...trazo}><path d="m6 15 6-6 6 6" /></svg>
                 </span>
                 <span className="truncate text-[23px] font-bold leading-tight tabular-nums text-white">
@@ -408,7 +418,7 @@ export function PantallaVenta({
                 type="button" onClick={cobrar} disabled={guardando || total <= 0}
                 className="min-h-[58px] shrink-0 rounded-xl bg-verde px-6 text-[16.5px] font-bold text-white transition active:scale-[.97] disabled:opacity-50"
               >
-                {guardando ? '…' : 'Cobrar'}
+                {guardando ? '…' : t.venta.cobrar}
               </button>
             </div>
 
@@ -460,6 +470,7 @@ function Carrito(props: {
   setElegido: (c: ClienteElegido) => void;
 }) {
   const t = useTextos();
+  const METODOS = metodosDe(t);
   const {
     carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha,
     empresaId, elegido, setElegido,
@@ -475,7 +486,7 @@ function Carrito(props: {
         <h2 className="text-[15px] font-bold tracking-tight">{t.venta.estaVenta}</h2>
         {carrito.length > 0 && (
           <button type="button" onClick={onLimpiar} className="min-h-[40px] px-2 text-[13px] font-semibold text-tinta/40 hover:text-rojo">
-            Vaciar
+            {t.venta.vaciar}
           </button>
         )}
       </div>
@@ -492,7 +503,7 @@ function Carrito(props: {
                   <div className="flex items-start justify-between gap-2">
                     <span className="text-[14px] font-bold leading-snug">{l.nombre}</span>
                     <button
-                      type="button" onClick={() => onQuitar(l.clave)} aria-label={`Quitar ${l.nombre}`}
+                      type="button" onClick={() => onQuitar(l.clave)} aria-label={t.venta.quitarProducto(l.nombre)}
                       className="icono-toque -mr-2 -mt-2 shrink-0 text-tinta/30 hover:bg-rojo-claro hover:text-rojo"
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -508,7 +519,7 @@ function Carrito(props: {
                       >−</button>
                       <input
                         type="number" inputMode="numeric" min={1} step="any"
-                        aria-label={`Cantidad de ${l.nombre}`}
+                        aria-label={t.venta.cantidadDe(l.nombre)}
                         className="w-12 border-0 bg-transparent p-0 text-center text-[16px] font-bold tabular-nums outline-none"
                         value={l.cantidad}
                         onChange={(e) => onCambiar(l.clave, { cantidad: Math.max(0.01, Number(e.target.value) || 1) })}
@@ -522,7 +533,7 @@ function Carrito(props: {
                     <span className="text-tinta/30">×</span>
                     <input
                       type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-                      aria-label={`Precio de ${l.nombre}`}
+                      aria-label={t.venta.precioDe(l.nombre)}
                       className="campo flex-1 py-2 text-right font-semibold tabular-nums"
                       value={l.precio_unitario}
                       onChange={(e) => onCambiar(l.clave, { precio_unitario: Math.max(0, Number(e.target.value) || 0) })}
@@ -531,7 +542,7 @@ function Carrito(props: {
 
                   <div className="mt-1.5 flex items-center justify-between">
                     <span className={`text-[11.5px] font-semibold ${excede ? 'text-rojo' : 'text-tinta/40'}`}>
-                      {excede ? `Solo quedan ${numero(l.stock!)}` : l.stock !== null ? `${numero(l.stock)} en stock` : 'sin control de stock'}
+                      {excede ? t.venta.soloQuedan(numero(l.stock!)) : l.stock !== null ? t.venta.enStock(numero(l.stock)) : t.venta.sinControlStock}
                     </span>
                     <span className="text-[13.5px] font-bold tabular-nums">
                       {dinero(l.cantidad * l.precio_unitario, moneda)}
@@ -571,7 +582,7 @@ function Carrito(props: {
               type="button" onClick={() => setMasOpciones((v) => !v)}
               className="flex min-h-[44px] w-full items-center justify-between rounded-xl px-1 text-[13.5px] font-semibold text-tinta/50"
             >
-              {masOpciones ? 'Menos opciones' : 'Cliente y fecha'}
+              {masOpciones ? t.venta.menosOpciones : t.venta.clienteYFecha}
               <svg viewBox="0 0 24 24" className={`h-4 w-4 transition ${masOpciones ? 'rotate-180' : ''}`} {...trazo}>
                 <path d="m6 9 6 6 6-6" />
               </svg>
@@ -616,7 +627,7 @@ function Carrito(props: {
 
             {descuento > subtotal && (
               <p className="rounded-xl bg-ambar-claro px-3 py-2.5 text-[13px] font-medium text-ambar">
-                El descuento no puede ser mayor que el subtotal.
+                {t.venta.descuentoMayor}
               </p>
             )}
             {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
@@ -626,7 +637,7 @@ function Carrito(props: {
               onClick={onCobrar}
               disabled={guardando || total <= 0 || descuento > subtotal}
             >
-              {guardando ? 'Registrando…' : `Cobrar ${dinero(total, moneda)}`}
+              {guardando ? t.venta.registrando : t.venta.cobrarMonto(dinero(total, moneda))}
             </button>
           </div>
         </>
@@ -677,7 +688,7 @@ function DialogoLibre({
           </label>
 
           <label className="block">
-            <span className="etiqueta">{t.venta.queEs}<span className="font-normal text-tinta/35">(opcional)</span></span>
+            <span className="etiqueta">{t.venta.queEs} <span className="font-normal text-tinta/35">{t.venta.opcionalEntreParentesis}</span></span>
             <input
               className="campo" placeholder={t.venta.queEsEjemplo} maxLength={120}
               value={nombre} onChange={(e) => setNombre(e.target.value)}
@@ -689,7 +700,7 @@ function DialogoLibre({
               type="button" onClick={() => setConCosto(true)}
               className="min-h-[44px] w-full rounded-xl px-1 text-left text-[13.5px] font-semibold text-tinta/50"
             >
-              + Agregar cuánto te costó
+              {t.venta.agregarCosto}
             </button>
           )}
 
@@ -702,7 +713,7 @@ function DialogoLibre({
                 onChange={(e) => setCosto(Math.max(0, Number(e.target.value) || 0))}
               />
               <span className="mt-1 block text-[12.5px] font-semibold text-verde-fuerte">
-                Ganás {dinero(Math.max(0, precio - costo), moneda)} por unidad
+                {t.venta.ganasPorUnidad(dinero(Math.max(0, precio - costo), moneda))}
               </span>
             </label>
           )}

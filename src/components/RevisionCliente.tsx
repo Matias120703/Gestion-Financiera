@@ -49,7 +49,7 @@ export function RevisionCliente({
       if (err) throw err;
       onListo();
     } catch (e: unknown) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.captura.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -62,7 +62,7 @@ export function RevisionCliente({
           <h2 className="text-[19px] font-bold tracking-tight">{t.captura.revisar}</h2>
           <p className="mt-0.5 text-[13.5px] text-tinta/55">{t.captura.podesCorregir}</p>
         </div>
-        <span className="pastilla shrink-0 bg-arena text-tinta/65">Cliente nuevo</span>
+        <span className="pastilla shrink-0 bg-arena text-tinta/65">{t.captura.clienteNuevo}</span>
       </div>
 
       {borrador.transcripcion && (
@@ -86,11 +86,11 @@ export function RevisionCliente({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="etiqueta">Nombre</span>
+            <span className="etiqueta">{t.captura.nombre}</span>
             <input className="campo" maxLength={80} value={nombre} onChange={(e) => setNombre(e.target.value)} />
           </label>
           <label className="block">
-            <span className="etiqueta">Teléfono</span>
+            <span className="etiqueta">{t.venta.telefono}</span>
             <input
               className="campo" inputMode="tel" maxLength={40} placeholder="0981 234 567"
               value={telefono} onChange={(e) => setTelefono(e.target.value)}
@@ -98,14 +98,14 @@ export function RevisionCliente({
           </label>
         </div>
         <label className="block">
-          <span className="etiqueta">Notas <span className="font-normal text-tinta/40">· opcional</span></span>
+          <span className="etiqueta">{t.captura.notas} <span className="font-normal text-tinta/40">{t.captura.opcional}</span></span>
           <input
-            className="campo" maxLength={1000} placeholder="Prefiere los martes, es alérgica a…"
+            className="campo" maxLength={1000} placeholder={t.captura.notasClienteEjemplo}
             value={notas} onChange={(e) => setNotas(e.target.value)}
           />
         </label>
         <p className="text-[12.5px] leading-snug text-tinta/50">
-          Si ese teléfono ya es de otro cliente, no se duplica: se actualiza el que ya estaba.
+          {t.captura.telefonoNoDuplica}
         </p>
       </div>
 

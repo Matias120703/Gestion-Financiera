@@ -13,12 +13,6 @@ const VACIO: ProductoDictado = {
   precio: null, costo: null, cantidad: null, categoria: 'General',
 };
 
-const ACCIONES: { clave: ProductoDictado['accion']; texto: string }[] = [
-  { clave: 'crear', texto: 'Agregar' },
-  { clave: 'precio', texto: 'Cambiar precio' },
-  { clave: 'stock', texto: 'Sumar stock' },
-];
-
 /**
  * «AGREGÁ EL SHAMPOO: ME CUESTA 20 MIL Y LO VENDO A 35»
  *
@@ -115,20 +109,26 @@ export function RevisionProducto({
           .eq('id', elegido.id).select('id');
       }
       if (res?.error) throw res.error;
-      verificarAfectados(res?.data as any, 'No se guardó: solo el dueño o un administrador puede tocar el catálogo.');
+      verificarAfectados(res?.data as any, t.captura.soloDuenoCatalogo);
       onListo();
     } catch (e: any) {
       const msg: string = e?.message ?? '';
       setError(/duplicate key|unique/i.test(msg)
-        ? 'Ya tenés algo con ese nombre en el catálogo.'
-        : mensajeDeError(e, 'No se pudo guardar.'));
+        ? t.captura.yaExisteEnCatalogo
+        : mensajeDeError(e, t.captura.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
   }
 
-  const titulo = p.accion === 'crear' ? (p.es_servicio ? 'Servicio nuevo' : 'Producto nuevo')
-    : p.accion === 'precio' ? 'Precio nuevo' : 'Entró stock';
+  const titulo = p.accion === 'crear' ? (p.es_servicio ? t.captura.servicioNuevo : t.captura.productoNuevo)
+    : p.accion === 'precio' ? t.captura.precioNuevo : t.captura.entroStock;
+
+  const ACCIONES: { clave: ProductoDictado['accion']; texto: string }[] = [
+    { clave: 'crear', texto: t.captura.accionAgregar },
+    { clave: 'precio', texto: t.captura.accionCambiarPrecio },
+    { clave: 'stock', texto: t.captura.accionSumarStock },
+  ];
 
   const segmento = (activo: boolean) =>
     `rounded-lg px-2 py-2 text-center text-[13px] font-semibold transition ${
@@ -177,35 +177,35 @@ export function RevisionProducto({
           <>
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
               <button type="button" className={segmento(p.es_servicio)} onClick={() => set({ es_servicio: true })}>
-                Servicio
+                {t.captura.servicio}
               </button>
               <button type="button" className={segmento(!p.es_servicio)} onClick={() => set({ es_servicio: false })}>
-                Producto
+                {t.captura.producto}
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="col-span-2 block">
-                <span className="etiqueta">Nombre</span>
+                <span className="etiqueta">{t.captura.nombre}</span>
                 <input className="campo" maxLength={120} value={p.nombre} onChange={(e) => set({ nombre: e.target.value })} />
               </label>
               <label className="block">
-                <span className="etiqueta">Lo vendés a</span>
+                <span className="etiqueta">{t.captura.loVendesA}</span>
                 <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
                   placeholder="0" value={p.precio ?? ''} onChange={(e) => set({ precio: cifra(e.target.value) })} />
               </label>
               <label className="block">
-                <span className="etiqueta">Categoría</span>
+                <span className="etiqueta">{t.captura.campoCategoria}</span>
                 <input className="campo" maxLength={40} value={p.categoria} onChange={(e) => set({ categoria: e.target.value })} />
               </label>
               {!p.es_servicio && (
                 <>
                   <label className="block">
-                    <span className="etiqueta">Te cuesta</span>
+                    <span className="etiqueta">{t.captura.teCuesta}</span>
                     <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
                       placeholder="0" value={p.costo ?? ''} onChange={(e) => set({ costo: cifra(e.target.value) })} />
                   </label>
                   <label className="block">
-                    <span className="etiqueta">Cuántos tenés</span>
+                    <span className="etiqueta">{t.captura.cuantosTenes}</span>
                     <input type="number" inputMode="decimal" min={0} step="any" className="campo tabular-nums"
                       placeholder="0" value={p.cantidad ?? ''} onChange={(e) => set({ cantidad: cifra(e.target.value) })} />
                   </label>
@@ -214,19 +214,19 @@ export function RevisionProducto({
             </div>
             {!p.es_servicio && (p.precio ?? 0) > 0 && (p.costo ?? 0) > 0 && (
               <p className="rounded-xl bg-arena px-3 py-2 text-[13px] text-tinta/60">
-                Ganás {plata((p.precio ?? 0) - (p.costo ?? 0))} por unidad.
+                {t.captura.ganasPorUnidad(plata((p.precio ?? 0) - (p.costo ?? 0)))}
               </p>
             )}
           </>
         ) : (
           <>
             <div>
-              <label className="etiqueta">{p.accion === 'precio' ? '¿A cuál?' : '¿De cuál entró?'}</label>
+              <label className="etiqueta">{p.accion === 'precio' ? t.captura.aCual : t.captura.deCualEntro}</label>
               {catalogo === null ? (
                 <p className="py-2 text-[13px] text-tinta/45">{t.comun.cargando}</p>
               ) : opciones.length === 0 ? (
                 <p className="rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-                  {p.accion === 'stock' ? 'No tenés productos que lleven stock.' : 'Tu catálogo está vacío.'}
+                  {p.accion === 'stock' ? t.captura.sinProductosConStock : t.captura.catalogoVacio}
                 </p>
               ) : (
                 <select className="campo" value={p.producto_id ?? ''} onChange={(e) => set({ producto_id: e.target.value || null })}>
@@ -237,21 +237,21 @@ export function RevisionProducto({
             </div>
             {p.accion === 'precio' ? (
               <label className="block">
-                <span className="etiqueta">Precio nuevo</span>
+                <span className="etiqueta">{t.captura.precioNuevo}</span>
                 <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
                   placeholder="0" value={p.precio ?? ''} onChange={(e) => set({ precio: cifra(e.target.value) })} />
                 {elegido && (
-                  <span className="mt-1 block text-[12.5px] text-tinta/50">Hoy está a {plata(Number(elegido.precio))}.</span>
+                  <span className="mt-1 block text-[12.5px] text-tinta/50">{t.captura.hoyEstaA(plata(Number(elegido.precio)))}</span>
                 )}
               </label>
             ) : (
               <label className="block">
-                <span className="etiqueta">Cuántos entraron</span>
+                <span className="etiqueta">{t.captura.cuantosEntraron}</span>
                 <input type="number" inputMode="decimal" min={0} step="any" className="campo tabular-nums"
                   placeholder="0" value={p.cantidad ?? ''} onChange={(e) => set({ cantidad: cifra(e.target.value) })} />
                 {elegido && (p.cantidad ?? 0) > 0 && (
                   <span className="mt-1 block text-[12.5px] font-semibold text-verde-fuerte">
-                    Tenés {numero(Number(elegido.stock))} → vas a tener {numero(Number(elegido.stock) + (p.cantidad ?? 0))}.
+                    {t.captura.vasATener(numero(Number(elegido.stock)), numero(Number(elegido.stock) + (p.cantidad ?? 0)))}
                   </span>
                 )}
               </label>

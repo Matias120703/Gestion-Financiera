@@ -107,7 +107,7 @@ export function RevisionFiado({
         if (err) throw err;
       } else {
         const cliente = await asegurarCliente(empresaId, elegido);
-        if (!cliente) throw new Error('Decí quién te debe.');
+        if (!cliente) throw new Error(t.captura.decíQuienTeDebe);
         const { error: err } = await sb.rpc('anotar_fiado', {
           p_empresa: empresaId, p_cliente: cliente, p_monto: borrador.monto,
           p_concepto: borrador.descripcion ?? '', p_fecha: borrador.fecha || null,
@@ -116,7 +116,7 @@ export function RevisionFiado({
       }
       onListo();
     } catch (e: unknown) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.captura.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -130,7 +130,7 @@ export function RevisionFiado({
           <p className="mt-0.5 text-[13.5px] text-tinta/55">{t.captura.podesCorregir}</p>
         </div>
         <span className={`pastilla shrink-0 ${esCobro ? 'bg-verde-claro text-verde-fuerte' : 'bg-ambar-claro text-ambar'}`}>
-          {esCobro ? 'Te pagaron' : 'Te deben'}
+          {esCobro ? t.captura.tipoTePagaron : t.captura.tipoTeDeben}
         </span>
       </div>
 
@@ -158,24 +158,24 @@ export function RevisionFiado({
 
         {esCobro ? (
           <div className="col-span-2">
-            <label className="etiqueta">¿Quién te pagó?</label>
+            <label className="etiqueta">{t.captura.quienTePago}</label>
             {deudores === null ? (
               <p className="py-2 text-[13px] text-tinta/45">{t.comun.cargando}</p>
             ) : deudores.length === 0 ? (
               <p className="rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-                Nadie te debe nada todavía, así que no hay a quién cobrarle.
+                {t.captura.nadieTeDebe}
               </p>
             ) : (
               <select className="campo" value={quien} onChange={(e) => setQuien(e.target.value)}>
                 <option value="">{t.captura.elegiUna}</option>
                 {deudores.map((d) => (
-                  <option key={d.cliente_id} value={d.cliente_id}>{d.nombre} — debe {plata(d.saldo)}</option>
+                  <option key={d.cliente_id} value={d.cliente_id}>{d.nombre} — {t.captura.debe(plata(d.saldo))}</option>
                 ))}
               </select>
             )}
             {deudor && borrador.monto > deudor.saldo && (
               <p className="mt-2 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-                {deudor.nombre} te debe {plata(deudor.saldo)}: no se le puede cobrar más que eso.
+                {t.captura.noSeLePuedeCobrarMas(deudor.nombre, plata(deudor.saldo))}
               </p>
             )}
           </div>
@@ -186,19 +186,19 @@ export function RevisionFiado({
                 empresaId={empresaId}
                 valor={elegido}
                 alElegir={setElegido}
-                etiqueta="¿Quién te debe?"
-                placeholder="Nombre de quien te debe"
-                ayudaTelefono="Para poder ubicarlo cuando haya que cobrarle. Si no lo tenés, dejalo vacío."
+                etiqueta={t.captura.quienTeDebe}
+                placeholder={t.captura.nombreQuienTeDebe}
+                ayudaTelefono={t.venta.telefonoParaCobrar}
                 pedirTelefono
                 obligatorio
               />
             </div>
             <div className="col-span-2">
               <label className="etiqueta">
-                Por qué te debe <span className="font-normal text-tinta/40">· opcional</span>
+                {t.captura.porQueTeDebe} <span className="font-normal text-tinta/40">{t.captura.opcional}</span>
               </label>
               <input
-                className="campo" maxLength={200} placeholder="Plata que le prestaste, mercadería…"
+                className="campo" maxLength={200} placeholder={t.captura.porQueTeDebeEjemplo}
                 value={borrador.descripcion} onChange={(e) => set('descripcion', e.target.value)}
               />
             </div>
@@ -212,7 +212,7 @@ export function RevisionFiado({
 
         {esCobro && (
           <div>
-            <label className="etiqueta">Cómo te pagó</label>
+            <label className="etiqueta">{t.captura.comoTePago}</label>
             <select className="campo" value={forma} onChange={(e) => set('metodo_pago', e.target.value)}>
               <option value="efectivo">{t.captura.metodoEfectivo}</option>
               <option value="transferencia">{t.captura.metodoTransferencia}</option>
@@ -224,7 +224,7 @@ export function RevisionFiado({
       </div>
 
       <div className="mt-5 rounded-2xl bg-arena p-4">
-        <label className="etiqueta">{esCobro ? '¿Cuánto te pagó?' : '¿Cuánto te debe?'}</label>
+        <label className="etiqueta">{esCobro ? t.captura.cuantoTePago : t.captura.cuantoTeDebe}</label>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
           className="campo text-[22px] font-bold tabular-nums"
@@ -238,8 +238,8 @@ export function RevisionFiado({
           ingreso es justo lo que nadie espera. */}
       <p className="mt-3 text-[12.5px] leading-snug text-tinta/50">
         {esCobro
-          ? 'Baja lo que te debe. No suma como ingreso: esa plata ya se contó cuando se vendió o se prestó.'
-          : `Queda en «${esPersonal ? 'Me deben' : 'Fiado'}». No suma a tus ventas ni a tus ingresos: todavía no entró nada.`}
+          ? t.captura.cobroNoEsIngreso
+          : t.captura.fiadoNoEsIngreso(esPersonal ? t.nav.meDeben : t.nav.fiado)}
       </p>
 
       {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
