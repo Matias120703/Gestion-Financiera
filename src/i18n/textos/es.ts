@@ -38,6 +38,29 @@ export const es = {
     milMillones: 'mil M',
   },
 
+  /**
+   * NOMBRES QUE SE GUARDAN EN ESPAÑOL Y SE MUESTRAN EN CADA IDIOMA.
+   *
+   * Las categorías y las formas de pago son datos, no textos: quedan en la
+   * base tal cual. Si se tradujeran al guardar, un negocio con el dueño en
+   * español y un vendedor en portugués tendría la misma plata partida en
+   * «Mercadería» y «Mercadoria», y ningún reporte volvería a sumar bien.
+   *
+   * Por eso se guardan siempre igual y se traducen recién al mostrarlas
+   * (ver `categoriaVisible` en i18n/nombres.ts). En español no hace falta
+   * ninguna entrada: el nombre guardado ya es el que se ve. Una categoría
+   * propia que la persona inventó no está en ninguna lista y se muestra
+   * como la escribió.
+   */
+  categorias: {} as Record<string, string>,
+  metodos: {
+    efectivo: 'Efectivo',
+    transferencia: 'Transferencia',
+    tarjeta: 'Tarjeta',
+    credito: 'Crédito',
+    otro: 'Otro',
+  } as Record<string, string>,
+
   rangos: {
     hoy: 'Hoy',
     ayer: 'Ayer',
@@ -558,6 +581,29 @@ export const es = {
     sinCostoServicio: 'Un servicio no tiene costo de compra: lo que se lleva quien lo hace se define en Equipo y reparto.',
     stockActual: 'Stock actual',
     avisarCuandoQuede: 'Avisar cuando quede',
+  },
+
+  /** GASTOS E INGRESOS SUELTOS: la pantalla de cargar a mano. */
+  gastos: {
+    salioPlata: 'Salió plata',
+    entroPlata: 'Entró plata',
+    montoMayorACero: 'Poné un monto mayor a cero.',
+    registrado: (esGasto: boolean, monto: string) => `${esGasto ? 'Gasto' : 'Ingreso'} registrado · ${monto}`,
+    menosDetalles: 'Menos detalles',
+    masDetalles: 'Agregar detalle, fecha o forma de pago',
+    siNoPonesNada: (categoria: string) => `(si no ponés nada, queda «${categoria}»)`,
+    ejemploGasto: 'Ej. Combustible para el reparto',
+    ejemploIngreso: 'Ej. Aporte de socio',
+    guardarMonto: (monto: string) => `Guardar ${monto}`,
+    ultimosDelPeriodo: 'Últimos movimientos del periodo',
+    delPeriodo: 'Movimientos del periodo',
+    sinDescripcion: 'Sin descripción',
+    porVoz: 'por voz',
+    seMuestranRecientes: 'Se muestran los más recientes. Los totales de arriba sí incluyen todo el periodo.',
+    paraVerElResto: 'Para ver el resto, entrá al',
+    historialCompleto: 'historial completo',
+    noSePudoGuardar: 'No se pudo guardar.',
+    noSePudoAnular: 'No se pudo anular.',
   },
 
   /** Lo que queda: pantallas que también estaban escritas en español a mano. */

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useTextos } from '@/i18n/cliente';
+import { useTextos, useLocale } from '@/i18n/cliente';
+import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, fechaLegible } from '@/lib/formato';
@@ -21,6 +22,9 @@ const RAPIDAS_GASTO = ['Mercadería', 'Transporte', 'Comida', 'Servicios', 'Publ
 const RAPIDAS_INGRESO = ['Aporte', 'Préstamo', 'Devolución', 'Otros'];
 const SUGERIDAS = ['Mercadería', 'Transporte', 'Comida', 'Publicidad', 'Servicios', 'Alquiler', 'Sueldos', 'Impuestos', 'Otros'];
 
+/** Las formas de pago, en el orden de los chips. Se guarda el código; lo que se lee sale de `metodoVisible`. */
+const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'];
+
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
 export function PantallaGastos({
@@ -37,6 +41,7 @@ export function PantallaGastos({
   hayMas?: boolean;
 }) {
   const t = useTextos();
+  const locale = useLocale();
   const zona = useZona();
   const router = useRouter();
   const dec = decimalesDe(moneda);
@@ -61,7 +66,7 @@ export function PantallaGastos({
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (monto <= 0) { setError('Poné un monto mayor a cero.'); return; }
+    if (monto <= 0) { setError(t.gastos.montoMayorACero); return; }
     // La descripción es opcional: si no la escribís, queda la categoría.
     // Escribir texto con el teclado en medio del día es lo que más frena.
 
@@ -85,13 +90,13 @@ export function PantallaGastos({
         origen: 'manual',
       });
       if (error) throw error;
-      setExito(`${tipo === 'gasto' ? 'Gasto' : 'Ingreso'} registrado · ${dinero(monto, moneda)}`);
+      setExito(t.gastos.registrado(tipo === 'gasto', dinero(monto, moneda)));
       setDescripcion(''); setMonto(0); setNotas('');
       setMasOpciones(false);
       router.refresh();
       setTimeout(() => setExito(''), 3400);
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar.'));
+      setError(mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -103,7 +108,7 @@ export function PantallaGastos({
       p_movimiento: id,
       p_motivo: motivo || null,
     });
-    if (error) throw new Error(mensajeDeError(error, 'No se pudo anular.'));
+    if (error) throw new Error(mensajeDeError(error, t.gastos.noSePudoAnular));
     setAAnular(null);
     router.refresh();
   }
@@ -125,14 +130,14 @@ export function PantallaGastos({
       {/* ------------------------------ formulario ------------------------------ */}
       <div className="tarjeta h-fit p-4">
         <div className="grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
-          {(['gasto', 'ingreso'] as const).map((t) => (
+          {(['gasto', 'ingreso'] as const).map((clase) => (
             <button
-              key={t} type="button" onClick={() => { setTipo(t); setCategoria(t === 'gasto' ? 'Mercadería' : 'Otros ingresos'); }}
+              key={clase} type="button" onClick={() => { setTipo(clase); setCategoria(clase === 'gasto' ? 'Mercadería' : 'Otros ingresos'); }}
               className={`rounded-lg py-2 text-[13.5px] font-bold transition ${
-                tipo === t ? 'bg-superficie shadow-sm ' + (t === 'gasto' ? 'text-rojo' : 'text-verde-fuerte') : 'text-tinta/50'
+                tipo === clase ? 'bg-superficie shadow-sm ' + (clase === 'gasto' ? 'text-rojo' : 'text-verde-fuerte') : 'text-tinta/50'
               }`}
             >
-              {t === 'gasto' ? 'Salió plata' : 'Entró plata'}
+              {clase === 'gasto' ? t.gastos.salioPlata : t.gastos.entroPlata}
             </button>
           ))}
         </div>
@@ -159,7 +164,7 @@ export function PantallaGastos({
                   key={c} type="button" onClick={() => setCategoria(c)}
                   className={categoria === c ? 'chip-encendido' : 'chip-apagado'}
                 >
-                  {c}
+                  {categoriaVisible(t, c)}
                 </button>
               ))}
             </div>
@@ -171,7 +176,7 @@ export function PantallaGastos({
               />
             )}
             <datalist id="categorias-gasto">
-              {categorias.map((c) => <option key={c} value={c} />)}
+              {categorias.map((c) => <option key={c} value={c} label={categoriaVisible(t, c)} />)}
             </datalist>
           </div>
 
@@ -179,7 +184,7 @@ export function PantallaGastos({
             type="button" onClick={() => setMasOpciones((v) => !v)}
             className="flex min-h-[44px] w-full items-center justify-between rounded-xl px-1 text-[13.5px] font-semibold text-tinta/50"
           >
-            {masOpciones ? 'Menos detalles' : 'Agregar detalle, fecha o forma de pago'}
+            {masOpciones ? t.gastos.menosDetalles : t.gastos.masDetalles}
             <svg viewBox="0 0 24 24" className={`h-4 w-4 transition ${masOpciones ? 'rotate-180' : ''}`} {...trazo}>
               <path d="m6 9 6 6 6-6" />
             </svg>
@@ -188,10 +193,10 @@ export function PantallaGastos({
           {masOpciones && (
             <div className="space-y-3 aparecer">
               <label className="block">
-                <span className="etiqueta">{t.pantallas.detalle}<span className="font-normal text-tinta/35">(si no ponés nada, queda &laquo;{categoria || 'General'}&raquo;)</span></span>
+                <span className="etiqueta">{t.pantallas.detalle}<span className="font-normal text-tinta/35">{t.gastos.siNoPonesNada(categoriaVisible(t, categoria || 'General'))}</span></span>
                 <input
                   className="campo" maxLength={120}
-                  placeholder={tipo === 'gasto' ? 'Ej. Combustible para el reparto' : 'Ej. Aporte de socio'}
+                  placeholder={tipo === 'gasto' ? t.gastos.ejemploGasto : t.gastos.ejemploIngreso}
                   value={descripcion} onChange={(e) => setDescripcion(e.target.value)}
                 />
               </label>
@@ -199,12 +204,12 @@ export function PantallaGastos({
               <div>
                 <span className="etiqueta">{t.pantallas.formaDePago}</span>
                 <div className="scroll-limpio flex gap-2 overflow-x-auto">
-                  {[['efectivo', 'Efectivo'], ['transferencia', 'Transferencia'], ['tarjeta', 'Tarjeta'], ['credito', 'Crédito'], ['otro', 'Otro']].map(([v, etiqueta]) => (
+                  {METODOS.map((v) => (
                     <button
                       key={v} type="button" onClick={() => setMetodo(v)}
                       className={metodo === v ? 'chip-encendido' : 'chip-apagado'}
                     >
-                      {etiqueta}
+                      {metodoVisible(t, v)}
                     </button>
                   ))}
                 </div>
@@ -226,13 +231,13 @@ export function PantallaGastos({
           {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
           <button className="boton-principal min-h-[52px] w-full text-[16px]" disabled={guardando || monto <= 0}>
-            {guardando ? 'Guardando…' : monto > 0 ? `Guardar ${dinero(monto, moneda)}` : 'Guardar'}
+            {guardando ? t.comun.guardando : monto > 0 ? t.gastos.guardarMonto(dinero(monto, moneda)) : t.comun.guardar}
           </button>
         </form>
       </div>
 
       {/* ------------------------------ listado ------------------------------ */}
-      <Seccion titulo={hayMas ? 'Últimos movimientos del periodo' : 'Movimientos del periodo'}>
+      <Seccion titulo={hayMas ? t.gastos.ultimosDelPeriodo : t.gastos.delPeriodo}>
         {movimientos.length === 0 ? (
           <Vacio titulo={t.pantallas.nadaPorAca} detalle={t.pantallas.nadaPorAcaDetalle} />
         ) : (
@@ -252,12 +257,12 @@ export function PantallaGastos({
 
                   <div className="min-w-0 flex-1">
                     <p className={`truncate text-[14px] font-semibold ${anulado ? 'text-tinta/40 line-through' : ''}`}>
-                      {mv.descripcion || 'Sin descripción'}
+                      {mv.descripcion || t.gastos.sinDescripcion}
                     </p>
                     <p className="truncate text-[12px] text-tinta/45">
                       {anulado && <span className="font-bold text-rojo">{t.pantallas.anulado} · </span>}
-                      {fechaLegible(mv.fecha, false)} · {mv.categoria} · {mv.metodo_pago}
-                      {mv.origen !== 'manual' && ' · por voz'}
+                      {fechaLegible(mv.fecha, false, locale)} · {categoriaVisible(t, mv.categoria)} · {metodoVisible(t, mv.metodo_pago)}
+                      {mv.origen !== 'manual' && ` · ${t.gastos.porVoz}`}
                     </p>
                   </div>
 
@@ -270,7 +275,7 @@ export function PantallaGastos({
                   {puedeAnular({ rol, userId }, mv, hoy) && (
                     <button
                       type="button" onClick={() => setAAnular(mv)}
-                      aria-label={t.pantallas.anularMovimiento} title="Anular"
+                      aria-label={t.pantallas.anularMovimiento} title={t.pantallas.anular}
                       className="icono-toque shrink-0 text-tinta/25 transition hover:bg-rojo-claro hover:text-rojo"
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
@@ -285,8 +290,8 @@ export function PantallaGastos({
         )}
         {hayMas && (
           <p className="border-t border-borde px-4 py-3 text-[12.5px] text-tinta/50">
-            Se muestran los más recientes. Los totales de arriba sí incluyen todo el periodo.
-            Para ver el resto, entrá al <a href="/movimientos" className="boton-texto">historial completo</a>.
+            {t.gastos.seMuestranRecientes}{' '}
+            {t.gastos.paraVerElResto} <a href="/movimientos" className="boton-texto">{t.gastos.historialCompleto}</a>.
           </p>
         )}
       </Seccion>
