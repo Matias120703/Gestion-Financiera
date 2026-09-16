@@ -3,6 +3,7 @@ import { type Moneda, dinero, dineroCorto, fechaLegible } from '@/lib/formato';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type { ResumenPersonal, ResumenDeudas } from '@/lib/tipos';
 import type { Textos as Diccionario } from '@/i18n';
+import { categoriaVisible } from '@/i18n/nombres';
 
 /**
  * EL PANEL DE UNA CUENTA PERSONAL
@@ -139,7 +140,7 @@ export function PanelPersonal({
               return (
                 <li key={e.categoria} className="px-4 py-3">
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="truncate text-[14.5px] font-semibold">{e.categoria}</span>
+                    <span className="truncate text-[14.5px] font-semibold">{categoriaVisible(t, e.categoria)}</span>
                     <span className="shrink-0 text-[14.5px] font-bold tabular-nums text-verde-fuerte">
                       {plata(Number(e.monto))}
                     </span>
@@ -160,7 +161,7 @@ export function PanelPersonal({
           <p className="border-t border-borde px-4 py-3 text-[13px] leading-relaxed text-tinta/55">
             {t.panelPersonal.fueraDeLoHabitual(
               plata(totalEntradas - Number(mayorEntrada.monto)),
-              mayorEntrada.categoria,
+              categoriaVisible(t, mayorEntrada.categoria),
             )}
           </p>
         )}

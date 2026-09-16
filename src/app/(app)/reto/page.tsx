@@ -7,6 +7,7 @@ import { traerResumen, traerRanking, traerSerieDiaria } from '@/lib/agregados';
 import { diasDelRango, diffDias, hoyISO } from '@/lib/fechas';
 import { dinero, dineroCorto, porcentaje, numero, fechaLegible, dineroQuizas, porcentajeQuizas } from '@/lib/formato';
 import { Barra, Indicador, Vacio, Seccion, GraficoDiario } from '@/components/Piezas';
+import { Rico } from '@/components/Rico';
 import { EditorReto } from '@/components/EditorReto';
 import { permisosDe } from '@/lib/permisos';
 import type { Reto } from '@/lib/tipos';
@@ -24,6 +25,7 @@ export const dynamic = 'force-dynamic';
 export default async function PaginaReto() {
   const ctx = await contextoObligatorio();
   const t = textos();
+  const locale = FICHA[idiomaActual()].locale;
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
   if (!tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/reto')) redirect('/panel');
 
@@ -80,17 +82,15 @@ export default async function PaginaReto() {
             <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">{t.pantallas.retoEnCurso}</p>
             <h2 className="mt-1.5 text-[22px] font-bold tracking-tight">{activo.nombre}</h2>
             <p className="mt-1 text-[13.5px] text-white/50">
-              {fechaLegible(activo.fecha_inicio)} — {fechaLegible(activo.fecha_fin)}
+              {fechaLegible(activo.fecha_inicio, true, locale)} — {fechaLegible(activo.fecha_fin, true, locale)}
             </p>
           </div>
           <div className="px-5 py-6">
             <p className="text-[14px] leading-relaxed text-tinta/65">
-              Esta meta se mide por <strong>ganancia neta</strong>, que se calcula con los costos del
-              negocio. Esa información la ve el propietario y los administradores.
+              <Rico texto={t.pantallas.retoPorGanancia} />
             </p>
             <p className="mt-3 text-[13.5px] text-tinta/55">
-              Lo que sí podés ver: en este periodo se vendieron{' '}
-              <strong className="text-tinta">{dinero(r.ventas, m)}</strong> en {numero(r.cantidadVentas)} operaciones.
+              <Rico texto={t.pantallas.retoLoQueSiVes(dinero(r.ventas, m), numero(r.cantidadVentas))} negrita="text-tinta" />
             </p>
           </div>
         </div>
@@ -121,7 +121,7 @@ export default async function PaginaReto() {
   ]);
   const mejorDia = [...serie].sort((a, b) => b.ventas - a.ventas)[0];
 
-  const etiquetaMedida = activo.medida === 'ganancia' ? 'ganancia neta' : 'ventas';
+  const etiquetaMedida = activo.medida === 'ganancia' ? t.pantallas.medidaGanancia : t.pantallas.medidaVentas;
 
   return (
     <div className="space-y-5">
@@ -129,11 +129,11 @@ export default async function PaginaReto() {
       <div className="tarjeta overflow-hidden">
         <div className="bg-noche px-5 py-6 text-white">
           <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">
-            {terminó ? 'Reto terminado' : yaEmpezó ? 'Reto en curso' : 'Reto por empezar'}
+            {terminó ? t.pantallas.retoTerminado : yaEmpezó ? t.pantallas.retoEnCurso : t.pantallas.retoPorEmpezar}
           </p>
           <h2 className="mt-1.5 text-[22px] font-bold tracking-tight lg:text-[26px]">{activo.nombre}</h2>
           <p className="mt-1 text-[13.5px] text-white/50">
-            {fechaLegible(activo.fecha_inicio)} — {fechaLegible(activo.fecha_fin)} · meta de {etiquetaMedida}
+            {fechaLegible(activo.fecha_inicio, true, locale)} — {fechaLegible(activo.fecha_fin, true, locale)} · {t.pantallas.metaDe(etiquetaMedida)}
           </p>
 
           <div className="mt-6 flex items-end justify-between gap-4">
@@ -141,7 +141,7 @@ export default async function PaginaReto() {
               <p className="text-[34px] font-bold leading-none tracking-tight tabular-nums lg:text-[42px]">
                 {dineroCorto(logrado, m)}
               </p>
-              <p className="mt-1.5 text-[13.5px] text-white/50">de {dinero(meta, m)}</p>
+              <p className="mt-1.5 text-[13.5px] text-white/50">{t.pantallas.deMonto(dinero(meta, m))}</p>
             </div>
             <p className="text-[30px] font-bold leading-none tabular-nums text-verde lg:text-[36px]">
               {porcentaje(Math.min(avance, 999), 0)}
@@ -160,25 +160,25 @@ export default async function PaginaReto() {
               {falta === 0 ? (
                 <span className="text-verde">{t.pantallas.metaAlcanzadaDetalle}</span>
               ) : diasRestantes > 0 ? (
-                <>{t.pantallas.teFaltan}<span className="text-verde">{dinero(falta, m)}</span> en {diasRestantes} día{diasRestantes === 1 ? '' : 's'}.</>
+                <Rico texto={t.pantallas.teFaltanEn(dinero(falta, m), diasRestantes)} negrita="font-semibold text-verde" />
               ) : (
-                <>Último día. Te faltan {dinero(falta, m)}.</>
+                <>{t.pantallas.ultimoDiaFaltan(dinero(falta, m))}</>
               )}
             </p>
           )}
         </div>
 
         <div className="grid grid-cols-2 divide-x divide-borde border-t border-borde lg:grid-cols-4">
-          <Celda titulo={t.pantallas.porDiaParaLlegar} valor={dineroCorto(ritmoNecesario, m)} detalle={diasRestantes > 0 ? `${diasRestantes} días restantes` : 'sin días restantes'} />
-          <Celda titulo={t.pantallas.ritmoActual} valor={dineroCorto(ritmoActual, m)} detalle="promedio por día" />
+          <Celda titulo={t.pantallas.porDiaParaLlegar} valor={dineroCorto(ritmoNecesario, m)} detalle={diasRestantes > 0 ? t.pantallas.diasRestantes(diasRestantes) : t.pantallas.sinDiasRestantes} />
+          <Celda titulo={t.pantallas.ritmoActual} valor={dineroCorto(ritmoActual, m)} detalle={t.pantallas.promedioPorDia} />
           <Celda
-            titulo="Vas" valor={diferencia >= 0 ? 'adelantado' : 'atrasado'}
-            detalle={`${diferencia >= 0 ? '+' : '−'} ${dineroCorto(Math.abs(diferencia), m)} vs. lo previsto`}
+            titulo={t.pantallas.vas} valor={diferencia >= 0 ? t.pantallas.adelantado : t.pantallas.atrasado}
+            detalle={t.pantallas.vsLoPrevisto(diferencia >= 0 ? '+' : '−', dineroCorto(Math.abs(diferencia), m))}
             tono={diferencia >= 0 ? 'bueno' : 'malo'}
           />
           <Celda
             titulo={t.pantallas.siSeguisAsi} valor={dineroCorto(proyeccion, m)}
-            detalle={proyeccion >= meta ? 'llegás a la meta' : `te quedás a ${dineroCorto(meta - proyeccion, m)}`}
+            detalle={proyeccion >= meta ? t.pantallas.llegasALaMeta : t.pantallas.teQuedasA(dineroCorto(meta - proyeccion, m))}
             tono={proyeccion >= meta ? 'bueno' : 'malo'}
           />
         </div>
@@ -186,24 +186,23 @@ export default async function PaginaReto() {
 
       {/* ------------------------- números del reto ------------------------- */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} />
+        <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={t.pantallas.ventasN(numero(r.cantidadVentas))} />
         {verRent ? (
           <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
         ) : (
-          <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle="entregadas" />
+          <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle={t.pantallas.entregadas} />
         )}
         <Indicador titulo={t.panel.gastos} valor={dineroCorto(r.gastos, m)} tono="malo" />
         <Indicador
           titulo={t.pantallas.mejorDia}
           valor={mejorDia && mejorDia.ventas > 0 ? dineroCorto(mejorDia.ventas, m) : '—'}
-          detalle={mejorDia && mejorDia.ventas > 0 ? fechaLegible(mejorDia.fecha, false) : 'sin ventas todavía'}
+          detalle={mejorDia && mejorDia.ventas > 0 ? fechaLegible(mejorDia.fecha, false, locale) : t.pantallas.sinVentasTodaviaCorto}
         />
       </div>
 
       {r.ventasAnuladas > 0 && (
         <p className="rounded-xl bg-arena px-4 py-3 text-[13px] text-tinta/60">
-          {r.ventasAnuladas} operación{r.ventasAnuladas === 1 ? '' : 'es'} anulada{r.ventasAnuladas === 1 ? '' : 's'} en
-          el reto. No cuentan para la meta.
+          {t.pantallas.operacionesAnuladas(r.ventasAnuladas)}
         </p>
       )}
 
@@ -228,7 +227,7 @@ export default async function PaginaReto() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[14px] font-semibold">{p.nombre}</p>
                     <p className="text-[12px] text-tinta/45">
-                      {numero(p.unidades)} unidades{verRent && ` · margen ${porcentajeQuizas(p.margen, 0)}`}
+                      {t.pantallas.unidadesMargen(numero(p.unidades), verRent ? porcentajeQuizas(p.margen, 0) : null)}
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
@@ -246,7 +245,7 @@ export default async function PaginaReto() {
         <div className="tarjeta p-4">
           <h2 className="text-[15px] font-bold tracking-tight">{t.pantallas.ajustarReto}</h2>
           <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
-            Cambiá la meta o las fechas, o cerralo y empezá uno nuevo.
+            {t.pantallas.cambiaLaMeta}
           </p>
           <div className="mt-4">
             <EditorReto empresaId={ctx.empresa.id} moneda={m} reto={activo} puedeGestionar={ctx.esAdmin} />
@@ -274,6 +273,7 @@ function Celda({
 
 function HistorialRetos({ retos, moneda }: { retos: Reto[]; moneda: string }) {
   const t = textos();
+  const locale = FICHA[idiomaActual()].locale;
   if (retos.length === 0) return null;
   return (
     <Seccion titulo={t.pantallas.retosAnteriores}>
@@ -283,7 +283,7 @@ function HistorialRetos({ retos, moneda }: { retos: Reto[]; moneda: string }) {
             <div className="min-w-0">
               <p className="truncate text-[14px] font-semibold">{r.nombre}</p>
               <p className="text-[12px] text-tinta/45">
-                {fechaLegible(r.fecha_inicio, false)} — {fechaLegible(r.fecha_fin)}
+                {fechaLegible(r.fecha_inicio, false, locale)} — {fechaLegible(r.fecha_fin, true, locale)}
               </p>
             </div>
             <span className="shrink-0 text-[13.5px] font-bold tabular-nums">{dinero(Number(r.meta), moneda, false)}</span>

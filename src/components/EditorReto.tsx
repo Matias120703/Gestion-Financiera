@@ -9,6 +9,7 @@ import { hoyISO, sumarDias, diffDias } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
 import type { Medida, Reto } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
+import { TextoSoloAdmin } from '@/components/TextoSoloAdmin';
 
 export function EditorReto({
   empresaId, moneda, reto, puedeGestionar,
@@ -20,11 +21,7 @@ export function EditorReto({
   puedeGestionar: boolean;
 }) {
   if (!puedeGestionar) {
-    return (
-      <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
-        La meta la define un administrador del negocio. Vos podés seguir el avance y sumar ventas.
-      </p>
-    );
+    return <TextoSoloAdmin />;
   }
   return <FormularioReto empresaId={empresaId} moneda={moneda} reto={reto} />;
 }
@@ -42,7 +39,7 @@ function FormularioReto({
   const dec = decimalesDe(moneda);
   const [abierto, setAbierto] = useState(!reto);
 
-  const [nombre, setNombre] = useState(reto?.nombre ?? '10 millones en una semana');
+  const [nombre, setNombre] = useState(reto?.nombre ?? t.pantallas.retoNombreEjemplo);
   const [meta, setMeta] = useState<number>(Number(reto?.meta ?? (moneda === 'PYG' ? 10_000_000 : 1000)));
   const [medida, setMedida] = useState<Medida>(reto?.medida ?? 'ventas');
   const [inicio, setInicio] = useState(reto?.fecha_inicio ?? hoyISO(zona));
@@ -56,15 +53,15 @@ function FormularioReto({
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (meta <= 0) { setError('La meta tiene que ser mayor a cero.'); return; }
-    if (fin < inicio) { setError('La fecha de fin no puede ser anterior al inicio.'); return; }
+    if (meta <= 0) { setError(t.pantallas.retoMetaCero); return; }
+    if (fin < inicio) { setError(t.pantallas.retoFechaAntes); return; }
 
     setGuardando(true);
     try {
       const supabase = clienteNavegador();
       const fila = {
         empresa_id: empresaId,
-        nombre: nombre.trim() || 'Mi reto',
+        nombre: nombre.trim() || t.pantallas.retoNombrePorDefecto,
         meta,
         medida,
         fecha_inicio: inicio,
@@ -84,7 +81,7 @@ function FormularioReto({
       setAbierto(false);
       router.refresh();
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo guardar el reto.'));
+      setError(mensajeDeError(e, t.pantallas.retoNoSeGuardo));
     } finally {
       setGuardando(false);
     }
@@ -99,7 +96,7 @@ function FormularioReto({
       if (error) throw error;
       router.refresh();
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo cerrar el reto.'));
+      setError(mensajeDeError(e, t.pantallas.retoNoSeCerro));
     } finally {
       setGuardando(false);
     }
@@ -111,7 +108,7 @@ function FormularioReto({
         <button className="boton-suave" onClick={() => setAbierto(true)}>{t.pantallas.editarReto}</button>
         {reto && (
           <button className="boton-suave text-rojo" onClick={cerrarReto} disabled={guardando}>
-            Cerrar reto
+            {t.pantallas.cerrarReto}
           </button>
         )}
       </div>
@@ -145,14 +142,14 @@ function FormularioReto({
                 medida === v ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50'
               }`}
             >
-              {v === 'ventas' ? 'Lo vendido' : 'Ganancia neta'}
+              {v === 'ventas' ? t.pantallas.loVendido : t.pantallas.gananciaNeta}
             </button>
           ))}
         </div>
         <p className="mt-1.5 text-[12px] leading-relaxed text-tinta/45">
           {medida === 'ventas'
-            ? 'Cuenta todo lo que facturás, sin descontar costos ni gastos.'
-            : 'Cuenta lo que realmente te queda después de costos y gastos. Es más exigente.'}
+            ? t.pantallas.cuentaVendido
+            : t.pantallas.cuentaGanancia}
         </p>
       </div>
 
@@ -169,7 +166,7 @@ function FormularioReto({
 
       <div className="rounded-xl bg-verde-claro p-3.5">
         <p className="text-[13px] font-semibold text-verde-fuerte">
-          Son {dias} día{dias === 1 ? '' : 's'}: necesitás {dinero(porDia, moneda)} por día.
+          {t.pantallas.necesitasPorDia(dias, dinero(porDia, moneda))}
         </p>
       </div>
 
@@ -180,7 +177,7 @@ function FormularioReto({
           <button type="button" className="boton-suave flex-1 py-3" onClick={() => setAbierto(false)}>{t.comun.cancelar}</button>
         )}
         <button type="submit" className="boton-principal flex-1 py-3" disabled={guardando}>
-          {guardando ? 'Guardando…' : reto ? 'Guardar cambios' : 'Empezar el reto'}
+          {guardando ? t.comun.guardando : reto ? t.pantallas.guardarCambios : t.pantallas.empezarReto}
         </button>
       </div>
     </form>

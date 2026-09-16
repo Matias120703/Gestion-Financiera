@@ -6,6 +6,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { dinero, fechaLegible } from '@/lib/formato';
 import { useTextos, useLocale } from '@/i18n/cliente';
+import { categoriaVisible } from '@/i18n/nombres';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type { Lote, LoteDetalle, MovimientoSuelto } from '@/lib/tipos';
 
@@ -235,10 +236,10 @@ function TarjetaLote({
                   <span className="min-w-0">
                     <span className={`block truncate text-[13.5px] font-medium ${
                       m.estado === 'anulado' ? 'text-tinta/35 line-through' : ''}`}>
-                      {m.descripcion || m.categoria}
+                      {m.descripcion || categoriaVisible(t, m.categoria)}
                     </span>
                     <span className="text-[11.5px] text-tinta/45">
-                      {fechaLegible(m.fecha, false, locale)} · {m.categoria}
+                      {fechaLegible(m.fecha, false, locale)} · {categoriaVisible(t, m.categoria)}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
@@ -274,7 +275,7 @@ function TarjetaLote({
                     className="flex items-center justify-between gap-3 rounded-lg bg-superficie px-2.5 py-1.5">
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-medium">
-                        {m.descripcion || m.categoria}
+                        {m.descripcion || categoriaVisible(t, m.categoria)}
                       </span>
                       <span className="text-[11.5px] text-tinta/45">
                         {fechaLegible(m.fecha, false, locale)} · {plata(Number(m.monto))}

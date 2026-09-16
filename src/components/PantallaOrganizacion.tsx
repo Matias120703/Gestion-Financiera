@@ -8,6 +8,7 @@ import { dinero, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
 import { useTextos, useLocale } from '@/i18n/cliente';
+import { categoriaVisible } from '@/i18n/nombres';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
   ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta, TrabajoPendiente,
@@ -597,7 +598,7 @@ function FormularioIngreso({
           id="ing-categoria" className="campo" value={categoria}
           onChange={(e) => setCategoria(e.target.value)}
         >
-          {categorias.map((c) => <option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
+          {categorias.map((c) => <option key={c.nombre} value={c.nombre}>{categoriaVisible(t, c.nombre)}</option>)}
         </select>
       </div>
 
@@ -753,7 +754,7 @@ function Salidas({
                   <span className="min-w-0 flex-1">
                     <span className="truncate text-[14.5px] font-semibold">{g.nombre}</span>
                     <span className="mt-0.5 block truncate text-[12.5px] text-tinta/50">
-                      {g.categoria}
+                      {categoriaVisible(t, g.categoria)}
                       {' · '}
                       {g.dia_del_mes ? t.organizacion.venceElDia(g.dia_del_mes) : t.organizacion.todoElMes}
                       {g.notas ? ` · ${g.notas}` : ''}
@@ -876,7 +877,7 @@ function FormularioSalida({
             id="salida-categoria" className="campo" value={categoria}
             onChange={(e) => setCategoria(e.target.value)}
           >
-            {categorias.map((c) => <option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
+            {categorias.map((c) => <option key={c.nombre} value={c.nombre}>{categoriaVisible(t, c.nombre)}</option>)}
           </select>
 
           {!creandoCat ? (

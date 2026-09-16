@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos, idiomaActual, FICHA } from '@/i18n';
+import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
 import { ReportePersonal } from '@/components/ReportePersonal';
 import { rangoDesdeParams, traerProductos } from '@/lib/datos';
 import {
@@ -107,33 +108,34 @@ export default async function PaginaReportes({
           <div>
             <h2 className="text-[16px] font-bold tracking-tight">{t.pantallas.descargarExcel}</h2>
             <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
-              {rango.desde === rango.hasta ? fechaLegible(rango.desde) : `${fechaLegible(rango.desde)} — ${fechaLegible(rango.hasta)}`}
-              {' · '}5 hojas: resumen, productos, movimientos, gastos y día por día.
+              {rango.desde === rango.hasta
+                ? fechaLegible(rango.desde, true, FICHA[idiomaActual()].locale)
+                : `${fechaLegible(rango.desde, true, FICHA[idiomaActual()].locale)} — ${fechaLegible(rango.hasta, true, FICHA[idiomaActual()].locale)}`}
+              {' · '}{t.pantallas.cincoHojas}
             </p>
           </div>
           <BotonExcel empresaId={ctx.empresa.id} desde={rango.desde} hasta={rango.hasta} />
         </div>
       ) : (
         <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
-          Acá ves el resumen operativo del periodo. El Excel financiero incluye costos y
-          márgenes, así que lo descarga el propietario o un administrador.
+          {t.pantallas.excelSoloAdmin}
         </p>
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {verRent ? (
           <>
-            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} />
-            <Indicador titulo={t.panel.gananciaBruta} valor={dineroCorto(r.gananciaBruta, m)} detalle={`margen ${porcentaje(r.margenBruto, 0)}`} />
+            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={t.pantallas.ventasN(numero(r.cantidadVentas))} />
+            <Indicador titulo={t.panel.gananciaBruta} valor={dineroCorto(r.gananciaBruta, m)} detalle={t.pantallas.margenCorto(porcentaje(r.margenBruto, 0))} />
             <Indicador titulo={t.panel.gastos} valor={dineroCorto(r.gastos, m)} tono="malo" />
             <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} destacado />
           </>
         ) : (
           <>
-            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={`${numero(r.cantidadVentas)} ventas`} destacado />
-            <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle="entregadas" />
-            <Indicador titulo={t.panel.ticketPromedio} valor={dineroCorto(r.ticketPromedio, m)} detalle="por venta" />
-            <Indicador titulo={t.pantallas.descuentos} valor={dineroCorto(r.descuentos, m)} detalle="que diste" />
+            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={t.pantallas.ventasN(numero(r.cantidadVentas))} destacado />
+            <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle={t.pantallas.entregadas} />
+            <Indicador titulo={t.panel.ticketPromedio} valor={dineroCorto(r.ticketPromedio, m)} detalle={t.pantallas.porVenta} />
+            <Indicador titulo={t.pantallas.descuentos} valor={dineroCorto(r.descuentos, m)} detalle={t.pantallas.queDiste} />
           </>
         )}
       </div>
@@ -192,7 +194,7 @@ export default async function PaginaReportes({
                 return (
                   <div key={metodo}>
                     <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                      <span className="text-[14px] font-semibold capitalize">{metodo}</span>
+                      <span className="text-[14px] font-semibold">{metodoVisible(t, metodo)}</span>
                       <span className="text-[13.5px] font-bold tabular-nums">{dinero(monto, m, false)}</span>
                     </div>
                     <Barra porcentaje={p} />
@@ -217,7 +219,7 @@ export default async function PaginaReportes({
                 <tbody>
                   {categorias.map((c) => (
                     <tr key={c.nombre}>
-                      <td className="font-semibold">{c.nombre}</td>
+                      <td className="font-semibold">{categoriaVisible(t, c.nombre)}</td>
                       <td className="num font-semibold tabular-nums text-rojo">{dinero(c.monto, m, false)}</td>
                       <td className="num tabular-nums text-tinta/50">{c.operaciones}</td>
                       <td className="num tabular-nums text-tinta/60">{porcentaje(c.participacion, 0)}</td>
@@ -232,20 +234,20 @@ export default async function PaginaReportes({
       </div>
 
       {quietos.length > 0 && (
-        <Seccion titulo={`Sin vender · ${quietos.length} producto${quietos.length === 1 ? '' : 's'} en este periodo`}>
+        <Seccion titulo={t.pantallas.sinVender(quietos.length)}>
           <div className="px-4 pb-4 pt-2">
             <p className="mb-3 text-[13.5px] leading-relaxed text-tinta/55">
               {verRent
-                ? `Tenés ${dinero(plataParada, m)} inmovilizados en productos que no se movieron en este periodo.`
-                : 'Estos productos no se movieron en este periodo. Puede ser una oportunidad de empuje.'}
+                ? t.pantallas.plataParada(dinero(plataParada, m))
+                : t.pantallas.productosQuietos}
             </p>
             <div className="flex flex-wrap gap-2">
               {quietos.slice(0, 24).map((p) => (
                 <span key={p.id} className="pastilla bg-arena text-tinta/60">
-                  {p.nombre} · {numero(Number(p.stock))} u.
+                  {p.nombre} · {t.pantallas.unidadesCorto(numero(Number(p.stock)))}
                 </span>
               ))}
-              {quietos.length > 24 && <span className="pastilla bg-arena text-tinta/40">+{quietos.length - 24} más</span>}
+              {quietos.length > 24 && <span className="pastilla bg-arena text-tinta/40">{t.pantallas.masN(quietos.length - 24)}</span>}
             </div>
           </div>
         </Seccion>

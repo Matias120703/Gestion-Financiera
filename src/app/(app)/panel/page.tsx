@@ -11,6 +11,7 @@ import { SelectorRango } from '@/components/SelectorRango';
 import { Indicador, GraficoDiario, Barra, Vacio, Seccion } from '@/components/Piezas';
 import { permisosDe } from '@/lib/permisos';
 import { textos, idiomaActual, FICHA } from '@/i18n';
+import { categoriaVisible } from '@/i18n/nombres';
 import { traerResumenPersonal } from '@/lib/personal';
 import { PanelPersonal } from '@/components/PanelPersonal';
 import { traerRacha } from '@/lib/habito';
@@ -395,7 +396,7 @@ export default async function PaginaPanel({
               {categoriasTop.map((c) => (
                 <div key={c.nombre}>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                    <span className="truncate text-[14px] font-semibold">{c.nombre}</span>
+                    <span className="truncate text-[14px] font-semibold">{categoriaVisible(t, c.nombre)}</span>
                     <span className="shrink-0 text-[13.5px] font-bold tabular-nums">{dinero(c.monto, m, false)}</span>
                   </div>
                   <Barra porcentaje={c.participacion} tono="rojo" />
