@@ -17,7 +17,7 @@
  * DICCIONARIOS. Ninguna pantalla se toca.
  */
 
-export const IDIOMAS = ['es', 'en'] as const;
+export const IDIOMAS = ['es', 'pt', 'en'] as const;
 export type Idioma = (typeof IDIOMAS)[number];
 
 /**
@@ -49,6 +49,7 @@ export interface FichaIdioma {
 
 export const FICHA: Record<Idioma, FichaIdioma> = {
   es: { nombre: 'Español', locale: 'es-PY', bandera: '🇵🇾' },
+  pt: { nombre: 'Português', locale: 'pt-BR', bandera: '🇧🇷' },
   en: { nombre: 'English', locale: 'en-US', bandera: '🇺🇸' },
 };
 
@@ -86,7 +87,9 @@ export function idiomaDeCabecera(cabecera: string | null | undefined): Idioma | 
  * persona y queda guardada en la empresa.
  */
 export const MONEDA_SUGERIDA: Record<Idioma, string> = {
-  es: 'PYG', en: 'USD',
+  // Portugués sugiere guaraníes y no reales: quien lo elige es, por ahora,
+  // un brasileño que trabaja en Paraguay y factura acá.
+  es: 'PYG', pt: 'PYG', en: 'USD',
 };
 
 /**
@@ -95,5 +98,7 @@ export const MONEDA_SUGERIDA: Record<Idioma, string> = {
  * nuevo se agrega su fila en `precios` y se toca este mapa.
  */
 export const MONEDA_DE_COBRO: Record<Idioma, string> = {
-  es: 'PYG', en: 'USD',
+  // Mismo razonamiento: el portugués se agregó para los brasileños de
+  // Paraguay, que pagan la suscripción en guaraníes como cualquier cliente.
+  es: 'PYG', pt: 'PYG', en: 'USD',
 };
