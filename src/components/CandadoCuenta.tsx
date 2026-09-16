@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { textos } from '@/i18n';
+import { useTextos } from '@/i18n/cliente';
 
 /**
  * El candado de pantalla completa para cuando la cuenta está vencida.
@@ -24,11 +24,13 @@ export function CandadoCuenta({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  // Los dos hooks van antes de cualquier salida: React los cuenta por
+  // orden, y saltearlos en algunas pasadas rompe el componente.
+  const t = useTextos();
+
   // /plan es la única puerta que queda abierta: sin ella, nadie podría
   // llegar a pagar.
   if (!bloqueada || pathname?.startsWith('/plan')) return <>{children}</>;
-
-  const t = textos();
 
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-arena bg-superficie px-6 py-16 text-center">
