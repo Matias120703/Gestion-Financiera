@@ -107,16 +107,16 @@ export default async function PaginaCierre({
                 cuando no son cero: el cierre se lee en diez segundos. */}
             {fiadoVendido > 0 && (
               <Detalle
-                etiqueta="De eso, fiado"
+                etiqueta={t.cierreExtra.deEsoFiado}
                 valor={dinero(fiadoVendido, m, true, locale)}
-                nota="se vendió, pero todavía no entró"
+                nota={t.cierreExtra.seVendioNoEntro}
               />
             )}
             {fiadoCobrado > 0 && (
               <Detalle
-                etiqueta="Cobraste de fiado"
+                etiqueta={t.cierreExtra.cobrasteDeFiado}
                 valor={dinero(fiadoCobrado, m, true, locale)}
-                nota="entró hoy, de ventas de otros días"
+                nota={t.cierreExtra.entroHoyDeOtrosDias}
               />
             )}
             <Fila
@@ -175,10 +175,10 @@ export default async function PaginaCierre({
       {momento && cierre.es_hoy && cierre.hubo_actividad && (quedo !== null ? quedo > 0 : entro > salio) && (
         <TarjetaRecomendar
           encabezado={cierre.racha.dias >= 7
-            ? `Llevás ${cierre.racha.dias} días seguidos anotando.`
+            ? t.cierreExtra.diasSeguidos(cierre.racha.dias)
             : quedo !== null
-              ? `Cerraste el día con ${dinero(quedo, m, true, locale)} de ganancia.`
-              : `Hoy entraron ${dinero(entro, m, true, locale)}.`}
+              ? t.cierreExtra.cerrasteConGanancia(dinero(quedo, m, true, locale))
+              : t.cierreExtra.hoyEntraron(dinero(entro, m, true, locale))}
         />
       )}
 

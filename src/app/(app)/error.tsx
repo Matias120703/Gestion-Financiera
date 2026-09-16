@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTextos } from '@/i18n/cliente';
 
 /**
  * Pantalla de error de las secciones internas.
@@ -16,6 +17,8 @@ export default function ErrorDeSeccion({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useTextos();
+
   useEffect(() => {
     console.error('[pantalla]', error.message, error.digest ?? '');
   }, [error]);
@@ -34,36 +37,34 @@ export default function ErrorDeSeccion({
         </span>
 
         <h1 className="mt-4 text-[19px] font-bold tracking-tight">
-          {esLectura ? 'No pudimos cargar tus datos' : 'Algo salió mal'}
+          {esLectura ? t.errores.noPudimosCargar : t.errores.algoSalioMal}
         </h1>
 
         <p className="mt-2 text-[14px] leading-relaxed text-tinta/60">
           {esLectura ? (
             <>
-              No es que no tengas movimientos: es que la consulta no llegó a
-              completarse. Puede ser la conexión o algo puntual del servidor.
+              {t.errores.lecturaDetalle}
               <strong className="block pt-2 text-tinta">
-                Ningún número de esta pantalla sería confiable ahora mismo, así que
-                preferimos no mostrarte ninguno.
+                {t.errores.lecturaFuerte}
               </strong>
             </>
           ) : (
-            'Ocurrió un problema inesperado en esta sección. Tus datos están a salvo.'
+            t.errores.inesperado
           )}
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-2.5">
           <button type="button" className="boton-suave py-3" onClick={() => window.location.reload()}>
-            Recargar
+            {t.errores.recargar}
           </button>
           <button type="button" className="boton-principal py-3" onClick={reset}>
-            Reintentar
+            {t.errores.reintentar}
           </button>
         </div>
 
         {error.digest && (
           <p className="mt-4 text-[11.5px] text-tinta/35">
-            Código para soporte: <span className="font-mono">{error.digest}</span>
+            {t.errores.codigoSoporte} <span className="font-mono">{error.digest}</span>
           </p>
         )}
       </div>

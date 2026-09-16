@@ -34,8 +34,23 @@ export function Indicador({
   );
 }
 
-/** Barras diarias en SVG. Sin librerías: liviano y funciona sin JavaScript. */
-export function GraficoDiario({ datos, moneda }: { datos: FilaDia[]; moneda: Moneda }) {
+/**
+ * Barras diarias en SVG. Sin librerías: liviano y funciona sin JavaScript.
+ *
+ * Los textos llegan de afuera porque este archivo lo usan páginas de
+ * servidor, y ahí no hay hooks para leer el diccionario.
+ */
+export function GraficoDiario({ datos, moneda, textos, locale }: {
+  datos: FilaDia[];
+  moneda: Moneda;
+  textos: {
+    graficoVendido: (monto: string) => string;
+    graficoGastado: (monto: string) => string;
+    graficoVentas: string;
+    graficoGastos: string;
+  };
+  locale?: string;
+}) {
   if (datos.length === 0) return null;
 
   const maximo = Math.max(...datos.map((d) => Math.max(d.ventas, d.gastos)), 1);
@@ -55,9 +70,9 @@ export function GraficoDiario({ datos, moneda }: { datos: FilaDia[]; moneda: Mon
                 <div className="w-full rounded-t bg-rojo/35 transition group-hover:bg-rojo/60" style={{ height: `${Math.max(hg, d.gastos > 0 ? 3 : 0)}%` }} />
               </div>
               <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-noche px-2.5 py-1.5 text-[11.5px] font-semibold text-white group-hover:block">
-                <span className="block">{fechaLegible(d.fecha, false)}</span>
-                <span className="block text-verde-claro">Vendido {dinero(d.ventas, moneda)}</span>
-                {d.gastos > 0 && <span className="block text-white/60">Gastado {dinero(d.gastos, moneda)}</span>}
+                <span className="block">{fechaLegible(d.fecha, false, locale)}</span>
+                <span className="block text-verde-claro">{textos.graficoVendido(dinero(d.ventas, moneda))}</span>
+                {d.gastos > 0 && <span className="block text-white/60">{textos.graficoGastado(dinero(d.gastos, moneda))}</span>}
               </div>
             </div>
           );
@@ -75,8 +90,8 @@ export function GraficoDiario({ datos, moneda }: { datos: FilaDia[]; moneda: Mon
       )}
 
       <div className="mt-3 flex gap-4 text-[12px] font-semibold text-tinta/50">
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-verde/85" /> Ventas</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-rojo/35" /> Gastos</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-verde/85" /> {textos.graficoVentas}</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-rojo/35" /> {textos.graficoGastos}</span>
       </div>
     </div>
   );

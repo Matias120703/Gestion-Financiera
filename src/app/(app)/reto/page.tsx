@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { textos } from '@/i18n';
+import { textos, idiomaActual, FICHA } from '@/i18n';
 import { contextoObligatorio } from '@/lib/sesion';
 import { tieneSeccion } from '@/lib/rubros';
 import { clienteServidor } from '@/lib/supabase/servidor';
@@ -210,7 +210,7 @@ export default async function PaginaReto() {
       {(r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
           <h2 className="mb-4 text-[15px] font-bold tracking-tight">{t.pantallas.comoVieneCadaDia}</h2>
-          <GraficoDiario datos={serie} moneda={m} />
+          <GraficoDiario datos={serie} moneda={m} textos={t.panel} locale={FICHA[idiomaActual()].locale} />
         </div>
       )}
 

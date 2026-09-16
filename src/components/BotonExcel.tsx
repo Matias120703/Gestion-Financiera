@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useTextos } from '@/i18n/cliente';
 
 export function BotonExcel({ empresaId, desde, hasta }: { empresaId: string; desde: string; hasta: string }) {
+  const t = useTextos();
   const [bajando, setBajando] = useState(false);
   const [error, setError] = useState('');
 
@@ -14,7 +16,7 @@ export function BotonExcel({ empresaId, desde, hasta }: { empresaId: string; des
       const r = await fetch(url);
       if (!r.ok) {
         const datos = await r.json().catch(() => ({}));
-        throw new Error(datos?.error ?? 'No se pudo generar el archivo.');
+        throw new Error(datos?.error ?? t.errores.excelNoSeGenero);
       }
 
       const blob = await r.blob();
@@ -31,7 +33,7 @@ export function BotonExcel({ empresaId, desde, hasta }: { empresaId: string; des
       enlace.remove();
       setTimeout(() => URL.revokeObjectURL(enlace.href), 4000);
     } catch (e: any) {
-      setError(e?.message ?? 'Falló la descarga.');
+      setError(e?.message ?? t.errores.excelFallo);
     } finally {
       setBajando(false);
     }
@@ -43,14 +45,14 @@ export function BotonExcel({ empresaId, desde, hasta }: { empresaId: string; des
         {bajando ? (
           <>
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            Armando el archivo…
+            {t.errores.excelArmando}
           </>
         ) : (
           <>
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4.5 19.5h15" />
             </svg>
-            Descargar Excel
+            {t.errores.excelDescargar}
           </>
         )}
       </button>

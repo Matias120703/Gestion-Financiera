@@ -311,7 +311,7 @@ export function NavLateral({
           }`}
         >
           {Ico.recomendar}
-          Recomendar
+          {t.nav.recomendar}
         </Link>
 
         {administraOrden && (
@@ -327,7 +327,7 @@ export function NavLateral({
               }`}
             >
               {Ico.orden}
-              Panel de Orden
+              {t.nav.panelOrden}
             </Link>
           </>
         )}
@@ -464,7 +464,7 @@ export function NavInferior({
                 }`}
               >
                 {Ico.recomendar}
-                <span className="px-0.5">Recomendar</span>
+                <span className="px-0.5">{t.nav.recomendar}</span>
               </Link>
 
               {administraOrden && (
@@ -476,7 +476,7 @@ export function NavInferior({
                   }`}
                 >
                   {Ico.orden}
-                  <span className="px-0.5">Panel de Orden</span>
+                  <span className="px-0.5">{t.nav.panelOrden}</span>
                 </Link>
               )}
             </div>

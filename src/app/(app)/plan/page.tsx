@@ -92,7 +92,7 @@ export default async function PaginaPlan({
           más de 25 días por delante en un plan mensual, pagó esta semana. */}
       {momentoRecomendar && sus.estado === 'activa' && !sus.en_prueba
         && sus.dias_restantes >= (sus.periodo === 'anual' ? 360 : 25) && (
-        <TarjetaRecomendar encabezado="Ya está, tu cuenta quedó al día." />
+        <TarjetaRecomendar encabezado={t.plan.alDia} />
       )}
 
       {!sus.en_prueba && ctx.planEfectivo === 'gratis' && sus.ya_uso_prueba && (
@@ -195,7 +195,7 @@ export default async function PaginaPlan({
                       plan={plan === 'pro' ? t.plan.pro : t.plan.negocio}
                       precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
                       periodo={periodo}
-                      etiqueta={sus.en_prueba ? 'Activar este plan' : 'Suscribirme'}
+                      etiqueta={sus.en_prueba ? t.plan.activarEstePlan : t.plan.suscribirme}
                     />
                   )
                 ) : (
@@ -221,13 +221,12 @@ export default async function PaginaPlan({
         className="flex items-center justify-between gap-3 rounded-2xl border border-verde/30 bg-verde-claro/30 p-4 transition hover:bg-verde-claro/50"
       >
         <span className="min-w-0">
-          <span className="block text-[14.5px] font-bold">Podés bajar lo que pagás</span>
+          <span className="block text-[14.5px] font-bold">{t.plan.podesBajar}</span>
           <span className="mt-0.5 block text-[13px] leading-relaxed text-tinta/65">
-            Traé un negocio con tu enlace y te llevás la mitad de su primer pago. Está en todos
-            los planes, incluso mientras probás.
+            {t.plan.podesBajarDetalle}
           </span>
         </span>
-        <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">Ver →</span>
+        <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">{t.plan.ver}</span>
       </Link>
 
       {whatsapp && (

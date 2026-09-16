@@ -51,17 +51,13 @@ export default async function PaginaMovimientos({
         {verRent ? (
           <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
         ) : (
-          <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle="entregadas" />
+          <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle={t.movimientos.entregadas} />
         )}
       </div>
 
       {r.movimientosAnulados > 0 && (
         <p className="rounded-xl bg-arena px-4 py-3 text-[13px] text-tinta/60">
-          Hay {r.movimientosAnulados} movimiento{r.movimientosAnulados === 1 ? '' : 's'} anulado{r.movimientosAnulados === 1 ? '' : 's'} en
-          este periodo por {dineroCorto(r.montoMovimientosAnulados, m)}
-          {r.ventasAnuladas > 0 && r.ventasAnuladas !== r.movimientosAnulados
-            && ` (${r.ventasAnuladas} de ellos son ventas)`}.
-          Aparecen tachados y no suman en ningún total.
+          {t.movimientos.hayAnulados(r.movimientosAnulados, dineroCorto(r.montoMovimientosAnulados, m), r.ventasAnuladas)}
         </p>
       )}
 

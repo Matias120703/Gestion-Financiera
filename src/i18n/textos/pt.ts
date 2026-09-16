@@ -148,6 +148,8 @@ export const pt: Textos = {
     activa: 'ativa',
     mas: 'Mais',
     todasLasSecciones: 'Todas as seções',
+    recomendar: 'Indicar',
+    panelOrden: 'Painel do Orden',
 
     salir: 'Sair',
   },
@@ -905,6 +907,10 @@ export const pt: Textos = {
     seMuestranRecientes: 'Aparecem os mais recentes. Os totais de cima incluem todo o período.',
     paraVerElResto: 'Pra ver o resto, entre no',
     historialCompleto: 'histórico completo',
+    misGastos: 'Minhas despesas do período',
+    misOtrosIngresos: 'Minhas outras entradas',
+    noSumanEnTotales: 'não somam nos totais',
+    sinGastosCorto: 'sem despesas',
     noSePudoGuardar: 'Não foi possível salvar.',
     noSePudoAnular: 'Não foi possível cancelar.',
   },
@@ -1039,6 +1045,11 @@ export const pt: Textos = {
     stockDevuelto: 'O estoque foi devolvido.',
     verMas: 'Ver mais lançamentos',
     deTotal: (vistos: string, total: string) => `${vistos} de ${total} lançamentos do período.`,
+    entregadas: 'entregues',
+    hayAnulados: (n: number, monto: string, ventas: number) =>
+      `Há ${n} ${n === 1 ? 'lançamento cancelado' : 'lançamentos cancelados'} neste período, somando ${monto}`
+      + (ventas > 0 && ventas !== n ? ` (${ventas} deles são vendas)` : '')
+      + '. Aparecem riscados e não somam em nenhum total.',
 
     motivosVenta: ['O cliente devolveu', 'Lancei errado', 'Foi lançado duas vezes', 'A venda não saiu'],
     motivosOtro: ['Lancei errado', 'Foi lançado duas vezes', 'Não era isso'],
@@ -1276,6 +1287,24 @@ export const pt: Textos = {
 
     tuResumen: 'Seu resumo do período',
     unidadesEntregadas: 'Unidades entregues',
+
+    teDeben: 'Te devem',
+    clientesQueDeben: (n: number) => (n === 1 ? '1 cliente' : `${n} clientes`),
+    plataQueNoEntro: 'dinheiro que ainda não entrou',
+    verFiado: 'Ver fiado →',
+    logradoDe: (logrado: string, meta: string) => `${logrado} de ${meta}`,
+    faltanDias: (n: number, ritmo: string) => `Faltam ${n} ${n === 1 ? 'dia' : 'dias'} · ${ritmo} por dia`,
+    deLoVendido: (p: string) => `${p} do que foi vendido`,
+    soloCargar: 'Você pode lançar vendas e despesas, ver o estoque e consultar o histórico do negócio. O detalhe de custos e rentabilidade fica com o dono e os administradores.',
+    quedan: (n: string) => `restam ${n}`,
+    resumenFino: (ticket: string, unidades: string, margen: string) => `Ticket médio ${ticket} · ${unidades} unidades vendidas · margem líquida ${margen}`,
+    anuladasNoSuman: (n: number) => `${n} venda(s) cancelada(s) que não somam`,
+    costosLosVeAdmin: 'Os custos, margens e lucros do negócio ficam com a administração.',
+    hayAnuladas: (n: number) => `Há ${n} venda(s) cancelada(s) que não somam.`,
+    graficoVendido: (monto: string) => `Vendido ${monto}`,
+    graficoGastado: (monto: string) => `Gasto ${monto}`,
+    graficoVentas: 'Vendas',
+    graficoGastos: 'Despesas',
   },
 
   cierre: {
@@ -1306,6 +1335,16 @@ export const pt: Textos = {
         : `Você tem ${n} dias de sequência. Lance algo hoje pra não perder.`,
     mejor: (n: number) => `Sua melhor sequência: ${n}`,
     nueva: 'Sequência nova!',
+  },
+
+  cierreExtra: {
+    deEsoFiado: 'Disso, fiado',
+    seVendioNoEntro: 'foi vendido, mas ainda não entrou',
+    cobrasteDeFiado: 'Você recebeu de fiado',
+    entroHoyDeOtrosDias: 'entrou hoje, de vendas de outros dias',
+    diasSeguidos: (n: number) => `Você está há ${n} dias seguidos lançando.`,
+    cerrasteConGanancia: (monto: string) => `Você fechou o dia com ${monto} de lucro.`,
+    hoyEntraron: (monto: string) => `Hoje entraram ${monto}.`,
   },
 
   plan: {
@@ -1342,6 +1381,12 @@ export const pt: Textos = {
     irAPagar: 'Ir pagar',
     pagoNoDisponible: 'Ainda não há uma forma de pagamento ativa. Fale com a gente e resolvemos.',
     gestionar: 'Gerenciar minha assinatura',
+    alDia: 'Pronto, sua conta está em dia.',
+    activarEstePlan: 'Ativar este plano',
+    suscribirme: 'Assinar',
+    podesBajar: 'Você pode pagar menos',
+    podesBajarDetalle: 'Traga um negócio com seu link e fique com metade do primeiro pagamento dele. Está em todos os planos, inclusive enquanto você testa.',
+    ver: 'Ver →',
   },
 
   ajustes: {
@@ -1703,6 +1748,20 @@ export const pt: Textos = {
     permiso: 'Você não tem permissão pra fazer isso.',
     red: 'Sem conexão. Tentamos de novo quando voltar.',
     generico: 'Não foi possível concluir. Tente de novo.',
+
+    noPudimosCargar: 'Não conseguimos carregar seus dados',
+    algoSalioMal: 'Algo deu errado',
+    lecturaDetalle: 'Não é que você não tenha lançamentos: a consulta não chegou a terminar. Pode ser a conexão ou algo pontual do servidor.',
+    lecturaFuerte: 'Nenhum número desta tela seria confiável agora, então preferimos não mostrar nenhum.',
+    inesperado: 'Aconteceu um problema inesperado nesta seção. Seus dados estão a salvo.',
+    recargar: 'Recarregar',
+    reintentar: 'Tentar de novo',
+    codigoSoporte: 'Código para o suporte:',
+
+    excelNoSeGenero: 'Não foi possível gerar o arquivo.',
+    excelFallo: 'O download falhou.',
+    excelArmando: 'Montando o arquivo…',
+    excelDescargar: 'Baixar Excel',
   },
 
   sinConexion: {

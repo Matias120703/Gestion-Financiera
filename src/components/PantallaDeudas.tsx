@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useLocale, useTextos } from '@/i18n/cliente';
+import { metodoVisible } from '@/i18n/nombres';
 import { dinero, fechaLegible } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { Vacio } from '@/components/Piezas';
@@ -552,10 +553,9 @@ function FormularioPago({
     }
   }
 
-  const METODOS: [string, string][] = [
-    ['efectivo', 'Efectivo'], ['transferencia', 'Transferencia'],
-    ['tarjeta', 'Tarjeta'], ['otro', 'Otro'],
-  ];
+  // Se guarda el código; lo que se lee sale del diccionario.
+  const METODOS: [string, string][] = ['efectivo', 'transferencia', 'tarjeta', 'otro']
+    .map((codigo) => [codigo, metodoVisible(t, codigo)]);
 
   return (
     <Hoja onCerrar={onCerrar}>

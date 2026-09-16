@@ -271,13 +271,13 @@ export default async function PaginaPanel({
         <Link href="/fiado" className="tarjeta block p-4 transition hover:border-verde/50">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-tinta/55">Te deben</p>
+              <p className="text-[13px] font-semibold text-tinta/55">{t.panel.teDeben}</p>
               <p className="mt-0.5 text-[22px] font-bold tabular-nums tracking-tight">{dinero(fiado.total, m)}</p>
               <p className="mt-0.5 text-[12.5px] text-tinta/50">
-                {fiado.cuantos === 1 ? '1 cliente' : `${fiado.cuantos} clientes`} · plata que todavía no entró
+                {t.panel.clientesQueDeben(fiado.cuantos)} · {t.panel.plataQueNoEntro}
               </p>
             </div>
-            <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">Ver fiado →</span>
+            <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">{t.panel.verFiado}</span>
           </div>
         </Link>
       )}
@@ -296,9 +296,9 @@ export default async function PaginaPanel({
           </div>
           <div className="mt-3"><Barra porcentaje={retoInfo.avance} /></div>
           <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] font-semibold text-tinta/55">
-            <span>{dinero(retoInfo.logrado, m)} de {dinero(Number(reto.meta), m)}</span>
+            <span>{t.panel.logradoDe(dinero(retoInfo.logrado, m), dinero(Number(reto.meta), m))}</span>
             {retoInfo.diasRestantes > 0 && retoInfo.falta > 0 && (
-              <span>Faltan {retoInfo.diasRestantes} día{retoInfo.diasRestantes === 1 ? '' : 's'} · {dineroCorto(retoInfo.ritmo, m)} por día</span>
+              <span>{t.panel.faltanDias(retoInfo.diasRestantes, dineroCorto(retoInfo.ritmo, m))}</span>
             )}
             {retoInfo.falta === 0 && <span className="text-verde-fuerte">{t.panel.metaAlcanzada}</span>}
           </div>
@@ -335,7 +335,7 @@ export default async function PaginaPanel({
       {!cicloLargo && dias.length > 1 && (r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
           <h2 className="mb-4 text-[15px] font-bold tracking-tight">{t.panel.diaPorDia}</h2>
-          <GraficoDiario datos={serie} moneda={m} />
+          <GraficoDiario datos={serie} moneda={m} textos={t.panel} locale={FICHA[idiomaActual()].locale} />
         </div>
       )}
 
@@ -366,7 +366,7 @@ export default async function PaginaPanel({
                     <tr key={p.producto_id ?? p.nombre}>
                       <td>
                         <span className="block font-semibold">{p.nombre}</span>
-                        <span className="block text-[12px] text-tinta/45">{porcentaje(p.participacion, 0)} de lo vendido</span>
+                        <span className="block text-[12px] text-tinta/45">{t.panel.deLoVendido(porcentaje(p.participacion, 0))}</span>
                       </td>
                       <td className="num font-semibold">{numero(p.unidades)}</td>
                       <td className="num tabular-nums">{dinero(p.ingresos, m, false)}</td>
@@ -410,8 +410,7 @@ export default async function PaginaPanel({
         ) : (
           <Seccion titulo={t.panel.tuActividad} accion={<Link href="/movimientos" className="boton-texto">{t.panel.verHistorial}</Link>}>
             <div className="px-4 pb-4 pt-3 text-[13.5px] leading-relaxed text-tinta/60">
-              Podés cargar ventas y gastos, ver el stock y consultar el historial del negocio.
-              El detalle de costos y rentabilidad queda para el propietario y los administradores.
+              {t.panel.soloCargar}
             </div>
           </Seccion>
         )}
@@ -423,7 +422,7 @@ export default async function PaginaPanel({
           <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
             {bajoStock.slice(0, 12).map((p) => (
               <span key={p.id} className="pastilla bg-ambar-claro text-ambar">
-                {p.nombre} · quedan {numero(p.stock)}
+                {p.nombre} · {t.panel.quedan(numero(p.stock))}
               </span>
             ))}
           </div>
@@ -456,9 +455,8 @@ export default async function PaginaPanel({
           </div>
         </dl>
         <p className="mt-4 text-[12.5px] leading-relaxed text-tinta/45">
-          Ticket promedio {dinero(r.ticketPromedio, m)} · {numero(r.unidadesVendidas)} unidades vendidas ·
-          margen neto {porcentaje(r.margenNeto, 1)}
-          {r.ventasAnuladas > 0 && ` · ${r.ventasAnuladas} venta(s) anulada(s) que no suman`}
+          {t.panel.resumenFino(dinero(r.ticketPromedio, m), numero(r.unidadesVendidas), porcentaje(r.margenNeto, 1))}
+          {r.ventasAnuladas > 0 && ` · ${t.panel.anuladasNoSuman(r.ventasAnuladas)}`}
         </p>
       </div>
       ) : (
@@ -472,8 +470,8 @@ export default async function PaginaPanel({
             <Linea etiqueta={t.panel.ticketPromedio} valor={dinero(r.ticketPromedio, m)} />
           </dl>
           <p className="mt-4 text-[12.5px] leading-relaxed text-tinta/45">
-            Los costos, márgenes y ganancias del negocio los ve la administración.
-            {r.ventasAnuladas > 0 && ` Hay ${r.ventasAnuladas} venta(s) anulada(s) que no suman.`}
+            {t.panel.costosLosVeAdmin}
+            {r.ventasAnuladas > 0 && ` ${t.panel.hayAnuladas(r.ventasAnuladas)}`}
           </p>
         </div>
       )}

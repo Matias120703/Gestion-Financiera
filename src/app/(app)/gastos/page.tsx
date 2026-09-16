@@ -1,5 +1,6 @@
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos } from '@/i18n';
+import { categoriaVisible } from '@/i18n/nombres';
 import { rangoDesdeParams } from '@/lib/datos';
 import { traerResumen, traerGastosPorCategoria, traerPaginaMovimientos } from '@/lib/agregados';
 import { PantallaGastos } from '@/components/PantallaGastos';
@@ -40,8 +41,8 @@ export default async function PaginaGastos({
    * correcto con el título equivocado sigue siendo un dato falso.
    */
   const esAdmin = ctx.miembro.rol === 'propietario' || ctx.miembro.rol === 'admin';
-  const tituloGastos = esAdmin ? t.pantallas.gastosDelPeriodo : 'Mis gastos del periodo';
-  const tituloIngresos = esAdmin ? t.panel.otrosIngresos : 'Mis otros ingresos';
+  const tituloGastos = esAdmin ? t.pantallas.gastosDelPeriodo : t.gastos.misGastos;
+  const tituloIngresos = esAdmin ? t.panel.otrosIngresos : t.gastos.misOtrosIngresos;
 
   return (
     <div className="space-y-5">
@@ -53,12 +54,12 @@ export default async function PaginaGastos({
         <Indicador
           titulo={t.pantallas.movimientosAnulados}
           valor={numero(r.movimientosAnulados)}
-          detalle="no suman en los totales"
+          detalle={t.gastos.noSumanEnTotales}
         />
         <Indicador
           titulo={t.pantallas.categoriaMasPesada}
-          valor={categorias[0]?.nombre ?? '—'}
-          detalle={categorias[0] ? dinero(categorias[0].monto, m) : 'sin gastos'}
+          valor={categorias[0] ? categoriaVisible(t, categorias[0].nombre) : '—'}
+          detalle={categorias[0] ? dinero(categorias[0].monto, m) : t.gastos.sinGastosCorto}
         />
       </div>
 
