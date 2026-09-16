@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { ReservaPublica } from '@/components/ReservaPublica';
 import type { AgendaPublica } from '@/lib/tipos';
+import { textos } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,10 +21,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function generateMetadata({ params }: { params: { slug: string } }) {
   const datos = await traer(params.slug);
-  if (!datos?.existe) return { title: 'Reservar un turno' };
+  const r = textos().reservaPublica;
+  if (!datos?.existe) return { title: r.metaReservar };
   return {
-    title: `Reservar con ${datos.negocio}`,
-    description: datos.mensaje || `Elegí día y horario con ${datos.negocio}.`,
+    title: r.metaReservarCon(datos.negocio ?? ''),
+    description: datos.mensaje || r.metaElegi(datos.negocio ?? ''),
   };
 }
 

@@ -25,8 +25,6 @@ import type {
  * carga una vez y no se toca en meses.
  */
 
-const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-
 export function PantallaAgenda({
   empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy,
   excepciones, negocio, zona, origen,
@@ -696,8 +694,8 @@ function NuevoTurno({
             valor={cliente}
             alElegir={setCliente}
             etiqueta={t.agenda.nombreCliente}
-            placeholder="Nombre de quien viene"
-            ayudaTelefono="Para mandarle el recordatorio y el enlace para cancelar. Si no lo tenés, dejalo vacío."
+            placeholder={t.agenda.nombreQuienViene}
+            ayudaTelefono={t.agenda.telefonoRecordatorio}
             pedirTelefono
             obligatorio
           />
@@ -1029,7 +1027,7 @@ function Horarios({
                   {suyos.map((h) => (
                     <li key={h.id} className="flex items-center justify-between gap-3 text-[13px]">
                       <span className="tabular-nums text-tinta/70">
-                        <b className="font-semibold">{DIAS[h.dia_semana]}</b>{' '}
+                        <b className="font-semibold">{t.agenda.diasSemana[h.dia_semana]}</b>{' '}
                         {h.desde.slice(0, 5)} — {h.hasta.slice(0, 5)}
                       </span>
                       <button
@@ -1050,7 +1048,7 @@ function Horarios({
                     <span className="etiqueta">{t.agenda.dia}</span>
                     <select className="campo py-2 text-[13.5px]" value={dia}
                       onChange={(e) => setDia(Number(e.target.value))}>
-                      {DIAS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                      {t.agenda.diasSemana.map((d, i) => <option key={i} value={i}>{d}</option>)}
                     </select>
                   </label>
                   <label className="w-[104px]">

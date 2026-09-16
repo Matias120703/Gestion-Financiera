@@ -1,9 +1,12 @@
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { CancelarTurno } from '@/components/ReservaPublica.cancelar';
 import type { ReservaPorToken } from '@/lib/tipos';
+import { textos } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Mi turno' };
+export function generateMetadata() {
+  return { title: textos().reservaPublica.metaMiTurno };
+}
 
 /**
  * MI TURNO · la pantalla del enlace que el cliente guardó.

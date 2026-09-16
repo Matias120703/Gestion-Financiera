@@ -5,9 +5,12 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { fechaLarga } from '@/lib/formato';
 import type { ReservaPorToken } from '@/lib/tipos';
+import { useTextos, useLocale } from '@/i18n/cliente';
 
 /** Ver y cancelar un turno con el enlace. Sin cuenta: el token es la llave. */
 export function CancelarTurno({ token, reserva }: { token: string; reserva: ReservaPorToken }) {
+  const r = useTextos().reservaPublica;
+  const locale = useLocale();
   const [estado, setEstado] = useState(reserva.estado ?? '');
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
@@ -23,7 +26,7 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
     } catch (e: any) {
       // Ver el comentario de ReservaPublica.tsx: el que lee esto es el cliente
       // del local, no alguien que tenga cuenta en Orden.
-      setError(mensajeDeError(e, 'No se pudo cancelar. Probá de nuevo.'));
+      setError(mensajeDeError(e, r.noSePudoCancelar));
     } finally {
       setCargando(false);
       setConfirmando(false);
@@ -33,15 +36,15 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
   if (!reserva.existe) {
     return (
       <Marco>
-        <h1 className="text-[19px] font-bold tracking-tight">No encontramos este turno</h1>
+        <h1 className="text-[19px] font-bold tracking-tight">{r.noEncontramos}</h1>
         <p className="mt-2 text-[14.5px] leading-relaxed text-tinta/60">
-          Puede que el enlace esté incompleto. Fijate de copiarlo entero, o escribile al local.
+          {r.enlaceIncompleto}
         </p>
       </Marco>
     );
   }
 
-  const hora = new Date(reserva.inicia!).toLocaleTimeString('es-PY', {
+  const hora = new Date(reserva.inicia!).toLocaleTimeString(locale, {
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
   const cancelada = estado === 'cancelada';
@@ -51,19 +54,19 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
     <Marco>
       <p className="text-[12px] font-bold uppercase tracking-wider text-tinta/40">{reserva.negocio}</p>
       <h1 className="mt-1 text-[22px] font-bold tracking-tight">
-        {cancelada ? 'Turno cancelado' : 'Tu turno'}
+        {cancelada ? r.turnoCancelado : r.tuTurno}
       </h1>
 
       <div className={`mt-4 rounded-2xl border p-4 ${
         cancelada ? 'border-borde bg-arena' : 'border-verde/30 bg-verde-claro'
       }`}>
         <p className={`text-[16px] font-semibold ${cancelada ? 'text-tinta/45 line-through' : 'text-verde-fuerte'}`}>
-          {fechaLarga(reserva.inicia!.slice(0, 10), 'es-PY')} a las {hora}
+          {r.fechaYHoraSimple(fechaLarga(reserva.inicia!.slice(0, 10), locale), hora)}
         </p>
         <p className={`mt-1 text-[14px] ${cancelada ? 'text-tinta/40' : 'text-tinta/70'}`}>
-          {reserva.servicio} con {reserva.con}
+          {r.servicioCon(reserva.servicio ?? '', reserva.con ?? '')}
         </p>
-        <p className="mt-1 text-[13px] text-tinta/45">A nombre de {reserva.cliente}</p>
+        <p className="mt-1 text-[13px] text-tinta/45">{r.aNombreDe(reserva.cliente ?? '')}</p>
       </div>
 
       {error && (
@@ -74,29 +77,28 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
 
       {cancelada ? (
         <p className="mt-4 text-[14px] leading-relaxed text-tinta/60">
-          Listo, el lugar quedó libre para otra persona. Si querés volver a reservar, entrá por el
-          link del local.
+          {r.lugarLibre}
         </p>
       ) : cerrada ? (
         <p className="mt-4 text-[14px] leading-relaxed text-tinta/60">
-          Este turno ya pasó.
+          {r.yaPaso}
         </p>
       ) : confirmando ? (
         <div className="mt-5 space-y-2">
-          <p className="text-[14px] font-medium">¿Seguro que no vas a venir?</p>
+          <p className="text-[14px] font-medium">{r.seguroNoVenis}</p>
           <div className="flex gap-2">
             <button
               type="button" className="boton-suave flex-1 py-2.5"
               onClick={() => setConfirmando(false)} disabled={cargando}
             >
-              Mantener el turno
+              {r.mantener}
             </button>
             <button
               type="button"
               className="flex-1 rounded-xl bg-rojo py-2.5 text-[14px] font-semibold text-white disabled:opacity-60"
               onClick={cancelar} disabled={cargando}
             >
-              {cargando ? 'Cancelando…' : 'Sí, cancelar'}
+              {cargando ? r.cancelando : r.siCancelar}
             </button>
           </div>
         </div>
@@ -106,10 +108,10 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
             type="button" className="boton-suave mt-5 w-full py-2.5"
             onClick={() => setConfirmando(true)}
           >
-            No voy a poder venir
+            {r.noVoyAPoder}
           </button>
           <p className="mt-2 text-center text-[12.5px] leading-snug text-tinta/45">
-            Avisar a tiempo le deja el lugar a otra persona.
+            {r.avisarATiempo}
           </p>
         </>
       )}
@@ -118,11 +120,12 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
 }
 
 function Marco({ children }: { children: React.ReactNode }) {
+  const r = useTextos().reservaPublica;
   return (
     <div className="min-h-screen bg-arena">
       <div className="mx-auto max-w-md px-4 pb-16 pt-10">
         <div className="rounded-2xl border border-borde bg-superficie p-5">{children}</div>
-        <p className="mt-8 text-center text-[11.5px] text-tinta/35">Turnos con Orden</p>
+        <p className="mt-8 text-center text-[11.5px] text-tinta/35">{r.turnosConOrden}</p>
       </div>
     </div>
   );

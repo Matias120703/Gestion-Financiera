@@ -1925,6 +1925,60 @@ export const es = {
     sinDiasEspecialesDetalle: 'Todo funciona con el horario de siempre.',
     rangoDeDias: (desde: string, hasta: string) => `Del ${desde} al ${hasta}`,
     abreDe: (desde: string, hasta: string) => `Abre de ${desde} a ${hasta}`,
+    diasSemana: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
+    nombreQuienViene: 'Nombre de quien viene',
+    telefonoRecordatorio: 'Para mandarle el recordatorio y el enlace para cancelar. Si no lo tenés, dejalo vacío.',
+  },
+
+  /**
+   * LA PÁGINA PÚBLICA DE RESERVAS y la de «mi turno».
+   *
+   * La lee el cliente del local, no el dueño: sale en el idioma del
+   * navegador de quien la abre.
+   */
+  reservaPublica: {
+    metaReservar: 'Reservar un turno',
+    metaReservarCon: (negocio: string) => `Reservar con ${negocio}`,
+    metaElegi: (negocio: string) => `Elegí día y horario con ${negocio}.`,
+    metaMiTurno: 'Mi turno',
+    noSePudoReservar: 'No se pudo reservar. Probá de nuevo.',
+    turnoReservado: 'Turno reservado',
+    fechaYHora: (fecha: string, hora: string) => `${fecha} a las **${hora}**`,
+    servicioCon: (servicio: string, con: string) => `${servicio} con ${con}`,
+    guardaEsteEnlace: 'Guardá este enlace',
+    loUnicoQueNecesitas: 'Es lo único que necesitás si después no podés venir. Cancelar a tiempo le deja el lugar a otra persona.',
+    verOCancelar: 'Ver o cancelar mi turno',
+    sinHorarios: 'Todavía no hay horarios cargados para reservar por acá. Escribile al local directamente.',
+    conQuien: '¿Con quién?',
+    queTeHaces: '¿Qué te hacés?',
+    minutos: (n: number) => `${n} minutos`,
+    sinServicios: 'No hay servicios disponibles para reservar.',
+    queDia: '¿Qué día?',
+    buscandoHorarios: 'Buscando horarios…',
+    sinHuecos: 'Ese día no queda ningún horario libre. Probá con otro.',
+    quienSos: '¿Y vos quién sos?',
+    tuNombre: 'Tu nombre',
+    tuTelefono: 'Tu teléfono',
+    telefonoSoloLocal: 'Solo lo usa el local para avisarte si pasa algo con tu turno.',
+    reservando: 'Reservando…',
+    reservar: (hora: string) => `Reservar ${hora}`,
+    turnosConOrden: 'Turnos con Orden',
+
+    noSePudoCancelar: 'No se pudo cancelar. Probá de nuevo.',
+    noEncontramos: 'No encontramos este turno',
+    enlaceIncompleto: 'Puede que el enlace esté incompleto. Fijate de copiarlo entero, o escribile al local.',
+    turnoCancelado: 'Turno cancelado',
+    tuTurno: 'Tu turno',
+    fechaYHoraSimple: (fecha: string, hora: string) => `${fecha} a las ${hora}`,
+    aNombreDe: (nombre: string) => `A nombre de ${nombre}`,
+    lugarLibre: 'Listo, el lugar quedó libre para otra persona. Si querés volver a reservar, entrá por el link del local.',
+    yaPaso: 'Este turno ya pasó.',
+    seguroNoVenis: '¿Seguro que no vas a venir?',
+    mantener: 'Mantener el turno',
+    cancelando: 'Cancelando…',
+    siCancelar: 'Sí, cancelar',
+    noVoyAPoder: 'No voy a poder venir',
+    avisarATiempo: 'Avisar a tiempo le deja el lugar a otra persona.',
   },
 
   lotes: {

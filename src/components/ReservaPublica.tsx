@@ -6,6 +6,8 @@ import { mensajeDeError } from '@/lib/errores';
 import { dinero, fechaLarga } from '@/lib/formato';
 import { sumarDias } from '@/lib/fechas';
 import type { AgendaPublica, ProfesionalPublico, ServicioPublico } from '@/lib/tipos';
+import { useTextos, useLocale } from '@/i18n/cliente';
+import { Rico } from '@/components/Rico';
 
 /**
  * RESERVAR UN TURNO · lo que ve el cliente
@@ -22,6 +24,8 @@ import type { AgendaPublica, ProfesionalPublico, ServicioPublico } from '@/lib/t
 type Paso = 'servicio' | 'dia' | 'datos' | 'listo';
 
 export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPublica }) {
+  const r = useTextos().reservaPublica;
+  const locale = useLocale();
   const profesionales = datos.profesionales ?? [];
 
   const [paso, setPaso] = useState<Paso>('servicio');
@@ -38,7 +42,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
   const [cargando, setCargando] = useState(false);
   const [listo, setListo] = useState<{ token: string; inicia: string } | null>(null);
 
-  const plata = (n: number) => dinero(n, datos.moneda, true, 'es-PY');
+  const plata = (n: number) => dinero(n, datos.moneda, true, locale);
 
   // Los próximos catorce días. Más que eso no entra en una pantalla y nadie
   // reserva un corte para dentro de dos meses.
@@ -98,7 +102,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
       // usuario de Orden, es un cliente que entró por un link de Instagram, y
       // un error de PostgreSQL en esta pantalla no dice «falló algo», dice
       // «este local no sabe lo que hace».
-      setError(mensajeDeError(e, 'No se pudo reservar. Probá de nuevo.'));
+      setError(mensajeDeError(e, r.noSePudoReservar));
       // Si el hueco se lo llevó otro mientras completaba, se refresca la
       // lista: mostrarle el mismo horario otra vez sería mentirle dos veces.
       setHuecos(null);
@@ -109,7 +113,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
   }
 
   const horaLegible = (iso: string) =>
-    new Date(iso).toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit', hour12: false });
+    new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
 
   // ---------- pantalla final ----------
   if (paso === 'listo' && listo) {
@@ -117,25 +121,24 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
       <Marco datos={datos}>
         <div className="rounded-2xl border border-verde/30 bg-verde-claro p-5 text-center">
           <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-verde text-2xl text-white">✓</div>
-          <h2 className="mt-3 text-[19px] font-bold tracking-tight text-verde-fuerte">Turno reservado</h2>
+          <h2 className="mt-3 text-[19px] font-bold tracking-tight text-verde-fuerte">{r.turnoReservado}</h2>
           <p className="mt-1 text-[15px] leading-relaxed text-tinta/70">
-            {fechaLarga(listo.inicia.slice(0, 10), 'es-PY')} a las <b>{horaLegible(listo.inicia)}</b>
+            <Rico texto={r.fechaYHora(fechaLarga(listo.inicia.slice(0, 10), locale), horaLegible(listo.inicia))} />
             <br />
-            {servicio?.nombre} con {profesional?.nombre}
+            {r.servicioCon(servicio?.nombre ?? '', profesional?.nombre ?? '')}
           </p>
         </div>
 
         <div className="mt-4 rounded-2xl border border-borde bg-superficie p-4">
-          <p className="text-[13.5px] font-semibold">Guardá este enlace</p>
+          <p className="text-[13.5px] font-semibold">{r.guardaEsteEnlace}</p>
           <p className="mt-1 text-[13px] leading-relaxed text-tinta/55">
-            Es lo único que necesitás si después no podés venir. Cancelar a tiempo le deja el
-            lugar a otra persona.
+            {r.loUnicoQueNecesitas}
           </p>
           <a
             href={`/turno/${listo.token}`}
             className="boton-suave mt-3 block w-full py-2.5 text-center"
           >
-            Ver o cancelar mi turno
+            {r.verOCancelar}
           </a>
         </div>
       </Marco>
@@ -148,14 +151,14 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
       {profesionales.length === 0 ? (
         <div className="rounded-2xl border border-borde bg-superficie p-5 text-center">
           <p className="text-[15px] leading-relaxed text-tinta/60">
-            Todavía no hay horarios cargados para reservar por acá. Escribile al local directamente.
+            {r.sinHorarios}
           </p>
         </div>
       ) : (
         <>
           {/* ---- con quién ---- */}
           {profesionales.length > 1 && (
-            <Bloque titulo="¿Con quién?">
+            <Bloque titulo={r.conQuien}>
               <div className="grid gap-2 sm:grid-cols-2">
                 {profesionales.map((p) => (
                   <button
@@ -177,7 +180,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
 
           {/* ---- qué servicio ---- */}
           {profesional && (
-            <Bloque titulo="¿Qué te hacés?">
+            <Bloque titulo={r.queTeHaces}>
               <div className="space-y-2">
                 {(profesional.servicios ?? []).map((s) => (
                   <button
@@ -192,7 +195,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-[14.5px] font-semibold">{s.nombre}</span>
-                      <span className="mt-0.5 block text-[12.5px] text-tinta/50">{s.duracion} minutos</span>
+                      <span className="mt-0.5 block text-[12.5px] text-tinta/50">{r.minutos(s.duracion)}</span>
                     </span>
                     <span className="shrink-0 text-[15px] font-bold tabular-nums">
                       {plata(Number(s.precio))}
@@ -201,7 +204,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                 ))}
                 {(profesional.servicios ?? []).length === 0 && (
                   <p className="text-[13.5px] text-tinta/55">
-                    No hay servicios disponibles para reservar.
+                    {r.sinServicios}
                   </p>
                 )}
               </div>
@@ -210,7 +213,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
 
           {/* ---- qué día ---- */}
           {profesional && servicio && (
-            <Bloque titulo="¿Qué día?">
+            <Bloque titulo={r.queDia}>
               <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
                 {dias.map((d) => {
                   const f = new Date(`${d}T12:00:00`);
@@ -224,7 +227,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                       }`}
                     >
                       <span className="block text-[11px] uppercase tracking-wide text-tinta/45">
-                        {f.toLocaleDateString('es-PY', { weekday: 'short' })}
+                        {f.toLocaleDateString(locale, { weekday: 'short' })}
                       </span>
                       <span className="block text-[15px] font-bold tabular-nums">{f.getDate()}</span>
                     </button>
@@ -234,10 +237,10 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
 
               <div className="mt-3">
                 {huecos === null ? (
-                  <p className="py-3 text-center text-[13.5px] text-tinta/45">Buscando horarios…</p>
+                  <p className="py-3 text-center text-[13.5px] text-tinta/45">{r.buscandoHorarios}</p>
                 ) : huecos.length === 0 ? (
                   <p className="rounded-xl bg-arena px-3 py-3 text-center text-[13.5px] leading-relaxed text-tinta/55">
-                    Ese día no queda ningún horario libre. Probá con otro.
+                    {r.sinHuecos}
                   </p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -263,24 +266,24 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
 
           {/* ---- quién sos ---- */}
           {hora && (
-            <Bloque titulo="¿Y vos quién sos?">
+            <Bloque titulo={r.quienSos}>
               <div className="space-y-3">
                 <div>
-                  <label className="etiqueta" htmlFor="pub-nombre">Tu nombre</label>
+                  <label className="etiqueta" htmlFor="pub-nombre">{r.tuNombre}</label>
                   <input
                     id="pub-nombre" className="campo" maxLength={80} autoFocus
                     value={nombre} onChange={(e) => setNombre(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="etiqueta" htmlFor="pub-tel">Tu teléfono</label>
+                  <label className="etiqueta" htmlFor="pub-tel">{r.tuTelefono}</label>
                   <input
                     id="pub-tel" className="campo" inputMode="tel" maxLength={40}
                     placeholder="0981 000 000"
                     value={telefono} onChange={(e) => setTelefono(e.target.value)}
                   />
                   <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">
-                    Solo lo usa el local para avisarte si pasa algo con tu turno.
+                    {r.telefonoSoloLocal}
                   </p>
                 </div>
 
@@ -296,7 +299,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                   disabled={cargando || nombre.trim() === '' || telefono.trim().length < 6}
                   onClick={confirmar}
                 >
-                  {cargando ? 'Reservando…' : `Reservar ${horaLegible(hora)}`}
+                  {cargando ? r.reservando : r.reservar(horaLegible(hora))}
                 </button>
               </div>
             </Bloque>
@@ -314,6 +317,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
 }
 
 function Marco({ datos, children }: { datos: AgendaPublica; children: React.ReactNode }) {
+  const r = useTextos().reservaPublica;
   return (
     <div className="min-h-screen bg-arena">
       <div className="mx-auto max-w-lg px-4 pb-16 pt-8">
@@ -331,7 +335,7 @@ function Marco({ datos, children }: { datos: AgendaPublica; children: React.Reac
 
         {/* Discreto a propósito: esta página es del barbero, no nuestra. */}
         <p className="mt-8 text-center text-[11.5px] text-tinta/35">
-          Turnos con Orden
+          {r.turnosConOrden}
         </p>
       </div>
     </div>

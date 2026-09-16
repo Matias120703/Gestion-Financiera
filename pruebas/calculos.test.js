@@ -645,7 +645,10 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const age = fs.readFileSync('src/components/PantallaAgenda.tsx', 'utf8');
   ok('la agenda elige el cliente de la lista', age.includes('<SelectorCliente'), true);
   ok('y lo manda al reservar', age.includes('p_cliente: d.cliente'), true);
-  ok('con textos de agenda y no de fiado', age.includes('placeholder="Nombre de quien viene"'), true);
+  // El texto vive en el diccionario desde que la agenda habla portugués.
+  ok('con textos de agenda y no de fiado',
+    age.includes('placeholder={t.agenda.nombreQuienViene}')
+      && fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes("nombreQuienViene: 'Nombre de quien viene'"), true);
   // Y se agenda hablando, en el micrófono de siempre: el dueño no quería uno
   // aparte adentro de la agenda.
   ok('la agenda levanta el turno dictado en la captura', age.includes('EVENTO_TURNO_DICTADO'), true);
