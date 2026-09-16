@@ -186,10 +186,24 @@ export function instrucciones(
    * el bloque de turnos ya armado (turno-voz.ts). Viene de afuera porque
    * depende de la agenda y del rubro de cada negocio.
    */
-  extras: { tipos?: string[]; bloqueTurnos?: string } = {},
+  extras: { tipos?: string[]; bloqueTurnos?: string; idioma?: string } = {},
 ) {
   const tipos = new Set(extras.tipos ?? []);
   const conTurnos = tipos.has('turno') && !!extras.bloqueTurnos;
+
+  // En qué idioma se escribe lo que la persona va a LEER: el aviso y la
+  // descripción. Las categorías no: son valores de la base y tienen que
+  // volver escritas tal cual están en la lista, o el gasto cae en un
+  // casillero nuevo que nadie creó.
+  const enPortugues = extras.idioma === 'pt';
+  const enSuIdioma = enPortugues ? 'en portugués de Brasil' : 'en español rioplatense';
+  const bloqueIdioma = enPortugues ? `
+
+IDIOMA
+   La persona usa Orden en portugués de Brasil. Puede hablar en portugués, en español o mezclando los dos: entendé las tres cosas igual.
+   - "descripcion" y "aviso" van en portugués de Brasil.
+   - Las categorías se devuelven EXACTAMENTE como están escritas en la lista, aunque estén en español: son valores del sistema, no texto para leer.
+   - "mil" y "milhão/milhões" son escalas igual que en español: "150 mil" es 150000, "dois milhões" es 2000000.` : '';
 
   // Los tipos que no son plata, en la lista de tipos. Solo los que existen
   // en esta cuenta: un tipo disponible es un tipo que el modelo va a usar.
@@ -462,14 +476,14 @@ ${reglaFiado}
    - 0.9+ si el monto y el concepto están claros.
    - 0.5-0.7 si tuviste que asumir el monto o la escala.
    - Menos de 0.5 si el mensaje es confuso; explicá la duda en "aviso" con
-     una frase corta en español rioplatense.
+     una frase corta ${enSuIdioma}.
    - "aviso" es null cuando todo está claro.
 
 9. DESCRIPCIÓN
    - Corta y concreta. Ej: "Sueldo de agosto", "Supermercado".
    - En una deuda es el NOMBRE con el que la va a reconocer en la lista:
      "Tarjeta Visa", "Préstamo del banco". Sin el monto adentro.
-   - Nunca inventes datos que no estén en el mensaje.`;
+   - Nunca inventes datos que no estén en el mensaje.${bloqueIdioma}`;
   }
 
   return `Sos el asistente de un negocio pequeño en Paraguay. Convertís lo que te dicen, en lenguaje cotidiano, en algo que el sistema pueda guardar: casi siempre un movimiento de plata${tiposAccion ? ', y a veces un turno, algo del catálogo o un cliente' : ''}.
@@ -599,13 +613,13 @@ ${reglaFiado}
 7. CONFIANZA (0 a 1)
    - 0.9+ si el monto y el concepto están explícitos y claros.
    - 0.5-0.7 si tuviste que asumir el monto, la escala o el producto.
-   - Menos de 0.5 si el mensaje es confuso. En ese caso explicá la duda en "aviso" con una frase corta y en español rioplatense.
+   - Menos de 0.5 si el mensaje es confuso. En ese caso explicá la duda en "aviso" con una frase corta y ${enSuIdioma}.
    - "aviso" es null cuando todo está claro.
 
 8. DESCRIPCIÓN
-   - Corta, concreta, en español. Ej: "Venta 3 perfumes Lattafa", "Combustible moto".
+   - Corta, concreta, ${enPortugues ? 'en portugués de Brasil' : 'en español'}. Ej: "Venta 3 perfumes Lattafa", "Combustible moto".
    - En una deuda es el NOMBRE con el que la persona la va a reconocer en la
      lista: "Tarjeta Visa", "Préstamo Banco Atlas", "Fiado del mayorista".
      No pongas el monto adentro del nombre.
-   - Nunca inventes datos que no estén en el mensaje.`;
+   - Nunca inventes datos que no estén en el mensaje.${bloqueIdioma}`;
 }

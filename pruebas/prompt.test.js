@@ -184,6 +184,34 @@ grupo('6 · La voz sirve para todo: turnos, catálogo y clientes');
     persona2.includes('UNA SOLA EXCEPCIÓN'), true);
 }
 
+// ---------------------------------------------------------------------
+// El idioma: quien usa Orden en portugués lee la descripción y el aviso en
+// portugués, pero las categorías vuelven tal cual están en la lista.
+// ---------------------------------------------------------------------
+{
+  const enEspanol = instrucciones(HOY, 'PYG', [], [], false, [], FIJOS);
+  const enPortugues = instrucciones(HOY, 'PYG', [], [], false, [], FIJOS, [], [], { idioma: 'pt' });
+  const personaPt = instrucciones(HOY, 'PYG', [], [], true, [], FIJOS, [], [], { idioma: 'pt' });
+
+  ok('sin decir idioma, el aviso sigue en español rioplatense',
+    enEspanol.includes('frase corta y en español rioplatense'), true);
+  ok('y no aparece ningún bloque de idioma',
+    enEspanol.includes('IDIOMA\n'), false);
+
+  ok('en portugués, el aviso se pide en portugués',
+    enPortugues.includes('frase corta y en portugués de Brasil'), true);
+  ok('la descripción también',
+    enPortugues.includes('Corta, concreta, en portugués de Brasil'), true);
+  ok('y ya no se pide nada en español rioplatense',
+    enPortugues.includes('español rioplatense'), false);
+  ok('se avisa que puede mezclar los dos idiomas',
+    enPortugues.includes('mezclando los dos'), true);
+  ok('las categorías vuelven como están en la lista',
+    enPortugues.includes('EXACTAMENTE como están escritas en la lista'), true);
+  ok('la cuenta personal en portugués también lo dice',
+    personaPt.includes('IDIOMA\n') && !personaPt.includes('español rioplatense'), true);
+}
+
 console.log('\n' + '═'.repeat(62));
 if (fallos > 0) {
   console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL PROMPT FALLARON`);

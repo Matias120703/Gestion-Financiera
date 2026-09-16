@@ -31,17 +31,26 @@ const MODELO_AUDIO_RESPALDO = 'whisper-1';
  * cosas va a oír. Con ella, «150 lucas» sale como un monto y «a las tres»
  * como una hora.
  */
-export async function transcribir(openai: OpenAI, archivo: File, pista: string): Promise<string> {
+export async function transcribir(
+  openai: OpenAI, archivo: File, pista: string,
+  /**
+   * En qué idioma habla la persona. Decírselo al modelo no es opcional: sin
+   * esto estaba fijo en español, y un brasileño que dictaba «vendi dois
+   * sacos de ração» salía transcripto como un español roto que después
+   * nadie podía interpretar. Es el idioma que eligió en Orden.
+   */
+  idioma: string = 'es',
+): Promise<string> {
   try {
     const t = await openai.audio.transcriptions.create({
-      file: archivo, model: MODELO_AUDIO, language: 'es', prompt: pista,
+      file: archivo, model: MODELO_AUDIO, language: idioma, prompt: pista,
     });
     return (t.text ?? '').trim();
   } catch (e: any) {
     if (MODELO_AUDIO === MODELO_AUDIO_RESPALDO) throw e;
     console.warn('[transcribir] audio con', MODELO_AUDIO, 'falló; voy con whisper:', e?.message);
     const t = await openai.audio.transcriptions.create({
-      file: archivo, model: MODELO_AUDIO_RESPALDO, language: 'es', prompt: pista,
+      file: archivo, model: MODELO_AUDIO_RESPALDO, language: idioma, prompt: pista,
     });
     return (t.text ?? '').trim();
   }

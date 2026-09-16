@@ -8,6 +8,7 @@ import type { CapturaInterpretada, Producto } from '@/lib/tipos';
 import { ESQUEMA, instrucciones } from '@/lib/captura';
 import { sanearFicha, sanearProducto } from '@/lib/acciones';
 import { contextoAcciones, turnoDictado } from '@/lib/acciones-servidor';
+import { idiomaActual } from '@/i18n';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -24,10 +25,17 @@ function respuestaVacia(mensaje: string, estado = 400) {
  * Lo que se le dice al modelo antes de escuchar: qué clase de cosas va a
  * oír. Con esto «150 lucas» sale como un monto y «a las tres» como una hora.
  */
-const PISTA_AUDIO =
-  'Nota de voz de alguien en Paraguay registrando ventas, gastos, cobros, turnos, '
-  + 'productos o clientes. Puede decir montos como "150 mil", "dos millones", '
-  + '"150 lucas", y horas como "mañana a las tres".';
+const PISTA_AUDIO: Record<string, string> = {
+  es: 'Nota de voz de alguien en Paraguay registrando ventas, gastos, cobros, turnos, '
+    + 'productos o clientes. Puede decir montos como "150 mil", "dos millones", '
+    + '"150 lucas", y horas como "mañana a las tres".',
+  // La pista va en el idioma del audio: el modelo la toma como el comienzo
+  // de lo que va a escuchar, y una pista en español empuja a transcribir
+  // en español aunque le hablen en portugués.
+  pt: 'Áudio de alguém no Paraguai registrando vendas, despesas, recebimentos, horários, '
+    + 'produtos ou clientes. Pode dizer valores como "150 mil", "dois milhões", '
+    + 'em guaranis, e horários como "amanhã às três".',
+};
 
 export async function POST(request: Request) {
   // ---------- 1. Sesión y permisos ----------
@@ -220,9 +228,13 @@ export async function POST(request: Request) {
     empresaId, rubro: empresa.rubro, tipoCuenta: empresa.tipo_cuenta, hoy, catalogo,
   });
 
+  // El idioma que eligió en Orden: con ese se escucha el audio y con ese
+  // se le escriben la descripción y el aviso.
+  const idioma = idiomaActual();
+
   const sistema = instrucciones(
     hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores,
-    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos });
+    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos, idioma });
 
   try {
     let textoUsuario = '';
@@ -239,7 +251,7 @@ export async function POST(request: Request) {
       if (!(archivo instanceof File)) return respuestaVacia('No llegó el audio.');
       if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia('El audio es demasiado largo.');
 
-      transcripcion = await transcribir(openai, archivo, PISTA_AUDIO);
+      transcripcion = await transcribir(openai, archivo, PISTA_AUDIO[idioma] ?? PISTA_AUDIO.es, idioma);
       if (!transcripcion) return respuestaVacia('No se entendió el audio. Probá de nuevo hablando más cerca.');
       textoUsuario = transcripcion;
     } else if (modo === 'foto') {
