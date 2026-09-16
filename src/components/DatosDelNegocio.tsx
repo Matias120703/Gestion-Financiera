@@ -1,10 +1,10 @@
 'use client';
 
-import { LISTA_RUBROS } from '@/lib/rubros';
+import { LISTA_RUBROS, rubroVisible } from '@/lib/rubros';
 import { CANALES, type DatosRegistro } from '@/lib/registro';
 import { DIAS_DE_PRUEBA } from '@/lib/constantes';
 import { CampoCodigoRef } from '@/components/CampoCodigoRef';
-import { useTextos } from '@/i18n/cliente';
+import { useTextos, useIdioma } from '@/i18n/cliente';
 import type { Rubro } from '@/lib/tipos';
 
 /**
@@ -26,6 +26,7 @@ export default function DatosDelNegocio({
   alCambiar: (parcial: Partial<DatosRegistro>) => void;
 }) {
   const t = useTextos();
+  const idioma = useIdioma();
   const esPersonal = datos.tipoCuenta === 'personal';
 
   return (
@@ -96,11 +97,11 @@ export default function DatosDelNegocio({
             onChange={(e) => alCambiar({ rubro: e.target.value as Rubro })}
           >
             {LISTA_RUBROS.map((r) => (
-              <option key={r.clave} value={r.clave}>{r.nombre}</option>
+              <option key={r.clave} value={r.clave}>{rubroVisible(r, idioma).nombre}</option>
             ))}
           </select>
           <p className="mt-1.5 text-[12.5px] leading-snug text-tinta/50">
-            {LISTA_RUBROS.find((r) => r.clave === datos.rubro)?.ejemplo}
+            {(() => { const r = LISTA_RUBROS.find((x) => x.clave === datos.rubro); return r ? rubroVisible(r, idioma).ejemplo : ''; })()}
             {'. '}
             {t.pantallas.rubroDetalle}
           </p>
@@ -150,8 +151,8 @@ export default function DatosDelNegocio({
       </div>
 
       <CampoCodigoRef
-        etiqueta="Código de quien te recomendó (opcional)"
-        ayuda="Si alguien que ya usa Orden te pasó su código, ponelo acá. No cambia nada de tu cuenta ni de lo que pagás."
+        etiqueta={t.pantallas.codigoQuienTeRecomendo}
+        ayuda={t.pantallas.codigoQuienTeRecomendoAyuda}
       />
     </div>
   );

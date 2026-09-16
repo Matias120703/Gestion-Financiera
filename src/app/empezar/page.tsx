@@ -97,7 +97,7 @@ export default function PaginaEmpezar() {
       await aplicarRef(supabase, data as string);
       activar(data as string);
     } catch (err: any) {
-      setError(err?.message ?? 'No se pudo crear la empresa.');
+      setError(err?.message ?? t.pantallas.noSePudoCrearEmpresa);
       setCargando(false);
     }
   }
@@ -115,7 +115,7 @@ export default function PaginaEmpezar() {
       if (fallo) throw fallo;
       activar(data as string);
     } catch (err: any) {
-      setError(err?.message ?? 'No se pudo unir a la empresa.');
+      setError(err?.message ?? t.pantallas.noSePudoUnir);
       setCargando(false);
     }
   }

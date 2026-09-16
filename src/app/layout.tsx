@@ -7,14 +7,18 @@ import { CapturarRef } from '@/components/CapturarRef';
 import { SeguirTema } from '@/components/SeguirTema';
 import { GUION_TEMA } from '@/lib/tema';
 
-export const metadata: Metadata = {
-  title: 'Orden · Gestión financiera',
-  description: 'Registrá ventas y gastos en segundos. Mirá tu ganancia real todos los días.',
-  manifest: '/manifest.webmanifest',
-  applicationName: 'Orden',
-  appleWebApp: { capable: true, title: 'Orden', statusBarStyle: 'black-translucent' },
-  icons: { icon: '/iconos/icono.svg', apple: '/iconos/icono.svg' },
-};
+/** El título y la descripción, en el idioma de quien abre la página. */
+export function generateMetadata(): Metadata {
+  const t = textos();
+  return {
+    title: t.pantallas.metaTitulo,
+    description: t.pantallas.metaDescripcion,
+    manifest: '/manifest.webmanifest',
+    applicationName: 'Orden',
+    appleWebApp: { capable: true, title: 'Orden', statusBarStyle: 'black-translucent' },
+    icons: { icon: '/iconos/icono.svg', apple: '/iconos/icono.svg' },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: '#0d1b16',

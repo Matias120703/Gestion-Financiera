@@ -59,7 +59,7 @@ function Formulario() {
       router.push(volver || '/panel');
       router.refresh();
     } catch (err: any) {
-      const mensaje: string = err?.message ?? 'No se pudo completar la operación.';
+      const mensaje: string = err?.message ?? t.pantallas.noSePudoCompletar;
       if (/invalid login/i.test(mensaje)) setError(t.acceso.credencialesMal);
       else if (/email not confirmed/i.test(mensaje)) setError(t.acceso.sinConfirmar);
       else setError(mensaje);

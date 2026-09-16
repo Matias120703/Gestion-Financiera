@@ -21,13 +21,12 @@ import type { Rubro, TipoCuenta } from './tipos';
  *
  * SOBRE LAS PALABRAS Y LOS IDIOMAS
  *
- * Los reemplazos de vocabulario están en español solamente, y es a propósito.
- * Hoy Orden habla un solo idioma (ver `IDIOMA_UNICO`), pero la regla vale
- * igual para cuando vuelva a hablar más: si cada rubro trajera su juego
- * completo de palabras traducidas, serían cuatro rubros por cada idioma de
- * texto a mantener para siempre. En los demás se usa la palabra genérica del
- * diccionario, que se entiende igual. Cuando haya clientes de un rubro
- * hablando otro idioma, se traduce ese caso y no antes.
+ * Acá decía: «cuando haya clientes de un rubro hablando otro idioma, se
+ * traduce ese caso y no antes». Los hay desde el 2026-09-16: brasileños que
+ * trabajan en Paraguay, muchos en el campo. Por eso cada rubro trae su
+ * nombre, su ejemplo y sus palabras también en portugués (`pt`). Un idioma
+ * que no esté en `pt` ni sea español sigue usando la palabra genérica del
+ * diccionario.
  */
 
 /**
@@ -71,6 +70,12 @@ export interface FichaRubro {
    * palabra del diccionario.
    */
   palabras: Partial<Record<'vender' | 'productos' | 'ventas', string>>;
+  /** Lo mismo en portugués: nombre y ejemplo al elegirlo, y sus palabras. */
+  pt: {
+    nombre: string;
+    ejemplo: string;
+    palabras: Partial<Record<'vender' | 'productos' | 'ventas', string>>;
+  };
   /**
    * Si el negocio tiene ciclos largos —un novillo que se engorda dieciocho
    * meses, una campaña de soja— la ganancia no se mide por día.
@@ -123,6 +128,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // sirve como unidad y no necesita nada de los otros rubros.
     secciones: { ...NUCLEO },
     palabras: {},
+    pt: { nombre: 'Comércio', ejemplo: 'Mercearia, loja de roupas, perfumaria, delivery', palabras: {} },
     ciclosLargos: false,
     cierraElDia: true,
   },
@@ -141,6 +147,11 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // cosas, en dos pestañas. Con el nombre viejo, quien entraba a cargar el
     // shampoo que vende no sabía si estaba en el lugar correcto.
     palabras: { vender: 'Cobrar', productos: 'Servicios y productos', ventas: 'Cobrado' },
+    pt: {
+      nombre: 'Serviços e ofícios',
+      ejemplo: 'Salão, barbearia, oficina, encanador, freelancer',
+      palabras: { vender: 'Receber', productos: 'Serviços e produtos', ventas: 'Recebido' },
+    },
     // El día SÍ es su unidad: un peluquero cobra hoy lo que hizo hoy, cierra
     // su día y tiene racha como cualquier comercio. Estuvo en `true` un
     // tiempo, arrastrado de cuando los lotes iban a servir también acá, y el
@@ -166,6 +177,11 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       '/reto': false,
     },
     palabras: { vender: 'Vender', productos: 'Hacienda', ventas: 'Ventas' },
+    pt: {
+      nombre: 'Pecuária',
+      ejemplo: 'Cria, engorda, leite',
+      palabras: { vender: 'Vender', productos: 'Rebanho', ventas: 'Vendas' },
+    },
     ciclosLargos: true,
     cierraElDia: false,
   },
@@ -184,6 +200,11 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       '/reto': false,
     },
     palabras: { vender: 'Vender', productos: 'Cultivos', ventas: 'Ventas' },
+    pt: {
+      nombre: 'Agricultura',
+      ejemplo: 'Soja, milho, horta, frutas',
+      palabras: { vender: 'Vender', productos: 'Culturas', ventas: 'Vendas' },
+    },
     ciclosLargos: true,
     cierraElDia: false,
   },
@@ -248,6 +269,7 @@ export const PERSONAL: FichaRubro = {
     '/reto': false,
   },
   palabras: {},
+  pt: { nombre: 'Pessoal', ejemplo: 'Seu salário, suas despesas e suas dívidas', palabras: {} },
   ciclosLargos: false,
   cierraElDia: false,
 };
@@ -289,8 +311,8 @@ export function tieneSeccion(
 /**
  * La palabra de este rubro, o la del diccionario si no la cambia.
  *
- * `porDefecto` viene traducida; el reemplazo no. Por eso el reemplazo solo se
- * aplica cuando el idioma es español: en inglés o portugués es mejor la
+ * `porDefecto` viene traducida. El reemplazo del rubro se usa en español y en
+ * portugués, que lo tienen escrito; en cualquier otro idioma es mejor la
  * palabra genérica bien traducida que una específica en el idioma equivocado.
  */
 export function palabra(
@@ -300,6 +322,14 @@ export function palabra(
   porDefecto: string,
   idioma: string,
 ): string {
+  const ficha = fichaDe(rubro, tipoCuenta);
+  if (idioma === 'pt') return ficha.pt.palabras[clave] ?? porDefecto;
   if (idioma !== 'es') return porDefecto;
-  return fichaDe(rubro, tipoCuenta).palabras[clave] ?? porDefecto;
+  return ficha.palabras[clave] ?? porDefecto;
+}
+
+/** El nombre y el ejemplo de un rubro, como se leen en ese idioma. */
+export function rubroVisible(ficha: FichaRubro, idioma: string): { nombre: string; ejemplo: string } {
+  if (idioma === 'pt') return { nombre: ficha.pt.nombre, ejemplo: ficha.pt.ejemplo };
+  return { nombre: ficha.nombre, ejemplo: ficha.ejemplo };
 }

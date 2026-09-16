@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
-import { LISTA_RUBROS } from '@/lib/rubros';
+import { LISTA_RUBROS, rubroVisible } from '@/lib/rubros';
 import CampoClave from '@/components/CampoClave';
 import DatosDelNegocio from '@/components/DatosDelNegocio';
 import {
@@ -13,7 +13,7 @@ import {
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
 import { aplicarRef } from '@/lib/referido';
-import { useTextos } from '@/i18n/cliente';
+import { useTextos, useIdioma } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 
 /**
@@ -37,6 +37,7 @@ import { Marca } from '@/components/Marca';
 export default function PaginaCrear() {
   const router = useRouter();
   const t = useTextos();
+  const idioma = useIdioma();
 
   /**
    * EL CAMINO DEL INVITADO
@@ -175,14 +176,15 @@ export default function PaginaCrear() {
       setAviso(t.acceso.confirmaTuCorreo);
       setCargando(false);
     } catch (err: any) {
-      const mensaje: string = err?.message ?? 'No se pudo crear la cuenta.';
+      const mensaje: string = err?.message ?? t.pantallas.noSePudoCrearCuenta;
       if (/already registered/i.test(mensaje)) setError(t.acceso.yaRegistrado);
       else setError(mensaje);
       setCargando(false);
     }
   }
 
-  const rubroNombre = LISTA_RUBROS.find((r) => r.clave === datos.rubro)?.nombre ?? '';
+  const fichaRubro = LISTA_RUBROS.find((r) => r.clave === datos.rubro);
+  const rubroNombre = fichaRubro ? rubroVisible(fichaRubro, idioma).nombre : '';
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-noche px-4 py-10">

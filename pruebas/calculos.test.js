@@ -1,7 +1,7 @@
 const { resumir, rankingProductos, gastosPorCategoria, serieDiaria, variacion, factorDescuento, esValido, tieneCostos, logradoEnReto } = require('../.compilado/calculos.js');
 const { resolverRango, rangoAnterior, diasDelRango, inicioDeSemana, sumarDias, diffDias, finDeMes } = require('../.compilado/fechas.js');
 const { dinero, dineroCorto, fechaLegible, decimalesDe } = require('../.compilado/formato.js');
-const { fichaDe, tieneSeccion, palabra, LISTA_RUBROS } = require('../.compilado/rubros.js');
+const { fichaDe, tieneSeccion, palabra, rubroVisible, LISTA_RUBROS } = require('../.compilado/rubros.js');
 
 let fallos = 0;
 function ok(nombre, real, esperado) {
@@ -419,6 +419,23 @@ ok('y a un almacén no se le cambia nada',
   palabra('comercio', 'emprendedor', 'productos', 'Productos', 'es'), 'Productos');
 ok('la peluquería cobra, no vende',
   palabra('servicios', 'emprendedor', 'vender', 'Vender', 'es'), 'Cobrar');
+
+// En portugués cada rubro tiene sus propias palabras (2026-09-16): a un
+// ganadero brasileño se le dice «Rebanho», no la palabra genérica.
+ok('en portugués, al ganadero se le dice Rebanho',
+  palabra('ganaderia', 'emprendedor', 'productos', 'Produtos', 'pt'), 'Rebanho');
+ok('a la peluquería, Receber',
+  palabra('servicios', 'emprendedor', 'vender', 'Vender', 'pt'), 'Receber');
+ok('y en portugués nunca se cuela la palabra en español',
+  palabra('agricultura', 'emprendedor', 'productos', 'Produtos', 'pt') !== 'Cultivos', true);
+ok('otro idioma sin palabras propias usa la genérica',
+  palabra('ganaderia', 'emprendedor', 'productos', 'Products', 'en'), 'Products');
+ok('el nombre del rubro al elegirlo, en portugués',
+  rubroVisible(fichaDe('ganaderia', 'emprendedor'), 'pt').nombre, 'Pecuária');
+ok('y en español no cambia',
+  rubroVisible(fichaDe('ganaderia', 'emprendedor'), 'es').nombre, 'Ganadería');
+ok('una cuenta personal también tiene su nombre en portugués',
+  rubroVisible(fichaDe(null, 'personal'), 'pt').nombre, 'Pessoal');
 
 // Y que el menú la llame de verdad. Sin esto, la función puede volver a
 // quedar perfecta y sin usar, que es exactamente lo que pasó.

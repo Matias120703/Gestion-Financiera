@@ -80,7 +80,7 @@ export default function PaginaClaveNueva() {
       // pedirle que escriba la clave que acaba de escribir.
       setTimeout(() => { router.push('/panel'); router.refresh(); }, 1400);
     } catch (err: any) {
-      const m: string = err?.message ?? 'No se pudo guardar.';
+      const m: string = err?.message ?? t.gastos.noSePudoGuardar;
       if (/should be different/i.test(m)) setError(t.acceso.esLaMisma);
       else if (/session/i.test(m)) setError(t.acceso.sesionVencida);
       else setError(m);
