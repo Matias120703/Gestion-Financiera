@@ -612,10 +612,15 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const pro = fs.readFileSync('src/components/PantallaProductos.tsx', 'utf8');
   ok('productos tiene pestañas de servicios y productos',
     pro.includes("type Tipo = 'servicios' | 'productos'"), true);
+  // Los textos viven en el diccionario desde que la pantalla habla portugués.
+  const textosEs = fs.readFileSync('src/i18n/textos/es.ts', 'utf8');
   ok('cada pestaña crea lo suyo',
-    pro.includes("'+ Servicio'") && pro.includes("'+ Producto'"), true);
+    pro.includes('controla_stock: !enServicios')
+      && pro.includes('t.productos.nuevoServicio') && pro.includes('t.productos.nuevoProducto')
+      && textosEs.includes("nuevoServicio: '+ Servicio'") && textosEs.includes("nuevoProducto: '+ Producto'"), true);
   ok('el formulario pregunta qué es, sin tilde escondido',
-    pro.includes('Qué es') && !pro.includes('t.productos.controlarStock}'), true);
+    pro.includes('t.productos.queEs') && textosEs.includes("queEs: 'Qué es'")
+      && !pro.includes('t.productos.controlarStock}'), true);
   const pag = fs.readFileSync('src/app/(app)/productos/page.tsx', 'utf8');
   ok('en servicios y oficios siempre hay pestañas',
     pag.includes("ctx.empresa.rubro === 'servicios'"), true);

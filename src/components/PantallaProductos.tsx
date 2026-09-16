@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTextos } from '@/i18n/cliente';
+import { categoriaVisible } from '@/i18n/nombres';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, numero, porcentaje } from '@/lib/formato';
@@ -119,7 +120,7 @@ export function PantallaProductos({
       const { data, error } = await supabase
         .from('productos').update({ activo: !p.activo }).eq('id', p.id).select('id');
       if (error) throw error;
-      verificarAfectados(data, 'No se guardó: solo un administrador puede pausar productos.');
+      verificarAfectados(data, t.productos.soloAdminPausa);
       router.refresh();
     } catch (e: any) {
       setError(mensajeDeError(e));
@@ -141,7 +142,7 @@ export function PantallaProductos({
                 pestana === tp ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'
               }`}
             >
-              {tp === 'servicios' ? 'Servicios' : 'Productos'}
+              {tp === 'servicios' ? t.productos.servicios : t.productos.productos}
               <span className="ml-1.5 text-[12px] font-semibold text-tinta/40">{cuantos(tp)}</span>
             </button>
           ))}
@@ -151,31 +152,31 @@ export function PantallaProductos({
       {enServicios ? (
         <div className="grid grid-cols-2 gap-3">
           <Indicador
-            titulo="Servicios activos"
+            titulo={t.productos.serviciosActivos}
             valor={numero(activosDeLaPestana.length)}
-            detalle={`${deLaPestana.length - activosDeLaPestana.length} pausados`}
+            detalle={t.productos.pausados(deLaPestana.length - activosDeLaPestana.length)}
           />
-          <Indicador titulo="Precio promedio" valor={dinero(precioPromedio, moneda)} detalle="de lo que ofrecés" />
+          <Indicador titulo={t.productos.precioPromedio} valor={dinero(precioPromedio, moneda)} detalle={t.productos.deLoQueOfreces} />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Indicador
             titulo={t.productos.activos}
             valor={numero(activosDeLaPestana.length)}
-            detalle={`${deLaPestana.length - activosDeLaPestana.length} pausados`}
+            detalle={t.productos.pausados(deLaPestana.length - activosDeLaPestana.length)}
           />
           {verCostos ? (
             <>
-              <Indicador titulo={t.productos.invertido} valor={dinero(valorInventario, moneda)} detalle="a precio de costo" />
-              <Indicador titulo={t.productos.siVendesTodo} valor={dinero(valorVenta, moneda)} detalle={`ganarías ${dinero(valorVenta - valorInventario, moneda)}`} tono="bueno" />
+              <Indicador titulo={t.productos.invertido} valor={dinero(valorInventario, moneda)} detalle={t.productos.aPrecioDeCosto} />
+              <Indicador titulo={t.productos.siVendesTodo} valor={dinero(valorVenta, moneda)} detalle={t.productos.ganarias(dinero(valorVenta - valorInventario, moneda))} tono="bueno" />
             </>
           ) : (
             <>
-              <Indicador titulo={t.productos.unidades} valor={numero(unidadesEnStock)} detalle="disponibles" />
-              <Indicador titulo={t.productos.valorVenta} valor={dinero(valorVenta, moneda)} detalle="si se vende todo" />
+              <Indicador titulo={t.productos.unidades} valor={numero(unidadesEnStock)} detalle={t.productos.disponibles} />
+              <Indicador titulo={t.productos.valorVenta} valor={dinero(valorVenta, moneda)} detalle={t.productos.siSeVendeTodo} />
             </>
           )}
-          <Indicador titulo={t.productos.porReponer} valor={numero(criticos.length)} detalle="llegaron al mínimo" tono={criticos.length ? 'malo' : 'neutro'} />
+          <Indicador titulo={t.productos.porReponer} valor={numero(criticos.length)} detalle={t.productos.llegaronAlMinimo} tono={criticos.length ? 'malo' : 'neutro'} />
         </div>
       )}
 
@@ -193,7 +194,7 @@ export function PantallaProductos({
             className="boton-principal shrink-0"
             onClick={() => setEditando({ ...VACIO, controla_stock: !enServicios })}
           >
-            {enServicios ? '+ Servicio' : '+ Producto'}
+            {enServicios ? t.productos.nuevoServicio : t.productos.nuevoProducto}
           </button>
         )}
       </div>
@@ -207,15 +208,14 @@ export function PantallaProductos({
 
       {!puedeGestionar && (
         <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
-          Podés consultar el catálogo y vender. Los costos de compra y los márgenes no se
-          muestran, y cambiar precios o stock queda para los administradores del negocio.
+          {t.productos.soloConsulta}
         </p>
       )}
 
       {enServicios && tieneAgenda && puedeGestionar && (
         <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
-          Para que un servicio se pueda reservar por el link, dale una duración en{' '}
-          <Link href="/agenda" className="font-semibold text-verde-fuerte underline">Agenda</Link>.
+          {t.productos.duracionEnAgenda}{' '}
+          <Link href="/agenda" className="font-semibold text-verde-fuerte underline">{t.nav.agenda}</Link>.
         </p>
       )}
 
@@ -223,17 +223,13 @@ export function PantallaProductos({
         {visibles.length === 0 ? (
           enServicios ? (
             <Vacio
-              titulo={deLaPestana.length === 0 ? 'Todavía no hay servicios' : 'Nada coincide'}
-              detalle={deLaPestana.length === 0
-                ? 'Cargá lo que ofrecés —un corte, una barba, una sesión— con su precio.'
-                : 'Probá con otra palabra.'}
+              titulo={deLaPestana.length === 0 ? t.productos.sinServicios : t.productos.nadaCoincide}
+              detalle={deLaPestana.length === 0 ? t.productos.sinServiciosDetalle : t.productos.otraPalabra}
             />
           ) : (
             <Vacio
-              titulo={deLaPestana.length === 0 ? 'Todavía no hay productos' : 'Nada coincide'}
-              detalle={deLaPestana.length === 0
-                ? 'Cargá lo que vendés con su costo y su precio. Sin costo no hay margen real.'
-                : 'Probá con otra palabra.'}
+              titulo={deLaPestana.length === 0 ? t.productos.sinProductos : t.productos.nadaCoincide}
+              detalle={deLaPestana.length === 0 ? t.productos.sinProductosDetalle : t.productos.otraPalabra}
             />
           )
         ) : (
@@ -244,7 +240,7 @@ export function PantallaProductos({
             <table className={`tabla ${enServicios ? 'min-w-[360px]' : 'min-w-[640px]'}`}>
               <thead>
                 <tr>
-                  <th>{enServicios ? 'Servicio' : t.productos.colProducto}</th>
+                  <th>{enServicios ? t.productos.colServicio : t.productos.colProducto}</th>
                   {verCostos && !enServicios && <th className="num">{t.productos.colCosto}</th>}
                   <th className="num">{t.productos.colPrecio}</th>
                   {verCostos && !enServicios && <th className="num">{t.productos.colMargen}</th>}
@@ -261,7 +257,7 @@ export function PantallaProductos({
                       <td>
                         <span className="block font-semibold">{p.nombre}</span>
                         <span className="block text-[12px] text-tinta/45">
-                          {p.categoria}{!p.activo && ' · pausado'}
+                          {categoriaVisible(t, p.categoria)}{!p.activo && ` · ${t.productos.pausado}`}
                         </span>
                       </td>
                       {verCostos && !enServicios && (
@@ -303,10 +299,10 @@ export function PantallaProductos({
                           {puedeGestionar && (
                             <button
                               onClick={() => alternarActivo(p)}
-                              aria-label={p.activo ? 'Pausar' : 'Reactivar'}
+                              aria-label={p.activo ? t.productos.pausar : t.productos.reactivar}
                               // Las dos rayitas solas no se entendían: quien
                               // buscaba cómo sacar algo no las encontraba.
-                              title={p.activo ? 'Pausar: deja de aparecer para vender' : 'Volver a vender'}
+                              title={p.activo ? t.productos.pausarDetalle : t.productos.volverAVender}
                               className="icono-toque text-tinta/35 hover:bg-rojo-claro hover:text-rojo"
                             >
                               <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}>
@@ -375,10 +371,10 @@ function DialogoProducto({
         .rpc('eliminar_producto', { p_producto: borrador.id });
       if (error) throw error;
       onGuardado(data === 'pausado'
-        ? `«${borrador.nombre}» ya tiene ventas o turnos, así que quedó pausado: no aparece más para vender y tu historial no cambia.`
-        : `«${borrador.nombre}» se eliminó.`);
+        ? t.productos.quedoPausado(borrador.nombre)
+        : t.productos.seElimino(borrador.nombre));
     } catch (e: any) {
-      setError(mensajeDeError(e, 'No se pudo eliminar.'));
+      setError(mensajeDeError(e, t.productos.noSePudoEliminar));
       setConfirmar(false);
     } finally {
       setEliminando(false);
@@ -386,10 +382,10 @@ function DialogoProducto({
   }
 
   const margen = b.precio > 0 ? ((b.precio - b.costo) / b.precio) * 100 : 0;
-  const que = b.controla_stock ? 'producto' : 'servicio';
-  const sugeridas = b.controla_stock
-    ? ['Perfumes', 'Tecnología', 'Hogar', 'Ropa', 'Accesorios', 'General']
-    : ['Cortes', 'Barba', 'Color', 'Tratamientos', 'Reparaciones', 'General'];
+  const esProd = b.controla_stock;
+  // Las categorías de un catálogo son de la persona: se sugieren en su idioma
+  // y se guardan como las escriba.
+  const sugeridas = esProd ? t.productos.sugeridasProducto : t.productos.sugeridasServicio;
 
   function set<K extends keyof Borrador>(k: K, v: Borrador[K], extra: Partial<Borrador> = {}) {
     setB((prev) => ({ ...prev, [k]: v, ...extra }));
@@ -414,13 +410,13 @@ function DialogoProducto({
         ? await supabase.from('productos').update(fila).eq('id', b.id).select('id')
         : await supabase.from('productos').insert(fila).select('id');
       if (error) throw error;
-      verificarAfectados(data, `No se guardó: solo un administrador puede modificar ${que}s.`);
+      verificarAfectados(data, t.productos.soloAdminModifica(esProd));
       onGuardado();
     } catch (e: any) {
       const msg: string = e?.message ?? '';
       setError(/duplicate key|unique/i.test(msg)
-        ? `Ya tenés un ${que} con ese nombre.`
-        : mensajeDeError(e, 'No se pudo guardar.'));
+        ? t.productos.yaExiste(esProd)
+        : mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -436,7 +432,11 @@ function DialogoProducto({
         className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-[19px] font-bold tracking-tight">{b.id ? `Editar ${que}` : `Nuevo ${que}`}</h2>
+        <h2 className="text-[19px] font-bold tracking-tight">
+          {b.id
+            ? (esProd ? t.productos.editarProducto : t.productos.editarServicio)
+            : (esProd ? t.productos.nuevoProductoTitulo : t.productos.nuevoServicioTitulo)}
+        </h2>
 
         <div className="mt-4 space-y-3">
           {/* Qué es va PRIMERO: es la pregunta que decide todo lo demás. Un
@@ -449,17 +449,17 @@ function DialogoProducto({
               saber interpretar. Ahora se pregunta con las palabras de todos
               los días, y viene marcado según la pestaña desde donde se abrió. */}
           <div>
-            <span className="etiqueta">Qué es</span>
+            <span className="etiqueta">{t.productos.queEs}</span>
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
               <button type="button" className={opcion(!b.controla_stock)}
                 onClick={() => set('controla_stock', false, { costo: 0 })}>
-                <span className="block text-[14px] font-bold">Servicio</span>
-                <span className="block text-[11.5px] font-medium opacity-70">un corte, una sesión</span>
+                <span className="block text-[14px] font-bold">{t.productos.colServicio}</span>
+                <span className="block text-[11.5px] font-medium opacity-70">{t.productos.servicioEjemplo}</span>
               </button>
               <button type="button" className={opcion(b.controla_stock)}
                 onClick={() => set('controla_stock', true)}>
-                <span className="block text-[14px] font-bold">Producto</span>
-                <span className="block text-[11.5px] font-medium opacity-70">se compra y se revende</span>
+                <span className="block text-[14px] font-bold">{t.productos.colProducto}</span>
+                <span className="block text-[11.5px] font-medium opacity-70">{t.productos.productoEjemplo}</span>
               </button>
             </div>
           </div>
@@ -499,7 +499,7 @@ function DialogoProducto({
                     {dinero(b.precio - b.costo, moneda)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-right text-[12px] font-semibold text-tinta/45">margen {porcentaje(margen, 0)}</p>
+                <p className="mt-0.5 text-right text-[12px] font-semibold text-tinta/45">{t.productos.margen(porcentaje(margen, 0))}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -532,7 +532,7 @@ function DialogoProducto({
         <div className="mt-5 grid grid-cols-2 gap-2.5">
           <button type="button" className="boton-suave py-3" onClick={onCerrar}>{t.comun.cancelar}</button>
           <button type="submit" className="boton-principal py-3" disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Guardar'}
+            {guardando ? t.comun.guardando : t.comun.guardar}
           </button>
         </div>
 
@@ -540,18 +540,17 @@ function DialogoProducto({
         {borrador.id && (
           confirmar ? (
             <div className="mt-4 space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
-              <p className="text-[13.5px] font-bold text-rojo">¿Eliminar «{borrador.nombre}»?</p>
+              <p className="text-[13.5px] font-bold text-rojo">{t.productos.eliminarPregunta(borrador.nombre)}</p>
               <p className="text-[12.5px] leading-snug text-tinta/65">
-                {borrador.controla_stock ? 'Si ya lo vendiste' : 'Si ya lo cobraste o tiene turnos'}, no se
-                borra: queda pausado, y tu historial no cambia. Si nunca se usó, se borra.
+                {borrador.controla_stock ? t.productos.eliminarDetalleProducto : t.productos.eliminarDetalleServicio}
               </p>
               <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" className="boton-suave py-2.5" onClick={() => setConfirmar(false)}>No</button>
+                <button type="button" className="boton-suave py-2.5" onClick={() => setConfirmar(false)}>{t.productos.no}</button>
                 <button
                   type="button" onClick={eliminar} disabled={eliminando}
                   className="rounded-xl bg-rojo py-2.5 text-[14px] font-bold text-white disabled:opacity-50"
                 >
-                  {eliminando ? 'Eliminando…' : 'Sí, eliminar'}
+                  {eliminando ? t.productos.eliminando : t.productos.siEliminar}
                 </button>
               </div>
             </div>
@@ -560,7 +559,7 @@ function DialogoProducto({
               type="button" onClick={() => setConfirmar(true)}
               className="mt-3 w-full rounded-xl py-2.5 text-[13.5px] font-semibold text-rojo/80 hover:bg-rojo-claro hover:text-rojo"
             >
-              Eliminar {que}
+              {esProd ? t.productos.eliminarProducto : t.productos.eliminarServicio}
             </button>
           )
         )}
