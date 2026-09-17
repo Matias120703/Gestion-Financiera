@@ -697,6 +697,78 @@ const num = (v) => Number(v);
   ok('cambiar solo el idioma no lo vuelve a prender',
     (await valor(local.uid, "select public.guardar_preferencias('es') j", [])).j.aviso_turnos, false);
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('14 · La agenda como calendario (072)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Cada día dice cuántos turnos tiene y qué tan lleno está. Un calendario
+  // que diga «libre» un feriado, o cuente un turno cancelado, es peor que no
+  // tenerlo. Un local propio, con un solo barbero, para que las cuentas
+  // no dependan de lo que dejaron los grupos anteriores.
+  {
+    const sur = await H.montarEmpresa(db, { email: 'dueno@barberiasur.com', nombre: 'Barbería Sur' });
+    const uidLuis = await H.sumarMiembro(db, sur.empresaId, 'luis@barberiasur.com', 'vendedor');
+    const corteSur = await H.crearProducto(db, sur.empresaId, sur.uid,
+      { nombre: 'Corte', costo: 0, precio: 50000, controla_stock: false });
+    const luis = (await valor(sur.uid,
+      "select public.guardar_profesional($1,$2,'comision',50,$3) as id", [sur.empresaId, 'Luis', uidLuis])).id;
+    await llamar(sur.uid, 'select public.guardar_horario($1,$2,1,$3,$4)', [sur.empresaId, luis, '08:00', '12:00']);
+    await llamar(sur.uid, 'select public.guardar_horario($1,$2,1,$3,$4)', [sur.empresaId, luis, '15:00', '18:00']);
+    const lunes2 = (await crudo('select ($1::date + 28) as d', [lunes])).d.toISOString().slice(0, 10);
+    const cal = async (uid, desde, dias) => (await valor(uid,
+      'select public.agenda_calendario($1, $2::date, ($2::date + $3::int)) j', [sur.empresaId, desde, dias])).j;
+    const dia = (lista, offset) => lista[offset];
+    const turno = (desde, hasta, estado = 'pendiente') => db.query(
+      `insert into public.turnos_reserva (empresa_id, profesional_id, producto_id, inicia, termina, cliente_nombre, estado)
+       values ($1, $2, $3, ($4::date + $5::time) at time zone 'America/Asuncion',
+               ($4::date + $6::time) at time zone 'America/Asuncion', 'Cliente', $7)`,
+      [sur.empresaId, luis, corteSur, lunes2, desde, hasta, estado]);
+
+    let semana = await cal(sur.uid, lunes2, 6);
+    ok('una semana son siete días', semana.length, 7);
+    ok('el lunes atiende 7 horas (8 a 12 y 15 a 18)', dia(semana, 0).abierto_min, 420);
+    ok('y sin turnos está libre', [dia(semana, 0).turnos, dia(semana, 0).estado], [0, 'libre']);
+    ok('el martes, sin horario, está cerrado', dia(semana, 1).estado, 'cerrado');
+
+    await turno('08:00', '12:00');
+    await turno('15:00', '16:30');
+    await turno('16:30', '18:00', 'cancelada');
+    semana = await cal(sur.uid, lunes2, 6);
+    ok('con 5 horas y media tomadas de 7, casi lleno', dia(semana, 0).estado, 'casi');
+    ok('un turno cancelado no ocupa ni se cuenta', [dia(semana, 0).turnos, dia(semana, 0).ocupado_min], [2, 330]);
+    ok('y dice cuánto queda libre', dia(semana, 0).libre_min, 90);
+
+    await turno('16:30', '18:00');
+    semana = await cal(sur.uid, lunes2, 6);
+    ok('con todo tomado, lleno', dia(semana, 0).estado, 'lleno');
+
+    // Un feriado el lunes siguiente: cerrado, aunque ese día de la semana trabaje.
+    const lunes3 = (await crudo('select ($1::date + 7) as d', [lunes2])).d.toISOString().slice(0, 10);
+    aceptado('el dueño cierra por feriado',
+      await llamar(sur.uid, 'select public.guardar_excepcion($1,$2,true,null,null,null,$3)',
+        [sur.empresaId, lunes3, 'Feriado']));
+    const otra = await cal(sur.uid, lunes3, 0);
+    ok('un feriado se ve cerrado', [otra[0].abierto_min, otra[0].estado], [0, 'cerrado']);
+
+    aceptado('Luis abre igual ese día, de 9 a 11',
+      await llamar(uidLuis, 'select public.guardar_excepcion($1,$2,false,$3,$4,$5,$6)',
+        [sur.empresaId, lunes3, luis, '09:00', '11:00', 'Abro igual']));
+    ok('y su día especial gana sobre el feriado del local', (await cal(sur.uid, lunes3, 0))[0].abierto_min, 120);
+
+    ok('un vendedor también ve el calendario', (await cal(uidLuis, lunes2, 0))[0].estado, 'lleno');
+
+    const ajeno = await H.montarEmpresa(db, { email: 'dueno@otrolocal.com', nombre: 'Otro Local' });
+    rechazado('otro negocio no ve la agenda de este',
+      await llamar(ajeno.uid, 'select public.agenda_calendario($1, $2::date, $2::date)', [sur.empresaId, lunes2]),
+      'No pertenecés');
+    rechazado('ni se puede pedir un año entero',
+      await llamar(local.uid, 'select public.agenda_calendario($1, $2::date, ($2::date + 200))', [local.empresaId, lunes2]),
+      'tres meses');
+    rechazado('ni un rango al revés',
+      await llamar(local.uid, 'select public.agenda_calendario($1, $2::date, ($2::date - 1))', [local.empresaId, lunes2]),
+      'no es válido');
+  }
+
   console.log('\n══════════════════════════════════════════════════════════════');
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA AGENDA FALLARON`);

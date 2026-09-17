@@ -43,6 +43,8 @@ export const MENSAJES_PT: Record<string, string> = {
   'La fecha que entendí ya pasó. Elegí el día.': 'A data que eu entendi já passou. Escolha o dia.',
 
   // ---- los de la base (raise exception) ----
+  // 072 · la agenda como calendario
+  'Elegí un rango de hasta tres meses.': 'Escolha um intervalo de até três meses.',
   // 070 · saldo y retiros
   'Ya pediste un retiro de % el %. Cuando te lo transfiramos vas a poder pedir otro.': 'Você já pediu um saque de % em %. Quando transferirmos, vai poder pedir outro.',
   'Para retirar necesitás al menos %. Hoy tenés %.': 'Pra sacar você precisa de pelo menos %. Hoje você tem %.',

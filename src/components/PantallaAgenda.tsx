@@ -9,6 +9,7 @@ import { sumarDias } from '@/lib/fechas';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
+import { CalendarioAgenda, SelectorVista, type VistaAgenda } from '@/components/CalendarioAgenda';
 import { SelectorCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO, type TurnoRespuesta } from '@/lib/turno-voz';
 import type {
@@ -58,6 +59,8 @@ export function PantallaAgenda({
   // Qué turno se está moviendo. Uno solo a la vez: dos formularios de
   // horario abiertos compitiendo por el mismo hueco es pedir un choque.
   const [moviendo, setMoviendo] = useState<string | null>(null);
+  // Cómo se mira la agenda: el día, o un calendario de semana, mes o fechas (072).
+  const [vista, setVista] = useState<VistaAgenda>('dia');
 
   const plata = (n: number) => dinero(n, moneda, true, locale);
   const ocupado = trabajando !== '';
@@ -149,9 +152,24 @@ export function PantallaAgenda({
 
       {/* ---------- los turnos del día ---------- */}
       <Seccion
-        titulo={`${t.agenda.turnosDe} ${fechaLarga(dia, locale)}`}
-        accion={<NavegadorDia dia={dia} hoy={hoy} alIr={(d) => router.push(`/agenda?dia=${d}`)} />}
+        titulo={vista === 'dia' ? `${t.agenda.turnosDe} ${fechaLarga(dia, locale)}` : t.agenda.calendario}
+        accion={vista === 'dia'
+          ? <NavegadorDia dia={dia} hoy={hoy} alIr={(d) => router.push(`/agenda?dia=${d}`)} />
+          : undefined}
       >
+        {/* El calendario es una forma de MIRAR: tocar un día vuelve a la
+            vista del día, donde se anota, se mueve y se atiende. */}
+        <SelectorVista vista={vista} alCambiar={setVista} />
+
+        {vista !== 'dia' ? (
+          <CalendarioAgenda
+            empresaId={empresaId}
+            vista={vista}
+            dia={dia}
+            hoy={hoy}
+            alElegirDia={(d) => { setVista('dia'); router.push(`/agenda?dia=${d}`); }}
+          />
+        ) : (<>
         <NuevoTurno
           empresaId={empresaId}
           dia={dia}
@@ -283,6 +301,7 @@ export function PantallaAgenda({
             ))}
           </ul>
         )}
+        </>)}
       </Seccion>
 
       {/* ---------- qué se puede reservar ---------- */}

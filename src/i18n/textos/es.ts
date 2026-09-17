@@ -1963,6 +1963,20 @@ export const es = {
     sinTurnos: 'Sin turnos para este día',
     sinTurnosDetalle: 'Los que reserven por tu link aparecen solos. Al que llame por teléfono, anotalo vos.',
     diaAnterior: 'Día anterior',
+    // La agenda como calendario (072).
+    calendario: 'Calendario',
+    vistaDia: 'Día',
+    vistaSemana: 'Semana',
+    vistaMes: 'Mes',
+    vistaRango: 'Fechas',
+    anterior: 'Anterior',
+    siguiente: 'Siguiente',
+    rangoLargo: 'Elegí un rango de hasta tres meses.',
+    resumenCalendario: (turnos: number, libres: number) =>
+      `${turnos === 1 ? '1 turno' : `${turnos} turnos`} · ${libres === 1 ? '1 día con lugar' : `${libres} días con lugar`}`,
+    turnosN: (n: number) => (n === 1 ? '1 turno' : `${n} turnos`),
+    estadoCalendario: { libre: 'Libre', casi: 'Casi lleno', lleno: 'Lleno', cerrado: 'Cerrado' },
+    tocaUnDia: 'Tocá un día para ver y anotar sus turnos.',
     diaSiguiente: 'Día siguiente',
 
     anotarTurno: 'Anotar un turno',
