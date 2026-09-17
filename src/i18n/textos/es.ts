@@ -34,6 +34,7 @@ export const es = {
     ultimaActualizacion: (fecha: string) => `Última actualización: ${fecha}`,
     verVideo: (titulo: string) => `Ver el video: ${titulo}`,
     planLoDefineElSistema: 'El plan lo determina el sistema de suscripciones mirando el estado y el periodo pagado. No se puede cambiar desde la aplicación.',
+    lemaOrden: 'Tu gestión financiera',
   },
 
   /**

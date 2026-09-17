@@ -372,6 +372,12 @@ export function NavInferior({
   // parecería que estás en ningún lado.
   const enOtraSeccion = !enBarra.some((href) => activo(ruta, href));
 
+  // Dónde va la burbuja: la sección fija activa, o «Más» si estás en otra.
+  const columnas = fijos.length + 1;
+  const indiceActivo = abierto || enOtraSeccion
+    ? fijos.length
+    : fijos.findIndex((i) => activo(ruta, i.href));
+
   // El menú se cierra solo al navegar. Sin esto queda tapando la pantalla
   // a la que acabás de entrar.
   useEffect(() => { setAbierto(false); }, [ruta]);
@@ -484,7 +490,17 @@ export function NavInferior({
         </div>
       )}
 
-      <nav className={`zona-segura-abajo fixed inset-x-0 bottom-0 z-50 touch-none border-t border-borde bg-superficie/95 backdrop-blur lg:hidden ${abierto ? 'hidden' : ''}`}>
+      {/*
+        LA BARRA FLOTA, DE VIDRIO, COMO LA DE IPHONE (cuaderno de Matías).
+
+        Se ve lo que pasa por detrás, desenfocado, y la burbuja de la sección
+        activa se desliza de una a otra con un rebote chico. Los estilos
+        están en globals.css (`.barra-vidrio`, `.barra-burbuja`).
+      */}
+      <nav
+        className={`fixed inset-x-0 bottom-0 z-50 touch-none px-3 lg:hidden ${abierto ? 'hidden' : ''}`}
+        style={{ paddingBottom: 'calc(10px + env(safe-area-inset-bottom))' }}
+      >
         {/*
           Las columnas son las que HAY, no cinco fijas.
 
@@ -495,9 +511,19 @@ export function NavInferior({
           agenda.
         */}
         <div
-          className="mx-auto grid max-w-lg"
-          style={{ gridTemplateColumns: `repeat(${fijos.length + 1}, minmax(0, 1fr))` }}
+          className="barra-vidrio relative mx-auto grid max-w-md rounded-[30px] p-1.5"
+          style={{ gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` }}
         >
+          {indiceActivo >= 0 && (
+            <span
+              aria-hidden="true"
+              className="barra-burbuja pointer-events-none absolute bottom-1.5 left-1.5 top-1.5"
+              style={{
+                width: `calc((100% - 12px) / ${columnas})`,
+                transform: `translateX(${indiceActivo * 100}%)`,
+              }}
+            />
+          )}
           {fijos.map((i) => {
             // Con el menú abierto, la sección de atrás se apaga: mientras
             // estás eligiendo, estás en el menú y no en el panel. Dos luces
@@ -507,8 +533,8 @@ export function NavInferior({
             return (
               <Link
                 key={i.href} href={i.href}
-                className={`flex flex-col items-center gap-1 px-1 py-2.5 text-center text-[10.5px] font-bold leading-tight transition ${
-                  on ? 'text-verde-fuerte' : 'text-tinta/40'
+                className={`relative z-10 flex flex-col items-center gap-0.5 rounded-[24px] px-1 py-2 text-center text-[10.5px] font-bold leading-tight transition-colors active:scale-95 ${
+                  on ? 'barra-activo text-verde-fuerte' : 'text-tinta/45'
                 }`}
               >
                 {i.icono}
@@ -525,8 +551,8 @@ export function NavInferior({
             onClick={() => setAbierto((v) => !v)}
             aria-expanded={abierto}
             aria-label={t.nav.todasLasSecciones}
-            className={`flex flex-col items-center gap-1 px-1 py-2.5 text-center text-[10.5px] font-bold leading-tight transition ${
-              abierto || enOtraSeccion ? 'text-verde-fuerte' : 'text-tinta/40'
+            className={`relative z-10 flex flex-col items-center gap-0.5 rounded-[24px] px-1 py-2 text-center text-[10.5px] font-bold leading-tight transition-colors active:scale-95 ${
+              abierto || enOtraSeccion ? 'barra-activo text-verde-fuerte' : 'text-tinta/45'
             }`}
           >
             {Ico.mas}

@@ -49,6 +49,7 @@ export const pt: Textos = {
     ultimaActualizacion: (fecha: string) => `Última atualização: ${fecha}`,
     verVideo: (titulo: string) => `Ver o vídeo: ${titulo}`,
     planLoDefineElSistema: 'O plano é definido pelo sistema de assinaturas, olhando o estado e o período pago. Não dá pra mudar pelo aplicativo.',
+    lemaOrden: 'Sua gestão financeira',
   },
 
   formato: {

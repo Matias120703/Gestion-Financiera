@@ -385,16 +385,19 @@ ok('tieneSeccion contesta igual que la ficha',
   // Se busca por sus clases y no por cómo empieza la etiqueta: la barra pasó a
   // armar la clase con una plantilla (para esconderse con el menú abierto) y
   // buscar `className="` ya no la encontraba.
-  const desde = nav.indexOf('zona-segura-abajo fixed inset-x-0 bottom-0');
-  const barra = nav.slice(desde, desde + 900);
+  // Desde que la barra flota (de vidrio, como la de iPhone) se busca por su
+  // clase nueva; el tramo es más largo porque adelante tiene su comentario.
+  const desde = nav.indexOf('fixed inset-x-0 bottom-0 z-50 touch-none px-3');
+  const barra = nav.slice(desde, desde + 1800);
   // Se miran solo las CLASES y no el texto crudo: el comentario que explica
   // este arreglo nombra el problema viejo, y buscarlo a secas lo encontraría
   // ahí y daría por rota una barra que está bien.
   const clases = (barra.match(/className=("[^"]*"|{`[^`]*`})/g) ?? []).join(' ');
   ok('las columnas de la barra no están escritas a mano',
     /grid-cols-\d/.test(clases), false);
+  ok('la barra se encontró', desde > 0, true);
   ok('se calculan a partir de los botones que hay',
-    barra.includes('gridTemplateColumns'), true);
+    barra.includes('gridTemplateColumns') && nav.includes('const columnas = fijos.length + 1;'), true);
 }
 
 // --- Las palabras de cada rubro ---

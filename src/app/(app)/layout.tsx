@@ -5,6 +5,8 @@ import { AvisoCuenta } from '@/components/AvisoCuenta';
 import { AvisoMonedaVista } from '@/components/AvisoMonedaVista';
 import { CandadoCuenta } from '@/components/CandadoCuenta';
 import { ProveedorZona } from '@/lib/zona';
+import { Intro } from '@/components/Intro';
+import { textos } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +20,8 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     // La zona envuelve TODO el layout y no solo `children`: el botón de
     // captura vive acá afuera y también necesita saber qué día es hoy.
     <ProveedorZona zona={ctx.zonaHoraria}>
+    {/* La entrada con el logo, una vez por sesión. Ver Intro.tsx. */}
+    <Intro lema={textos().comun.lemaOrden} />
     <div className="flex min-h-screen">
       <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} />
 
@@ -29,7 +33,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
           rol={ctx.miembro.rol}
         />
 
-        <main className="flex-1 px-4 pb-28 pt-5 lg:px-7 lg:pb-10">
+        <main className="flex-1 px-4 pb-36 pt-5 lg:px-7 lg:pb-10">
           <div className="mx-auto w-full max-w-6xl">
             {/* Va en el layout y no en cada pantalla: la cuenta vencida no es
                 un asunto del panel ni de gastos, es del sistema entero. */}

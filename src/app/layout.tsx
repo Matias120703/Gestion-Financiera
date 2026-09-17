@@ -36,7 +36,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const t = textos();
 
   return (
-    <html lang={idioma}>
+    // suppressHydrationWarning: los guiones del tema y de la intro le ponen
+    // una clase al <html> antes de que cargue React, a propósito (ver
+    // lib/tema.ts e Intro.tsx). Sin esto, en desarrollo avisa que no coincide.
+    <html lang={idioma} suppressHydrationWarning>
       <head>
         {/* El tema se aplica antes de pintar nada. Ver src/lib/tema.ts: si
             esto fuera un efecto de React, cada apertura de la app arrancaría

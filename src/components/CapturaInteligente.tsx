@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { OrbeVoz } from '@/components/OrbeVoz';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -104,6 +105,8 @@ export function BotonCaptura({
   useBloquearFondo(modo !== 'cerrado');
 
   const grabadora = useRef<MediaRecorder | null>(null);
+  // El micrófono abierto, para que la esfera se mueva con la voz (OrbeVoz).
+  const [flujoVoz, setFlujoVoz] = useState<MediaStream | null>(null);
   const trozos = useRef<Blob[]>([]);
   const cronometro = useRef<ReturnType<typeof setInterval> | null>(null);
   const archivoRef = useRef<HTMLInputElement | null>(null);
@@ -262,6 +265,7 @@ export function BotonCaptura({
       rec.ondataavailable = (e) => { if (e.data.size > 0) trozos.current.push(e.data); };
       rec.onstop = () => {
         flujo.getTracks().forEach((t) => t.stop());
+        setFlujoVoz(null);
         const blob = new Blob(trozos.current, { type: tipo || 'audio/webm' });
         if (blob.size < 1200) {
           setError(t.captura.audioCorto);
@@ -277,6 +281,7 @@ export function BotonCaptura({
       };
       rec.start();
       grabadora.current = rec;
+      setFlujoVoz(flujo);
       setSegundos(0);
       setModo('audio');
       cronometro.current = setInterval(() => setSegundos((s) => s + 1), 1000);
@@ -293,6 +298,7 @@ export function BotonCaptura({
     if (cancelar) {
       rec.onstop = null;
       rec.stream.getTracks().forEach((t) => t.stop());
+      setFlujoVoz(null);
       rec.stop();
       setModo('menu');
       return;
@@ -526,7 +532,7 @@ export function BotonCaptura({
         onClick={() => setModo('menu')}
         aria-label={t.captura.botonAria}
         className="fixed right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-verde text-white shadow-[0_10px_30px_-6px_rgba(23,121,90,.7)] transition active:scale-95 lg:bottom-7 lg:right-7 lg:h-[60px] lg:w-[60px]"
-        style={{ bottom: 'calc(86px + env(safe-area-inset-bottom))' }}
+        style={{ bottom: 'calc(96px + env(safe-area-inset-bottom))' }}
       >
         <svg viewBox="0 0 24 24" className="h-6 w-6" {...trazo}>
           <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" />
@@ -624,10 +630,9 @@ export function BotonCaptura({
             {/* ---------------- GRABANDO ---------------- */}
             {modo === 'audio' && (
               <div className="py-4 text-center">
-                <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-rojo text-white grabando">
-                  <svg viewBox="0 0 24 24" className="h-8 w-8" {...trazo}>
-                    <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" /><path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" />
-                  </svg>
+                {/* La IA que escucha: se mueve y gira con la voz. */}
+                <div className="py-3">
+                  <OrbeVoz flujo={flujoVoz} />
                 </div>
                 <p className="mt-5 text-3xl font-bold tabular-nums tracking-tight">
                   {String(Math.floor(segundos / 60)).padStart(2, '0')}:{String(segundos % 60).padStart(2, '0')}
@@ -660,8 +665,9 @@ export function BotonCaptura({
             {/* ---------------- PROCESANDO ---------------- */}
             {modo === 'procesando' && (
               <div className="py-12 text-center">
-                <div className="mx-auto h-9 w-9 animate-spin rounded-full border-[3px] border-verde-claro border-t-verde" />
-                <p className="mt-5 text-[15px] font-semibold">{t.captura.interpretando}</p>
+                {/* La misma esfera, sin voz: respira mientras la IA piensa. */}
+                <OrbeVoz tamano={112} />
+                <p className="mt-6 text-[15px] font-semibold">{t.captura.interpretando}</p>
                 <p className="mt-1 text-[13.5px] text-tinta/50">{t.captura.tardaSegundos}</p>
               </div>
             )}
