@@ -4,6 +4,8 @@ const { dinero, dineroCorto, fechaLegible, decimalesDe } = require('../.compilad
 const { fichaDe, tieneSeccion, palabra, rubroVisible, LISTA_RUBROS } = require('../.compilado/rubros.js');
 
 let fallos = 0;
+/** Comprobaciones que esperan algo; el resumen del final las espera. */
+const pendientes = [];
 function ok(nombre, real, esperado) {
   const a = JSON.stringify(real), b = JSON.stringify(esperado);
   if (a !== b) { fallos++; console.log('FALLA', nombre, '\n  real:', a, '\n  esperado:', b); }
@@ -885,6 +887,57 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('aplicar el código nunca puede romper un registro', /catch\s*{/.test(ref), true);
   ok('el enlace lo arma un solo lugar', ref.includes('export function enlaceDeSocio'), true);
 
+  // 2026-09-17: nadie quedaba anotado y la base no tenía ni el rechazo. El
+  // código vivía solo en `localStorage`, que no viaja cuando el correo de
+  // confirmación se abre desde la app de Gmail ni cuando el enlace se abre
+  // dentro de WhatsApp y la cuenta se crea después en otro navegador. Ahora
+  // el código va guardado EN LA CUENTA desde el registro.
+  ok('el código se guarda en la cuenta al registrarse',
+    /data:\s*{\s*ref:/.test(fs.readFileSync('src/app/crear/page.tsx', 'utf8')), true);
+  ok('y se lo busca ahí cuando el navegador no lo tiene', ref.includes('user_metadata'), true);
+  ok('una vez usado se olvida, para que no valga en la próxima empresa',
+    /updateUser\(\{\s*data:\s*\{\s*ref:\s*null/.test(ref), true);
+
+  // El orden importa: primero este navegador, después el enlace que se está
+  // abriendo, y al final la cuenta.
+  {
+    const { codigoDeInvitacion, CLAVE_REF } = require('../.compilado/referido.js');
+    const guardado = {};
+    global.localStorage = {
+      getItem: (k) => guardado[k] ?? null,
+      setItem: (k, v) => { guardado[k] = v; },
+      removeItem: (k) => { delete guardado[k]; },
+    };
+    global.window = { location: { search: '' } };
+    const cuentaCon = (valor) => ({
+      rpc: async () => ({ error: null }),
+      auth: { getUser: async () => ({ data: { user: { user_metadata: { ref: valor } } } }) },
+    });
+    const sinCuenta = { rpc: async () => ({ error: null }) };
+
+    pendientes.push((async () => {
+      ok('sin nada guardado no hay código', await codigoDeInvitacion(sinCuenta), null);
+
+      global.window.location.search = '?ref=abcd1234';
+      ok('el código del enlace sirve aunque no esté guardado',
+        await codigoDeInvitacion(sinCuenta), 'ABCD1234');
+
+      global.window.location.search = '';
+      ok('el que quedó en la cuenta sirve cuando el navegador no tiene nada',
+        await codigoDeInvitacion(cuentaCon('efgh5678')), 'EFGH5678');
+      ok('un código torcido en la cuenta se ignora',
+        await codigoDeInvitacion(cuentaCon('nada')), null);
+
+      guardado[CLAVE_REF] = JSON.stringify({ codigo: 'AAAA1111', desde: Date.now() });
+      global.window.location.search = '?ref=BBBB2222';
+      ok('manda el de este navegador: es el primero que llegó',
+        await codigoDeInvitacion(cuentaCon('CCCC3333')), 'AAAA1111');
+
+      delete global.localStorage;
+      delete global.window;
+    })());
+  }
+
   // Adivinar códigos ajenos de a uno no puede ser un juego público: el premio
   // por acertar es la comisión de otra persona.
   const campo = fs.readFileSync('src/components/CampoCodigoRef.tsx', 'utf8');
@@ -1262,5 +1315,10 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('activar un plan avisa al cliente', fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8').includes('avisarActivacion('), true);
 }
 
-console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
-process.exit(fallos ? 1 : 0);
+// Las comprobaciones que esperan algo (una función async) se anotan en
+// `pendientes` y el resumen las espera. Sin esto se imprimirían después del
+// `process.exit` y una falla ahí no bajaría la bandera: pasaría inadvertida.
+Promise.all(pendientes).then(() => {
+  console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
+  process.exit(fallos ? 1 : 0);
+});

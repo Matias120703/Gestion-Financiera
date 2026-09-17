@@ -12,7 +12,7 @@ import {
   DATOS_VACIOS, guardarPendiente, limpiarPendiente, telefonoLimpio, telefonoValido,
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
-import { aplicarRef } from '@/lib/referido';
+import { aplicarRef, leerRef } from '@/lib/referido';
 import { avisarCuentaNueva } from '@/lib/avisos-cliente';
 import { useTextos, useIdioma } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
@@ -122,10 +122,17 @@ export default function PaginaCrear() {
       const { data, error: errorAlta } = await supabase.auth.signUp({
         email: email.trim(),
         password: clave,
-        // Si hay confirmación por correo, el enlace tiene que volver a
-        // /empezar y no al panel: la empresa todavía no existe, y /empezar
-        // sabe recuperar lo que contestó en el primer paso.
-        options: { emailRedirectTo: `${window.location.origin}/empezar` },
+        options: {
+          // Si hay confirmación por correo, el enlace tiene que volver a
+          // /empezar y no al panel: la empresa todavía no existe, y /empezar
+          // sabe recuperar lo que contestó en el primer paso.
+          emailRedirectTo: `${window.location.origin}/empezar`,
+          // El código de quien lo trajo, guardado EN LA CUENTA y no solo en
+          // este navegador: es lo único que sobrevive a confirmar el correo
+          // desde la app de Gmail o a abrir el enlace dentro de WhatsApp y
+          // registrarse después en Safari. Ver `codigoDeInvitacion`.
+          data: { ref: leerRef() ?? null },
+        },
       });
       if (errorAlta) throw errorAlta;
 

@@ -60,7 +60,54 @@ export function limpiarRef(): void {
 
 type ConRpc = {
   rpc: (nombre: string, args: Record<string, unknown>) => PromiseLike<{ error: unknown }>;
+  auth?: {
+    getUser: () => PromiseLike<{ data: { user: { user_metadata?: Record<string, unknown> | null } | null } }>;
+    updateUser: (datos: { data: Record<string, unknown> }) => PromiseLike<unknown>;
+  };
 };
+
+/**
+ * EL CÓDIGO NO PUEDE VIVIR SOLO EN UN NAVEGADOR.
+ *
+ * El 2026-09-17 Matías avisó que quien entra con su enlace no quedaba
+ * anotado, y la base no tenía ni el referido ni un rechazo: el código nunca
+ * llegó. Guardarlo en `localStorage` alcanza mientras todo pase en la misma
+ * pestaña, y justo en este camino no pasa:
+ *
+ *   · el enlace se abre DENTRO de WhatsApp y la cuenta se crea después en
+ *     Safari o Chrome, que no comparten el almacenamiento;
+ *   · o el correo de confirmación se toca desde la app de Gmail, que abre su
+ *     propio navegador y cae en /empezar sin nada guardado.
+ *
+ * Por eso ahora se busca en tres lugares, en orden: lo guardado en este
+ * navegador, el `?ref=` de la dirección que se está abriendo, y —el que
+ * sobrevive a todo— el que quedó anotado en la cuenta al registrarse (ver
+ * `/crear`, que lo manda en el `signUp`).
+ *
+ * Que el código viaje en la cuenta no habilita nada: `usar_codigo_referido`
+ * vuelve a comprobar en PostgreSQL que exista, esté activo, que la cuenta sea
+ * nueva, que no haya pagado y que nadie se traiga a sí mismo. Es lo mismo que
+ * podría escribir a mano en el registro.
+ */
+export async function codigoDeInvitacion(cliente: ConRpc): Promise<string | null> {
+  const guardado = leerRef();
+  if (guardado) return guardado;
+
+  if (typeof window !== 'undefined') {
+    const deLaDireccion = limpiarCodigo(new URLSearchParams(window.location.search).get('ref'));
+    if (deLaDireccion.length === 8) return deLaDireccion;
+  }
+
+  try {
+    const respuesta = await cliente.auth?.getUser();
+    const enLaCuenta = limpiarCodigo(respuesta?.data?.user?.user_metadata?.ref as string | undefined);
+    if (enLaCuenta.length === 8) return enLaCuenta;
+  } catch {
+    // Sin sesión o sin red: se sigue sin código, como antes.
+  }
+
+  return null;
+}
 
 /**
  * Usa el código guardado, si hay uno, en la cuenta recién creada.
@@ -82,9 +129,12 @@ type ConRpc = {
  * no para todas las que esa persona cree de acá en adelante.
  */
 export async function aplicarRef(cliente: ConRpc, empresaId: string): Promise<void> {
-  const codigo = leerRef();
+  const codigo = await codigoDeInvitacion(cliente);
   if (!codigo) return;
   limpiarRef();
+  // También se borra de la cuenta: el código vale para la primera empresa,
+  // no para todas las que esa persona cree de acá en adelante.
+  try { await cliente.auth?.updateUser({ data: { ref: null } }); } catch { /* ver abajo */ }
   try {
     const { error } = await cliente.rpc('usar_codigo_referido', { p_empresa: empresaId, p_codigo: codigo });
     if (!error) return;
