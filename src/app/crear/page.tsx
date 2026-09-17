@@ -13,6 +13,7 @@ import {
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
 import { aplicarRef } from '@/lib/referido';
+import { avisarCuentaNueva } from '@/lib/avisos-cliente';
 import { useTextos, useIdioma } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 
@@ -162,6 +163,7 @@ export default function PaginaCrear() {
         // Si entró por el enlace de alguien, queda anotado quién lo trajo.
         // No frena nada ni se le avisa: ver `aplicarRef`.
         await aplicarRef(supabase, empresaId as string);
+        avisarCuentaNueva(empresaId as string);
 
         limpiarPendiente();
         document.cookie =

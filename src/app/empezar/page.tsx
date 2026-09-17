@@ -10,6 +10,7 @@ import {
   zonaDelNavegador, type DatosRegistro,
 } from '@/lib/registro';
 import { aplicarRef } from '@/lib/referido';
+import { avisarCuentaNueva } from '@/lib/avisos-cliente';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 
@@ -95,6 +96,7 @@ export default function PaginaEmpezar() {
       // no a /crear. Si esto faltara, el camino con confirmación perdería la
       // comisión de alguien sin que nadie se entere.
       await aplicarRef(supabase, data as string);
+      avisarCuentaNueva(data as string);
       activar(data as string);
     } catch (err: any) {
       setError(err?.message ?? t.pantallas.noSePudoCrearEmpresa);

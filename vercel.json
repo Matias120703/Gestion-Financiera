@@ -13,6 +13,18 @@
     {
       "path": "/api/tareas/resumen-semanal",
       "schedule": "30 11 * * 1"
+    },
+    {
+      "path": "/api/tareas/avisos-manana",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/tareas/avisos-tarde",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/tareas/avisos-noche",
+      "schedule": "30 23 * * *"
     }
   ]
 }

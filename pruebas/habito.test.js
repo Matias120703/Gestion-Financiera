@@ -368,6 +368,92 @@ const leerRacha = (db, uid, empresaId) =>
       'denied|policy|permission');
   }
 
+  // ===================================================================
+  grupo('7 · Orden habla todos los días (071)');
+  // ===================================================================
+  {
+    const delDia = () => H.comoServicio(db, () =>
+      db.query('select public.avisos_del_dia() l').then((x) => x.rows[0].l));
+
+    const G = await H.montarEmpresa(db, { email: 'duenio@golf.com', nombre: 'Golf' });
+    // Directo, como superusuario: acá se miden los números del aviso, no el
+    // permiso para vender (ese vive en registrar_venta y tiene sus pruebas).
+    const venta = (dias, monto, costo) => Promise.resolve().then(() => db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto, costo_total)
+       values ($1, 'venta', public.hoy_empresa($1) - $2::int, 'Venta', 'Ventas', $3, $3, $4)`,
+      [G.empresaId, dias, monto, costo]));
+
+    // Ayer: vendió 200.000 (costo 80.000) y gastó 20.000. Hoy: vendió 250.000 (costo 100.000).
+    await venta(1, 200000, 80000);
+    await gastoEn(db, G.empresaId, G.uid, 1, 20000);
+    await venta(0, 250000, 100000);
+
+    const g = (await delDia()).find((x) => x.empresa_id === G.empresaId);
+    ok('una cuenta viva recibe sus números', Boolean(g), true);
+    ok('lo vendido hoy', Number(g.hoy.ventas), 250000);
+    ok('y lo ganado hoy, con el costo descontado', Number(g.hoy.ganancia), 150000);
+    ok('lo de ayer, con el gasto descontado',
+      [Number(g.ayer.ventas), Number(g.ayer.gastos), Number(g.ayer.ganancia)], [200000, 20000, 100000]);
+    ok('cuántas cosas cargó cada día', [g.hoy.cargados, g.ayer.cargados], [1, 2]);
+    ok('con la fecha de hoy en su zona', /^\d{4}-\d{2}-\d{2}$/.test(String(g.fecha)), true);
+    ok('le llega al dueño', g.destinatarios.map((d) => d.user_id), [G.uid]);
+
+    // Un vendedor no ve la ganancia en la app: tampoco por notificación.
+    const vend = await H.sumarMiembro(db, G.empresaId, 'vendedor@golf.com', 'vendedor');
+    ok('al vendedor no le llegan los números del negocio',
+      (await delDia()).find((x) => x.empresa_id === G.empresaId).destinatarios.some((d) => d.user_id === vend), false);
+
+    // Un aviso que no se puede apagar termina con todos los avisos apagados.
+    await H.comoUsuario(db, G.uid, () => db.query('select public.guardar_preferencias(null,null,null,null,null,false)'));
+    ok('quien apaga el aviso del día no lo recibe',
+      (await delDia()).find((x) => x.empresa_id === G.empresaId).destinatarios, []);
+    ok('y lo ve apagado en sus preferencias',
+      (await H.comoUsuario(db, G.uid, () => db.query('select public.mis_preferencias() p').then((x) => x.rows[0].p))).aviso_diario,
+      false);
+
+    // A quien abandonó hace meses no se le escribe.
+    const Hq = await H.montarEmpresa(db, { email: 'duenio@hotel.com', nombre: 'Hotel' });
+    await db.query(`update public.empresas set created_at = now() - interval '90 days' where id = $1`, [Hq.empresaId]);
+    ok('a una cuenta abandonada no se le escribe', (await delDia()).some((x) => x.empresa_id === Hq.empresaId), false);
+
+    // Una vencida no puede cargar: pedirle que cargue es mentirle.
+    const I = await H.montarEmpresa(db, { email: 'duenio@india.com', nombre: 'India' });
+    ok('una cuenta recién creada sí recibe', (await delDia()).some((x) => x.empresa_id === I.empresaId), true);
+    await db.query(`update public.suscripciones set plan = 'gratis', estado = 'vencida',
+      periodo_fin = now() - interval '1 day' where empresa_id = $1`, [I.empresaId]);
+    ok('una cuenta vencida no', (await delDia()).some((x) => x.empresa_id === I.empresaId), false);
+
+    rechazado('un cliente no puede pedir los números de todos',
+      await H.intentar(db, G.uid, () => db.query('select public.avisos_del_dia()')), 'denied|permission');
+
+    // ---- La prueba se termina: 3 días, 1 día y el último día ----
+    const porTerminar = () => H.comoServicio(db, () =>
+      db.query('select public.pruebas_por_terminar() l').then((x) => x.rows[0].l));
+    const J = await H.montarEmpresa(db, { email: 'duenio@juliet.com', nombre: 'Juliet' });
+    // A las 23:59 del día que toca, en Asunción: que la cuenta no dependa de
+    // la hora a la que corre la prueba.
+    const terminaEn = (dias) => db.query(
+      `update public.suscripciones set estado = 'prueba',
+         periodo_fin = (((now() at time zone 'America/Asuncion')::date + $2::int)::timestamp
+                        + interval '23 hours 59 minutes') at time zone 'America/Asuncion'
+       where empresa_id = $1`, [J.empresaId, dias]);
+    const juliet = async () => (await porTerminar()).find((x) => x.empresa_id === J.empresaId);
+
+    await terminaEn(5);
+    ok('con cinco días por delante todavía no se avisa', Boolean(await juliet()), false);
+    await terminaEn(3);
+    ok('faltando tres días, sí', (await juliet())?.dias, 3);
+    await terminaEn(2);
+    ok('faltando dos no, para no escribirle todos los días', Boolean(await juliet()), false);
+    await terminaEn(1);
+    ok('faltando uno, sí', (await juliet())?.dias, 1);
+    await terminaEn(0);
+    ok('el último día, sí', (await juliet())?.dias, 0);
+    ok('y le llega al dueño', (await juliet()).destinatarios.map((d) => d.user_id), [J.uid]);
+    await db.query(`update public.suscripciones set estado = 'activa' where empresa_id = $1`, [J.empresaId]);
+    ok('a quien ya pagó no le llega el aviso de la prueba', Boolean(await juliet()), false);
+  }
+
   console.log(`\n${'═'.repeat(62)}`);
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE HÁBITO FALLARON`);

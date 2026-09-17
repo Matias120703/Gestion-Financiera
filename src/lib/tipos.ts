@@ -630,6 +630,8 @@ export interface MovimientoSuelto {
 export interface Preferencias {
   /** El aviso de la tarde con los turnos del día siguiente. */
   aviso_turnos: boolean;
+  /** Los avisos de todos los días: mañana, tarde y noche (071). */
+  aviso_diario: boolean;
   idioma: string;
   aviso_cierre: boolean;
   aviso_semanal: boolean;

@@ -1630,6 +1630,8 @@ export const pt: Textos = {
     avisoSemanalDetalle: 'Toda segunda, com o que aconteceu nos últimos sete dias.',
     avisoTurnos: 'Avisos da agenda',
     avisoTurnosDetalle: 'Quando alguém agenda pelo seu link, na hora. E à tarde, quantos horários você tem no dia seguinte e pra quantos ainda não avisou.',
+    avisoDiario: 'Seu dia com o Orden',
+    avisoDiarioDetalle: 'De manhã, como foi ontem. À tarde, se você ainda não lançou nada. À noite, quanto vendeu, gastou e lucrou, comparado com ontem.',
     horaCierre: 'A que horas te lembrar',
     activarPush: 'Ativar avisos neste aparelho',
     pushActivo: 'Avisos ativados aqui',
@@ -2108,6 +2110,52 @@ export const pt: Textos = {
   sinConexion: {
     titulo: 'Sem conexão',
     detalle: 'Não conseguimos chegar ao servidor. O que você já lançou está a salvo.',
+  },
+
+  notificaciones: {
+    manana: {
+      negocioConVentas: (ventas: string, ganancia: string) => `Ontem você vendeu ${ventas} e lucrou ${ganancia}. Lance o de hoje e veja como está indo.`,
+      negocioConPerdida: (ventas: string, perdida: string) => `Ontem você vendeu ${ventas}, mas as despesas te deixaram ${perdida} no negativo. Hoje é outro dia.`,
+      negocioSoloGastos: (gastos: string) => `Ontem você lançou ${gastos} em despesas e nenhuma venda. Hoje lance também o que vender.`,
+      negocioNada: 'Bom dia. Lance sua primeira venda de hoje: por voz são dez segundos.',
+      personalConGastos: (gastos: string) => `Ontem você gastou ${gastos}. Lance o de hoje assim que fizer e saiba sempre quanto sobra.`,
+      personalSoloIngresos: (ingresos: string) => `Ontem entraram ${ingresos}. Lance também o que gastar hoje.`,
+      personalNada: 'Bom dia. Lance seus gastos de hoje assim que fizer: por voz são dez segundos.',
+    },
+    tarde: {
+      negocio: 'Você ainda não lançou nada hoje. Vendeu algo? Fale por voz e fica anotado.',
+      personal: 'Você ainda não anotou nada hoje. Gastou com algo? Fale por voz e fica anotado.',
+    },
+    noche: {
+      titulo: (nombre: string) => `Seu dia em ${nombre}`,
+      negocio: (ventas: string, comparacion: string, gastos: string, ganancia: string) =>
+        `Hoje você vendeu ${ventas}${comparacion}, gastou ${gastos} e lucrou ${ganancia}.`,
+      negocioConPerdida: (ventas: string, comparacion: string, gastos: string, perdida: string) =>
+        `Hoje você vendeu ${ventas}${comparacion} e gastou ${gastos}: ficou ${perdida} no negativo.`,
+      negocioSinVentas: (gastos: string) => `Hoje você lançou ${gastos} em despesas e nenhuma venda. Se vendeu algo, ainda dá tempo de anotar.`,
+      personal: (ingresos: string, gastos: string) => `Hoje entraram ${ingresos} e você gastou ${gastos}.`,
+      personalSoloGastos: (gastos: string) => `Hoje você gastou ${gastos}. Amanhã te conto como está indo.`,
+      personalSoloIngresos: (ingresos: string) => `Hoje entraram ${ingresos}. Bom dia!`,
+      masQueAyer: (pct: number) => ` (${pct}% a mais que ontem)`,
+      menosQueAyer: (pct: number) => ` (${pct}% a menos que ontem)`,
+      igualQueAyer: ' (igual a ontem)',
+    },
+    prueba: {
+      titulo: (dias: number) => (dias <= 0 ? 'Seu teste do Orden termina hoje'
+        : dias === 1 ? 'Seu teste do Orden termina amanhã'
+        : `Seu teste do Orden termina em ${dias} dias`),
+      cuerpo: 'Ative seu plano pra continuar usando o Orden sem interrupção. O que você lançou fica guardado.',
+    },
+    planActivo: {
+      titulo: (plan: string) => `Seu plano ${plan} está ativo`,
+      cuerpo: (fecha: string) => `Você já pode usar o Orden sem interrupção até ${fecha}. Obrigado por confiar na gente!`,
+    },
+    socio: {
+      entroTitulo: 'Alguém entrou com seu link',
+      entroCuerpo: (negocio: string) => `${negocio} criou a conta. Quando pagar o primeiro mês, metade é sua.`,
+      comisionTitulo: (negocio: string) => `${negocio} pagou o primeiro mês`,
+      comisionCuerpo: (monto: string) => `Você ganhou ${monto}. Já está no seu saldo pra sacar.`,
+    },
   },
 
   email: {

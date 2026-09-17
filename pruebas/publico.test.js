@@ -358,6 +358,7 @@ function aceptado(nombre, resultado) {
       esPublica('/api/tareas/recordatorio'), true);
     ok('el resumen semanal también', esPublica('/api/tareas/resumen-semanal'), true);
     ok('y la de los turnos de mañana', esPublica('/api/tareas/turnos-manana'), true);
+    ok('y las tres corridas del día', ['manana', 'tarde', 'noche'].every((m) => esPublica(`/api/tareas/avisos-${m}`)), true);
 
     // La dispara el navegador de quien reservó, que no tiene cuenta.
     ok('el aviso de una reserva nueva también entra sin sesión',
@@ -394,7 +395,8 @@ function aceptado(nombre, resultado) {
     // cron apuntando a una ruta que no existe se ejecuta igual, sin avisar,
     // y no hace nada — que es exactamente lo difícil de notar.
     const crons = JSON.parse(fs.readFileSync('vercel.json', 'utf8')).crons ?? [];
-    ok('vercel.json declara las tres tareas', crons.length, 3);
+    // Tres de siempre y las tres corridas del día (071).
+    ok('vercel.json declara las seis tareas', crons.length, 6);
     const huerfanos = crons
       .map((c) => c.path)
       .filter((p) => !fs.existsSync(`src/app${p}/route.ts`));

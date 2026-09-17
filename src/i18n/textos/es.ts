@@ -1694,6 +1694,8 @@ export const es = {
     avisoSemanalDetalle: 'Los lunes, con lo que pasó los últimos siete días.',
     avisoTurnos: 'Avisos de la agenda',
     avisoTurnosDetalle: 'Cuando alguien reserva por tu link, en el momento. Y a la tarde, cuántos turnos tenés al día siguiente y a cuántos todavía no les avisaste.',
+    avisoDiario: 'Tu día con Orden',
+    avisoDiarioDetalle: 'A la mañana, cómo te fue ayer. A la tarde, si todavía no cargaste nada. A la noche, cuánto vendiste, gastaste y ganaste, contra ayer.',
     horaCierre: 'A qué hora recordarte',
     activarPush: 'Activar avisos en este dispositivo',
     pushActivo: 'Avisos activados acá',
@@ -2189,6 +2191,58 @@ export const es = {
   sinConexion: {
     titulo: 'Sin conexión',
     detalle: 'No podemos llegar al servidor. Lo que ya cargaste está a salvo.',
+  },
+
+  /**
+   * LO QUE LE DICE ORDEN A CADA UNO POR NOTIFICACIÓN (071).
+   *
+   * Las frases del día las elige lib/frases-del-dia.ts según los números;
+   * acá solo está cómo se dicen. Los montos llegan ya escritos con su moneda.
+   */
+  notificaciones: {
+    manana: {
+      negocioConVentas: (ventas: string, ganancia: string) => `Ayer vendiste ${ventas} y ganaste ${ganancia}. Anotá lo de hoy y mirá cómo venís.`,
+      negocioConPerdida: (ventas: string, perdida: string) => `Ayer vendiste ${ventas}, pero los gastos te dejaron ${perdida} abajo. Hoy es otro día.`,
+      negocioSoloGastos: (gastos: string) => `Ayer cargaste ${gastos} en gastos y ninguna venta. Hoy anotá también lo que vendés.`,
+      negocioNada: 'Buen día. Anotá tu primera venta de hoy: por voz son diez segundos.',
+      personalConGastos: (gastos: string) => `Ayer gastaste ${gastos}. Anotá lo de hoy apenas lo hagas y sabé siempre cuánto te queda.`,
+      personalSoloIngresos: (ingresos: string) => `Ayer entraron ${ingresos}. Anotá también lo que gastás hoy.`,
+      personalNada: 'Buen día. Anotá tus gastos de hoy apenas los hagas: por voz son diez segundos.',
+    },
+    tarde: {
+      negocio: 'Todavía no cargaste nada hoy. ¿Vendiste algo? Decilo por voz y queda anotado.',
+      personal: 'Todavía no anotaste nada hoy. ¿Gastaste en algo? Decilo por voz y queda anotado.',
+    },
+    noche: {
+      titulo: (nombre: string) => `Tu día en ${nombre}`,
+      negocio: (ventas: string, comparacion: string, gastos: string, ganancia: string) =>
+        `Hoy vendiste ${ventas}${comparacion}, gastaste ${gastos} y ganaste ${ganancia}.`,
+      negocioConPerdida: (ventas: string, comparacion: string, gastos: string, perdida: string) =>
+        `Hoy vendiste ${ventas}${comparacion} y gastaste ${gastos}: quedaste ${perdida} abajo.`,
+      negocioSinVentas: (gastos: string) => `Hoy cargaste ${gastos} en gastos y ninguna venta. Si vendiste algo, todavía estás a tiempo de anotarlo.`,
+      personal: (ingresos: string, gastos: string) => `Hoy entraron ${ingresos} y gastaste ${gastos}.`,
+      personalSoloGastos: (gastos: string) => `Hoy gastaste ${gastos}. Mañana te cuento cómo venís.`,
+      personalSoloIngresos: (ingresos: string) => `Hoy entraron ${ingresos}. ¡Buen día!`,
+      masQueAyer: (pct: number) => ` (${pct}% más que ayer)`,
+      menosQueAyer: (pct: number) => ` (${pct}% menos que ayer)`,
+      igualQueAyer: ' (igual que ayer)',
+    },
+    prueba: {
+      titulo: (dias: number) => (dias <= 0 ? 'Tu prueba de Orden termina hoy'
+        : dias === 1 ? 'Tu prueba de Orden termina mañana'
+        : `Tu prueba de Orden termina en ${dias} días`),
+      cuerpo: 'Activá tu plan para seguir usando Orden sin cortes. Lo que cargaste queda guardado.',
+    },
+    planActivo: {
+      titulo: (plan: string) => `Tu plan ${plan} está activo`,
+      cuerpo: (fecha: string) => `Ya podés usar Orden sin cortes hasta el ${fecha}. ¡Gracias por confiar en nosotros!`,
+    },
+    socio: {
+      entroTitulo: 'Alguien entró con tu enlace',
+      entroCuerpo: (negocio: string) => `${negocio} creó su cuenta. Cuando pague su primer mes, la mitad es tuya.`,
+      comisionTitulo: (negocio: string) => `${negocio} pagó su primer mes`,
+      comisionCuerpo: (monto: string) => `Ganaste ${monto}. Ya está en tu saldo para retirar.`,
+    },
   },
 
   email: {

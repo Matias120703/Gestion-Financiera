@@ -104,6 +104,7 @@ export function AjustesDeAvisos({
         p_aviso_semanal: siguiente.aviso_semanal,
         p_hora_cierre: siguiente.hora_cierre,
         p_aviso_turnos: siguiente.aviso_turnos,
+        p_aviso_diario: siguiente.aviso_diario,
       });
       if (e) throw e;
       setMensaje(t.ajustes.guardado);
@@ -138,6 +139,13 @@ export function AjustesDeAvisos({
           </select>
         </label>
       )}
+
+      <Interruptor
+        titulo={t.ajustes.avisoDiario}
+        detalle={t.ajustes.avisoDiarioDetalle}
+        encendido={prefs.aviso_diario ?? true}
+        alCambiar={(v) => guardar({ aviso_diario: v })}
+      />
 
       <Interruptor
         titulo={t.ajustes.avisoSemanal}

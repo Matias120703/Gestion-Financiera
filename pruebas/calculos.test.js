@@ -1160,5 +1160,99 @@ ok('un rubro desconocido no rompe: cae en comercio',
     portadaInst.includes('href="/instalar"'), true);
 }
 
+// --- Lo que le dice Orden a cada uno, todos los días (071) ---
+//
+// La base da los números; esta función elige la frase. Lo que se prueba acá
+// son las reglas: a la tarde solo a quien no cargó, a la noche solo a quien
+// cargó, y el porcentaje contra ayer solo si ayer hubo ventas.
+{
+  const fs = require('fs');
+  const { fraseDelDia, comparacionConAyer } = require('../.compilado/frases-del-dia.js');
+  const tx = {
+    manana: {
+      negocioConVentas: (v, g) => `V:${v} G:${g}`,
+      negocioConPerdida: (v, p) => `V:${v} P:${p}`,
+      negocioSoloGastos: (g) => `SG:${g}`,
+      negocioNada: 'NADA',
+      personalConGastos: (g) => `PG:${g}`,
+      personalSoloIngresos: (i) => `PI:${i}`,
+      personalNada: 'PNADA',
+    },
+    tarde: { negocio: 'TN', personal: 'TP' },
+    noche: {
+      titulo: (n) => `Día en ${n}`,
+      negocio: (v, c, g, gan) => `V:${v}${c} G:${g} GAN:${gan}`,
+      negocioConPerdida: (v, c, g, p) => `V:${v}${c} G:${g} P:${p}`,
+      negocioSinVentas: (g) => `SV:${g}`,
+      personal: (i, g) => `I:${i} G:${g}`,
+      personalSoloGastos: (g) => `G:${g}`,
+      personalSoloIngresos: (i) => `I:${i}`,
+      masQueAyer: (p) => ` +${p}%`,
+      menosQueAyer: (p) => ` -${p}%`,
+      igualQueAyer: ' =',
+    },
+  };
+  const dia = (o = {}) => ({ ventas: 0, ingresos: 0, gastos: 0, ganancia: 0, cargados: 0, ...o });
+  const cuenta = (hoy, ayer, tipo = 'emprendedor') => ({ nombre: 'Kiosco', moneda: 'PYG', tipo_cuenta: tipo, hoy: dia(hoy), ayer: dia(ayer) });
+  const gs = (n) => dinero(n, 'PYG', true, 'es-PY');
+
+  ok('mañana: ayer vendió y ganó',
+    fraseDelDia('manana', cuenta({}, { ventas: 200000, ganancia: 90000, cargados: 3 }), tx, 'es-PY').cuerpo,
+    `V:${gs(200000)} G:${gs(90000)}`);
+  ok('mañana: ayer vendió pero perdió, se dice en positivo cuánto',
+    fraseDelDia('manana', cuenta({}, { ventas: 50000, ganancia: -30000, cargados: 2 }), tx, 'es-PY').cuerpo,
+    `V:${gs(50000)} P:${gs(30000)}`);
+  ok('mañana: ayer no cargó nada, igual hay un empujón',
+    fraseDelDia('manana', cuenta({}, {}), tx, 'es-PY').cuerpo, 'NADA');
+  ok('mañana: el título es el nombre de la cuenta',
+    fraseDelDia('manana', cuenta({}, {}), tx, 'es-PY').titulo, 'Kiosco');
+  ok('mañana, cuenta personal: habla de gastos, no de ventas',
+    fraseDelDia('manana', cuenta({}, { gastos: 40000, cargados: 1 }, 'personal'), tx, 'es-PY').cuerpo, `PG:${gs(40000)}`);
+
+  ok('tarde: a quien ya cargó no se le escribe',
+    fraseDelDia('tarde', cuenta({ cargados: 1 }, {}), tx, 'es-PY'), null);
+  ok('tarde: a quien no cargó, sí',
+    fraseDelDia('tarde', cuenta({}, {}), tx, 'es-PY').cuerpo, 'TN');
+  ok('tarde, cuenta personal: su propia frase',
+    fraseDelDia('tarde', cuenta({}, {}, 'personal'), tx, 'es-PY').cuerpo, 'TP');
+
+  ok('noche: un día vacío no tiene resumen',
+    fraseDelDia('noche', cuenta({}, {}), tx, 'es-PY'), null);
+  ok('noche: vendió más que ayer, con el porcentaje',
+    fraseDelDia('noche', cuenta({ ventas: 110000, gastos: 10000, ganancia: 60000, cargados: 4 }, { ventas: 100000 }), tx, 'es-PY').cuerpo,
+    `V:${gs(110000)} +10% G:${gs(10000)} GAN:${gs(60000)}`);
+  ok('noche: sin ventas ayer no hay porcentaje contra cero',
+    comparacionConAyer(110000, 0, tx.noche), '');
+  ok('noche: menos que ayer', comparacionConAyer(98000, 100000, tx.noche), ' -2%');
+  ok('noche: igual que ayer', comparacionConAyer(100000, 100000, tx.noche), ' =');
+  ok('noche: el título dice de qué cuenta es',
+    fraseDelDia('noche', cuenta({ ventas: 1, ganancia: 1, cargados: 1 }, {}), tx, 'es-PY').titulo, 'Día en Kiosco');
+  ok('noche: solo gastos',
+    fraseDelDia('noche', cuenta({ gastos: 5000, ganancia: -5000, cargados: 1 }, {}), tx, 'es-PY').cuerpo, `SV:${gs(5000)}`);
+  ok('noche, cuenta personal: entró y gastó',
+    fraseDelDia('noche', cuenta({ ingresos: 300000, gastos: 50000, cargados: 2 }, {}, 'personal'), tx, 'es-PY').cuerpo,
+    `I:${gs(300000)} G:${gs(50000)}`);
+
+  // Las tres corridas existen y cada una a su hora (Hobby: una vez por día cada una).
+  const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+  const rutas = vercel.crons.map((c) => c.path);
+  ok('las tres corridas del día están programadas',
+    ['manana', 'tarde', 'noche'].every((m) => rutas.includes(`/api/tareas/avisos-${m}`)), true);
+  ok('y ninguna corre más de una vez por día',
+    vercel.crons.every((c) => /^\d+ \d+ \* \* [\d*]$/.test(c.schedule)), true);
+
+  const es = fs.readFileSync('src/i18n/textos/es.ts', 'utf8');
+  ok('las frases están en el diccionario, no en la ruta', es.includes('  notificaciones: {'), true);
+  const ruta = fs.readFileSync('src/lib/avisos-diarios.ts', 'utf8');
+  ok('una vez por persona, momento y día', ruta.includes("rpc('reservar_envio'") && ruta.includes('cuenta.fecha'), true);
+  ok('y en el idioma de cada uno', ruta.includes('diccionario(idioma)'), true);
+
+  const empezar = fs.readFileSync('src/app/empezar/page.tsx', 'utf8');
+  const crear = fs.readFileSync('src/app/crear/page.tsx', 'utf8');
+  ok('las dos puertas de registro avisan la cuenta nueva',
+    empezar.includes('avisarCuentaNueva(') && crear.includes('avisarCuentaNueva('), true);
+  ok('activar un plan avisa al cliente', fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8').includes('avisarActivacion('), true);
+}
+
 console.log(fallos === 0 ? '\n>>> TODAS LAS PRUEBAS PASARON' : `\n>>> ${fallos} FALLAS`);
 process.exit(fallos ? 1 : 0);

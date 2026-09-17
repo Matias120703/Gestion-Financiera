@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
+import { avisarActivacion } from '@/lib/avisos-cliente';
 import type {
   AccionAdmin, CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
   ResumenPanel, RetiroAdmin, SocioAdmin, TipoCuenta,
@@ -530,7 +531,8 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     }
   }
 
-  const activar = () => correr('activando', async () => clienteNavegador().rpc('cambiar_plan_cuenta', {
+  const activar = () => correr('activando', async () => {
+    const r = await clienteNavegador().rpc('cambiar_plan_cuenta', {
     p_empresa: cuenta.empresa_id,
     p_plan: plan,
     p_meses: meses,
@@ -540,7 +542,12 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     // sí viaja como cero: es un trato válido —solo el dueño— y confundirlo
     // con vacío le regalaría vendedores a alguien que no los pagó.
     p_vendedores: vendedores.trim() === '' ? null : Number(vendedores),
-  }));
+    });
+    // Al cliente le llega «Tu plan está activo», y al socio su comisión si la
+    // ganó. Va aparte y sin esperar: el plan ya quedó activo en la base.
+    if (!r.error) avisarActivacion(cuenta.empresa_id);
+    return r;
+  });
 
   const cortar = () => correr('cortando', async () => clienteNavegador().rpc('cambiar_plan_cuenta', {
     p_empresa: cuenta.empresa_id, p_plan: 'gratis', p_meses: 1, p_nota: nota,
