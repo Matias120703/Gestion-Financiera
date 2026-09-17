@@ -713,6 +713,89 @@ const resumen = (db, uid, empresa) => H.intentar(db, uid,
     await H.intentar(db, yo.uid, () => db.query(
       'select public.guardar_presupuesto($1,$2,$3)', [yo.empresaId, 'Cuidado personal', 0])));
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('15 · Ahorrar en dólares, en euros o en libras (073)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // El fondo va en SU moneda; lo que suma en tus números va en la tuya. Si se
+  // mezclaran, 100 dólares sumarían como 100 guaraníes.
+  {
+    // En guaraníes: las cuentas de arriba están en dólares, y ahí un fondo en
+    // dólares es simplemente su moneda.
+    const ellaUid = await H.crearUsuario(db, 'dolares@correo.com');
+    const ella = { uid: ellaUid, empresaId: null };
+    await H.comoUsuario(db, ellaUid, async () => {
+      ella.empresaId = (await db.query('select public.crear_empresa($1,$2,$3,$4,$5) as id',
+        ['Mis ahorros', 'PYG', 'Dueña', 'America/Asuncion', 'personal'])).rows[0].id;
+    });
+    const como = (sql, args) => H.intentar(db, ella.uid, () => db.query(sql, args));
+
+    let viaje;
+    aceptado('se crea un fondo en dólares',
+      await H.intentar(db, ella.uid, async () => {
+        const r = await db.query('select public.guardar_ahorro($1,$2,$3,null,null,$4) as id',
+          [ella.empresaId, 'Viaje', 1000, 'usd']);
+        viaje = r.rows[0].id;
+        return r;
+      }));
+
+    rechazado('guardar dólares sin decir cuánto costaron en guaraníes no se puede',
+      await como('select public.mover_ahorro($1,$2,$3,$4)', [ella.empresaId, viaje, 'aporte', 100]),
+      'cuánto fue en PYG');
+
+    aceptado('100 dólares que costaron 750.000 guaraníes',
+      await como('select public.mover_ahorro($1,$2,$3,$4,null,$5,$6)', [ella.empresaId, viaje, 'aporte', 100, '', 750000]));
+
+    let r = await resumen(db, ella.uid, ella.empresaId);
+    const f = r.ahorros.find((x) => x.id === viaje);
+    ok('el fondo dice su moneda', f.moneda, 'USD');
+    ok('su saldo va en dólares', Number(f.saldo), 100);
+    ok('la meta también', Number(f.meta), 1000);
+    ok('y lo que costó, en guaraníes', Number(f.saldo_local), 750000);
+    ok('lo guardado del mes suma en guaraníes, no en dólares', Number(r.ahorrado_en_el_ciclo), 750000);
+
+    aceptado('se retiran 40 dólares y se reciben 310.000',
+      await como('select public.mover_ahorro($1,$2,$3,$4,null,$5,$6)', [ella.empresaId, viaje, 'retiro', 40, '', 310000]));
+    r = await resumen(db, ella.uid, ella.empresaId);
+    ok('quedan 60 dólares', Number(r.ahorros.find((x) => x.id === viaje).saldo), 60);
+    ok('y el neto del mes en guaraníes', Number(r.ahorrado_en_el_ciclo), 440000);
+
+    rechazado('con movimientos, la moneda ya no se cambia',
+      await como('select public.guardar_ahorro($1,$2,$3,null,$4,$5)', [ella.empresaId, 'Viaje', 1000, viaje, 'EUR']),
+      'no se le puede cambiar la moneda');
+    aceptado('pero se le puede cambiar el nombre sin tocar la moneda',
+      await como('select public.guardar_ahorro($1,$2,$3,null,$4)', [ella.empresaId, 'Viaje a Europa', 1000, viaje]));
+    ok('y sigue en dólares',
+      (await resumen(db, ella.uid, ella.empresaId)).ahorros.find((x) => x.id === viaje).moneda, 'USD');
+
+    let comun;
+    aceptado('un fondo en la moneda de la cuenta queda como siempre',
+      await H.intentar(db, ella.uid, async () => {
+        const x = await db.query('select public.guardar_ahorro($1,$2,null,null,null,$3) as id',
+          [ella.empresaId, 'Emergencias', 'PYG']);
+        comun = x.rows[0].id;
+        return x;
+      }));
+    ok('elegir la propia es como no elegir ninguna',
+      (await db.query('select moneda from public.ahorros where id=$1', [comun])).rows[0].moneda, null);
+    aceptado('y se guarda sin pedir nada más',
+      await como('select public.mover_ahorro($1,$2,$3,$4)', [ella.empresaId, comun, 'aporte', 200000]));
+    ok('sumando junto con lo de dólares, en guaraníes',
+      Number((await resumen(db, ella.uid, ella.empresaId)).ahorrado_en_el_ciclo), 640000);
+
+    rechazado('una moneda inventada no',
+      await como('select public.guardar_ahorro($1,$2,null,null,null,$3)', [ella.empresaId, 'Raro', 'DOLARES']),
+      'no es válida');
+
+    const excel = await H.intentar(db, ella.uid, () => db.query(
+      "select public.resumen_ahorro_periodo($1, (now() at time zone 'America/Asuncion')::date - 1, (now() at time zone 'America/Asuncion')::date) j",
+      [ella.empresaId])).then((x) => x.valor.rows[0].j);
+    ok('el Excel suma en guaraníes', [Number(excel.aportado), Number(excel.retirado)], [950000, 310000]);
+    const filaViaje = excel.por_fondo.find((x) => x.moneda === 'USD');
+    ok('y dice la moneda de cada fondo', Boolean(filaViaje), true);
+    ok('con su saldo en guaraníes, para que la columna se pueda leer junta', Number(filaViaje.saldo_hoy), 440000);
+  }
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES PERSONALES FALLARON`);

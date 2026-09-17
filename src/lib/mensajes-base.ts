@@ -43,6 +43,10 @@ export const MENSAJES_PT: Record<string, string> = {
   'La fecha que entendí ya pasó. Elegí el día.': 'A data que eu entendi já passou. Escolha o dia.',
 
   // ---- los de la base (raise exception) ----
+  // 073 · ahorrar en otra moneda
+  'Esa moneda no es válida.': 'Essa moeda não é válida.',
+  'Ese fondo ya tiene movimientos: no se le puede cambiar la moneda. Creá otro fondo.': 'Essa reserva já tem movimentos: não dá pra mudar a moeda. Crie outra reserva.',
+  'Escribí cuánto fue en %: sin eso no se puede sumar a tus números.': 'Escreva quanto foi em %: sem isso não dá pra somar aos seus números.',
   // 072 · la agenda como calendario
   'Elegí un rango de hasta tres meses.': 'Escolha um intervalo de até três meses.',
   // 070 · saldo y retiros

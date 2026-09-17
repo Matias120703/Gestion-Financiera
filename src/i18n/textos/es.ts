@@ -524,6 +524,15 @@ export const es = {
     sinMeta: 'sin objetivo definido',
     ahorradoEsteCiclo: 'Destinado a ahorro',
     quitarFondo: 'Eliminar fondo',
+    // Ahorrar en otra moneda (073).
+    monedaDelFondo: 'Moneda del fondo',
+    miMoneda: (moneda: string) => `Mi moneda (${moneda})`,
+    monedaFija: 'La moneda se elige al crear el fondo y no se cambia.',
+    otraMonedaDetalle: 'Guardás en esa moneda y anotás cuánto te costó en la tuya: así tus números siguen sumando en una sola moneda.',
+    cuantoEn: (moneda: string) => `Cuánto en ${moneda}`,
+    cuantoPagaste: (moneda: string) => `Cuánto pagaste en ${moneda}`,
+    cuantoRecibiste: (moneda: string) => `Cuánto recibiste en ${moneda}`,
+    teCosto: (plata: string) => `te costó ${plata}`,
     confirmarQuitarFondo: (nombre: string) => `¿Eliminar el fondo «${nombre}»?`,
 
     // ---- categorías propias ----

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
-import { dinero, fechaLegible } from '@/lib/formato';
+import { decimalesDe, dinero, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
 import { useTextos, useLocale } from '@/i18n/cliente';
@@ -250,12 +250,15 @@ export function PantallaOrganizacion({
           p_meta: d.meta,
           p_fecha_limite: d.fecha_limite,
           p_id: d.id ?? null,
+          // Al editar va null: la base deja la moneda como estaba (073).
+          p_moneda: d.id ? null : (d.moneda ?? null),
         }))}
-        alMover={(id, tipo, monto) => correr('ahorro', async () => sb().rpc('mover_ahorro', {
+        alMover={(id, tipo, monto, montoLocal) => correr('ahorro', async () => sb().rpc('mover_ahorro', {
           p_empresa: empresaId,
           p_ahorro: id,
           p_tipo: tipo,
           p_monto: monto,
+          p_monto_local: montoLocal ?? null,
         }))}
         alQuitarFondo={(id) => correr('ahorro', async () => sb().rpc('borrar_ahorro', {
           p_empresa: empresaId,
@@ -997,7 +1000,12 @@ type DatosFondo = {
   nombre: string;
   meta: number | null;
   fecha_limite: string | null;
+  /** Solo al crear: la moneda del fondo (073). */
+  moneda?: string | null;
 };
+
+/** En qué se puede ahorrar. La de la cuenta va primero y aparte. */
+const MONEDAS_AHORRO = ['USD', 'EUR', 'GBP', 'BRL'] as const;
 
 function Ahorros({
   fondos, delCiclo, moneda, ocupado, alGuardarFondo, alMover, alQuitarFondo,
@@ -1007,7 +1015,7 @@ function Ahorros({
   moneda: string;
   ocupado: boolean;
   alGuardarFondo: (d: DatosFondo) => void;
-  alMover: (id: string, tipo: 'aporte' | 'retiro', monto: number) => void;
+  alMover: (id: string, tipo: 'aporte' | 'retiro', monto: number, montoLocal?: number) => void;
   alQuitarFondo: (id: string) => void;
 }) {
   const t = useTextos();
@@ -1055,7 +1063,7 @@ function Ahorros({
                 moneda={moneda}
                 ocupado={ocupado}
                 alEditar={() => { setCreando(false); setEditando(f); }}
-                alMover={(tipo, monto) => alMover(f.id, tipo, monto)}
+                alMover={(tipo, monto, montoLocal) => alMover(f.id, tipo, monto, montoLocal)}
                 alQuitar={() => {
                   if (confirm(t.organizacion.confirmarQuitarFondo(f.nombre))) alQuitarFondo(f.id);
                 }}
@@ -1077,6 +1085,7 @@ function Ahorros({
         <div className="border-t border-borde bg-arena/50 px-4 py-4">
           <FormularioFondo
             fondo={editando}
+            moneda={moneda}
             ocupado={ocupado}
             alCerrar={cerrar}
             alGuardar={(d) => { alGuardarFondo(d); cerrar(); }}
@@ -1096,9 +1105,11 @@ function Ahorros({
  * puerta la única salida sería vaciarlo.
  */
 function FormularioFondo({
-  fondo, ocupado, alCerrar, alGuardar,
+  fondo, moneda, ocupado, alCerrar, alGuardar,
 }: {
   fondo: Ahorro | null;
+  /** La moneda de la cuenta. */
+  moneda: string;
   ocupado: boolean;
   alCerrar: () => void;
   alGuardar: (d: DatosFondo) => void;
@@ -1108,6 +1119,7 @@ function FormularioFondo({
   const [nombre, setNombre] = useState(fondo?.nombre ?? '');
   const [meta, setMeta] = useState(fondo?.meta ? String(fondo.meta) : '');
   const [fecha, setFecha] = useState(fondo?.fecha_limite ?? '');
+  const [monedaFondo, setMonedaFondo] = useState(fondo?.moneda ?? moneda);
 
   // La base rechaza una fecha ya vencida, salvo que sea la que el fondo ya
   // tenía guardada. El tope de abajo dice exactamente eso, para que el
@@ -1124,6 +1136,31 @@ function FormularioFondo({
           placeholder={t.organizacion.nombreDelFondoEjemplo}
           value={nombre} onChange={(e) => setNombre(e.target.value)}
         />
+      </div>
+
+      {/* Del cuaderno: «mucha gente no ahorra en su moneda local». Se elige
+          al crear y no se cambia: cambiarla reetiquetaría lo guardado. */}
+      <div>
+        <label className="etiqueta" htmlFor="fondo-moneda">{t.organizacion.monedaDelFondo}</label>
+        {fondo ? (
+          <p className="text-[14px] font-semibold">
+            {fondo.moneda ?? t.organizacion.miMoneda(moneda)}
+            <span className="ml-2 text-[12px] font-normal text-tinta/45">{t.organizacion.monedaFija}</span>
+          </p>
+        ) : (
+          <select
+            id="fondo-moneda" className="campo"
+            value={monedaFondo} onChange={(e) => setMonedaFondo(e.target.value)}
+          >
+            <option value={moneda}>{t.organizacion.miMoneda(moneda)}</option>
+            {MONEDAS_AHORRO.filter((m) => m !== moneda).map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        )}
+        {!fondo && monedaFondo !== moneda && (
+          <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{t.organizacion.otraMonedaDetalle}</p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -1168,6 +1205,7 @@ function FormularioFondo({
               nombre: nombre.trim(),
               meta: n > 0 ? n : null,
               fecha_limite: fecha === '' ? null : fecha,
+              moneda: fondo ? undefined : monedaFondo,
             });
           }}
         >
@@ -1185,14 +1223,20 @@ function Fondo({
   moneda: string;
   ocupado: boolean;
   alEditar: () => void;
-  alMover: (tipo: 'aporte' | 'retiro', monto: number) => void;
+  alMover: (tipo: 'aporte' | 'retiro', monto: number, montoLocal?: number) => void;
   alQuitar: () => void;
 }) {
   const t = useTextos();
   const locale = useLocale();
   const [accion, setAccion] = useState<'aporte' | 'retiro' | null>(null);
   const [monto, setMonto] = useState('');
-  const plata = (n: number) => dinero(n, moneda, true, locale);
+  const [montoLocal, setMontoLocal] = useState('');
+  // El saldo, la meta y el ritmo van en la moneda DEL FONDO; lo que costó, en la de la cuenta.
+  const otraMoneda = Boolean(fondo.moneda && fondo.moneda !== moneda);
+  const plata = (n: number) => dinero(n, fondo.moneda ?? moneda, true, locale);
+  const plataLocal = (n: number) => dinero(n, moneda, true, locale);
+  // En guaraníes el punto es de miles («750.000»); en dólares la coma puede ser decimal.
+  const numero = (s: string) => (decimalesDe(moneda) === 0 ? Number(s.replace(/[.,]/g, '')) : Number(s.replace(',', '.')));
 
   const avance = fondo.meta && fondo.meta > 0
     ? Math.min(100, (fondo.saldo / fondo.meta) * 100)
@@ -1208,7 +1252,12 @@ function Fondo({
     <li className="px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
         <span className="truncate text-[14.5px] font-semibold">{fondo.nombre}</span>
-        <span className="shrink-0 text-[15px] font-bold tabular-nums">{plata(fondo.saldo)}</span>
+        <span className="shrink-0 text-right">
+          <span className="block text-[15px] font-bold tabular-nums">{plata(fondo.saldo)}</span>
+          {otraMoneda && fondo.saldo > 0 && (
+            <span className="block text-[11.5px] tabular-nums text-tinta/45">{t.organizacion.teCosto(plataLocal(Number(fondo.saldo_local ?? 0)))}</span>
+          )}
+        </span>
       </div>
 
       {avance !== null ? (
@@ -1274,26 +1323,42 @@ function Fondo({
         <div className="mt-2.5 flex flex-wrap items-end gap-2">
           <div className="min-w-[140px] flex-1">
             <label className="etiqueta">
-              {accion === 'aporte' ? t.organizacion.cuantoGuardas : t.organizacion.cuantoRetiras}
+              {otraMoneda
+                ? t.organizacion.cuantoEn(fondo.moneda!)
+                : accion === 'aporte' ? t.organizacion.cuantoGuardas : t.organizacion.cuantoRetiras}
             </label>
             <input
               className="campo py-2 text-[14px]" inputMode="decimal" autoFocus
               value={monto} onChange={(e) => setMonto(e.target.value.replace(/[^\d.,]/g, ''))}
             />
           </div>
+          {/* En otra moneda, además, cuánto fue en la tuya: es el cambio que
+              te hicieron a vos, y con eso suma a tus números (073). */}
+          {otraMoneda && (
+            <div className="min-w-[140px] flex-1">
+              <label className="etiqueta">
+                {accion === 'aporte' ? t.organizacion.cuantoPagaste(moneda) : t.organizacion.cuantoRecibiste(moneda)}
+              </label>
+              <input
+                className="campo py-2 text-[14px]" inputMode="decimal"
+                value={montoLocal} onChange={(e) => setMontoLocal(e.target.value.replace(/[^\d.,]/g, ''))}
+              />
+            </div>
+          )}
           <button
             type="button" className="boton-suave px-3 py-2 text-[13px]"
-            onClick={() => { setAccion(null); setMonto(''); }} disabled={ocupado}
+            onClick={() => { setAccion(null); setMonto(''); setMontoLocal(''); }} disabled={ocupado}
           >
             {t.comun.cancelar}
           </button>
           <button
             type="button" className="boton-principal px-4 py-2 text-[13px]"
-            disabled={ocupado || Number(monto.replace(',', '.')) <= 0}
+            disabled={ocupado || Number(monto.replace(',', '.')) <= 0 || (otraMoneda && numero(montoLocal) <= 0)}
             onClick={() => {
-              alMover(accion, Number(monto.replace(',', '.')));
+              alMover(accion, Number(monto.replace(',', '.')), otraMoneda ? numero(montoLocal) : undefined);
               setAccion(null);
               setMonto('');
+              setMontoLocal('');
             }}
           >
             {t.comun.guardar}

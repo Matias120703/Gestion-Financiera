@@ -790,6 +790,10 @@ export interface Ahorro {
    * la meta ya está juntada.
    */
   por_mes: number | null;
+  /** En qué moneda se guarda (073). Null = la de la cuenta. */
+  moneda: string | null;
+  /** Lo que costó lo guardado, en la moneda de la cuenta. */
+  saldo_local: number;
 }
 
 /**
