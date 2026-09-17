@@ -180,6 +180,52 @@ function aceptado(nombre, res) {
   rechazado('las tablas no se leen directo',
     await como(A.uid, 'select * from public.cuentas_dinero'), 'permission denied');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('9 · La cuenta elegida a mano (075)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Con dos bancos, «transferencia» no dice a cuál de los dos. Quien carga
+  // el gasto puede decirlo, y lo que diga manda sobre el reparto por forma
+  // de pago de la 074.
+  const segundoBanco = (await valor(A.uid,
+    'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id',
+    [A.empresaId, 'Banco Atlas', 'banco', 0, []])).id;
+
+  const saldoAntesAtlas = await saldoDe(segundoBanco);
+  const saldoAntesFamiliar = await saldoDe(familiar);
+  const aMano = await cargar(A.empresaId, 'gasto', 30000, 'transferencia', { cuenta: segundoBanco });
+  ok('la cuenta elegida gana sobre la forma de pago', aMano.cuenta_id, segundoBanco);
+  ok('y el gasto sale de esa', await saldoDe(segundoBanco), saldoAntesAtlas - 30000);
+  ok('la otra queda igual', await saldoDe(familiar), saldoAntesFamiliar);
+
+  // Las cuentas para llenar el selector: sin saldo y solo para quien administra.
+  const paraElegir = (await valor(A.uid, 'select public.cuentas_para_elegir($1) j', [A.empresaId])).j;
+  ok('el selector trae las cuentas activas', paraElegir.map((c) => c.nombre),
+    ['Efectivo', 'Banco Familiar', 'Banco Atlas']);
+  ok('y sin el saldo adentro', Object.keys(paraElegir[0]).sort(), ['id', 'nombre', 'tipo']);
+  rechazado('un vendedor no elige cuentas',
+    await como(vendedor, 'select public.cuentas_para_elegir($1)', [A.empresaId]), 'dueño');
+
+  // El sueldo se cobra siempre en el mismo lado, así que se guarda una vez.
+  const sueldo = (await valor(A.uid,
+    'select public.guardar_ingreso_fijo($1,$2,$3,$4,$5,$6,$7) id',
+    [A.empresaId, 'Sueldo', 3000000, 30, true, null, segundoBanco])).id;
+  ok('el ingreso fijo recuerda dónde se cobra',
+    (await db.query('select cuenta_id from public.ingresos_fijos where id = $1', [sueldo])).rows[0].cuenta_id,
+    segundoBanco);
+
+  aceptado('y se puede dejar sin definir',
+    await como(A.uid, 'select public.guardar_ingreso_fijo($1,$2,$3,$4,$5,$6,$7)',
+      [A.empresaId, 'Sueldo', 3000000, 30, true, sueldo, null]));
+  ok('queda en null', (await db.query('select cuenta_id from public.ingresos_fijos where id = $1', [sueldo])).rows[0].cuenta_id, null);
+
+  rechazado('una cuenta de otro negocio no se acepta ni acá',
+    await como(A.uid, 'select public.guardar_ingreso_fijo($1,$2,$3,$4,$5,$6,$7)',
+      [A.empresaId, 'Sueldo', 3000000, 30, true, sueldo,
+        (await valor(B.uid, 'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id',
+          [B.empresaId, 'Ajena', 'banco', 0, []])).id]),
+    'no existe');
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA BILLETERA FALLARON`);

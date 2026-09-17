@@ -1312,6 +1312,15 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const crear = fs.readFileSync('src/app/crear/page.tsx', 'utf8');
   ok('las dos puertas de registro avisan la cuenta nueva',
     empezar.includes('avisarCuentaNueva(') && crear.includes('avisarCuentaNueva('), true);
+  // De qué cuenta salió la plata, elegido a mano (075). Con dos bancos, la
+  // forma de pago ya no alcanza para saber a cuál va.
+  const gas = fs.readFileSync('src/components/PantallaGastos.tsx', 'utf8');
+  ok('el gasto puede decir de qué cuenta salió', gas.includes('cuenta_id: cuentaId || null'), true);
+  ok('y solo se pregunta si hay más de una', gas.includes('cuentas.length > 1'), true);
+  const org = fs.readFileSync('src/components/PantallaOrganizacion.tsx', 'utf8');
+  ok('el sueldo guarda en qué cuenta se cobra', org.includes('p_cuenta: d.cuentaId || null'), true);
+  ok('y el ingreso suelto también cae donde se diga', org.includes('cuenta_id: d.cuentaId || null'), true);
+
   const panelAdmin = fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8');
   ok('activar un plan avisa al cliente', panelAdmin.includes('avisarActivacion('), true);
 

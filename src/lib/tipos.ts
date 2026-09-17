@@ -455,6 +455,18 @@ export interface Billetera {
   total: number;
 }
 
+/**
+ * Una cuenta, con lo justo para elegirla en un formulario (075).
+ *
+ * Sin saldo a propósito: al cargar un gasto solo hace falta saber cómo se
+ * llama cada cuenta, y el saldo obliga a una consulta por cuenta.
+ */
+export interface CuentaParaElegir {
+  id: string;
+  nombre: string;
+  tipo: TipoCuentaDinero;
+}
+
 export type EstadoRetiro = 'pedido' | 'pagado' | 'rechazado';
 
 /**
@@ -766,6 +778,8 @@ export interface IngresoFijo {
   dia_del_mes: number;
   /** Cuál define el ciclo, si hay varios. */
   principal: boolean;
+  /** En qué cuenta de la billetera se cobra. Null = sin definir (075). */
+  cuenta_id?: string | null;
 }
 
 /**

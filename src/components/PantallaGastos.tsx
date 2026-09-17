@@ -8,7 +8,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
-import type { Movimiento, Rol } from '@/lib/tipos';
+import type { CuentaParaElegir, Movimiento, Rol } from '@/lib/tipos';
 import { Vacio, Seccion } from '@/components/Piezas';
 import { puedeAnular } from '@/lib/permisos';
 import { mensajeDeError } from '@/lib/errores';
@@ -28,7 +28,7 @@ const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'];
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
 export function PantallaGastos({
-  empresaId, moneda, movimientos, categoriasUsadas, rol, userId, hoy, hayMas = false,
+  empresaId, moneda, movimientos, categoriasUsadas, rol, userId, hoy, hayMas = false, cuentas = [],
 }: {
   empresaId: string;
   moneda: string;
@@ -39,6 +39,8 @@ export function PantallaGastos({
   userId: string;
   hoy: string;
   hayMas?: boolean;
+  /** Las cuentas de la billetera, para elegir una a mano (075). */
+  cuentas?: CuentaParaElegir[];
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -52,6 +54,8 @@ export function PantallaGastos({
   const [categoria, setCategoria] = useState('Mercadería');
   const [fecha, setFecha] = useState(hoyISO(zona));
   const [metodo, setMetodo] = useState('efectivo');
+  /** Vacío = la que reciba esa forma de pago, como hasta ahora (074). */
+  const [cuentaId, setCuentaId] = useState('');
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
@@ -87,6 +91,8 @@ export function PantallaGastos({
         metodo_pago: metodo,
         contraparte: '',
         notas: notas.trim(),
+        // Vacío deja que el disparador la deduzca de la forma de pago (074).
+        cuenta_id: cuentaId || null,
         origen: 'manual',
       });
       if (error) throw error;
@@ -190,10 +196,24 @@ export function PantallaGastos({
             </svg>
           </button>
 
+          {/*
+            LOS DETALLES, COMO UNA SECCIÓN Y NO COMO CAMPOS SUELTOS.
+
+            Matías, mirándolo en el iPhone: «cuando abro para poner en qué,
+            qué fecha y demás, se desestructura todo; es muy feo». Era eso:
+            los chips de forma de pago se cortaban contra el borde, la aclaración
+            del detalle quedaba pegada a la etiqueta, y la fecha y la nota
+            compartían dos columnas de 160 px. Ahora todo esto vive dentro de
+            un bloque con borde propio, cada cosa en su renglón, y las dos
+            columnas recién aparecen cuando hay ancho para ellas.
+          */}
           {masOpciones && (
-            <div className="space-y-3 aparecer">
+            <div className="space-y-3.5 rounded-2xl border border-borde/70 bg-arena/40 p-3.5 aparecer">
               <label className="block">
-                <span className="etiqueta">{t.pantallas.detalle}<span className="font-normal text-tinta/35">{t.gastos.siNoPonesNada(categoriaVisible(t, categoria || 'General'))}</span></span>
+                <span className="etiqueta mb-0.5">{t.pantallas.detalle}</span>
+                <span className="mb-1.5 block text-[12px] leading-snug text-tinta/45">
+                  {t.gastos.siNoPonesNada(categoriaVisible(t, categoria || 'General'))}
+                </span>
                 <input
                   className="campo" maxLength={120}
                   placeholder={tipo === 'gasto' ? t.gastos.ejemploGasto : t.gastos.ejemploIngreso}
@@ -203,7 +223,7 @@ export function PantallaGastos({
 
               <div>
                 <span className="etiqueta">{t.pantallas.formaDePago}</span>
-                <div className="scroll-limpio flex gap-2 overflow-x-auto">
+                <div className="flex flex-wrap gap-2">
                   {METODOS.map((v) => (
                     <button
                       key={v} type="button" onClick={() => setMetodo(v)}
@@ -215,14 +235,46 @@ export function PantallaGastos({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              {/*
+                DE QUÉ CUENTA SALIÓ (075).
+
+                Con una sola cuenta no se pregunta: la forma de pago ya la
+                encuentra sola. Con dos bancos sí, porque «transferencia» no
+                dice a cuál de los dos. «Automática» deja el reparto de la 074.
+              */}
+              {cuentas.length > 1 && (
+                <div>
+                  <span className="etiqueta">{tipo === 'gasto' ? t.gastos.deQueCuenta : t.gastos.aQueCuenta}</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button" onClick={() => setCuentaId('')}
+                      className={cuentaId === '' ? 'chip-encendido' : 'chip-apagado'}
+                    >
+                      {t.gastos.automatica}
+                    </button>
+                    {cuentas.map((c) => (
+                      <button
+                        key={c.id} type="button" onClick={() => setCuentaId(c.id)}
+                        className={cuentaId === c.id ? 'chip-encendido' : 'chip-apagado'}
+                      >
+                        {c.nombre}
+                      </button>
+                    ))}
+                  </div>
+                  {cuentaId === '' && (
+                    <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">{t.gastos.porFormaDePago}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="grid gap-3.5 sm:grid-cols-2">
                 <label className="block">
                   <span className="etiqueta">{t.venta.fecha}</span>
-                  <input type="date" className="campo py-2.5" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+                  <input type="date" className="campo" value={fecha} onChange={(e) => setFecha(e.target.value)} />
                 </label>
                 <label className="block">
                   <span className="etiqueta">{t.pantallas.nota}</span>
-                  <input className="campo py-2.5" maxLength={200} placeholder={t.venta.opcional} value={notas} onChange={(e) => setNotas(e.target.value)} />
+                  <input className="campo" maxLength={200} placeholder={t.venta.opcional} value={notas} onChange={(e) => setNotas(e.target.value)} />
                 </label>
               </div>
             </div>

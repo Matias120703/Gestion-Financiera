@@ -11,7 +11,7 @@ import { useTextos, useLocale } from '@/i18n/cliente';
 import { categoriaVisible } from '@/i18n/nombres';
 import { Seccion, Vacio } from '@/components/Piezas';
 import type {
-  ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta, TrabajoPendiente,
+  ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta, CuentaParaElegir, TrabajoPendiente,
 } from '@/lib/tipos';
 
 /**
@@ -40,7 +40,7 @@ import type {
  * única mentira que un sistema de plata no se puede permitir.
  */
 export function PantallaOrganizacion({
-  empresaId, moneda, resumen, categorias, trabajos,
+  empresaId, moneda, resumen, categorias, trabajos, cuentas = [],
 }: {
   empresaId: string;
   moneda: string;
@@ -48,6 +48,8 @@ export function PantallaOrganizacion({
   categorias: CategoriaDeCuenta[];
   /** En qué negocios trabajás y cuánto te pagaron que todavía no cargaste. */
   trabajos: TrabajoPendiente[];
+  /** Las cuentas de la billetera, para decir dónde cae cada plata (075). */
+  cuentas?: CuentaParaElegir[];
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -130,6 +132,7 @@ export function PantallaOrganizacion({
             categorias={categorias}
             moneda={moneda}
             ocupado={ocupado}
+            cuentas={cuentas}
             alGuardarFijo={(d) => correr('entrada', async () => sb().rpc('guardar_ingreso_fijo', {
               p_empresa: empresaId,
               p_nombre: d.nombre,
@@ -137,6 +140,8 @@ export function PantallaOrganizacion({
               p_dia: d.dia,
               p_principal: d.principal,
               p_id: d.id ?? null,
+              // Dónde se cobra este sueldo (075). Null = sin definir.
+              p_cuenta: d.cuentaId || null,
             }))}
             alQuitarFijo={(id) => correr('entrada', async () => sb().rpc('borrar_ingreso_fijo', {
               p_empresa: empresaId,
@@ -156,6 +161,8 @@ export function PantallaOrganizacion({
               metodo_pago: 'otro',
               contraparte: '',
               notas: '',
+              // Vacío: la deduce la forma de pago, como siempre (074).
+              cuenta_id: d.cuentaId || null,
               origen: 'manual',
             }))}
           />
@@ -282,17 +289,19 @@ function Renglon({ etiqueta, valor, tono }: { etiqueta: string; valor: string; t
 // INGRESOS · el renglón que se abre
 // ════════════════════════════════════════════════════════════
 
-type DatosFijo = { id?: string; nombre: string; importe: number; dia: number; principal: boolean };
-type DatosIngreso = { concepto: string; monto: number; fecha: string; categoria: string };
+type DatosFijo = { id?: string; nombre: string; importe: number; dia: number; principal: boolean; cuentaId: string };
+type DatosIngreso = { concepto: string; monto: number; fecha: string; categoria: string; cuentaId: string };
 
 function Ingresos({
-  total, fijos, categorias, moneda, ocupado, alGuardarFijo, alQuitarFijo, alRegistrar,
+  total, fijos, categorias, moneda, ocupado, cuentas, alGuardarFijo, alQuitarFijo, alRegistrar,
 }: {
   total: number;
   fijos: IngresoFijo[];
   categorias: CategoriaDeCuenta[];
   moneda: string;
   ocupado: boolean;
+  /** Las cuentas de la billetera, para decir dónde se cobra (075). */
+  cuentas: CuentaParaElegir[];
   alGuardarFijo: (d: DatosFijo) => void;
   alQuitarFijo: (id: string) => void;
   alRegistrar: (d: DatosIngreso) => void;
@@ -351,8 +360,10 @@ function Ingresos({
                     onClick={() => { cerrarFormularios(); setEditando(f); }}
                     disabled={ocupado}
                   >
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-[14px] font-semibold">{f.nombre}</span>
+                    {/* La pastilla baja de renglón antes que comerse el
+                        nombre: «Su…» no le dice a nadie cuál sueldo es. */}
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-[14px] font-semibold">{f.nombre}</span>
                       {f.principal && (
                         <span className="pastilla shrink-0 bg-verde text-sobre-verde">
                           {t.organizacion.marcaMiCiclo}
@@ -361,6 +372,8 @@ function Ingresos({
                     </span>
                     <span className="mt-0.5 block text-[12px] text-tinta/50">
                       {t.organizacion.entraElDia(f.dia_del_mes)}
+                      {nombreDeCuenta(cuentas, f.cuenta_id) &&
+                        ` · ${t.organizacion.seCobraEn(nombreDeCuenta(cuentas, f.cuenta_id))}`}
                     </span>
                   </button>
                   <span className="shrink-0 text-[14px] font-bold tabular-nums text-verde-fuerte">
@@ -385,6 +398,7 @@ function Ingresos({
               fijo={editando}
               moneda={moneda}
               ocupado={ocupado}
+              cuentas={cuentas}
               alCerrar={() => setEditando(null)}
               alGuardar={(d) => { alGuardarFijo(d); setEditando(null); }}
               alQuitar={() => {
@@ -399,6 +413,7 @@ function Ingresos({
               fijo={null}
               moneda={moneda}
               ocupado={ocupado}
+              cuentas={cuentas}
               alCerrar={() => setCreandoFijo(false)}
               alGuardar={(d) => { alGuardarFijo(d); setCreandoFijo(false); }}
             />
@@ -407,6 +422,8 @@ function Ingresos({
               categorias={categorias}
               moneda={moneda}
               ocupado={ocupado}
+              cuentas={cuentas}
+              cuentaSugerida={fijos.find((f) => f.principal)?.cuenta_id ?? fijos.find((f) => f.cuenta_id)?.cuenta_id ?? ''}
               alCerrar={() => setRegistrando(false)}
               alRegistrar={(d) => { alRegistrar(d); setRegistrando(false); }}
             />
@@ -433,11 +450,12 @@ function Ingresos({
 }
 
 function FormularioFijo({
-  fijo, moneda, ocupado, alCerrar, alGuardar, alQuitar,
+  fijo, moneda, ocupado, cuentas, alCerrar, alGuardar, alQuitar,
 }: {
   fijo: IngresoFijo | null;
   moneda: string;
   ocupado: boolean;
+  cuentas: CuentaParaElegir[];
   alCerrar: () => void;
   alGuardar: (d: DatosFijo) => void;
   alQuitar?: () => void;
@@ -447,6 +465,7 @@ function FormularioFijo({
   const [importe, setImporte] = useState(fijo ? String(fijo.importe) : '');
   const [dia, setDia] = useState(String(fijo?.dia_del_mes ?? 30));
   const [principal, setPrincipal] = useState(fijo?.principal ?? true);
+  const [cuentaId, setCuentaId] = useState(fijo?.cuenta_id ?? '');
 
   const valido = nombre.trim() !== '' && Number(importe.replace(',', '.')) > 0;
 
@@ -481,6 +500,13 @@ function FormularioFijo({
         </div>
       </div>
 
+      <SelectorCuenta
+        etiqueta={t.organizacion.dondeLoCobras}
+        cuentas={cuentas}
+        valor={cuentaId}
+        alElegir={setCuentaId}
+      />
+
       <label className="flex items-start gap-2.5 rounded-xl border border-borde p-3">
         <input
           type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-verde"
@@ -507,6 +533,7 @@ function FormularioFijo({
             importe: Number(importe.replace(',', '.')),
             dia: Number(dia),
             principal,
+            cuentaId,
           })}
         >
           {ocupado ? t.comun.guardando : t.comun.guardar}
@@ -534,11 +561,14 @@ function FormularioFijo({
  * no los puede confundir nunca: uno es una expectativa y el otro es plata.
  */
 function FormularioIngreso({
-  categorias, moneda, ocupado, alCerrar, alRegistrar,
+  categorias, moneda, ocupado, cuentas, cuentaSugerida, alCerrar, alRegistrar,
 }: {
   categorias: CategoriaDeCuenta[];
   moneda: string;
   ocupado: boolean;
+  cuentas: CuentaParaElegir[];
+  /** La cuenta del sueldo principal: es donde cae casi siempre (075). */
+  cuentaSugerida: string;
   alCerrar: () => void;
   alRegistrar: (d: DatosIngreso) => void;
 }) {
@@ -553,6 +583,7 @@ function FormularioIngreso({
   const hoy = hoyISO(zona);
   const [fecha, setFecha] = useState(hoy);
   const [categoria, setCategoria] = useState(categorias[0]?.nombre ?? 'Otros ingresos');
+  const [cuentaId, setCuentaId] = useState(cuentaSugerida);
 
   const enElFuturo = fecha > hoy;
   const valido = concepto.trim() !== ''
@@ -605,6 +636,13 @@ function FormularioIngreso({
         </select>
       </div>
 
+      <SelectorCuenta
+        etiqueta={t.gastos.aQueCuenta}
+        cuentas={cuentas}
+        valor={cuentaId}
+        alElegir={setCuentaId}
+      />
+
       {enElFuturo && (
         <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2 text-[12.5px] font-medium leading-snug text-rojo">
           {t.organizacion.fechaFutura}
@@ -623,6 +661,7 @@ function FormularioIngreso({
             monto: Number(monto.replace(',', '.')),
             fecha,
             categoria,
+            cuentaId,
           })}
         >
           {ocupado ? t.comun.guardando : t.organizacion.registrar}
@@ -1367,4 +1406,49 @@ function Fondo({
       )}
     </li>
   );
+}
+
+/**
+ * DÓNDE CAE ESTA PLATA (075).
+ *
+ * Matías: «el ingreso fijo normalmente es un sueldo y se cobra en un banco
+ * en específico; quiero poder elegirlo». Con una sola cuenta no se pregunta
+ * —no hay nada que elegir— y sin ninguna tampoco.
+ */
+function SelectorCuenta({
+  etiqueta, cuentas, valor, alElegir,
+}: {
+  etiqueta: string;
+  cuentas: CuentaParaElegir[];
+  valor: string;
+  alElegir: (id: string) => void;
+}) {
+  const t = useTextos();
+  if (cuentas.length === 0) return null;
+  return (
+    <div>
+      <span className="etiqueta">{etiqueta}</span>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button" onClick={() => alElegir('')}
+          className={valor === '' ? 'chip-encendido' : 'chip-apagado'}
+        >
+          {t.organizacion.sinCuenta}
+        </button>
+        {cuentas.map((c) => (
+          <button
+            key={c.id} type="button" onClick={() => alElegir(c.id)}
+            className={valor === c.id ? 'chip-encendido' : 'chip-apagado'}
+          >
+            {c.nombre}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** El nombre de una cuenta, o '' si no hay ninguna elegida. */
+function nombreDeCuenta(cuentas: CuentaParaElegir[], id: string | null | undefined): string {
+  return cuentas.find((c) => c.id === id)?.nombre ?? '';
 }

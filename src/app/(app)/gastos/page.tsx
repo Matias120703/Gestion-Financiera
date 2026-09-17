@@ -8,6 +8,7 @@ import { SelectorRango } from '@/components/SelectorRango';
 import { Indicador } from '@/components/Piezas';
 import { dineroCorto, dinero, numero } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
+import { traerCuentasParaElegir } from '@/lib/billetera';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,11 +21,14 @@ export default async function PaginaGastos({
   const t = textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Los totales salen agregados; la lista es solo la primera página.
-  const [r, categorias, paginaGastos, paginaIngresos] = await Promise.all([
+  const [r, categorias, paginaGastos, paginaIngresos, cuentas] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
     traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tipo: 'gasto', tamano: 50 }),
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tipo: 'ingreso', tamano: 50 }),
+    // Para elegir de qué cuenta salió (075). Un vendedor no administra la
+    // billetera, así que para él la lista viene vacía y no se pregunta nada.
+    ctx.esAdmin ? traerCuentasParaElegir(ctx.empresa.id) : Promise.resolve([]),
   ]);
 
   const gastos = [...paginaGastos.movimientos, ...paginaIngresos.movimientos]
@@ -72,6 +76,7 @@ export default async function PaginaGastos({
         rol={ctx.miembro.rol}
         userId={ctx.userId}
         hoy={hoyISO(ctx.zonaHoraria)}
+        cuentas={cuentas}
       />
     </div>
   );
