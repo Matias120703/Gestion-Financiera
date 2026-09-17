@@ -27,15 +27,22 @@ export function Marca({
 }) {
   return (
     <svg viewBox="0 0 512 512" className={clase} role="img" aria-label="Orden">
-      {!sobreOscuro && <rect width="512" height="512" rx="112" fill="#0d1b16" />}
-      <circle
-        cx="256" cy="256" r="132" fill="none"
-        stroke={sobreOscuro ? '#3ddc9a' : '#17795a'} strokeWidth={46}
-      />
+      <defs>
+        {/* El mismo degradado del ícono y del logo que escucha (LogoVoz). */}
+        <linearGradient id="marca-anillo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#7cf0a8" />
+          <stop offset="55%" stopColor="#48dc82" />
+          <stop offset="100%" stopColor="#1f9d57" />
+        </linearGradient>
+      </defs>
+      {!sobreOscuro && <rect width="512" height="512" rx="112" fill="#121212" />}
+      <circle cx="256" cy="256" r="132" fill="none" stroke="url(#marca-anillo)" strokeWidth={46} />
+      {/* La luz que en la pantalla de voz recorre el anillo, acá quieta. */}
       <path
-        d="M256 190v132" strokeWidth={26} strokeLinecap="round"
-        stroke={sobreOscuro ? '#ffffff' : '#e6f4ee'}
+        d="M132 211A132 132 0 0 1 301 132" fill="none" stroke="#eafff1"
+        strokeWidth={15} strokeLinecap="round" opacity={0.92}
       />
+      <path d="M256 190v132" strokeWidth={26} strokeLinecap="round" stroke="#f3f5f2" />
     </svg>
   );
 }
