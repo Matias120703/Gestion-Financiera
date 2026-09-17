@@ -73,7 +73,7 @@ function Pestania({ activa, onClick, children }: {
     <button
       type="button" onClick={onClick}
       className={`rounded-lg px-3.5 py-1.5 text-[13px] font-semibold transition ${
-        activa ? 'bg-verde text-white' : 'bg-arena text-tinta/55 hover:bg-borde/40'
+        activa ? 'bg-verde text-sobre-verde' : 'bg-arena text-tinta/55 hover:bg-borde/40'
       }`}
     >
       {children}

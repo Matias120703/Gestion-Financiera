@@ -14,11 +14,18 @@
  * Van en RGB sin `rgb()` a propósito: es lo que le permite a Tailwind
  * componerles la opacidad (`text-tinta/45`, `bg-verde/10`).
  *
- * CÓMO SE ELIGIÓ EL OSCURO
+ * CÓMO SE ELIGIÓ EL OSCURO (el estilo de Wise, con el verde de Orden)
  *
- * No es gris: es el mismo verde de la marca bajado hasta el fondo, igual que
- * la portada. Y no es negro puro — sobre negro absoluto, el texto blanco
- * vibra y cansa; #0d1714 deja descansar la vista.
+ * Neutro, casi negro, con tarjetas gris oscuro y el verde vivo como único
+ * color. No es negro puro — sobre negro absoluto, el texto blanco vibra y
+ * cansa; #121212 deja descansar la vista.
+ *
+ * EL VERDE ES CLARO A PROPÓSITO
+ *
+ * El verde vivo de los botones (#48dc82) no se lee como texto sobre blanco,
+ * y el blanco no se lee encima de él. Por eso son tres: `verde` para llenar
+ * (botones, barras, puntos), `sobre-verde` para lo que va escrito encima, y
+ * `verde-fuerte` para el verde escrito sobre la tarjeta de cada tema.
  *
  * El orden de las superficies se invierte, y tiene que invertirse entero: en
  * claro la página es gris muy claro y la tarjeta es blanca (la tarjeta
@@ -32,14 +39,15 @@
 :root {
   color-scheme: light;
 
-  --tinta:        13 27 22;
-  --tinta-suave:  27 47 38;
-  --arena:        246 247 245;
+  --tinta:        14 15 12;
+  --tinta-suave:  69 71 66;
+  --arena:        243 244 241;
   --superficie:   255 255 255;
-  --borde:        227 231 228;
-  --verde:        23 121 90;
-  --verde-claro:  230 244 238;
-  --verde-fuerte: 15 92 68;
+  --borde:        229 231 225;
+  --verde:        72 220 130;
+  --verde-claro:  225 247 233;
+  --verde-fuerte: 21 128 61;
+  --sobre-verde:  6 42 20;
   --rojo:         192 57 43;
   --rojo-claro:   253 236 235;
   --ambar:        183 121 31;
@@ -49,19 +57,19 @@
 html.oscuro {
   color-scheme: dark;
 
-  --tinta:        226 236 231;
-  --tinta-suave:  186 203 194;
-  --arena:        13 23 20;
-  --superficie:   24 34 30;
-  --borde:        45 60 53;
-  /* El verde de la marca no se lee sobre casi negro: se sube hasta que sí. */
-  --verde:        32 154 113;
-  --verde-claro:  18 48 38;
-  --verde-fuerte: 78 209 157;
-  --rojo:         233 121 106;
-  --rojo-claro:   60 29 26;
-  --ambar:        226 168 71;
-  --ambar-claro:  55 41 17;
+  --tinta:        240 241 238;
+  --tinta-suave:  200 202 197;
+  --arena:        18 18 18;
+  --superficie:   34 35 33;
+  --borde:        52 53 50;
+  --verde:        72 220 130;
+  --verde-claro:  31 54 39;
+  --verde-fuerte: 120 234 164;
+  --sobre-verde:  6 42 20;
+  --rojo:         240 128 112;
+  --rojo-claro:   64 32 29;
+  --ambar:        232 176 82;
+  --ambar-claro:  58 44 20;
 }
 
 html, body { height: 100%; }
@@ -103,18 +111,21 @@ body {
  */
 
 @layer components {
+  /* Como Wise: la tarjeta se separa del fondo por el color, no por la
+     sombra. El borde es apenas una línea en claro y casi nada en oscuro. */
   .tarjeta {
-    @apply rounded-2xl border border-borde bg-superficie shadow-tarjeta;
+    @apply rounded-3xl border border-borde/70 bg-superficie;
   }
 
+  /* Todo botón es una píldora. */
   .boton {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold
            transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
-  .boton-principal { @apply boton bg-verde text-white hover:bg-verde-fuerte; }
-  .boton-suave     { @apply boton border border-borde bg-superficie text-tinta hover:bg-arena; }
+  .boton-principal { @apply boton bg-verde text-sobre-verde hover:brightness-95; }
+  .boton-suave     { @apply boton bg-verde-claro text-verde-fuerte hover:brightness-95; }
   .boton-peligro   { @apply boton bg-rojo text-white hover:opacity-90; }
-  .boton-texto     { @apply text-sm font-semibold text-verde hover:underline; }
+  .boton-texto     { @apply text-sm font-semibold text-verde-fuerte hover:underline; }
 
   /*
    * 16px no es capricho: iOS hace zoom automático al enfocar cualquier input
@@ -129,15 +140,15 @@ body {
   /* Chip seleccionable: método de cobro, categoría de gasto. Alto de 44px
      para que se pueda tocar con el pulgar sin errar. */
   .chip {
-    @apply inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl border px-4
+    @apply inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-full border px-4
            text-[14px] font-semibold transition active:scale-[.97];
   }
   .chip-apagado { @apply chip border-borde bg-superficie text-tinta/60; }
-  .chip-encendido { @apply chip border-verde bg-verde text-white; }
+  .chip-encendido { @apply chip border-verde bg-verde text-sobre-verde; }
 
   /* Botón de icono con área táctil de verdad (44px), no de 24. */
   .icono-toque {
-    @apply grid h-11 w-11 place-items-center rounded-xl transition active:scale-95;
+    @apply grid h-11 w-11 place-items-center rounded-full transition active:scale-95;
   }
 
   .etiqueta {
@@ -145,7 +156,7 @@ body {
   }
 
   .titulo-seccion {
-    @apply text-[11px] font-bold uppercase tracking-[.14em] text-tinta/45;
+    @apply text-[13px] font-semibold text-tinta/55;
   }
 
   .pastilla {
@@ -163,6 +174,14 @@ body {
   .tabla tbody td { @apply border-b border-borde/60 px-3 py-2.5 align-middle; }
   .tabla tbody tr:last-child td { @apply border-b-0; }
   .num { @apply text-right tabular-nums; }
+}
+
+/*
+ * La letra de los números grandes y los títulos, angosta y pesada como la de
+ * Wise. El ancho va acá porque Tailwind no tiene una clase para font-stretch.
+ */
+@layer utilities {
+  .font-titulo { font-stretch: 80%; letter-spacing: -0.01em; }
 }
 
 @keyframes aparecer {
@@ -206,7 +225,7 @@ body {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: #0a1712;
+  background: #121212;
   animation: intro-salir .45s ease-in 1.35s forwards;
 }
 html.intro-vista .intro { display: none; }
@@ -216,7 +235,7 @@ html.intro-vista .intro { display: none; }
   width: 320px;
   height: 320px;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(61, 220, 154, .22), transparent 65%);
+  background: radial-gradient(circle, rgba(72, 220, 130, .22), transparent 65%);
   animation: intro-luz 1.4s ease-out both;
 }
 .intro-marca { animation: intro-marca .7s cubic-bezier(.34, 1.56, .64, 1) both; }

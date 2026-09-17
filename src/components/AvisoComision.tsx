@@ -45,7 +45,7 @@ export function AvisoComision({ novedad }: { novedad: Novedad }) {
 
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-verde/30 bg-verde-claro/40 p-4">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-verde text-white">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-verde text-sobre-verde">
         <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" {...trazo}>
           <path d="M12 7.5v9M14.8 9.6c-.5-.8-1.5-1.3-2.8-1.3-1.6 0-2.7.8-2.7 2 0 2.8 5.6 1.4 5.6 4.2 0 1.2-1.2 2-2.9 2-1.4 0-2.4-.5-2.9-1.4" />
         </svg>

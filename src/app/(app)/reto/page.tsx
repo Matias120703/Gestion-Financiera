@@ -80,7 +80,7 @@ export default async function PaginaReto() {
         <div className="tarjeta overflow-hidden">
           <div className="bg-noche px-5 py-6 text-white">
             <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">{t.pantallas.retoEnCurso}</p>
-            <h2 className="mt-1.5 text-[22px] font-bold tracking-tight">{activo.nombre}</h2>
+            <h2 className="mt-1.5 text-[22px] font-titulo font-extrabold tracking-tight">{activo.nombre}</h2>
             <p className="mt-1 text-[13.5px] text-white/50">
               {fechaLegible(activo.fecha_inicio, true, locale)} — {fechaLegible(activo.fecha_fin, true, locale)}
             </p>
@@ -131,19 +131,19 @@ export default async function PaginaReto() {
           <p className="text-[11px] font-bold uppercase tracking-[.14em] text-white/45">
             {terminó ? t.pantallas.retoTerminado : yaEmpezó ? t.pantallas.retoEnCurso : t.pantallas.retoPorEmpezar}
           </p>
-          <h2 className="mt-1.5 text-[22px] font-bold tracking-tight lg:text-[26px]">{activo.nombre}</h2>
+          <h2 className="mt-1.5 text-[22px] font-titulo font-extrabold tracking-tight lg:text-[26px]">{activo.nombre}</h2>
           <p className="mt-1 text-[13.5px] text-white/50">
             {fechaLegible(activo.fecha_inicio, true, locale)} — {fechaLegible(activo.fecha_fin, true, locale)} · {t.pantallas.metaDe(etiquetaMedida)}
           </p>
 
           <div className="mt-6 flex items-end justify-between gap-4">
             <div>
-              <p className="text-[34px] font-bold leading-none tracking-tight tabular-nums lg:text-[42px]">
+              <p className="text-[34px] font-titulo font-extrabold leading-none tracking-tight tabular-nums lg:text-[42px]">
                 {dineroCorto(logrado, m)}
               </p>
               <p className="mt-1.5 text-[13.5px] text-white/50">{t.pantallas.deMonto(dinero(meta, m))}</p>
             </div>
-            <p className="text-[30px] font-bold leading-none tabular-nums text-verde lg:text-[36px]">
+            <p className="text-[30px] font-titulo font-extrabold leading-none tabular-nums text-verde-fuerte lg:text-[36px]">
               {porcentaje(Math.min(avance, 999), 0)}
             </p>
           </div>
@@ -158,9 +158,9 @@ export default async function PaginaReto() {
           {!terminó && (
             <p className="mt-3 text-[13.5px] font-semibold">
               {falta === 0 ? (
-                <span className="text-verde">{t.pantallas.metaAlcanzadaDetalle}</span>
+                <span className="text-verde-fuerte">{t.pantallas.metaAlcanzadaDetalle}</span>
               ) : diasRestantes > 0 ? (
-                <Rico texto={t.pantallas.teFaltanEn(dinero(falta, m), diasRestantes)} negrita="font-semibold text-verde" />
+                <Rico texto={t.pantallas.teFaltanEn(dinero(falta, m), diasRestantes)} negrita="font-semibold text-verde-fuerte" />
               ) : (
                 <>{t.pantallas.ultimoDiaFaltan(dinero(falta, m))}</>
               )}
@@ -222,7 +222,7 @@ export default async function PaginaReto() {
               {top.map((p, i) => (
                 <li key={p.producto_id ?? p.nombre} className="flex items-center gap-3 px-4 py-3">
                   <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[12px] font-bold ${
-                    i === 0 ? 'bg-verde text-white' : 'bg-arena text-tinta/50'
+                    i === 0 ? 'bg-verde text-sobre-verde' : 'bg-arena text-tinta/50'
                   }`}>{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[14px] font-semibold">{p.nombre}</p>

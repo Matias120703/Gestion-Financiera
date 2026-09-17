@@ -212,7 +212,7 @@ export function PantallaAgenda({
                     )}
                   </span>
                   {r.estado === 'atendida' && (
-                    <span className="pastilla bg-verde text-white">{t.agenda.atendido}</span>
+                    <span className="pastilla bg-verde text-sobre-verde">{t.agenda.atendido}</span>
                   )}
                   {r.estado === 'no_vino' && (
                     <span className="pastilla bg-rojo-claro text-rojo">{t.agenda.noVino}</span>
@@ -492,7 +492,7 @@ function HorariosLibres({
               key={h.inicia} type="button" disabled={ocupado}
               onClick={() => alElegir(h.inicia)}
               className={elegido === h.inicia
-                ? 'rounded-lg border border-verde bg-verde py-2 text-center text-[13.5px] font-semibold tabular-nums text-white'
+                ? 'rounded-lg border border-verde bg-verde py-2 text-center text-[13.5px] font-semibold tabular-nums text-sobre-verde'
                 : 'rounded-lg border border-borde bg-superficie py-2 text-center text-[13.5px] font-semibold tabular-nums transition hover:border-verde/50'}
             >
               {hora(h.inicia)}
@@ -860,7 +860,7 @@ function TarjetaLink({
           <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{url}</span>
           <button
             type="button"
-            className="shrink-0 rounded-lg bg-verde px-3 py-1.5 text-[12.5px] font-semibold text-white"
+            className="shrink-0 rounded-lg bg-verde px-3 py-1.5 text-[12.5px] font-semibold text-sobre-verde"
             onClick={() => {
               navigator.clipboard?.writeText(url);
               setCopiado(true);
@@ -1199,13 +1199,13 @@ function DiasEspeciales({
           <div className="mb-3 flex gap-2">
             <button type="button" disabled={ocupado} onClick={() => setCerrado(true)}
               className={cerrado
-                ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-white'
+                ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-sobre-verde'
                 : 'rounded-lg border border-borde bg-superficie px-3 py-1.5 text-[13px] font-semibold'}>
               {t.agenda.cerradoTodoElDia}
             </button>
             <button type="button" disabled={ocupado} onClick={() => setCerrado(false)}
               className={!cerrado
-                ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-white'
+                ? 'rounded-lg border border-verde bg-verde px-3 py-1.5 text-[13px] font-semibold text-sobre-verde'
                 : 'rounded-lg border border-borde bg-superficie px-3 py-1.5 text-[13px] font-semibold'}>
               {t.agenda.abroEnOtroHorario}
             </button>

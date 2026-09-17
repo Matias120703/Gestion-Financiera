@@ -53,7 +53,7 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
   return (
     <Marco>
       <p className="text-[12px] font-bold uppercase tracking-wider text-tinta/40">{reserva.negocio}</p>
-      <h1 className="mt-1 text-[22px] font-bold tracking-tight">
+      <h1 className="mt-1 text-[22px] font-titulo font-extrabold tracking-tight">
         {cancelada ? r.turnoCancelado : r.tuTurno}
       </h1>
 

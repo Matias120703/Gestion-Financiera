@@ -19,7 +19,7 @@ export function Indicador({
   return (
     <div className={`tarjeta p-4 ${destacado ? 'ring-1 ring-verde/25' : ''}`}>
       <p className="titulo-seccion">{titulo}</p>
-      <p className={`mt-2 text-[22px] font-bold leading-none tracking-tight tabular-nums lg:text-[25px] ${colorValor}`}>
+      <p className={`mt-2 text-[22px] font-titulo font-extrabold leading-none tracking-tight tabular-nums lg:text-[25px] ${colorValor}`}>
         {valor}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">

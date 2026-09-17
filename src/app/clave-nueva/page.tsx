@@ -105,7 +105,7 @@ export default function PaginaClaveNueva() {
           {estado === 'sinSesion' && (
             <>
               <p className="titulo-seccion">{t.acceso.enlaceVencido}</p>
-              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+              <h1 className="mt-2 text-[24px] font-titulo font-extrabold leading-tight tracking-tight">
                 {t.acceso.enlaceVencidoTitulo}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
@@ -120,7 +120,7 @@ export default function PaginaClaveNueva() {
           {estado === 'listo' && (hecho ? (
             <>
               <p className="titulo-seccion">{t.comun.listo}</p>
-              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+              <h1 className="mt-2 text-[24px] font-titulo font-extrabold leading-tight tracking-tight">
                 {t.acceso.cambiada}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
@@ -130,7 +130,7 @@ export default function PaginaClaveNueva() {
           ) : (
             <>
               <p className="titulo-seccion">{t.acceso.casi}</p>
-              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+              <h1 className="mt-2 text-[24px] font-titulo font-extrabold leading-tight tracking-tight">
                 {t.acceso.ponerNueva}
               </h1>
 

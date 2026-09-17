@@ -170,7 +170,7 @@ export function CalendarioAgenda({
                   fueraDelMes || pasado ? 'opacity-45' : ''
                 } ${COLOR[d.estado]}`}
               >
-                <span className={`text-[13px] font-bold tabular-nums ${d.fecha === hoy ? 'rounded-full bg-verde px-1.5 text-white' : ''}`}>
+                <span className={`text-[13px] font-bold tabular-nums ${d.fecha === hoy ? 'rounded-full bg-verde px-1.5 text-sobre-verde' : ''}`}>
                   {Number(d.fecha.slice(8, 10))}
                 </span>
                 {d.turnos > 0 ? (

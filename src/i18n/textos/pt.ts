@@ -157,6 +157,8 @@ export const pt: Textos = {
     mas: 'Mais',
     todasLasSecciones: 'Todas as seções',
     recomendar: 'Indicar',
+    ganar: 'Ganhe 50%',
+    ganarDetalle: 'Indique o Orden e ganhe metade do primeiro pagamento',
     panelOrden: 'Painel do Orden',
     billetera: 'Carteira',
 
@@ -2219,6 +2221,8 @@ export const pt: Textos = {
     comoSeMueveDetalle: 'Cada venda, despesa ou entrada vai pra conta da sua forma de pagamento: o recebido em dinheiro, pro dinheiro; o recebido por transferência, pro banco que recebe.',
     sinConexionBancos: 'Os bancos do Paraguai não se conectam com nenhum app, então o saldo é o que o Orden calcula com o que você lança. Se não bater com o seu banco, toque em «Ajustar saldo».',
     verHistorial: 'Ver o histórico →',
+    atajos: 'Atalhos',
+    tocaUnaCuenta: 'Toque em uma conta para ajustar o saldo, transferir ou editar.',
   },
 
   email: {

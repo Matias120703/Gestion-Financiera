@@ -82,7 +82,7 @@ export default async function PaginaCierre({
     <div className="mx-auto max-w-lg space-y-4">
       <header>
         <p className="titulo-seccion">{t.cierre.titulo}</p>
-        <h1 className="mt-1 text-[22px] font-bold capitalize leading-tight tracking-tight">
+        <h1 className="mt-1 text-[22px] font-titulo font-extrabold capitalize leading-tight tracking-tight">
           {fechaLarga(cierre.fecha, locale)}
         </h1>
         <p className="mt-1 text-[13px] font-semibold text-tinta/45">{t.cierre.subtitulo}</p>
@@ -213,7 +213,7 @@ function Fila({
       <span className={`text-[14px] ${destacado ? 'font-bold text-tinta' : 'font-semibold text-tinta/55'}`}>
         {etiqueta}
       </span>
-      <span className={`tabular-nums ${destacado ? 'text-[22px] font-bold' : 'text-[17px] font-bold'} ${color}`}>
+      <span className={`tabular-nums ${destacado ? 'text-[22px] font-titulo font-extrabold' : 'text-[17px] font-bold'} ${color}`}>
         {valor}
       </span>
     </div>

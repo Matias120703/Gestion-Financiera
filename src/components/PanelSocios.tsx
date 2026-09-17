@@ -170,7 +170,7 @@ export function PanelSocios({ socios, comisiones, referidos, retiros = [], moned
             <button
               key={f.valor} type="button" onClick={() => setFiltro(f.valor)}
               className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
-                filtro === f.valor ? 'bg-verde text-white' : 'bg-arena text-tinta/60 hover:bg-borde/40'
+                filtro === f.valor ? 'bg-verde text-sobre-verde' : 'bg-arena text-tinta/60 hover:bg-borde/40'
               }`}
             >
               {f.texto}

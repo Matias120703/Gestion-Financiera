@@ -38,7 +38,7 @@ export function Intro({ lema }: { lema: string }) {
           <svg viewBox="0 0 512 512" className="intro-marca h-[68px] w-[68px]">
             <circle
               className="intro-anillo" cx="256" cy="256" r="132" fill="none"
-              stroke="#3ddc9a" strokeWidth={46} strokeLinecap="round"
+              stroke="#48dc82" strokeWidth={46} strokeLinecap="round"
             />
             <path className="intro-palo" d="M256 190v132" strokeWidth={26} strokeLinecap="round" stroke="#ffffff" />
           </svg>

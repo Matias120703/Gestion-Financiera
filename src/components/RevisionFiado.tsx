@@ -227,7 +227,7 @@ export function RevisionFiado({
         <label className="etiqueta">{esCobro ? t.captura.cuantoTePago : t.captura.cuantoTeDebe}</label>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-          className="campo text-[22px] font-bold tabular-nums"
+          className="campo text-[22px] font-titulo font-extrabold tabular-nums"
           value={borrador.monto}
           onChange={(e) => set('monto', Number(e.target.value) || 0)}
         />

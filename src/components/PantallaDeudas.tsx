@@ -65,7 +65,7 @@ export function PantallaDeudas({
     <div className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-bold tracking-tight">{t.deudas.titulo}</h1>
+          <h1 className="text-[22px] font-titulo font-extrabold tracking-tight">{t.deudas.titulo}</h1>
           <p className="mt-0.5 text-[13px] font-semibold text-tinta/45">{t.deudas.subtitulo}</p>
         </div>
         {puedeEditar && (
@@ -84,7 +84,7 @@ export function PantallaDeudas({
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="tarjeta p-4">
             <p className="titulo-seccion">{t.deudas.totalDebido}</p>
-            <p className="mt-1.5 text-[24px] font-bold tracking-tight tabular-nums">
+            <p className="mt-1.5 text-[24px] font-titulo font-extrabold tracking-tight tabular-nums">
               {plata(Number(resumen.total_debido))}
             </p>
           </div>
@@ -204,7 +204,7 @@ function TarjetaDeuda({
 
         <div className="text-right">
           <p className="titulo-seccion">{t.deudas.saldo}</p>
-          <p className="text-[22px] font-bold tracking-tight tabular-nums">
+          <p className="text-[22px] font-titulo font-extrabold tracking-tight tabular-nums">
             {plata(Number(deuda.saldo))}
           </p>
           <p className="text-[12px] text-tinta/40">
@@ -592,7 +592,7 @@ function FormularioPago({
             Quien lleva la contabilidad fina la desmarca. */}
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-borde p-3">
           <input
-            type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[#17795a]"
+            type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[#22a55a]"
             checked={crearGasto} onChange={(e) => setCrearGasto(e.target.checked)}
           />
           <span className="min-w-0">

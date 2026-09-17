@@ -354,7 +354,7 @@ function Ingresos({
                     <span className="flex items-center gap-2">
                       <span className="truncate text-[14px] font-semibold">{f.nombre}</span>
                       {f.principal && (
-                        <span className="pastilla shrink-0 bg-verde text-white">
+                        <span className="pastilla shrink-0 bg-verde text-sobre-verde">
                           {t.organizacion.marcaMiCiclo}
                         </span>
                       )}

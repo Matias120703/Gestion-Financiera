@@ -213,7 +213,7 @@ export default function PaginaCrear() {
 
             {paso === 1 && !invitado ? (
               <>
-                <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
+                <h1 className="mt-2 text-[26px] font-titulo font-extrabold leading-tight tracking-tight">
                   {t.registro.contanos}
                 </h1>
                 <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">
@@ -250,7 +250,7 @@ export default function PaginaCrear() {
               </>
             ) : (
               <>
-                <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
+                <h1 className="mt-2 text-[26px] font-titulo font-extrabold leading-tight tracking-tight">
                   {invitado ? t.registro.sumateAlEquipo : t.registro.tuAcceso}
                 </h1>
                 <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">

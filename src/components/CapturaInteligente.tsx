@@ -531,7 +531,7 @@ export function BotonCaptura({
         type="button"
         onClick={() => setModo('menu')}
         aria-label={t.captura.botonAria}
-        className="fixed right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-verde text-white shadow-[0_10px_30px_-6px_rgba(23,121,90,.7)] transition active:scale-95 lg:bottom-7 lg:right-7 lg:h-[60px] lg:w-[60px]"
+        className="fixed right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-verde text-sobre-verde shadow-[0_10px_30px_-6px_rgba(40,180,100,.7)] transition active:scale-95 lg:bottom-7 lg:right-7 lg:h-[60px] lg:w-[60px]"
         style={{ bottom: 'calc(96px + env(safe-area-inset-bottom))' }}
       >
         <svg viewBox="0 0 24 24" className="h-6 w-6" {...trazo}>
@@ -634,7 +634,7 @@ export function BotonCaptura({
                 <div className="py-3">
                   <OrbeVoz flujo={flujoVoz} />
                 </div>
-                <p className="mt-5 text-3xl font-bold tabular-nums tracking-tight">
+                <p className="mt-5 text-3xl font-titulo font-extrabold tabular-nums tracking-tight">
                   {String(Math.floor(segundos / 60)).padStart(2, '0')}:{String(segundos % 60).padStart(2, '0')}
                 </p>
                 <p className="mt-2 text-[14px] text-tinta/60">{t.captura.hablaNormal}</p>
@@ -1053,7 +1053,7 @@ function Revision({
         </label>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-          className="campo text-[22px] font-bold tabular-nums"
+          className="campo text-[22px] font-titulo font-extrabold tabular-nums"
           value={borrador.monto}
           onChange={(e) => onCambio({ ...borrador, monto: Number(e.target.value) || 0 })}
         />

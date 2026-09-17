@@ -71,7 +71,7 @@ export default async function PaginaPlan({
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <header>
-        <h1 className="text-[22px] font-bold tracking-tight">{t.plan.titulo}</h1>
+        <h1 className="text-[22px] font-titulo font-extrabold tracking-tight">{t.plan.titulo}</h1>
       </header>
 
       {/* ---------------- Dónde está parada la persona ---------------- */}
@@ -268,7 +268,7 @@ function Tarjeta({
       </div>
 
       <p className="mt-3 flex items-baseline gap-1.5">
-        <span className="text-[24px] font-bold tracking-tight tabular-nums">{precio}</span>
+        <span className="text-[24px] font-titulo font-extrabold tracking-tight tabular-nums">{precio}</span>
         {porPeriodo && <span className="text-[13px] font-semibold text-tinta/45">{porPeriodo}</span>}
       </p>
 
@@ -276,7 +276,7 @@ function Tarjeta({
       <ul className="mt-2 flex-1 space-y-2">
         {puntos.map((punto) => (
           <li key={punto} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
-            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde"
+            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde-fuerte"
                  fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 13 4 4L19 7" />
             </svg>

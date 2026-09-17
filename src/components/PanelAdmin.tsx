@@ -185,7 +185,7 @@ export function PanelAdmin({
               <button
                 key={f.valor} type="button" onClick={() => setFiltro(f.valor)}
                 className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
-                  filtro === f.valor ? 'bg-verde text-white' : 'bg-arena text-tinta/60 hover:bg-borde/40'
+                  filtro === f.valor ? 'bg-verde text-sobre-verde' : 'bg-arena text-tinta/60 hover:bg-borde/40'
                 }`}
               >
                 {f.texto}
@@ -423,7 +423,7 @@ function Metrica({ titulo, valor, detalle, tono }: {
   return (
     <div className="rounded-2xl border border-borde bg-superficie p-4">
       <p className="text-[11.5px] font-semibold uppercase tracking-wide text-tinta/45">{titulo}</p>
-      <p className={`mt-1.5 text-[22px] font-bold leading-none tabular-nums ${color}`}>{valor}</p>
+      <p className={`mt-1.5 text-[22px] font-titulo font-extrabold leading-none tabular-nums ${color}`}>{valor}</p>
       <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{detalle}</p>
     </div>
   );

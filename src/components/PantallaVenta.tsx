@@ -269,7 +269,7 @@ export function PantallaVenta({
           ninguna duda de si el toque funcionó. */}
       {exito && (
         <div className="fixed inset-x-0 top-[60px] z-50 px-3 lg:top-24" role="status" aria-live="polite">
-          <div className="destello mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-verde px-4 py-3.5 text-white shadow-[0_12px_34px_-8px_rgba(23,121,90,.75)]">
+          <div className="destello mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-verde px-4 py-3.5 text-sobre-verde shadow-[0_12px_34px_-8px_rgba(40,180,100,.75)]">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/20">
               <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo} strokeWidth={2.4}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
             </span>
@@ -337,12 +337,12 @@ export function PantallaVenta({
                   } ${agotado ? 'opacity-55' : 'hover:border-verde hover:bg-verde-claro/30'}`}
                 >
                   {enCarrito && (
-                    <span className="absolute -right-1.5 -top-1.5 grid h-6 min-w-[24px] place-items-center rounded-full bg-verde px-1.5 text-[12px] font-bold text-white">
+                    <span className="absolute -right-1.5 -top-1.5 grid h-6 min-w-[24px] place-items-center rounded-full bg-verde px-1.5 text-[12px] font-bold text-sobre-verde">
                       {numero(enCarrito.cantidad)}
                     </span>
                   )}
                   <span className="line-clamp-2 text-[14px] font-bold leading-snug">
-                    {esFrecuente && <span className="mr-1 text-verde" aria-label={t.venta.masVendido}>★</span>}
+                    {esFrecuente && <span className="mr-1 text-verde-fuerte" aria-label={t.venta.masVendido}>★</span>}
                     {p.nombre}
                   </span>
                   <span className="mt-2 block">
@@ -391,7 +391,7 @@ export function PantallaVenta({
                 <button
                   key={m.valor} type="button" onClick={() => setMetodo(m.valor)}
                   className={`inline-flex min-h-[40px] shrink-0 items-center rounded-xl px-3.5 text-[13.5px] font-bold transition active:scale-[.97] ${
-                    metodo === m.valor ? 'bg-verde text-white' : 'bg-white/10 text-white/60'
+                    metodo === m.valor ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
                   }`}
                 >
                   {m.corto}
@@ -409,14 +409,14 @@ export function PantallaVenta({
                   {t.venta.productosEnCarrito(unidades, numero(unidades))}
                   <svg viewBox="0 0 24 24" className="h-3 w-3" {...trazo}><path d="m6 15 6-6 6 6" /></svg>
                 </span>
-                <span className="truncate text-[23px] font-bold leading-tight tabular-nums text-white">
+                <span className="truncate text-[23px] font-titulo font-extrabold leading-tight tabular-nums text-white">
                   {dinero(total, moneda)}
                 </span>
               </button>
 
               <button
                 type="button" onClick={cobrar} disabled={guardando || total <= 0}
-                className="min-h-[58px] shrink-0 rounded-xl bg-verde px-6 text-[16.5px] font-bold text-white transition active:scale-[.97] disabled:opacity-50"
+                className="min-h-[58px] shrink-0 rounded-xl bg-verde px-6 text-[16.5px] font-bold text-sobre-verde transition active:scale-[.97] disabled:opacity-50"
               >
                 {guardando ? '…' : t.venta.cobrar}
               </button>
@@ -616,7 +616,7 @@ function Carrito(props: {
               )}
               <div className="flex items-baseline justify-between border-t border-borde pt-1.5">
                 <span className="text-[14px] font-bold">{t.venta.total}</span>
-                <span className="text-[20px] font-bold tabular-nums">{dinero(total, moneda)}</span>
+                <span className="text-[20px] font-titulo font-extrabold tabular-nums">{dinero(total, moneda)}</span>
               </div>
               {verCostos && (
                 <div className="flex justify-between text-[12.5px] font-semibold text-verde-fuerte">
@@ -681,7 +681,7 @@ function DialogoLibre({
             <span className="etiqueta">{t.venta.precio}</span>
             <input
               type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-              className="campo text-[22px] font-bold tabular-nums" autoFocus
+              className="campo text-[22px] font-titulo font-extrabold tabular-nums" autoFocus
               value={precio || ''} placeholder="0"
               onChange={(e) => setPrecio(Math.max(0, Number(e.target.value) || 0))}
             />

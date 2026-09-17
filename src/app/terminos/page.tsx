@@ -89,7 +89,7 @@ export default function Terminos() {
         </p>
         <p>
           Nosotros solo lo usamos para prestarte el servicio. Cómo lo tratamos está en la{' '}
-          <a href="/privacidad" className="font-semibold text-verde underline">política de privacidad</a>.
+          <a href="/privacidad" className="font-semibold text-verde-fuerte underline">política de privacidad</a>.
         </p>
       </Apartado>
 

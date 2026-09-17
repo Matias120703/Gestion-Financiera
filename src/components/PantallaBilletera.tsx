@@ -92,60 +92,59 @@ export function PantallaBilletera({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 py-2">
-      {/* ---- el total ---- */}
-      <div className="relative overflow-hidden rounded-3xl bg-noche p-5 text-white shadow-tarjeta">
-        <div
-          className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full opacity-40 blur-2xl"
-          style={{ background: 'radial-gradient(circle, #3ddc9a, transparent 65%)' }}
-        />
-        <div className="relative flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-white/55">{b.tuPlata}</p>
-            <p className="mt-1.5 text-[32px] font-bold leading-none tabular-nums tracking-tight">
+      {/* ---- el total y cada cuenta, en una sola tarjeta (como Wise) ---- */}
+      <section className="tarjeta overflow-hidden">
+        <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-tinta/55">{b.tuPlata}</p>
+            <p className="mt-1.5 truncate font-titulo text-[40px] font-extrabold leading-none tabular-nums tracking-tight">
               {plata(billetera.total)}
             </p>
-            <p className="mt-2 text-[12.5px] text-white/55">{b.enNCuentas(cuentas.length)}</p>
+            <p className="mt-2 text-[12.5px] text-tinta/50">{b.enNCuentas(cuentas.length)}</p>
           </div>
-          <BotonOjo oculto={oculto} alCambiar={alternar} clase="bg-white/10 text-white hover:bg-white/15" />
+          <BotonOjo oculto={oculto} alCambiar={alternar} clase="shrink-0 bg-arena text-tinta/70 hover:text-tinta" />
         </div>
-      </div>
+
+        {cuentas.length > 0 && (
+          <>
+            <ul className="px-2">
+              {cuentas.map((c) => (
+                <FilaCuenta
+                  key={c.id}
+                  cuenta={c}
+                  otras={cuentas.filter((x) => x.id !== c.id)}
+                  moneda={moneda}
+                  plata={plata}
+                  ocupado={trabajando}
+                  alAjustar={(real, nota) => correr(() => sb().rpc('ajustar_saldo_cuenta', {
+                    p_empresa: empresaId, p_cuenta: c.id, p_saldo_real: real, p_nota: nota,
+                  }))}
+                  alTransferir={(hacia, monto) => correr(() => sb().rpc('transferir_entre_cuentas', {
+                    p_empresa: empresaId, p_desde: c.id, p_hacia: hacia, p_monto: monto, p_nota: '',
+                  }))}
+                  alEditar={(d) => correr(() => sb().rpc('guardar_cuenta_dinero', {
+                    p_empresa: empresaId, p_nombre: d.nombre, p_tipo: d.tipo, p_saldo_inicial: 0,
+                    p_metodos: d.metodos, p_id: c.id,
+                  }))}
+                  alQuitar={() => {
+                    if (confirm(b.confirmarQuitar(c.nombre))) {
+                      correr(() => sb().rpc('quitar_cuenta_dinero', { p_empresa: empresaId, p_id: c.id }));
+                    }
+                  }}
+                />
+              ))}
+            </ul>
+            <p className="px-5 pb-4 pt-2 text-[12px] text-tinta/45">{b.tocaUnaCuenta}</p>
+          </>
+        )}
+      </section>
 
       {error && (
-        <p className="rounded-xl bg-rojo-claro px-3.5 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
+        <p className="rounded-2xl bg-rojo-claro px-3.5 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
       )}
 
-      {/* ---- cada cuenta, como una tarjeta ---- */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {cuentas.map((c, i) => (
-          <TarjetaCuenta
-            key={c.id}
-            cuenta={c}
-            indice={i}
-            otras={cuentas.filter((x) => x.id !== c.id)}
-            moneda={moneda}
-            plata={plata}
-            ocupado={trabajando}
-            alAjustar={(real, nota) => correr(() => sb().rpc('ajustar_saldo_cuenta', {
-              p_empresa: empresaId, p_cuenta: c.id, p_saldo_real: real, p_nota: nota,
-            }))}
-            alTransferir={(hacia, monto) => correr(() => sb().rpc('transferir_entre_cuentas', {
-              p_empresa: empresaId, p_desde: c.id, p_hacia: hacia, p_monto: monto, p_nota: '',
-            }))}
-            alEditar={(d) => correr(() => sb().rpc('guardar_cuenta_dinero', {
-              p_empresa: empresaId, p_nombre: d.nombre, p_tipo: d.tipo, p_saldo_inicial: 0,
-              p_metodos: d.metodos, p_id: c.id,
-            }))}
-            alQuitar={() => {
-              if (confirm(b.confirmarQuitar(c.nombre))) {
-                correr(() => sb().rpc('quitar_cuenta_dinero', { p_empresa: empresaId, p_id: c.id }));
-              }
-            }}
-          />
-        ))}
-      </div>
-
       {creando ? (
-        <div className="rounded-2xl border border-borde bg-superficie p-4">
+        <div className="tarjeta p-5">
           <p className="text-[15px] font-bold">{cuentas.length === 0 ? b.primeraCuenta : b.nuevaCuenta}</p>
           <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/55">{b.nuevaCuentaDetalle}</p>
           <FormularioCuenta
@@ -168,7 +167,7 @@ export function PantallaBilletera({
         </button>
       )}
 
-      <div className="rounded-2xl bg-arena p-4 text-[12.5px] leading-relaxed text-tinta/60">
+      <div className="rounded-3xl border border-borde/70 p-5 text-[12.5px] leading-relaxed text-tinta/60">
         <p className="font-semibold text-tinta/75">{b.comoSeMueve}</p>
         <p className="mt-1">{b.comoSeMueveDetalle}</p>
         <p className="mt-2">{b.sinConexionBancos}</p>
@@ -180,20 +179,25 @@ export function PantallaBilletera({
   );
 }
 
-/** Colores de tarjeta, uno por cuenta: que el Familiar y el Itaú no se confundan de un vistazo. */
-export const FONDOS = [
-  'linear-gradient(135deg, #0f5c44 0%, #17795a 55%, #3ddc9a 130%)',
-  'linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #818cf8 130%)',
-  'linear-gradient(135deg, #3b0764 0%, #7e22ce 60%, #e879f9 130%)',
-  'linear-gradient(135deg, #0c4a6e 0%, #0369a1 60%, #38bdf8 130%)',
-  'linear-gradient(135deg, #431407 0%, #c2410c 60%, #fb923c 130%)',
-];
+/** El círculo de cada cuenta: la inicial del banco, o un billete si es efectivo. */
+export function IconoCuenta({ cuenta }: { cuenta: CuentaDinero }) {
+  return (
+    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-verde-claro text-[15px] font-bold text-verde-fuerte">
+      {cuenta.tipo === 'efectivo' ? (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo} strokeWidth={1.9}>
+          <rect x="3" y="6.5" width="18" height="11" rx="2" /><circle cx="12" cy="12" r="2.5" />
+        </svg>
+      ) : (
+        (cuenta.nombre.trim().charAt(0) || '·').toUpperCase()
+      )}
+    </span>
+  );
+}
 
-function TarjetaCuenta({
-  cuenta, indice, otras, moneda, plata, ocupado, alAjustar, alTransferir, alEditar, alQuitar,
+function FilaCuenta({
+  cuenta, otras, moneda, plata, ocupado, alAjustar, alTransferir, alEditar, alQuitar,
 }: {
   cuenta: CuentaDinero;
-  indice: number;
   otras: CuentaDinero[];
   moneda: string;
   plata: (n: number) => string;
@@ -205,29 +209,38 @@ function TarjetaCuenta({
 }) {
   const t = useTextos();
   const b = t.billetera;
+  const [abierta, setAbierta] = useState(false);
   const [modo, setModo] = useState<'' | 'ajustar' | 'transferir' | 'editar'>('');
   const [valor, setValor] = useState('');
   const [hacia, setHacia] = useState(otras[0]?.id ?? '');
   const numero = (s: string) => aNumero(s, moneda);
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-borde bg-superficie shadow-tarjeta">
-      <div className="relative p-4 text-white" style={{ background: FONDOS[indice % FONDOS.length] }}>
-        <div className="flex items-start justify-between gap-2">
-          <p className="truncate text-[13px] font-bold uppercase tracking-[0.12em]">{cuenta.nombre}</p>
-          <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-[10.5px] font-semibold">
-            {b.tipos[cuenta.tipo]}
+    <li className={`rounded-2xl transition ${abierta ? 'bg-arena' : ''}`}>
+      <button
+        type="button"
+        onClick={() => { setAbierta((v) => !v); setModo(''); }}
+        aria-expanded={abierta}
+        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-arena"
+      >
+        <IconoCuenta cuenta={cuenta} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-semibold">{cuenta.nombre}</span>
+          <span className="block truncate text-[12.5px] text-tinta/50">
+            {[b.tipos[cuenta.tipo], cuenta.metodos.length > 0
+              ? cuenta.metodos.map((m) => metodoVisible(t, m)).join(', ')
+              : b.noRecibeNada,
+            ].filter((x, i, todos) => todos.indexOf(x) === i).join(' · ')}
           </span>
-        </div>
-        <p className="mt-5 text-[26px] font-bold leading-none tabular-nums tracking-tight">{plata(Number(cuenta.saldo))}</p>
-        <p className="mt-2 truncate text-[11.5px] text-white/70">
-          {cuenta.metodos.length > 0
-            ? b.recibe(cuenta.metodos.map((m) => metodoVisible(t, m)).join(', '))
-            : b.noRecibeNada}
-        </p>
-      </div>
+        </span>
+        <span className="shrink-0 text-[15px] font-semibold tabular-nums">{plata(Number(cuenta.saldo))}</span>
+        <svg viewBox="0 0 24 24" className={`h-4 w-4 shrink-0 text-tinta/30 transition ${abierta ? 'rotate-90' : ''}`} {...trazo} strokeWidth={2}>
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      </button>
 
-      <div className="px-4 py-3">
+      {abierta && (
+      <div className="px-3 pb-3 pt-1">
         {(Number(cuenta.entro_mes) > 0 || Number(cuenta.salio_mes) > 0) && (
           <p className="text-[12.5px] text-tinta/55">
             {b.esteMes}{' '}
@@ -239,17 +252,17 @@ function TarjetaCuenta({
 
         {modo === '' && (
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className="boton-suave px-3 py-1.5 text-[12.5px]" disabled={ocupado}
+            <button type="button" className="boton-principal px-4 py-2 text-[13px]" disabled={ocupado}
               onClick={() => { setModo('ajustar'); setValor(''); }}>
               {b.ajustarSaldo}
             </button>
             {otras.length > 0 && (
-              <button type="button" className="boton-suave px-3 py-1.5 text-[12.5px]" disabled={ocupado}
+              <button type="button" className="boton-suave px-4 py-2 text-[13px]" disabled={ocupado}
                 onClick={() => { setModo('transferir'); setValor(''); }}>
                 {b.transferir}
               </button>
             )}
-            <button type="button" className="boton-suave px-3 py-1.5 text-[12.5px]" disabled={ocupado}
+            <button type="button" className="boton-suave px-4 py-2 text-[13px]" disabled={ocupado}
               onClick={() => setModo('editar')}>
               {b.editar}
             </button>
@@ -322,7 +335,8 @@ function TarjetaCuenta({
           </div>
         )}
       </div>
-    </div>
+      )}
+    </li>
   );
 }
 

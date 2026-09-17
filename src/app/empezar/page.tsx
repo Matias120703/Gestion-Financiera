@@ -139,7 +139,7 @@ export default function PaginaEmpezar() {
 
         <div className="tarjeta p-6">
           <p className="titulo-seccion">{t.pantallas.primerPaso}</p>
-          <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">{t.pantallas.empecemos}</h1>
+          <h1 className="mt-2 text-[26px] font-titulo font-extrabold leading-tight tracking-tight">{t.pantallas.empecemos}</h1>
           <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">
             {t.pantallas.creaTuCuenta}
           </p>

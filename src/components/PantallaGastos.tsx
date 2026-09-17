@@ -149,7 +149,7 @@ export function PantallaGastos({
             <span className="etiqueta">{t.pantallas.cuanto}</span>
             <input
               type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-              className="campo text-[26px] font-bold tabular-nums" autoFocus
+              className="campo text-[26px] font-titulo font-extrabold tabular-nums" autoFocus
               value={monto || ''} placeholder="0"
               onChange={(e) => setMonto(Math.max(0, Number(e.target.value) || 0))}
             />

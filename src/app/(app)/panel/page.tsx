@@ -20,7 +20,7 @@ import { AvisoComision, type Novedad } from '@/components/AvisoComision';
 import { BilleteraPanel } from '@/components/BilleteraPanel';
 import { traerBilletera } from '@/lib/billetera';
 import { clienteServidor } from '@/lib/supabase/servidor';
-import { fichaDe } from '@/lib/rubros';
+import { fichaDe, palabra, type Seccion as Ruta } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
 
@@ -82,6 +82,16 @@ export default async function PaginaPanel({
       <div className="space-y-4">
         {/* Tu plata arriba de todo: el total y cada banco para deslizar (074). */}
         {billeteraPersonal && <BilleteraPanel billetera={billeteraPersonal} moneda={ctx.empresa.moneda} />}
+        <Atajos
+          etiqueta={t.billetera.atajos}
+          ficha={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones}
+          items={[
+            { href: '/gastos', texto: t.panel.cargarGasto },
+            { href: '/deudas', texto: t.nav.deudas },
+            { href: '/organizacion', texto: t.nav.organizacion },
+            { href: '/billetera', texto: t.nav.billetera },
+          ]}
+        />
         <AvisoComision novedad={await novedadComision} />
         <PanelPersonal
           resumen={resumenPersonal}
@@ -205,6 +215,19 @@ export default async function PaginaPanel({
           costado (074). Solo quien puede verla. */}
       {billeteraNegocio && <BilleteraPanel billetera={billeteraNegocio} moneda={ctx.empresa.moneda} />}
 
+      {/* Los atajos en píldora, como «Enviar · Añadir dinero» en Wise. La
+          billetera solo para quien la puede ver (ver SOLO_ADMIN). */}
+      <Atajos
+        etiqueta={t.billetera.atajos}
+        ficha={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones}
+        items={[
+          { href: '/vender', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'vender', t.nav.vender, idiomaActual()) },
+          { href: '/gastos', texto: t.panel.cargarGasto },
+          { href: '/agenda', texto: t.nav.agenda },
+          ...(ctx.esAdmin ? [{ href: '/billetera' as Ruta, texto: t.nav.billetera }] : []),
+        ]}
+      />
+
       <AvisoComision novedad={await novedadComision} />
 
       {/* La racha solo donde el hábito es diario. Ver el comentario de arriba. */}
@@ -287,7 +310,7 @@ export default async function PaginaPanel({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-tinta/55">{t.panel.teDeben}</p>
-              <p className="mt-0.5 text-[22px] font-bold tabular-nums tracking-tight">{dinero(fiado.total, m)}</p>
+              <p className="mt-0.5 text-[22px] font-titulo font-extrabold tabular-nums tracking-tight">{dinero(fiado.total, m)}</p>
               <p className="mt-0.5 text-[12.5px] text-tinta/50">
                 {t.panel.clientesQueDeben(fiado.cuantos)} · {t.panel.plataQueNoEntro}
               </p>
@@ -305,7 +328,7 @@ export default async function PaginaPanel({
               <p className="titulo-seccion">{t.panel.retoActivo}</p>
               <p className="mt-1 truncate text-[16px] font-bold tracking-tight">{reto.nombre}</p>
             </div>
-            <span className="shrink-0 text-[22px] font-bold tabular-nums text-verde-fuerte">
+            <span className="shrink-0 text-[22px] font-titulo font-extrabold tabular-nums text-verde-fuerte">
               {porcentaje(Math.min(retoInfo.avance, 999), 0)}
             </span>
           </div>
@@ -328,7 +351,7 @@ export default async function PaginaPanel({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[13px] font-semibold text-tinta/55">{t.panel.loQueDebes}</p>
-              <p className="mt-0.5 text-[22px] font-bold tabular-nums">{dinero(deudas.total_debido, m)}</p>
+              <p className="mt-0.5 text-[22px] font-titulo font-extrabold tabular-nums">{dinero(deudas.total_debido, m)}</p>
             </div>
             {deudas.vencidas > 0 ? (
               <span className="pastilla bg-rojo-claro text-rojo">
@@ -508,5 +531,34 @@ function Linea({
       <dt className={fuerte ? 'font-bold' : 'text-tinta/60'}>{etiqueta}</dt>
       <dd className={`tabular-nums ${fuerte ? 'font-bold' : 'font-semibold'} ${color}`}>{valor}</dd>
     </div>
+  );
+}
+
+/**
+ * Los atajos de arriba, en píldora: el primero lleno de verde, el resto en
+ * verde suave, como los de Wise. Solo los que la cuenta tiene: a un kiosco no
+ * se le ofrece la agenda, y con menos de dos no vale la fila.
+ */
+function Atajos({
+  etiqueta, ficha, items,
+}: {
+  etiqueta: string;
+  ficha: Partial<Record<Ruta, boolean>>;
+  items: { href: Ruta; texto: string }[];
+}) {
+  const visibles = items.filter((i) => ficha[i.href]);
+  if (visibles.length < 2) return null;
+  return (
+    <nav aria-label={etiqueta} className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      {visibles.map((a, i) => (
+        <Link
+          key={a.href}
+          href={a.href}
+          className={`${i === 0 ? 'boton-principal' : 'boton-suave'} shrink-0 px-5 py-2.5 text-[14px]`}
+        >
+          {a.texto}
+        </Link>
+      ))}
+    </nav>
   );
 }

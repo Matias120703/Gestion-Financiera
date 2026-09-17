@@ -77,7 +77,7 @@ function Formulario() {
 
         <div className="tarjeta p-6">
           <p className="titulo-seccion">{t.acceso.marca}</p>
-          <h1 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
+          <h1 className="mt-2 text-[26px] font-titulo font-extrabold leading-tight tracking-tight">
             {t.acceso.entrarTitulo}
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">

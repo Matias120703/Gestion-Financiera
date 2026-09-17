@@ -67,7 +67,7 @@ export default function PaginaRecuperar() {
           {listo ? (
             <>
               <p className="titulo-seccion">{t.acceso.revisaCorreo}</p>
-              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+              <h1 className="mt-2 text-[24px] font-titulo font-extrabold leading-tight tracking-tight">
                 {t.acceso.enCamino}
               </h1>
               <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
@@ -83,7 +83,7 @@ export default function PaginaRecuperar() {
           ) : (
             <>
               <p className="titulo-seccion">{t.acceso.recuperarTitulo}</p>
-              <h1 className="mt-2 text-[24px] font-bold leading-tight tracking-tight">
+              <h1 className="mt-2 text-[24px] font-titulo font-extrabold leading-tight tracking-tight">
                 {t.acceso.olvide}
               </h1>
               <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">

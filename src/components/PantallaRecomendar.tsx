@@ -81,7 +81,7 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
   return (
     <div className="mx-auto max-w-2xl space-y-4 py-2">
       <div>
-        <h1 className="text-[20px] font-bold tracking-tight">{r.titulo}</h1>
+        <h1 className="text-[20px] font-titulo font-extrabold tracking-tight">{r.titulo}</h1>
         <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
           {r.bajada}
         </p>
@@ -160,7 +160,7 @@ function Promesa({ chica = false }: { chica?: boolean }) {
     <div className={`rounded-2xl border border-verde/30 bg-verde-claro/25 ${chica ? 'p-4' : 'p-5'}`}>
       {!chica && (
         <>
-          <h1 className="text-[20px] font-bold tracking-tight">{r.promesaTitulo}</h1>
+          <h1 className="text-[20px] font-titulo font-extrabold tracking-tight">{r.promesaTitulo}</h1>
           <p className="mt-1.5 text-[14px] leading-relaxed text-tinta/70">
             <Rico texto={r.promesaBajada} negrita="text-tinta" />
           </p>

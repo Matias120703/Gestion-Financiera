@@ -181,7 +181,7 @@ function Eleccion({
     >
       <span className="flex items-center justify-between gap-2">
         <span className="text-[14.5px] font-bold">{titulo}</span>
-        <span className={`pastilla shrink-0 ${activo ? 'bg-verde text-white' : 'bg-arena text-tinta/50'}`}>
+        <span className={`pastilla shrink-0 ${activo ? 'bg-verde text-sobre-verde' : 'bg-arena text-tinta/50'}`}>
           {prueba}
         </span>
       </span>

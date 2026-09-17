@@ -901,8 +901,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // En los DOS menús. Estuvo solo en el del celular: en la computadora, que
   // es donde se trabaja sentado, la pantalla existía y no había cómo llegar.
   const nav = fs.readFileSync('src/components/Navegacion.tsx', 'utf8');
-  ok('hay cómo llegar desde el menú del celular y desde la barra lateral',
-    nav.split('href="/recomendar"').length - 1, 2);
+  // Y la tercera, la píldora «Ganá 50%» de la barra de arriba, siempre a la
+  // vista como «Gana 50» en Wise.
+  ok('hay cómo llegar desde el menú del celular, la barra lateral y la píldora de arriba',
+    nav.split('href="/recomendar"').length - 1, 3);
+  ok('la píldora de arriba dice cuánto se gana', nav.includes('{t.nav.ganar}'), true);
 }
 
 // --- Se pide en el momento, no en un menú (062) ---

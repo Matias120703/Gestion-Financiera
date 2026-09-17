@@ -150,7 +150,7 @@ export default async function Portada({
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div
             className="absolute -left-24 -top-40 h-[34rem] w-[34rem] rounded-full opacity-70 blur-3xl"
-            style={{ background: 'radial-gradient(circle, rgba(23,121,90,.55) 0%, rgba(23,121,90,0) 70%)' }}
+            style={{ background: 'radial-gradient(circle, rgba(40,180,100,.55) 0%, rgba(40,180,100,0) 70%)' }}
           />
           <div
             className="absolute -right-32 top-24 h-[30rem] w-[30rem] rounded-full opacity-50 blur-3xl"
@@ -210,7 +210,7 @@ export default async function Portada({
                   primero que se lee tiene que ser la pregunta, no una
                   credencial. Sin ella el titular arranca más arriba y pega
                   más fuerte, que es todo lo que tiene que hacer. */}
-              <h1 className="text-[38px] font-bold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
+              <h1 className="text-[38px] font-titulo font-extrabold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
                 {p.titular1}<br />
                 {p.titular2}{' '}
                 <span className="bg-gradient-to-r from-menta to-menta-suave bg-clip-text text-transparent">
@@ -269,7 +269,7 @@ export default async function Portada({
                     {/* el número que importa */}
                     <div className="rounded-2xl border border-borde bg-superficie p-4">
                       <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">{p.demoTeQuedoHoy}</p>
-                      <p className="mt-1 text-[27px] font-bold tracking-tight tabular-nums text-verde-fuerte">
+                      <p className="mt-1 text-[27px] font-titulo font-extrabold tracking-tight tabular-nums text-verde-fuerte">
                         Gs. 2.150.000
                       </p>
                       <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-verde-claro px-2 py-0.5
@@ -335,7 +335,7 @@ export default async function Portada({
       {/* ---------------- Los dos públicos ---------------- */}
       <section id="formas" className="border-y border-borde bg-arena scroll-mt-4">
         <div className="mx-auto max-w-6xl px-5 py-14">
-          <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
+          <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
             {p.formasTitulo}
           </h2>
           <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
@@ -371,7 +371,7 @@ export default async function Portada({
 
       {/* ---------------- Cómo se carga ---------------- */}
       <section className="mx-auto max-w-6xl px-5 py-14">
-        <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
+        <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
           {p.cargarTitulo}
         </h2>
 
@@ -405,7 +405,7 @@ export default async function Portada({
       {HAY_DEMOS && (
         <section className="border-t border-borde">
           <div className="mx-auto max-w-6xl px-5 py-14">
-            <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
+            <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
               {p.demosTitulo}
             </h2>
             <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
@@ -421,7 +421,7 @@ export default async function Portada({
         <div className="mx-auto max-w-6xl px-5 py-14">
           <div className="grid gap-10 lg:grid-cols-2">
             <div>
-              <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">
+              <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
                 {p.nocheTitulo}
               </h2>
               <p className="mt-4 text-[15.5px] leading-relaxed text-tinta/65">
@@ -430,7 +430,7 @@ export default async function Portada({
               <ul className="mt-6 space-y-3">
                 {p.nochePuntos.map((linea) => (
                   <li key={linea} className="flex items-start gap-2.5 text-[14.5px] leading-relaxed text-tinta/70">
-                    <svg viewBox="0 0 24 24" className="mt-1 h-4 w-4 shrink-0 text-verde"
+                    <svg viewBox="0 0 24 24" className="mt-1 h-4 w-4 shrink-0 text-verde-fuerte"
                          fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
                       <path d="m5 13 4 4L19 7" />
                     </svg>
@@ -461,7 +461,7 @@ export default async function Portada({
       {/* ---------------- Precios ---------------- */}
       <section id="precios" className="mx-auto max-w-6xl px-5 py-14 scroll-mt-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <h2 className="text-[25px] font-bold tracking-tight lg:text-[33px]">{p.cuantoCuesta}</h2>
+          <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">{p.cuantoCuesta}</h2>
 
           {/* Enlaces y no botones: la portada la lee gente que todavía no
               decidió nada, y un enlace anda antes de que cargue un solo
@@ -601,7 +601,7 @@ export default async function Portada({
           <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center">
             <div>
               <p className="titulo-seccion">{p.unExtra}</p>
-              <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
+              <h2 className="mt-2 text-[25px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[33px]">
                 {p.recomendarTitulo}
               </h2>
               <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
@@ -645,7 +645,7 @@ export default async function Portada({
           <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-start">
             <div>
               <p className="titulo-seccion">{p.enTuCelular}</p>
-              <h2 className="mt-2 text-[25px] font-bold leading-tight tracking-tight lg:text-[33px]">
+              <h2 className="mt-2 text-[25px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[33px]">
                 {p.instalarTitulo}
               </h2>
               <p className="mt-4 max-w-xl text-[15.5px] leading-relaxed text-tinta/65">
@@ -698,7 +698,7 @@ export default async function Portada({
 function Dato({ valor, texto }: { valor: string; texto: string }) {
   return (
     <div className="px-1 py-7 lg:px-5">
-      <p className="text-[24px] font-bold tracking-tight text-menta lg:text-[28px]">{valor}</p>
+      <p className="text-[24px] font-titulo font-extrabold tracking-tight text-menta lg:text-[28px]">{valor}</p>
       <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/45">{texto}</p>
     </div>
   );
@@ -727,7 +727,7 @@ function Fila({
   return (
     <div className="flex items-baseline justify-between gap-4 py-3">
       <span className={`text-[14px] ${grande ? 'font-bold' : 'font-semibold text-tinta/55'}`}>{etiqueta}</span>
-      <span className={`tabular-nums font-bold ${grande ? 'text-[22px]' : 'text-[16px]'} ${tono}`}>{valor}</span>
+      <span className={`tabular-nums font-titulo font-extrabold ${grande ? 'text-[22px]' : 'text-[16px]'} ${tono}`}>{valor}</span>
     </div>
   );
 }
@@ -764,7 +764,7 @@ function Forma({
       <ul className="mt-4 flex-1 space-y-2.5">
         {puntos.map((punto) => (
           <li key={punto} className="flex items-start gap-2 text-[14px] leading-snug text-tinta/70">
-            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde"
+            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde-fuerte"
                  fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 13 4 4L19 7" />
             </svg>
@@ -777,7 +777,7 @@ function Forma({
         href={para_link}
         className={`mt-5 block rounded-xl px-4 py-3 text-center text-[14.5px] font-bold transition ${
           destacado
-            ? 'bg-verde text-white hover:bg-verde-fuerte'
+            ? 'bg-verde text-sobre-verde hover:brightness-95'
             : 'border border-verde/40 text-verde-fuerte hover:bg-verde-claro'}`}
       >
         {boton}
@@ -813,7 +813,7 @@ function Plan({
       <h3 className="text-[16px] font-bold tracking-tight">{nombre}</h3>
       <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
         {desde && <span className="text-[13px] font-semibold text-tinta/45">{desde}</span>}
-        <span className="text-[26px] font-bold tracking-tight tabular-nums">{precio}</span>
+        <span className="text-[26px] font-titulo font-extrabold tracking-tight tabular-nums">{precio}</span>
         {porMes && <span className="text-[13px] font-semibold text-tinta/45">{porMes}</span>}
       </p>
       <p className="mt-1.5 text-[13px] font-semibold text-tinta/50">{para}</p>
@@ -821,7 +821,7 @@ function Plan({
       <ul className="mt-4 flex-1 space-y-2">
         {puntos.map((punto) => (
           <li key={punto} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
-            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde"
+            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde-fuerte"
                  fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 13 4 4L19 7" />
             </svg>
@@ -841,7 +841,7 @@ function Plan({
         href={enlace}
         className={`mt-4 block rounded-xl px-4 py-2.5 text-center text-[14px] font-bold transition ${
           destacado
-            ? 'bg-verde text-white hover:bg-verde-fuerte'
+            ? 'bg-verde text-sobre-verde hover:brightness-95'
             : 'border border-verde/40 text-verde-fuerte hover:bg-verde-claro'}`}
       >
         {llamado}
@@ -854,7 +854,7 @@ function Plan({
 function Paso({ numero, titulo, texto }: { numero: string; titulo: string; texto: string }) {
   return (
     <li className="tarjeta p-4">
-      <span className="grid h-7 w-7 place-items-center rounded-full bg-verde text-[13px] font-black text-white">
+      <span className="grid h-7 w-7 place-items-center rounded-full bg-verde text-[13px] font-black text-sobre-verde">
         {numero}
       </span>
       <p className="mt-2.5 text-[14.5px] font-bold leading-snug tracking-tight">{titulo}</p>

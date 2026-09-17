@@ -42,7 +42,7 @@ export default function PaginaInstalar() {
       </header>
 
       <article className="mx-auto max-w-2xl px-5 py-10">
-        <h1 className="text-[26px] font-bold leading-tight tracking-tight lg:text-[32px]">
+        <h1 className="text-[26px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[32px]">
           {p.titulo}
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">

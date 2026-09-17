@@ -126,7 +126,7 @@ function FormularioReto({
         <span className="etiqueta">{t.pantallas.meta}</span>
         <input
           type="number" inputMode="decimal" min={0} step={dec === 0 ? 1000 : 0.01}
-          className="campo text-[20px] font-bold tabular-nums"
+          className="campo text-[20px] font-titulo font-extrabold tabular-nums"
           value={meta || ''} onChange={(e) => setMeta(Math.max(0, Number(e.target.value) || 0))}
         />
         <span className="mt-1 block text-[12.5px] text-tinta/50">{dinero(meta, moneda)}</span>

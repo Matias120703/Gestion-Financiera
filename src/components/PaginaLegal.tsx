@@ -30,7 +30,7 @@ export function PaginaLegal({
       </header>
 
       <article className="mx-auto max-w-3xl px-5 py-12">
-        <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[38px]">{titulo}</h1>
+        <h1 className="text-[30px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[38px]">{titulo}</h1>
         <p className="mt-2 text-[13.5px] font-semibold text-tinta/45">
           {t.comun.ultimaActualizacion(actualizado)}
         </p>
@@ -52,7 +52,7 @@ export function PaginaLegal({
 export function Apartado({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="text-[19px] font-bold tracking-tight lg:text-[21px]">{titulo}</h2>
+      <h2 className="text-[19px] font-titulo font-extrabold tracking-tight lg:text-[21px]">{titulo}</h2>
       <div className="mt-3 space-y-3 text-[15px] leading-relaxed text-tinta/70">{children}</div>
     </section>
   );

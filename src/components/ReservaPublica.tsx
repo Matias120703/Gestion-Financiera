@@ -120,7 +120,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
     return (
       <Marco datos={datos}>
         <div className="rounded-2xl border border-verde/30 bg-verde-claro p-5 text-center">
-          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-verde text-2xl text-white">✓</div>
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-verde text-2xl text-sobre-verde">✓</div>
           <h2 className="mt-3 text-[19px] font-bold tracking-tight text-verde-fuerte">{r.turnoReservado}</h2>
           <p className="mt-1 text-[15px] leading-relaxed text-tinta/70">
             <Rico texto={r.fechaYHora(fechaLarga(listo.inicia.slice(0, 10), locale), horaLegible(listo.inicia))} />
@@ -251,7 +251,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                         onClick={() => { setHora(h); setPaso('datos'); }}
                         className={`rounded-lg border py-2.5 text-center text-[14px] font-semibold tabular-nums transition ${
                           hora === h
-                            ? 'border-verde bg-verde text-white'
+                            ? 'border-verde bg-verde text-sobre-verde'
                             : 'border-borde bg-superficie hover:border-verde/50'
                         }`}
                       >
@@ -322,7 +322,7 @@ function Marco({ datos, children }: { datos: AgendaPublica; children: React.Reac
     <div className="min-h-screen bg-arena">
       <div className="mx-auto max-w-lg px-4 pb-16 pt-8">
         <header className="mb-5 text-center">
-          <h1 className="text-[24px] font-bold tracking-tight">{datos.negocio}</h1>
+          <h1 className="text-[24px] font-titulo font-extrabold tracking-tight">{datos.negocio}</h1>
           {datos.direccion && (
             <p className="mt-1 text-[13.5px] text-tinta/55">{datos.direccion}</p>
           )}

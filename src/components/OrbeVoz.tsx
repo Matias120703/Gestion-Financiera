@@ -121,7 +121,7 @@ export function OrbeVoz({ flujo = null, tamano = 168 }: { flujo?: MediaStream | 
       <div ref={caja} className="relative h-full w-full will-change-transform">
         <div
           ref={forma}
-          className="absolute inset-0 overflow-hidden shadow-[0_18px_40px_-14px_rgba(23,121,90,.55)]"
+          className="absolute inset-0 overflow-hidden shadow-[0_18px_40px_-14px_rgba(40,180,100,.55)]"
           // `isolation` y la máscara son para Safari: sin eso, al girar las
           // capas de adentro se salen de la forma redondeada en el iPhone.
           style={{ borderRadius: '50%', isolation: 'isolate', WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}

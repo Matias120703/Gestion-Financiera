@@ -153,7 +153,7 @@ export function ListaMovimientos({
             <button
               key={f.valor} type="button" onClick={() => setFiltro(f.valor)}
               className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                filtro === f.valor ? 'border-verde bg-verde text-white' : 'border-borde bg-superficie text-tinta/60'
+                filtro === f.valor ? 'border-verde bg-verde text-sobre-verde' : 'border-borde bg-superficie text-tinta/60'
               }`}
             >
               {t.movimientos[f.texto]}
@@ -164,7 +164,7 @@ export function ListaMovimientos({
 
       <label className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold text-tinta/55">
         <input
-          type="checkbox" className="h-3.5 w-3.5 accent-[#17795a]"
+          type="checkbox" className="h-3.5 w-3.5 accent-[#22a55a]"
           checked={verAnuladas} onChange={(e) => setVerAnuladas(e.target.checked)}
         />
         {t.movimientos.mostrarAnuladas}

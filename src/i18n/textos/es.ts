@@ -113,6 +113,9 @@ export const es = {
     mas: 'Más',
     todasLasSecciones: 'Todas las secciones',
     recomendar: 'Recomendar',
+    // La píldora de arriba, siempre a la vista (como «Gana 50» en Wise).
+    ganar: 'Ganá 50%',
+    ganarDetalle: 'Recomendá Orden y ganá la mitad del primer pago',
     panelOrden: 'Panel de Orden',
     billetera: 'Billetera',
 
@@ -2309,6 +2312,8 @@ export const es = {
     comoSeMueveDetalle: 'Cada venta, gasto o ingreso va a la cuenta de su forma de pago: lo cobrado en efectivo, al efectivo; lo cobrado por transferencia, al banco que la recibe.',
     sinConexionBancos: 'Los bancos de Paraguay no se conectan con ninguna app, así que el saldo es el que calcula Orden con lo que cargás. Si no coincide con tu banco, tocá «Ajustar saldo».',
     verHistorial: 'Ver el historial →',
+    atajos: 'Atajos',
+    tocaUnaCuenta: 'Tocá una cuenta para ajustar su saldo, transferir o editarla.',
   },
 
   email: {

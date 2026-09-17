@@ -753,34 +753,28 @@ export function BarraSuperior({
   }
 
   return (
-    <header className="zona-segura-arriba sticky top-0 z-30 border-b border-borde bg-superficie/90 backdrop-blur">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-7">
-        <div className="flex min-w-0 items-center gap-2.5">
-          {/* Solo en celular: en pantalla grande el logo esta en la barra
-              lateral. Es el mismo componente, para que no se vuelva a quedar
-              uno de los dos con un dibujo viejo. */}
-          <Marca clase="h-8 w-8 shrink-0 lg:hidden" />
-          <h1 className="truncate text-[17px] font-bold tracking-tight lg:text-[19px]">{titulo}</h1>
-        </div>
-
-        <div className="relative shrink-0">
+    <header className="zona-segura-arriba sticky top-0 z-30 bg-arena/85 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 lg:px-7">
+        <div className="relative flex min-w-0 items-center gap-3">
+          {/* Como en Wise: arriba a la izquierda, la persona. Tocarla abre su
+              cuenta (cambiar de negocio, sumarse a otro, salir). */}
           <button
             type="button" onClick={() => setAbierto((v) => !v)}
-            className="flex items-center gap-2 rounded-xl border border-borde px-2.5 py-1.5 text-[13px] font-semibold hover:bg-arena"
+            aria-label={nombreUsuario || t.nav.miCuenta}
+            aria-expanded={abierto}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-superficie text-[14px] font-bold text-tinta ring-1 ring-borde transition active:scale-95"
           >
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-noche text-[11px] font-bold text-white">
-              {(nombreUsuario || 'U').charAt(0).toUpperCase()}
-            </span>
-            <span className="hidden max-w-[130px] truncate sm:inline">{empresa.nombre}</span>
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-tinta/40" {...trazo}><path d="m6 9 6 6 6-6" /></svg>
+            {iniciales(nombreUsuario)}
           </button>
+          <h1 className="truncate font-titulo text-[21px] font-extrabold tracking-tight lg:text-[23px]">{titulo}</h1>
 
           {abierto && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setAbierto(false)} />
-              <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-borde bg-superficie shadow-tarjeta aparecer">
+              <div className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-3xl border border-borde bg-superficie shadow-[0_18px_40px_-18px_rgba(0,0,0,.35)] aparecer">
                 <div className="border-b border-borde px-4 py-3">
                   <p className="text-[13px] font-bold">{nombreUsuario || t.nav.miCuenta}</p>
+                  <p className="mt-0.5 truncate text-[12px] text-tinta/50">{empresa.nombre}</p>
                   {/* El código de invitación NO se muestra acá: vive en Ajustes y
                       solo lo ve quien administra. La base tampoco se lo entrega
                       a un vendedor aunque manipule el navegador. */}
@@ -826,7 +820,30 @@ export function BarraSuperior({
             </>
           )}
         </div>
+
+        {/* Recomendar, siempre a la vista, como «Gana 50» en Wise: quien ya
+            usa Orden es el que mejor lo vende, y el lugar fijo le recuerda
+            que se gana la mitad del primer pago de cada negocio que trae. */}
+        <Link
+          href="/recomendar"
+          aria-label={t.nav.ganarDetalle}
+          className="flex shrink-0 items-center gap-1.5 rounded-full bg-verde-claro px-3.5 py-2 text-[13px] font-bold text-verde-fuerte transition active:scale-95"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo} strokeWidth={2}>
+            <rect x="3.5" y="8" width="17" height="4" rx="1" /><path d="M5 12v8h14v-8M12 8v12" />
+            <path d="M12 8c-1.2-2.6-4.5-3.4-4.5-1.2C7.5 8 10 8 12 8Zm0 0c1.2-2.6 4.5-3.4 4.5-1.2C16.5 8 14 8 12 8Z" />
+          </svg>
+          {t.nav.ganar}
+        </Link>
       </div>
     </header>
   );
+}
+
+/** «Matías Aranda» → «MA»; un solo nombre → su primera letra. */
+function iniciales(nombre: string) {
+  const partes = (nombre || '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return 'U';
+  const letras = partes.length === 1 ? partes[0].charAt(0) : partes[0].charAt(0) + partes[partes.length - 1].charAt(0);
+  return letras.toUpperCase();
 }
