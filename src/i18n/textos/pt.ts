@@ -42,6 +42,13 @@ export const pt: Textos = {
     error: 'Algo deu errado',
     coloresClaros: 'Cores claras',
     coloresOscuros: 'Cores escuras',
+    elegirFechas: 'Escolher datas',
+    aplicar: 'Aplicar',
+    cargandoPantalla: 'Carregando',
+    rangoInvalido: 'O intervalo de datas não é válido.',
+    ultimaActualizacion: (fecha: string) => `Última atualização: ${fecha}`,
+    verVideo: (titulo: string) => `Ver o vídeo: ${titulo}`,
+    planLoDefineElSistema: 'O plano é definido pelo sistema de assinaturas, olhando o estado e o período pago. Não dá pra mudar pelo aplicativo.',
   },
 
   formato: {

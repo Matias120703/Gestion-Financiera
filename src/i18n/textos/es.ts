@@ -27,6 +27,13 @@ export const es = {
     error: 'Algo salió mal',
     coloresClaros: 'Colores claros',
     coloresOscuros: 'Colores oscuros',
+    elegirFechas: 'Elegir fechas',
+    aplicar: 'Aplicar',
+    cargandoPantalla: 'Cargando',
+    rangoInvalido: 'El rango de fechas no es válido.',
+    ultimaActualizacion: (fecha: string) => `Última actualización: ${fecha}`,
+    verVideo: (titulo: string) => `Ver el video: ${titulo}`,
+    planLoDefineElSistema: 'El plan lo determina el sistema de suscripciones mirando el estado y el periodo pagado. No se puede cambiar desde la aplicación.',
   },
 
   /**

@@ -32,7 +32,7 @@ export function PaginaLegal({
       <article className="mx-auto max-w-3xl px-5 py-12">
         <h1 className="text-[30px] font-bold leading-tight tracking-tight lg:text-[38px]">{titulo}</h1>
         <p className="mt-2 text-[13.5px] font-semibold text-tinta/45">
-          Última actualización: {actualizado}
+          {t.comun.ultimaActualizacion(actualizado)}
         </p>
 
         <div className="mt-8 space-y-7">{children}</div>

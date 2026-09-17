@@ -49,7 +49,7 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
             clave === 'personalizado' ? 'border-verde bg-verde text-white' : 'border-borde bg-superficie text-tinta/60 hover:border-verde/50'
           }`}
         >
-          Elegir fechas
+          {t.comun.elegirFechas}
         </button>
       </div>
 
@@ -67,7 +67,7 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
             className="boton-principal py-2.5"
             onClick={() => aplicar('personalizado', { desde: d <= h ? d : h, hasta: h >= d ? h : d })}
           >
-            Aplicar
+            {t.comun.aplicar}
           </button>
         </div>
       )}

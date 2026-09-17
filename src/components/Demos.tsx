@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { DEMOS } from '@/lib/demos';
 import type { Idioma } from '@/i18n/idiomas';
+import { useTextos } from '@/i18n/cliente';
 
 /**
  * LOS VIDEOS DE «CÓMO SE VE POR DENTRO»
@@ -46,6 +47,7 @@ export default function Demos({ idioma }: { idioma: Idioma }) {
 function Video({
   archivo, portada, titulo, detalle,
 }: { archivo: string; portada?: string; titulo: string; detalle: string }) {
+  const t = useTextos();
   const [arrancado, setArrancado] = useState(false);
   const ref = useRef<HTMLVideoElement>(null);
 
@@ -77,7 +79,7 @@ function Video({
           <button
             type="button"
             onClick={arrancar}
-            aria-label={`Ver el video: ${titulo}`}
+            aria-label={t.comun.verVideo(titulo)}
             className="absolute inset-0 grid place-items-center bg-noche/25 transition hover:bg-noche/10"
           >
             <span className="grid h-16 w-16 place-items-center rounded-full bg-superficie/95 shadow-tarjeta">

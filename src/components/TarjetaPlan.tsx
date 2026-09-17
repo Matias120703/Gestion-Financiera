@@ -62,8 +62,7 @@ export function TarjetaPlan({
       </Link>
 
       <p className="text-[12px] leading-relaxed text-tinta/40">
-        El plan lo determina el sistema de suscripciones mirando el estado y el periodo
-        pagado. No se puede cambiar desde la aplicación.
+        {t.comun.planLoDefineElSistema}
       </p>
     </div>
   );

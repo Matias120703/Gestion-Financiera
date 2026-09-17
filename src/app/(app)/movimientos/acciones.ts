@@ -3,6 +3,7 @@
 import { contextoObligatorio } from '@/lib/sesion';
 import { traerPaginaMovimientos, type Cursor, type FiltrosHistorial } from '@/lib/agregados';
 import type { Movimiento } from '@/lib/tipos';
+import { textos } from '@/i18n';
 
 /**
  * Trae una página del historial desde el servidor.
@@ -21,7 +22,7 @@ export async function cargarPagina(
 
   const esFecha = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f);
   if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) {
-    throw new Error('El rango de fechas no es válido.');
+    throw new Error(textos().comun.rangoInvalido);
   }
 
   // Si la lectura falla, el error sube hasta el componente, que muestra un
