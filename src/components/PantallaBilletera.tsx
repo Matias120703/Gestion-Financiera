@@ -181,7 +181,7 @@ export function PantallaBilletera({
 }
 
 /** Colores de tarjeta, uno por cuenta: que el Familiar y el Itaú no se confundan de un vistazo. */
-const FONDOS = [
+export const FONDOS = [
   'linear-gradient(135deg, #0f5c44 0%, #17795a 55%, #3ddc9a 130%)',
   'linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #818cf8 130%)',
   'linear-gradient(135deg, #3b0764 0%, #7e22ce 60%, #e879f9 130%)',

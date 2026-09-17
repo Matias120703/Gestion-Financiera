@@ -2278,6 +2278,8 @@ export const es = {
     ocultarMontos: 'Ocultar los montos',
     cargaTusCuentas: 'Cargá cuánto tenés en cada banco →',
     verBilletera: 'Ver la billetera',
+    verTodo: 'Ver todo',
+    deslizaParaVer: 'Deslizá para ver cada cuenta',
     tipos: { banco: 'Banco', efectivo: 'Efectivo', billetera: 'Billetera' } as Record<string, string>,
     recibe: (metodos: string) => `Recibe: ${metodos}`,
     noRecibeNada: 'No recibe nada solo: movela con transferencias o ajustes',

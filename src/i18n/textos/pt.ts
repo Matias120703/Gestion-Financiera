@@ -2188,6 +2188,8 @@ export const pt: Textos = {
     ocultarMontos: 'Esconder os valores',
     cargaTusCuentas: 'Cadastre quanto você tem em cada banco →',
     verBilletera: 'Ver a carteira',
+    verTodo: 'Ver tudo',
+    deslizaParaVer: 'Deslize pra ver cada conta',
     tipos: { banco: 'Banco', efectivo: 'Dinheiro', billetera: 'Carteira digital' } as Record<string, string>,
     recibe: (metodos: string) => `Recebe: ${metodos}`,
     noRecibeNada: 'Não recebe nada sozinha: mova com transferências ou ajustes',
