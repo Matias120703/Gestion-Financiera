@@ -1098,7 +1098,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('se aclara que también vale una persona, no solo un negocio',
     textosPortada.includes('las dos cuentas valen igual'), true);
   ok('los precios aclaran que está en todos los planes',
-    textosPortada.includes('Recomendar está en todos los planes'), true);
+    textosPortada.includes('Las invitaciones están en todos los planes'), true);
   // Desde el candado del 2026-09-15 una cuenta vencida no entra. La portada
   // lo prometía al revés; se mira el texto que se muestra, no el comentario.
   const lineaPrecios = textosPortada.split(/\r?\n/).find((l) => l.trim().startsWith('preciosBajada:')) ?? '';
