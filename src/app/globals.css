@@ -305,3 +305,91 @@ html.oscuro .barra-burbuja::before {
   .barra-burbuja { transition-duration: .01s; }
   .barra-activo svg { animation: none; }
 }
+
+/*
+ * ============================================================
+ * LA LENTE DE VIDRIO DE LA BARRA (Navegacion.tsx, useLenteDeVidrio)
+ * ============================================================
+ *
+ * La burbuja que aparece al mantener apretada la barra, como en iPhone: más
+ * alta que la barra, con el borde tornasolado (rosa a un lado, celeste al
+ * otro, un filo amarillo arriba) y un brillo. Lo agrandado de adentro es una
+ * copia de la barra escalada: Safari no deja deformar lo que hay detrás.
+ */
+.barra-vidrio {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.barra-lente {
+  position: absolute;
+  top: -7px;
+  bottom: -7px;
+  z-index: 20;
+  overflow: hidden;
+  border-radius: 9999px;
+  pointer-events: none;
+  /* Casi opaca: lo de abajo se ve solo a través de la copia agrandada, o
+     los íconos aparecen dobles. */
+  background: rgb(var(--superficie) / .9);
+  -webkit-backdrop-filter: blur(1.5px) saturate(170%) brightness(1.08);
+  backdrop-filter: blur(1.5px) saturate(170%) brightness(1.08);
+  box-shadow:
+    inset 0 1.5px 1px rgb(255 255 255 / .95),
+    inset 0 -1.5px 1px rgb(255 255 255 / .45),
+    inset 5px 0 9px -2px rgb(255 70 180 / .42),
+    inset -5px 0 9px -2px rgb(40 205 255 / .45),
+    inset 0 9px 12px -9px rgb(255 225 80 / .55),
+    inset 0 -9px 12px -9px rgb(120 90 255 / .35),
+    0 12px 30px -10px rgb(0 0 0 / .45);
+  /* backwards y no both: al terminar tiene que mandar el estilo de abajo, o
+     al soltar no se podría desvanecer. */
+  animation: lente-aparece .22s cubic-bezier(.34, 1.56, .64, 1) backwards;
+  isolation: isolate;
+}
+
+/* El brillo: una luz arriba a la izquierda, como en una gota. */
+.barra-lente::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 60% at 30% 0%, rgb(255 255 255 / .55), transparent 55%),
+    radial-gradient(80% 50% at 80% 110%, rgb(255 255 255 / .25), transparent 60%);
+  mix-blend-mode: screen;
+}
+
+.barra-lente-contenido {
+  position: absolute;
+  top: 7px;
+  transform: scale(1.24);
+}
+
+/* Al soltar: se acomoda sobre el botón con un rebote y se desvanece. */
+.barra-lente-soltando {
+  transition: left .3s cubic-bezier(.34, 1.56, .64, 1), opacity .2s ease .12s, transform .3s ease;
+  opacity: 0;
+  transform: scale(.92);
+}
+.barra-lente-soltando .barra-lente-contenido {
+  transition: left .3s cubic-bezier(.34, 1.56, .64, 1), transform-origin .3s cubic-bezier(.34, 1.56, .64, 1);
+}
+
+html.oscuro .barra-lente {
+  background: rgb(var(--superficie) / .9);
+  box-shadow:
+    inset 0 1.5px 1px rgb(255 255 255 / .55),
+    inset 0 -1.5px 1px rgb(255 255 255 / .2),
+    inset 5px 0 9px -2px rgb(255 70 180 / .5),
+    inset -5px 0 9px -2px rgb(40 205 255 / .5),
+    inset 0 9px 12px -9px rgb(255 225 80 / .45),
+    inset 0 -9px 12px -9px rgb(120 90 255 / .4),
+    0 12px 30px -10px rgb(0 0 0 / .8);
+}
+
+@keyframes lente-aparece {
+  from { opacity: 0; transform: scale(.7); }
+  to { opacity: 1; transform: none; }
+}

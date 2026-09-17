@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
@@ -344,6 +344,108 @@ export function NavLateral({
   );
 }
 
+/**
+ * LA LENTE DE VIDRIO DE LA BARRA, COMO EN IPHONE.
+ *
+ * Matías mandó la captura de WhatsApp en iPhone: mantenés apretada la barra
+ * de abajo, aparece una burbuja de vidrio que sigue el dedo, agranda los
+ * íconos que tiene debajo y tiene el borde tornasolado. Al soltar, te lleva a
+ * la sección donde quedó.
+ *
+ * CÓMO SE DISTINGUE UN TOQUE DE UN ARRASTRE
+ *
+ * Un toque sigue siendo un toque: el enlace hace lo suyo, y la lente solo
+ * aparece un instante. Recién cuando el dedo se corre más de 6 px es un
+ * arrastre: la lente sigue el dedo y al soltar se navega desde acá, y el
+ * clic que el navegador dispara después se descarta para no navegar dos
+ * veces.
+ *
+ * Con «reducir movimiento» encendido en el teléfono no hay lente: la barra
+ * funciona igual, con toques.
+ */
+function useLenteDeVidrio(columnas: number, alSoltar: (indice: number) => void) {
+  const barra = useRef<HTMLDivElement>(null);
+  const gesto = useRef<{ id: number; inicioX: number; arrastra: boolean } | null>(null);
+  const ignorarClic = useRef(false);
+  const [estado, setEstado] = useState<{
+    x: number; indice: number; anchoLente: number; anchoBarra: number; altoBarra: number; soltando: boolean;
+  } | null>(null);
+
+  const medir = (clienteX: number) => {
+    const el = barra.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const borde = 6;
+    const celda = (r.width - borde * 2) / columnas;
+    // La lente no se sale de la barra: frena en el primer y el último botón.
+    const x = Math.min(Math.max(clienteX - r.left, borde + celda / 2), r.width - borde - celda / 2);
+    const indice = Math.min(columnas - 1, Math.max(0, Math.floor((x - borde) / celda)));
+    return { x, indice, celda, borde, anchoBarra: r.width, altoBarra: r.height };
+  };
+
+  const reducido = () => typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const eventos = {
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (reducido() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const m = medir(e.clientX);
+      if (!m) return;
+      gesto.current = { id: e.pointerId, inicioX: e.clientX, arrastra: false };
+      setEstado({
+        x: m.x, indice: m.indice, anchoLente: m.celda * 1.6,
+        anchoBarra: m.anchoBarra, altoBarra: m.altoBarra, soltando: false,
+      });
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      const g = gesto.current;
+      if (!g || g.id !== e.pointerId) return;
+      if (!g.arrastra && Math.abs(e.clientX - g.inicioX) > 6) {
+        g.arrastra = true;
+        // Desde acá el dedo es de la barra aunque se salga un poco de ella.
+        try { barra.current?.setPointerCapture(e.pointerId); } catch { /* sin captura igual anda */ }
+      }
+      if (!g.arrastra) return;
+      const m = medir(e.clientX);
+      if (!m) return;
+      setEstado((s) => {
+        if (!s) return s;
+        // Un golpecito al pasar de un botón a otro, donde el teléfono lo permite.
+        if (m.indice !== s.indice) navigator.vibrate?.(6);
+        return { ...s, x: m.x, indice: m.indice };
+      });
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+      const g = gesto.current;
+      gesto.current = null;
+      if (!g || g.id !== e.pointerId) return;
+      const m = medir(e.clientX);
+      if (!m) { setEstado(null); return; }
+      // La lente se acomoda sobre el botón donde quedó, con un rebote, y se va.
+      const centro = m.borde + m.celda * m.indice + m.celda / 2;
+      setEstado((s) => (s ? { ...s, x: centro, indice: m.indice, soltando: true } : s));
+      setTimeout(() => setEstado(null), 320);
+      if (g.arrastra) {
+        ignorarClic.current = true;
+        setTimeout(() => { ignorarClic.current = false; }, 450);
+        alSoltar(m.indice);
+      }
+    },
+    onPointerCancel: () => {
+      gesto.current = null;
+      setEstado(null);
+    },
+    onClickCapture: (e: React.MouseEvent) => {
+      if (ignorarClic.current) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+  };
+
+  return { barra, eventos, estado };
+}
+
 export function NavInferior({
   tipo = 'emprendedor', rubro = 'comercio', esAdmin = true, administraOrden = false,
 }: {
@@ -361,6 +463,7 @@ export function NavInferior({
   administraOrden?: boolean;
 }) {
   const ruta = usePathname();
+  const router = useRouter();
   const t = useTextos();
   const [abierto, setAbierto] = useState(false);
 
@@ -385,6 +488,11 @@ export function NavInferior({
   const indiceActivo = abierto || enOtraSeccion
     ? fijos.length
     : fijos.findIndex((i) => activo(ruta, i.href));
+
+  const lente = useLenteDeVidrio(columnas, (i) => {
+    if (i < fijos.length) router.push(fijos[i].href);
+    else setAbierto(true);
+  });
 
   // El menú se cierra solo al navegar. Sin esto queda tapando la pantalla
   // a la que acabás de entrar.
@@ -519,18 +627,60 @@ export function NavInferior({
           agenda.
         */}
         <div
+          ref={lente.barra}
+          {...lente.eventos}
           className="barra-vidrio relative mx-auto grid max-w-md rounded-[30px] p-1.5"
           style={{ gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))` }}
         >
           {indiceActivo >= 0 && (
             <span
               aria-hidden="true"
-              className="barra-burbuja pointer-events-none absolute bottom-1.5 left-1.5 top-1.5"
+              className={`barra-burbuja pointer-events-none absolute bottom-1.5 left-1.5 top-1.5 transition-opacity ${
+                lente.estado ? 'opacity-0' : ''
+              }`}
               style={{
                 width: `calc((100% - 12px) / ${columnas})`,
                 transform: `translateX(${indiceActivo * 100}%)`,
               }}
             />
+          )}
+
+          {/* La lente de vidrio: aparece al mantener apretado y sigue el dedo. */}
+          {lente.estado && (
+            <span
+              aria-hidden="true"
+              className={`barra-lente ${lente.estado.soltando ? 'barra-lente-soltando' : ''}`}
+              style={{ width: lente.estado.anchoLente, left: lente.estado.x - lente.estado.anchoLente / 2 }}
+            >
+              {/* Adentro, una copia de la barra agrandada y alineada con la de
+                  abajo: eso es lo que hace que la lente «aumente» los íconos.
+                  El vidrio de verdad dobla la luz; esto se ve igual y anda en
+                  Safari, que no deja deformar lo de atrás. */}
+              <span
+                className="barra-lente-contenido grid p-1.5"
+                style={{
+                  width: lente.estado.anchoBarra,
+                  height: lente.estado.altoBarra,
+                  left: -(lente.estado.x - lente.estado.anchoLente / 2),
+                  gridTemplateColumns: `repeat(${columnas}, minmax(0, 1fr))`,
+                  transformOrigin: `${lente.estado.x}px 50%`,
+                }}
+              >
+                {[...fijos.map((i) => ({ clave: i.href, icono: i.icono, texto: i.href === '/cierre' ? t.nav.cierreCorto : i.texto })),
+                  { clave: 'mas', icono: Ico.mas, texto: t.nav.mas },
+                ].map((x, n) => (
+                  <span
+                    key={x.clave}
+                    className={`flex flex-col items-center gap-0.5 px-1 py-2 text-center text-[10.5px] font-bold leading-tight ${
+                      n === lente.estado!.indice ? 'text-verde-fuerte' : 'text-tinta/55'
+                    }`}
+                  >
+                    {x.icono}
+                    {x.texto}
+                  </span>
+                ))}
+              </span>
+            </span>
           )}
           {fijos.map((i) => {
             // Con el menú abierto, la sección de atrás se apaga: mientras
@@ -540,7 +690,7 @@ export function NavInferior({
             const on = activo(ruta, i.href) && !abierto;
             return (
               <Link
-                key={i.href} href={i.href}
+                key={i.href} href={i.href} draggable={false}
                 className={`relative z-10 flex flex-col items-center gap-0.5 rounded-[24px] px-1 py-2 text-center text-[10.5px] font-bold leading-tight transition-colors active:scale-95 ${
                   on ? 'barra-activo text-verde-fuerte' : 'text-tinta/45'
                 }`}
