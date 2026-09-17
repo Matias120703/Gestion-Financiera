@@ -1312,7 +1312,25 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const crear = fs.readFileSync('src/app/crear/page.tsx', 'utf8');
   ok('las dos puertas de registro avisan la cuenta nueva',
     empezar.includes('avisarCuentaNueva(') && crear.includes('avisarCuentaNueva('), true);
-  ok('activar un plan avisa al cliente', fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8').includes('avisarActivacion('), true);
+  const panelAdmin = fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8');
+  ok('activar un plan avisa al cliente', panelAdmin.includes('avisarActivacion('), true);
+
+  // Los avisos decían el nombre de la cuenta, y diez cuentas personales se
+  // llaman «Mis finanzas»: no se sabía quién era ninguna. Va el nombre de la
+  // persona, tanto para la administración como para quien la trajo.
+  const nueva = fs.readFileSync('src/app/api/avisos/cuenta-nueva/route.ts', 'utf8');
+  ok('el aviso de cuenta nueva dice quién se registró', nueva.includes('Se registró ${persona}'), true);
+  ok('y al socio también le dice quién entró', nueva.includes('t.entroTitulo(persona)'), true);
+  ok('la comisión también nombra a la persona',
+    fs.readFileSync('src/app/api/admin/aviso-activacion/route.ts', 'utf8').includes('t.comisionTitulo(persona)'), true);
+  ok('el nombre de la persona lo resuelve un solo lugar',
+    fs.readFileSync('src/lib/avisos.ts', 'utf8').includes('export async function nombreDeLaPersona'), true);
+
+  // Activar el mes dejaba la ficha abierta con un cartel adentro: había que
+  // cerrarla a mano para ver la lista al día.
+  ok('activar cierra la ficha y recarga con el resultado arriba',
+    /onHecho\(\[contar\?\.\(data\), comision\]/.test(panelAdmin), true);
+  ok('y el resultado dice de quién es la cuenta', panelAdmin.includes('la cuenta de ${quienEs(cuenta)} quedó activa'), true);
 }
 
 // Las comprobaciones que esperan algo (una función async) se anotan en

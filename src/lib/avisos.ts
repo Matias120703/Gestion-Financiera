@@ -47,6 +47,37 @@ export interface Aviso {
 }
 
 /**
+ * CÓMO SE LLAMA LA PERSONA DE UNA CUENTA, NO CÓMO SE LLAMA LA CUENTA.
+ *
+ * Los avisos de cuenta nueva y de comisión decían el nombre de la empresa, y
+ * Matías lo pidió al revés: «si se registró Matías Aranda, que diga que se
+ * registró Matías Aranda». El motivo es concreto: casi todas las cuentas
+ * personales se llaman «Mis finanzas» o «Mi gestión», así que diez avisos
+ * seguidos decían lo mismo y no se sabía quién era ninguno. Y el socio, que
+ * recomienda a gente que conoce, necesita el nombre para reconocerla.
+ *
+ * Si la persona no dejó su nombre se devuelve el `respaldo` —el nombre de la
+ * cuenta— antes que un aviso que empiece en blanco.
+ */
+export async function nombreDeLaPersona(empresaId: string, respaldo: string): Promise<string> {
+  try {
+    const supabase = clienteDeServicio();
+    const { data } = await supabase
+      .from('miembros')
+      .select('nombre, rol')
+      .eq('empresa_id', empresaId)
+      .in('rol', ['propietario', 'admin'])
+      // El propietario primero: en una cuenta con equipo es quien la creó.
+      .order('rol', { ascending: true })
+      .order('created_at', { ascending: true });
+    const persona = (data ?? []).find((m) => (m.nombre ?? '').trim() !== '');
+    return (persona?.nombre ?? '').trim() || respaldo;
+  } catch {
+    return respaldo;
+  }
+}
+
+/**
  * Manda un aviso a todos los dispositivos de una persona.
  *
  * Devuelve cuántos llegaron. Un endpoint que responde 404 o 410 está muerto

@@ -2192,9 +2192,9 @@ export const pt: Textos = {
       cuerpo: (fecha: string) => `Você já pode usar o Orden sem interrupção até ${fecha}. Obrigado por confiar na gente!`,
     },
     socio: {
-      entroTitulo: 'Alguém entrou com seu link',
-      entroCuerpo: (negocio: string) => `${negocio} criou a conta. Quando pagar o primeiro mês, metade é sua.`,
-      comisionTitulo: (negocio: string) => `${negocio} pagou o primeiro mês`,
+      entroTitulo: (persona: string) => `${persona} entrou com seu link`,
+      entroCuerpo: 'Criou a conta. Quando pagar o primeiro mês, metade é sua.',
+      comisionTitulo: (persona: string) => `${persona} pagou o primeiro mês`,
       comisionCuerpo: (monto: string) => `Você ganhou ${monto}. Já está no seu saldo pra sacar.`,
     },
   },

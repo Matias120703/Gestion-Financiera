@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { clienteDeServicio } from '@/lib/supabase/servicio';
-import { avisar } from '@/lib/avisos';
+import { avisar, nombreDeLaPersona } from '@/lib/avisos';
 import { diccionario } from '@/i18n/diccionarios';
 import { fichaDe } from '@/lib/rubros';
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
   const { data: dueno } = await servicio
     .from('miembros')
-    .select('rol')
+    .select('rol, nombre')
     .eq('empresa_id', empresaId)
     .eq('user_id', user.id)
     .eq('rol', 'propietario')
@@ -72,6 +72,10 @@ export async function POST(request: Request) {
     .maybeSingle();
   const socio = (referido as any)?.socios as { nombre: string; user_id: string | null } | undefined;
 
+  // Quién se registró. El nombre lo dejó en el primer paso del registro; si
+  // no lo dejó, queda el nombre de la cuenta.
+  const persona = (dueno.nombre ?? '').trim() || await nombreDeLaPersona(empresaId, empresa.nombre);
+
   let avisados = 0;
 
   try {
@@ -80,10 +84,11 @@ export async function POST(request: Request) {
     const que = empresa.tipo_cuenta === 'personal'
       ? 'Cuenta personal'
       : `Negocio · ${fichaDe(empresa.rubro, 'emprendedor').nombre}`;
-    const cuerpo = [que, 'en prueba', socio ? `vino con el enlace de ${socio.nombre}` : '']
+    const cuerpo = [que, `«${empresa.nombre}»`, 'en prueba', socio ? `vino con el enlace de ${socio.nombre}` : '']
       .filter(Boolean).join(' · ');
     const entregas = await Promise.all(ids.map((id) => avisar(id, {
-      titulo: `Nueva cuenta: ${empresa.nombre}`,
+      // El nombre de la persona y no el de la cuenta: ver `nombreDeLaPersona`.
+      titulo: `Se registró ${persona}`,
       cuerpo,
       url: '/admin',
       tag: `cuenta-${empresaId}`,
@@ -100,8 +105,10 @@ export async function POST(request: Request) {
       const idioma = pref?.idioma ?? 'es';
       const t = diccionario(idioma).notificaciones.socio;
       avisados += await avisar(socio.user_id, {
-        titulo: t.entroTitulo,
-        cuerpo: t.entroCuerpo(empresa.nombre),
+        // Al socio le sirve el nombre de quien entró: recomienda a gente que
+        // conoce, y «Mis finanzas» no le dice nada.
+        titulo: t.entroTitulo(persona),
+        cuerpo: t.entroCuerpo,
         url: '/recomendar',
         tag: `referido-${empresaId}`,
         idioma,

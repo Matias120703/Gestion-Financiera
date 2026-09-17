@@ -53,6 +53,17 @@ const NOMBRE_PLAN: Record<string, string> = {
 };
 
 /**
+ * Cómo se llama la PERSONA de esta cuenta.
+ *
+ * Diez cuentas personales se llaman «Mis finanzas», así que decir el nombre
+ * de la cuenta no distingue a nadie. Primero el contacto de la ficha, después
+ * el propietario del registro, y solo si no hay ninguno, la cuenta.
+ */
+function quienEs(cuenta: { contacto?: string; propietario?: string; nombre: string }) {
+  return (cuenta.contacto ?? '').trim() || (cuenta.propietario ?? '').trim() || cuenta.nombre;
+}
+
+/**
  * Cómo se llama lo que esta cuenta tiene hoy.
  *
  * Una cuenta en prueba nace con `plan = 'pro'` en la base —es lo que le
@@ -111,6 +122,8 @@ export function PanelAdmin({
   const [filtro, setFiltro] = useState<Filtro>('atencion');
   const [busqueda, setBusqueda] = useState('');
   const [abierta, setAbierta] = useState<CuentaAdmin | null>(null);
+  /** Lo que acaba de pasar, para decirlo arriba y con la lista ya al día. */
+  const [hecho, setHecho] = useState('');
 
   const visibles = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -133,6 +146,26 @@ export function PanelAdmin({
 
   return (
     <div className="space-y-7">
+      {/*
+        QUÉ PASÓ, DESPUÉS DE QUE PASÓ.
+        Matías: «cuando activo el mes quiero que se reinicie solo y que me
+        aparezca un mensaje de que se pudo activar la cuenta y que se generó
+        la comisión». Antes la ficha quedaba abierta con un cartel adentro y
+        había que cerrarla a mano para ver la lista al día.
+      */}
+      {hecho && (
+        <div className="flex items-start gap-3 rounded-2xl bg-verde-claro px-4 py-3">
+          <p className="min-w-0 flex-1 text-[13.5px] font-medium leading-relaxed text-verde-fuerte">{hecho}</p>
+          <button
+            type="button" onClick={() => setHecho('')}
+            aria-label="Cerrar el aviso"
+            className="shrink-0 text-[13px] font-bold text-verde-fuerte"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* ---------------- Mis finanzas ---------------- */}
       <MisFinanzas finanzas={finanzas} misEmpresas={misEmpresas} onHecho={() => router.refresh()} />
 
@@ -284,7 +317,7 @@ export function PanelAdmin({
           rechazado={rechazoPorEmpresa.get(abierta.empresa_id) ?? null}
           whatsapp={whatsapp}
           onCerrar={() => setAbierta(null)}
-          onHecho={() => { setAbierta(null); router.refresh(); }}
+          onHecho={(mensaje) => { setAbierta(null); setHecho(mensaje ?? ''); router.refresh(); }}
         />
       )}
     </div>
@@ -439,7 +472,8 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
   rechazado: CodigoRechazado | null;
   whatsapp: string | null;
   onCerrar: () => void;
-  onHecho: () => void;
+  /** Cierra la ficha y recarga la lista; el mensaje se lee arriba. */
+  onHecho: (mensaje?: string) => void;
 }) {
   const [codigoSocio, setCodigoSocio] = useState('');
 
@@ -477,9 +511,18 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
   const [trabajando, setTrabajando] = useState('');
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
-  const [logro, setLogro] = useState('');
 
-  async function correr(nombre: string, fn: () => Promise<{ data?: any; error: any }>) {
+  /**
+   * `contar` arma el mensaje que se lee arriba, en la lista ya recargada, y
+   * no un cartel dentro de una hoja que además hay que cerrar a mano. Lo de
+   * la comisión se agrega solo, porque vale para cualquier acción que la
+   * genere.
+   */
+  async function correr(
+    nombre: string,
+    fn: () => Promise<{ data?: any; error: any }>,
+    contar?: (data: any) => string,
+  ) {
     setTrabajando(nombre);
     setError('');
     try {
@@ -501,10 +544,9 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
         && referido !== null && referido.comision === null && data.comision_generada === false;
 
       // Un código que se había perdido y se recuperó con su comisión es una
-      // buena noticia, no un aviso: va en verde.
+      // buena noticia, no un aviso: va en verde, arriba.
       if (data?.por_enlace && data?.comision_generada) {
-        setLogro(`${String(data.aviso)} La vas a ver en Socios, en «Por pagar».`);
-        setTrabajando('');
+        onHecho(`${String(data.aviso)} La vas a ver en Socios, en «Por pagar».`);
         return;
       }
 
@@ -514,16 +556,15 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
       ].filter(Boolean).join(' ');
 
       // Un aviso no es un fallo: la cuenta se activó igual. Pero hay que
-      // decirlo, o el ingreso propio se pierde sin que nadie se entere.
+      // decirlo, o el ingreso propio se pierde sin que nadie se entere. Este
+      // sí se queda en la hoja: es algo para mirar, no un «listo».
       if (texto) { setAviso(texto); setTrabajando(''); return; }
 
-      if (data?.comision_generada) {
-        setLogro(`Se generó la comisión de ${referido?.socio ?? 'quien lo trajo'}. La vas a ver en Socios, en «Por pagar».`);
-        setTrabajando('');
-        return;
-      }
+      const comision = data?.comision_generada
+        ? `Se generó la comisión de ${referido?.socio ?? 'quien lo trajo'}: la vas a ver en Socios, en «Por pagar».`
+        : '';
 
-      onHecho();
+      onHecho([contar?.(data), comision].filter(Boolean).join(' ') || undefined);
     } catch (e: any) {
       setError(mensajeDeError(e, 'No se pudo hacer el cambio.'));
     } finally {
@@ -547,7 +588,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     // ganó. Va aparte y sin esperar: el plan ya quedó activo en la base.
     if (!r.error) avisarActivacion(cuenta.empresa_id);
     return r;
-  });
+  }, () => `Listo: la cuenta de ${quienEs(cuenta)} quedó activa en el plan ${plan === 'negocio' ? 'Premium' : 'Pro'} por ${meses} ${meses === 1 ? 'mes' : 'meses'}.`);
 
   const cortar = () => correr('cortando', async () => clienteNavegador().rpc('cambiar_plan_cuenta', {
     p_empresa: cuenta.empresa_id, p_plan: 'gratis', p_meses: 1, p_nota: nota,
@@ -692,21 +733,10 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
             <div className="rounded-xl bg-ambar-claro px-3.5 py-2.5">
               <p className="text-[13px] font-medium text-ambar">{aviso}</p>
               <button
-                type="button" onClick={onHecho}
+                type="button" onClick={() => onHecho()}
                 className="mt-2 text-[12.5px] font-semibold text-ambar underline"
               >
                 Entendido, cerrar
-              </button>
-            </div>
-          )}
-          {logro && (
-            <div className="rounded-xl bg-verde-claro px-3.5 py-2.5">
-              <p className="text-[13px] font-medium text-verde-fuerte">{logro}</p>
-              <button
-                type="button" onClick={onHecho}
-                className="mt-2 text-[12.5px] font-semibold text-verde-fuerte underline"
-              >
-                Listo, cerrar
               </button>
             </div>
           )}

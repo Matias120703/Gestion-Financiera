@@ -2283,9 +2283,9 @@ export const es = {
       cuerpo: (fecha: string) => `Ya podés usar Orden sin cortes hasta el ${fecha}. ¡Gracias por confiar en nosotros!`,
     },
     socio: {
-      entroTitulo: 'Alguien entró con tu enlace',
-      entroCuerpo: (negocio: string) => `${negocio} creó su cuenta. Cuando pague su primer mes, la mitad es tuya.`,
-      comisionTitulo: (negocio: string) => `${negocio} pagó su primer mes`,
+      entroTitulo: (persona: string) => `${persona} entró con tu enlace`,
+      entroCuerpo: 'Creó su cuenta. Cuando pague su primer mes, la mitad es tuya.',
+      comisionTitulo: (persona: string) => `${persona} pagó su primer mes`,
       comisionCuerpo: (monto: string) => `Ganaste ${monto}. Ya está en tu saldo para retirar.`,
     },
   },

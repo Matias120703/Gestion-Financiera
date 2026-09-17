@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { clienteDeServicio } from '@/lib/supabase/servicio';
-import { avisar } from '@/lib/avisos';
+import { avisar, nombreDeLaPersona } from '@/lib/avisos';
 import { diccionario } from '@/i18n/diccionarios';
 import { FICHA, esIdioma, IDIOMA_POR_DEFECTO } from '@/i18n/idiomas';
 
@@ -102,8 +102,11 @@ export async function POST(request: Request) {
       const idioma = esIdioma(pref?.idioma) ? pref!.idioma : IDIOMA_POR_DEFECTO;
       const t = diccionario(idioma).notificaciones.socio;
       const monto = `Gs. ${Number(comision.monto).toLocaleString(FICHA[idioma as keyof typeof FICHA].locale, { maximumFractionDigits: 0 })}`;
+      // El nombre de la persona que pagó, no el de su cuenta: el socio la
+      // trajo por conocerla. Ver `nombreDeLaPersona`.
+      const persona = await nombreDeLaPersona(empresaId, empresa.nombre);
       avisados += await avisar(socioUser, {
-        titulo: t.comisionTitulo(empresa.nombre),
+        titulo: t.comisionTitulo(persona),
         cuerpo: t.comisionCuerpo(monto),
         url: '/recomendar',
         tag: `comision-${comision.id}`,
