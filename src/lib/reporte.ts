@@ -5,6 +5,7 @@ import {
 } from './calculos';
 import { decimalesDe, simboloDe, fechaLegible } from './formato';
 import type { Movimiento, Producto } from './tipos';
+import { textosExcel, type TextosExcel } from './reporte-textos';
 
 const VERDE = 'FF17795A';
 const VERDE_SUAVE = 'FFE6F4EE';
@@ -115,6 +116,12 @@ export interface DatosReporte {
    */
   movimientos: Movimiento[];
   productosBd: Producto[];
+  /**
+   * En qué idioma sale el archivo: el de quien lo baja. Sin idioma, español.
+   * Las categorías y las formas de pago llegan ya traducidas: ver
+   * reporte-textos.ts.
+   */
+  idioma?: string;
 }
 
 /** Arma el libro de Excel completo. Función pura: no toca red ni base de datos. */
@@ -126,8 +133,9 @@ export function construirLibro(datos: DatosReporte): ExcelJS.Workbook {
 }
 
 function libroDeNegocio({
-  empresa, desde, hasta, resumen, ranking, categorias, serie, movimientos, productosBd,
+  empresa, desde, hasta, resumen, ranking, categorias, serie, movimientos, productosBd, idioma,
 }: DatosReporte): ExcelJS.Workbook {
+  const tx = textosExcel(idioma);
   const moneda = empresa.moneda;
   const cicloLargo = empresa.rubro === 'ganaderia' || empresa.rubro === 'agricultura';
   const fmt = formatoMoneda(moneda);
@@ -137,7 +145,7 @@ function libroDeNegocio({
   const r = resumen;
   const productos = ranking;
   const dias = serie.map((d) => d.fecha);
-  const periodo = textoPeriodo(desde, hasta, empresa);
+  const periodo = textoPeriodo(desde, hasta, empresa, tx);
 
   const libro = new ExcelJS.Workbook();
   libro.creator = 'Orden';
@@ -147,14 +155,14 @@ function libroDeNegocio({
   // HOJA 1 · RESUMEN
   // ==========================================================
   {
-    const h = libro.addWorksheet('Resumen', {
+    const h = libro.addWorksheet(tx.hojaResumen, {
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
     h.columns = [
       { width: 4 }, { width: 34 }, { width: 20 }, { width: 20 }, { width: 4 },
     ];
-    encabezado(h, empresa.nombre, 'RESUMEN EJECUTIVO', periodo, 5);
+    encabezado(h, empresa.nombre, tx.resumenEjecutivo, periodo, 5);
 
     let f = 6;
     const bloque = (titulo: string) => {
@@ -189,35 +197,35 @@ function libroDeNegocio({
       f += 1;
     };
 
-    bloque('Entró plata');
-    linea('Ventas a precio de lista', r.ventasBrutas, { nota: `${r.cantidadVentas} operaciones` });
+    bloque(tx.entroPlata);
+    linea(tx.ventasPrecioLista, r.ventasBrutas, { nota: tx.operaciones(r.cantidadVentas) });
     if (r.descuentos > 0) {
-      linea('Descuentos otorgados', -r.descuentos, { color: ROJO });
+      linea(tx.descuentosOtorgados, -r.descuentos, { color: ROJO });
     }
-    linea('Ventas cobradas', r.ventas, { fuerte: true });
-    linea('Otros ingresos', r.otrosIngresos);
-    linea('Total que entró', r.ingresosTotales, { fuerte: true, color: VERDE });
+    linea(tx.ventasCobradas, r.ventas, { fuerte: true });
+    linea(tx.otrosIngresos, r.otrosIngresos);
+    linea(tx.totalQueEntro, r.ingresosTotales, { fuerte: true, color: VERDE });
     f += 1;
 
-    bloque('Costos y gastos');
-    linea('Costo de la mercadería vendida', r.costoMercaderia, { color: ROJO });
-    linea('Gastos operativos', r.gastos, { color: ROJO });
-    linea('Total que salió', r.costoMercaderia + r.gastos, { fuerte: true, color: ROJO });
+    bloque(tx.costosYGastos);
+    linea(tx.costoMercaderia, r.costoMercaderia, { color: ROJO });
+    linea(tx.gastosOperativos, r.gastos, { color: ROJO });
+    linea(tx.totalQueSalio, r.costoMercaderia + r.gastos, { fuerte: true, color: ROJO });
     f += 1;
 
-    bloque('Resultado');
-    linea('Ganancia bruta', r.gananciaBruta, { fuerte: true, nota: `margen ${r.margenBruto.toFixed(1)}%` });
-    linea('Ganancia neta', r.gananciaNeta, { fuerte: true, color: r.gananciaNeta >= 0 ? VERDE : ROJO, nota: `margen ${r.margenNeto.toFixed(1)}%` });
+    bloque(tx.resultado);
+    linea(tx.gananciaBruta, r.gananciaBruta, { fuerte: true, nota: tx.margen(r.margenBruto.toFixed(1)) });
+    linea(tx.gananciaNeta, r.gananciaNeta, { fuerte: true, color: r.gananciaNeta >= 0 ? VERDE : ROJO, nota: tx.margen(r.margenNeto.toFixed(1)) });
     f += 1;
 
-    bloque('Indicadores');
-    linea('Ticket promedio', r.ticketPromedio);
-    linea('Unidades vendidas', r.unidadesVendidas, { formato: fmtNum });
-    linea('Productos distintos vendidos', productos.length, { formato: '#,##0' });
-    linea('Promedio de ventas por día', dias.length ? r.ventas / dias.length : 0);
+    bloque(tx.indicadores);
+    linea(tx.ticketPromedio, r.ticketPromedio);
+    linea(tx.unidadesVendidas, r.unidadesVendidas, { formato: fmtNum });
+    linea(tx.productosDistintos, productos.length, { formato: '#,##0' });
+    linea(tx.promedioVentasDia, dias.length ? r.ventas / dias.length : 0);
     if (r.ventasAnuladas > 0) {
-      linea('Ventas anuladas', r.ventasAnuladas, { formato: '#,##0', nota: 'no suman en ningún total' });
-      linea('Monto de ventas anuladas', r.montoVentasAnuladas, { color: ROJO });
+      linea(tx.ventasAnuladas, r.ventasAnuladas, { formato: '#,##0', nota: tx.noSumanEnNingunTotal });
+      linea(tx.montoVentasAnuladas, r.montoVentasAnuladas, { color: ROJO });
     }
     f += 2;
 
@@ -227,7 +235,7 @@ function libroDeNegocio({
 
     h.mergeCells(`B${f}:D${f}`);
     const dc = h.getCell(`B${f}`);
-    dc.value = 'PARA TENER EN CUENTA';
+    dc.value = tx.paraTenerEnCuenta;
     dc.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF6B7C75' } };
     f += 1;
 
@@ -242,28 +250,26 @@ function libroDeNegocio({
       f += 1;
     };
 
+    const plata = (n: number) => `${simboloDe(moneda)} ${Math.round(n).toLocaleString(tx.locale)}`;
     if (mejor) {
-      const detalleGanancia = mejor.ganancia === null
-        ? ''
-        : `, ganancia ${simboloDe(moneda)} ${Math.round(mejor.ganancia).toLocaleString('es-PY')}`;
-      nota(`Lo que más dejó: ${mejor.nombre} — ${mejor.unidades.toLocaleString('es-PY')} unidades${detalleGanancia}`);
+      const detalleGanancia = mejor.ganancia === null ? '' : tx.conGanancia(plata(mejor.ganancia));
+      nota(tx.loQueMasDejo(mejor.nombre, mejor.unidades.toLocaleString(tx.locale)) + detalleGanancia);
     }
-    if (mayorGasto) nota(`El gasto más grande: ${mayorGasto.descripcion} — ${simboloDe(moneda)} ${Math.round(Number(mayorGasto.monto)).toLocaleString('es-PY')}`);
-    if (r.gananciaNeta < 0) nota('Atención: en este periodo gastaste más de lo que ganaste.');
+    if (mayorGasto) nota(tx.gastoMasGrande(mayorGasto.descripcion, plata(Number(mayorGasto.monto))));
+    if (r.gananciaNeta < 0) nota(tx.gastasteMasQueGanaste);
     if (r.descuentos > 0) {
       const pct = r.ventasBrutas > 0 ? (r.descuentos / r.ventasBrutas) * 100 : 0;
-      nota(`Diste ${simboloDe(moneda)} ${Math.round(r.descuentos).toLocaleString('es-PY')} en descuentos: el ${pct.toFixed(1)}% de tu precio de lista.`);
+      nota(tx.disteDescuentos(plata(r.descuentos), pct.toFixed(1)));
     }
     if (r.movimientosAnulados > 0) {
-      nota(`Se anularon ${r.movimientosAnulados} movimiento(s), de los cuales ${r.ventasAnuladas} son ventas. `
-        + 'Figuran en el detalle pero no suman en ningún total.');
+      nota(tx.seAnularon(r.movimientosAnulados, r.ventasAnuladas));
     }
     // Para un comercio, no haber vendido nada es un dato —y probablemente un
     // problema que mirar—, así que se dice. La versión de esta frase para una
     // cuenta personal está en `libroPersonal`: ahí no hay ventas nunca, y
     // señalarlo sería acusar a alguien de no hacer algo que ni se le ofrece.
     if (productos.length === 0) {
-      nota('No se registraron ventas en este periodo.');
+      nota(tx.sinVentas);
     }
   }
 
@@ -271,7 +277,7 @@ function libroDeNegocio({
   // HOJA 2 · PRODUCTOS
   // ==========================================================
   {
-    const h = libro.addWorksheet('Productos', {
+    const h = libro.addWorksheet(tx.hojaProductos, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
@@ -279,9 +285,9 @@ function libroDeNegocio({
       { width: 5 }, { width: 32 }, { width: 11 }, { width: 15 }, { width: 14 },
       { width: 15 }, { width: 15 }, { width: 15 }, { width: 10 }, { width: 13 },
     ];
-    encabezado(h, empresa.nombre, 'PRODUCTOS VENDIDOS · DE MAYOR A MENOR', periodo, 10);
+    encabezado(h, empresa.nombre, tx.productosVendidos, periodo, 10);
 
-    filaEncabezadoTabla(h, 6, ['#', 'Producto', 'Unidades', 'Precio lista', 'Descuento', 'Cobrado', 'Costo', 'Ganancia', 'Margen', 'Participación']);
+    filaEncabezadoTabla(h, 6, tx.columnasProductos);
 
     // El descuento de cada venta se reparte entre sus productos en proporción
     // a lo que pesa cada uno. Así la suma de esta columna da exactamente el
@@ -345,10 +351,10 @@ function libroDeNegocio({
       let f = fTotal + 3;
       h.mergeCells(`B${f}:G${f}`);
       const t = h.getCell(`B${f}`);
-      t.value = `NO SE VENDIERON EN ESTE PERIODO (${quietos.length})`;
+      t.value = tx.noSeVendieron(quietos.length);
       t.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF6B7C75' } };
       f += 1;
-      filaEncabezadoTabla(h, f, ['', 'Producto', 'Stock', 'Precio', 'Costo', 'Plata parada']);
+      filaEncabezadoTabla(h, f, tx.columnasQuietos);
       quietos.forEach((p: any, i: number) => {
         const fila = h.getRow(f + 1 + i);
         fila.values = ['', p.nombre, Number(p.stock), Number(p.precio), Number(p.costo), Number(p.stock) * Number(p.costo)];
@@ -367,7 +373,7 @@ function libroDeNegocio({
   // HOJA 3 · MOVIMIENTOS
   // ==========================================================
   {
-    const h = libro.addWorksheet('Movimientos', {
+    const h = libro.addWorksheet(tx.hojaMovimientos, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
@@ -375,12 +381,9 @@ function libroDeNegocio({
       { width: 12 }, { width: 11 }, { width: 36 }, { width: 16 }, { width: 14 },
       { width: 15 }, { width: 13 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 17 },
     ];
-    encabezado(h, empresa.nombre, 'DETALLE DE MOVIMIENTOS', periodo, 11);
+    encabezado(h, empresa.nombre, tx.detalleMovimientos, periodo, 11);
 
-    filaEncabezadoTabla(h, 6, [
-      'Fecha', 'Tipo', 'Descripción', 'Categoría', 'Cobro/Pago',
-      'Subtotal', 'Descuento', 'Cobrado', 'Costo', 'Ganancia', 'Estado',
-    ]);
+    filaEncabezadoTabla(h, 6, tx.columnasMovimientos);
 
     const ordenados = [...movimientos].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 
@@ -394,8 +397,8 @@ function libroDeNegocio({
         : signo * Number(mv.monto);
 
       fila.values = [
-        fechaLegible(mv.fecha),
-        mv.tipo === 'venta' ? 'Venta' : esGasto ? 'Gasto' : 'Ingreso',
+        fechaLegible(mv.fecha, true, tx.locale),
+        mv.tipo === 'venta' ? tx.venta : esGasto ? tx.gasto : tx.ingreso,
         mv.descripcion || '—',
         mv.categoria,
         mv.metodo_pago,
@@ -404,7 +407,7 @@ function libroDeNegocio({
         signo * Number(mv.monto),
         Number(mv.costo_total ?? 0),
         ganancia,
-        anulado ? `ANULADA${mv.motivo_anulacion ? ` · ${mv.motivo_anulacion}` : ''}` : 'Válida',
+        anulado ? `${tx.anulada}${mv.motivo_anulacion ? ` · ${mv.motivo_anulacion}` : ''}` : tx.valida,
       ];
       fila.height = 18;
       fila.eachCell((c, n) => {
@@ -430,7 +433,7 @@ function libroDeNegocio({
     const total = h.getRow(fTotal);
     // Los totales usan el resumen, que ya excluye las anuladas.
     total.values = [
-      '', '', 'TOTAL DEL PERIODO (sin anuladas)', '', '',
+      '', '', tx.totalSinAnuladas, '', '',
       r.ventasBrutas + r.otrosIngresos - r.gastos,
       -r.descuentos,
       r.ingresosTotales - r.gastos,
@@ -455,14 +458,14 @@ function libroDeNegocio({
   // HOJA 4 · GASTOS
   // ==========================================================
   {
-    const h = libro.addWorksheet('Gastos', {
+    const h = libro.addWorksheet(tx.hojaGastos, {
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
     });
     h.columns = [{ width: 5 }, { width: 32 }, { width: 20 }, { width: 16 }, { width: 16 }, { width: 5 }];
-    encabezado(h, empresa.nombre, 'EN QUÉ SE FUE LA PLATA', periodo, 6);
+    encabezado(h, empresa.nombre, tx.enQueSeFueLaPlata, periodo, 6);
 
-    filaEncabezadoTabla(h, 6, ['#', 'Categoría', 'Total gastado', 'Movimientos', 'Del total']);
+    filaEncabezadoTabla(h, 6, tx.columnasGastos);
 
     categorias.forEach((c, i) => {
       const fila = h.getRow(7 + i);
@@ -499,18 +502,18 @@ function libroDeNegocio({
   // No se genera en ciclo largo: ver el comentario de `rubro` arriba.
   // ==========================================================
   if (!cicloLargo) {
-    const h = libro.addWorksheet('Día por día', {
+    const h = libro.addWorksheet(tx.hojaDiaPorDia, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
     });
     h.columns = [{ width: 5 }, { width: 20 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 5 }];
-    encabezado(h, empresa.nombre, 'RESULTADO DE CADA DÍA', periodo, 6);
+    encabezado(h, empresa.nombre, tx.resultadoDeCadaDia, periodo, 6);
 
-    filaEncabezadoTabla(h, 6, ['', 'Fecha', 'Vendido', 'Gastado', 'Ganancia del día']);
+    filaEncabezadoTabla(h, 6, tx.columnasDias);
 
     serie.forEach((d, i) => {
       const fila = h.getRow(7 + i);
-      fila.values = ['', fechaLegible(d.fecha), d.ventas, d.gastos, d.ganancia ?? null];
+      fila.values = ['', fechaLegible(d.fecha, true, tx.locale), d.ventas, d.gastos, d.ganancia ?? null];
       fila.height = 18;
       fila.eachCell((c, n) => {
         c.font = { name: 'Calibri', size: 10 };
@@ -572,8 +575,9 @@ function libroDeNegocio({
  *   · el detalle completo, para poder buscar «¿cuándo pagué esto?».
  */
 function libroPersonal({
-  empresa, desde, hasta, resumen, categorias, ingresos, ahorro, serie, movimientos,
+  empresa, desde, hasta, resumen, categorias, ingresos, ahorro, serie, movimientos, idioma,
 }: DatosReporte): ExcelJS.Workbook {
+  const tx = textosExcel(idioma);
   const moneda = empresa.moneda;
   const fmt = formatoMoneda(moneda);
   const fmtPorc = '0.0"%"';
@@ -583,7 +587,7 @@ function libroPersonal({
   const salio = r.gastos;
   const teQuedo = entro - salio;
 
-  const periodo = textoPeriodo(desde, hasta, empresa);
+  const periodo = textoPeriodo(desde, hasta, empresa, tx);
 
   // Días del calendario, no días con movimientos: para el promedio diario lo
   // que importa es cuánto duró el período, no en cuántos días cargó algo.
@@ -601,12 +605,12 @@ function libroPersonal({
   // HOJA 1 · RESUMEN
   // ==========================================================
   {
-    const h = libro.addWorksheet('Resumen', {
+    const h = libro.addWorksheet(tx.hojaResumen, {
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
     h.columns = [{ width: 4 }, { width: 34 }, { width: 20 }, { width: 20 }, { width: 4 }];
-    encabezado(h, empresa.nombre, 'TUS NÚMEROS DEL PERIODO', periodo, 5);
+    encabezado(h, empresa.nombre, tx.tusNumeros, periodo, 5);
 
     let f = 6;
 
@@ -651,69 +655,69 @@ function libroPersonal({
     };
 
     // ---- de dónde vino ----
-    bloque('Lo que entró');
+    bloque(tx.loQueEntro);
     if (ingresos.length === 0) {
-      linea('Todavía no cargaste ningún ingreso', 0);
+      linea(tx.sinIngresos, 0);
     } else {
       ingresos.forEach((i) => {
         linea(i.nombre, i.monto, {
-          nota: i.operaciones === 1 ? '1 vez' : `${i.operaciones} veces`,
+          nota: tx.veces(i.operaciones),
         });
       });
     }
-    linea('Total que entró', entro, { fuerte: true, color: VERDE });
+    linea(tx.totalQueEntro, entro, { fuerte: true, color: VERDE });
     f += 1;
 
     // ---- en qué se fue ----
-    bloque('Lo que salió');
+    bloque(tx.loQueSalio);
     if (categorias.length === 0) {
-      linea('Todavía no cargaste ningún gasto', 0);
+      linea(tx.sinGastos, 0);
     } else {
       // Las cinco más caras. El detalle completo tiene su propia hoja: acá
       // repetir veinte categorías taparía el número que importa.
       categorias.slice(0, 5).forEach((c) => {
-        linea(c.nombre, c.monto, { color: ROJO, nota: `${c.participacion.toFixed(1)}% de tus gastos` });
+        linea(c.nombre, c.monto, { color: ROJO, nota: tx.deTusGastos(c.participacion.toFixed(1)) });
       });
       if (categorias.length > 5) {
         const resto = categorias.slice(5).reduce((s, c) => s + c.monto, 0);
-        linea(`Otras ${categorias.length - 5} categorías`, resto, { color: ROJO });
+        linea(tx.otrasCategorias(categorias.length - 5), resto, { color: ROJO });
       }
     }
-    linea('Total que salió', salio, { fuerte: true, color: ROJO });
+    linea(tx.totalQueSalio, salio, { fuerte: true, color: ROJO });
     f += 1;
 
     // ---- el ahorro, que no es ninguna de las dos cosas ----
     if (huboAhorro) {
-      bloque('Lo que guardaste');
-      linea('Depositado en tus fondos', ahorro.aportado, { color: VERDE });
-      if (ahorro.retirado > 0) linea('Retirado de tus fondos', -ahorro.retirado, { color: ROJO });
-      linea('Guardado en el periodo', ahorro.neto, { fuerte: true });
+      bloque(tx.loQueGuardaste);
+      linea(tx.depositadoEnFondos, ahorro.aportado, { color: VERDE });
+      if (ahorro.retirado > 0) linea(tx.retiradoDeFondos, -ahorro.retirado, { color: ROJO });
+      linea(tx.guardadoEnElPeriodo, ahorro.neto, { fuerte: true });
       f += 1;
     }
 
     // ---- el número ----
-    bloque('Resultado');
-    linea('Te quedó', teQuedo, {
+    bloque(tx.resultado);
+    linea(tx.teQuedo, teQuedo, {
       fuerte: true,
       color: teQuedo >= 0 ? VERDE : ROJO,
-      nota: 'lo que entró menos lo que salió',
+      nota: tx.entroMenosSalio,
     });
     if (huboAhorro && ahorro.neto > 0) {
-      linea('De eso, ya está guardado', ahorro.neto, {
-        nota: 'sigue siendo tuyo, no es un gasto',
+      linea(tx.yaEstaGuardado, ahorro.neto, {
+        nota: tx.sigueSiendoTuyo,
       });
     }
     f += 1;
 
-    bloque('Para mirarlo de cerca');
-    linea('Gasto promedio por día', salio / dias, { nota: `${dias} días del periodo` });
-    linea('Días en que cargaste algo', serie.length, { formato: '#,##0' });
+    bloque(tx.paraMirarloDeCerca);
+    linea(tx.gastoPromedioDia, salio / dias, { nota: tx.diasDelPeriodo(dias) });
+    linea(tx.diasConAlgo, serie.length, { formato: '#,##0' });
     if (entro > 0) {
-      linea('Del total que entró, gastaste', (salio / entro) * 100, { formato: fmtPorc });
+      linea(tx.delTotalGastaste, (salio / entro) * 100, { formato: fmtPorc });
     }
     if (r.movimientosAnulados > 0) {
-      linea('Movimientos anulados', r.movimientosAnulados, {
-        formato: '#,##0', nota: 'no suman en ningún total',
+      linea(tx.movimientosAnulados, r.movimientosAnulados, {
+        formato: '#,##0', nota: tx.noSumanEnNingunTotal,
       });
     }
     f += 2;
@@ -721,7 +725,7 @@ function libroPersonal({
     // ---- para tener en cuenta ----
     h.mergeCells(`B${f}:D${f}`);
     const dc = h.getCell(`B${f}`);
-    dc.value = 'PARA TENER EN CUENTA';
+    dc.value = tx.paraTenerEnCuenta;
     dc.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF6B7C75' } };
     f += 1;
 
@@ -737,34 +741,33 @@ function libroPersonal({
     };
 
     const simbolo = simboloDe(moneda);
-    const enPlata = (n: number) => `${simbolo} ${Math.round(n).toLocaleString('es-PY')}`;
+    const enPlata = (n: number) => `${simbolo} ${Math.round(n).toLocaleString(tx.locale)}`;
 
     const mayorGasto = movimientos
       .filter((m) => m.tipo === 'gasto' && esValido(m))
       .sort((a, b) => Number(b.monto) - Number(a.monto))[0];
 
     if (categorias[0]) {
-      nota(`Donde más se te fue: ${categorias[0].nombre} — ${enPlata(categorias[0].monto)}, `
-        + `el ${categorias[0].participacion.toFixed(1)}% de todo lo que gastaste.`);
+      nota(tx.dondeMasSeFue(categorias[0].nombre, enPlata(categorias[0].monto), categorias[0].participacion.toFixed(1)));
     }
     if (mayorGasto) {
-      nota(`El gasto más grande: ${mayorGasto.descripcion || 'sin descripción'} — ${enPlata(Number(mayorGasto.monto))}.`);
+      nota(`${tx.gastoMasGrande(mayorGasto.descripcion || tx.sinDescripcion, enPlata(Number(mayorGasto.monto)))}.`);
     }
     if (huboAhorro && ahorro.neto > 0) {
-      nota(`Guardaste ${enPlata(ahorro.neto)} en el periodo. Esa plata no figura como gasto en ninguna hoja: la seguís teniendo.`);
+      nota(tx.guardaste(enPlata(ahorro.neto)));
     }
 
     // Cuando no hay nada que destacar, el archivo dice algo útil en vez de
     // señalar un vacío. Un reporte que solo marca lo que falta no invita a
     // volver a abrirlo.
     if (entro === 0 && salio === 0) {
-      nota('Todavía no cargaste nada en este periodo. Contale un gasto por voz y en diez segundos ya tenés tu primer número.');
+      nota(tx.sinNada);
     } else if (salio > 0 && entro === 0) {
-      nota('Cargaste gastos pero ningún ingreso. Anotá tu sueldo y vas a ver de verdad cuánto te queda cada mes.');
+      nota(tx.gastosSinIngresos);
     } else if (teQuedo < 0) {
-      nota(`En este periodo gastaste ${enPlata(Math.abs(teQuedo))} más de lo que entró.`);
+      nota(tx.gastasteDeMas(enPlata(Math.abs(teQuedo))));
     } else if (teQuedo > 0 && !huboAhorro) {
-      nota(`Te quedaron ${enPlata(teQuedo)} sin gastar. Si creás un fondo de ahorro, esa plata deja de estar suelta y le ponés un destino.`);
+      nota(tx.sobro(enPlata(teQuedo)));
     }
   }
 
@@ -772,15 +775,15 @@ function libroPersonal({
   // HOJA 2 · EN QUÉ SE FUE
   // ==========================================================
   {
-    const h = libro.addWorksheet('En qué se fue', {
+    const h = libro.addWorksheet(tx.hojaEnQueSeFue, {
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
     });
     h.columns = [{ width: 5 }, { width: 32 }, { width: 20 }, { width: 16 }, { width: 16 }, { width: 5 }];
-    encabezado(h, empresa.nombre, 'EN QUÉ SE FUE LA PLATA', periodo, 6);
+    encabezado(h, empresa.nombre, tx.enQueSeFueLaPlata, periodo, 6);
 
-    filaEncabezadoTabla(h, 6, ['#', 'Categoría', 'Total gastado', 'Movimientos', 'Del total']);
-    tablaDeCategorias(h, categorias, salio, fmt, fmtPorc, 'Nada gastado en este periodo.');
+    filaEncabezadoTabla(h, 6, tx.columnasGastos);
+    tablaDeCategorias(h, categorias, salio, fmt, fmtPorc, tx.nadaGastado);
   }
 
   // ==========================================================
@@ -791,15 +794,15 @@ function libroPersonal({
   // que viene y qué parte fue de una sola vez.
   // ==========================================================
   {
-    const h = libro.addWorksheet('De dónde vino', {
+    const h = libro.addWorksheet(tx.hojaDeDondeVino, {
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
     });
     h.columns = [{ width: 5 }, { width: 32 }, { width: 20 }, { width: 16 }, { width: 16 }, { width: 5 }];
-    encabezado(h, empresa.nombre, 'DE DÓNDE VINO LA PLATA', periodo, 6);
+    encabezado(h, empresa.nombre, tx.deDondeVinoLaPlata, periodo, 6);
 
-    filaEncabezadoTabla(h, 6, ['#', 'Categoría', 'Total que entró', 'Veces', 'Del total']);
-    tablaDeCategorias(h, ingresos, entro, fmt, fmtPorc, 'Nada cargado en este periodo.');
+    filaEncabezadoTabla(h, 6, tx.columnasIngresos);
+    tablaDeCategorias(h, ingresos, entro, fmt, fmtPorc, tx.nadaCargado);
   }
 
   // ==========================================================
@@ -809,16 +812,16 @@ function libroPersonal({
   // usa fondos es exactamente el problema que esta planilla vino a corregir.
   // ==========================================================
   if (huboAhorro) {
-    const h = libro.addWorksheet('Ahorro', {
+    const h = libro.addWorksheet(tx.hojaAhorro, {
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
     });
     h.columns = [
       { width: 5 }, { width: 30 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 20 }, { width: 5 },
     ];
-    encabezado(h, empresa.nombre, 'TUS FONDOS DE AHORRO', periodo, 7);
+    encabezado(h, empresa.nombre, tx.tusFondos, periodo, 7);
 
-    filaEncabezadoTabla(h, 6, ['#', 'Fondo', 'Depositado', 'Retirado', 'Guardado', 'Saldo a hoy']);
+    filaEncabezadoTabla(h, 6, tx.columnasFondos);
 
     ahorro.porFondo.forEach((fondo, i) => {
       const fila = h.getRow(7 + i);
@@ -851,8 +854,7 @@ function libroPersonal({
     const aviso = h.getRow(fTotal + 2);
     h.mergeCells(`B${fTotal + 2}:F${fTotal + 2}`);
     const c = aviso.getCell(2);
-    c.value = 'La columna «Saldo a hoy» es el total acumulado de cada fondo, de siempre: '
-      + 'no pertenece al periodo de esta planilla y por eso no se suma en la fila del total.';
+    c.value = tx.avisoSaldoAHoy;
     c.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: 'FF8A968F' } };
     c.alignment = { vertical: 'middle', wrapText: true };
     aviso.height = 28;
@@ -867,16 +869,16 @@ function libroPersonal({
   // importa— hacia la derecha de la pantalla.
   // ==========================================================
   {
-    const h = libro.addWorksheet('Movimientos', {
+    const h = libro.addWorksheet(tx.hojaMovimientos, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
     h.columns = [
       { width: 13 }, { width: 11 }, { width: 42 }, { width: 20 }, { width: 16 }, { width: 18 }, { width: 20 },
     ];
-    encabezado(h, empresa.nombre, 'TODO LO QUE CARGASTE', periodo, 7);
+    encabezado(h, empresa.nombre, tx.todoLoQueCargaste, periodo, 7);
 
-    filaEncabezadoTabla(h, 6, ['Fecha', 'Tipo', 'Descripción', 'Categoría', 'Cómo', 'Monto', 'Estado']);
+    filaEncabezadoTabla(h, 6, tx.columnasMovimientosPersona);
 
     const ordenados = [...movimientos].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 
@@ -886,13 +888,13 @@ function libroPersonal({
       const anulado = !esValido(mv);
 
       fila.values = [
-        fechaLegible(mv.fecha),
-        esGasto ? 'Gasto' : 'Ingreso',
+        fechaLegible(mv.fecha, true, tx.locale),
+        esGasto ? tx.gasto : tx.ingreso,
         mv.descripcion || '—',
         mv.categoria,
         mv.metodo_pago,
         (esGasto ? -1 : 1) * Number(mv.monto),
-        anulado ? `ANULADO${mv.motivo_anulacion ? ` · ${mv.motivo_anulacion}` : ''}` : 'Válido',
+        anulado ? `${tx.anulado}${mv.motivo_anulacion ? ` · ${mv.motivo_anulacion}` : ''}` : tx.valido,
       ];
       fila.height = 18;
       fila.eachCell((c, n) => {
@@ -916,7 +918,7 @@ function libroPersonal({
     const fTotal = 7 + ordenados.length;
     const total = h.getRow(fTotal);
     // El total sale del resumen, que ya deja afuera las anuladas.
-    total.values = ['', '', 'TOTAL DEL PERIODO (sin anulados)', '', '', teQuedo, ''];
+    total.values = ['', '', tx.totalSinAnulados, '', '', teQuedo, ''];
     total.height = 22;
     total.eachCell((c, n) => {
       c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -934,21 +936,21 @@ function libroPersonal({
   // HOJA 6 · DÍA POR DÍA
   // ==========================================================
   {
-    const h = libro.addWorksheet('Día por día', {
+    const h = libro.addWorksheet(tx.hojaDiaPorDia, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
     });
     h.columns = [{ width: 5 }, { width: 20 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 5 }];
-    encabezado(h, empresa.nombre, 'CÓMO VINO CADA DÍA', periodo, 6);
+    encabezado(h, empresa.nombre, tx.comoVinoCadaDia, periodo, 6);
 
-    filaEncabezadoTabla(h, 6, ['', 'Fecha', 'Entró', 'Salió', 'Diferencia']);
+    filaEncabezadoTabla(h, 6, tx.columnasDiasPersona);
 
     serie.forEach((d, i) => {
       // Para una persona no hay ventas: lo que entró es todo junto.
       const entroDia = d.ventas + d.otrosIngresos;
       const diferencia = entroDia - d.gastos;
       const fila = h.getRow(7 + i);
-      fila.values = ['', fechaLegible(d.fecha), entroDia, d.gastos, diferencia];
+      fila.values = ['', fechaLegible(d.fecha, true, tx.locale), entroDia, d.gastos, diferencia];
       fila.height = 18;
       fila.eachCell((c, n) => {
         c.font = { name: 'Calibri', size: 10 };
@@ -1032,11 +1034,12 @@ function tablaDeCategorias(
   });
 }
 
-export function nombreArchivo(empresa: string, desde: string, hasta: string, moneda?: string): string {
-  const limpio = empresa.replace(/[^\p{L}\p{N} ]/gu, '').trim() || 'Negocio';
+export function nombreArchivo(empresa: string, desde: string, hasta: string, moneda?: string, idioma?: string): string {
+  const tx = textosExcel(idioma);
+  const limpio = empresa.replace(/[^\p{L}\p{N} ]/gu, '').trim() || tx.negocio;
   // En otra moneda se dice en el nombre: dos archivos del mismo mes, uno en
   // guaraníes y otro en dólares, no pueden llamarse igual.
-  const enOtra = moneda ? ` en ${moneda}` : '';
+  const enOtra = moneda ? tx.enMoneda(moneda) : '';
   return `Orden ${limpio} ${desde}${desde === hasta ? '' : ` a ${hasta}`}${enOtra}.xlsx`;
 }
 
@@ -1045,16 +1048,16 @@ export function nombreArchivo(empresa: string, desde: string, hasta: string, mon
  * qué cambio: sin eso, quien abra en seis meses un Excel en dólares de un
  * negocio en guaraníes no tendría cómo saber de dónde salió cada número.
  */
-function textoPeriodo(desde: string, hasta: string, empresa: DatosReporte['empresa']): string {
+function textoPeriodo(desde: string, hasta: string, empresa: DatosReporte['empresa'], tx: TextosExcel): string {
+  const fecha = (iso: string) => fechaLegible(iso, true, tx.locale);
   const periodo = desde === hasta
-    ? `Periodo: ${fechaLegible(desde)}`
-    : `Periodo: ${fechaLegible(desde)} al ${fechaLegible(hasta)}`;
+    ? tx.periodoUnDia(fecha(desde))
+    : tx.periodoRango(fecha(desde), fecha(hasta));
   const c = empresa.conversion;
   if (!c || !c.cotizacion) return periodo;
-  const cambio = c.cotizacion.toLocaleString('es-PY', { maximumFractionDigits: 6 });
-  const cuando = c.desde ? ` del ${fechaLegible(c.desde.slice(0, 10))}` : '';
-  const s = simboloDe(empresa.moneda);
-  return `${periodo} · En ${s}, al cambio${cuando}: 1 ${s} = ${simboloDe(c.propia)} ${cambio}`;
+  const cambio = c.cotizacion.toLocaleString(tx.locale, { maximumFractionDigits: 6 });
+  const cuando = c.desde ? fecha(c.desde.slice(0, 10)) : null;
+  return tx.conCambio(periodo, simboloDe(empresa.moneda), cuando, simboloDe(c.propia), cambio);
 }
 
 /**

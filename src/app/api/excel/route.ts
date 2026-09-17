@@ -10,7 +10,8 @@ import { construirLibro, enLaMonedaDeLaVista, nombreArchivo } from '@/lib/report
 import { vistaDeEmpresa } from '@/lib/sesion';
 import type { Empresa, Producto } from '@/lib/tipos';
 import { esErrorDeLectura } from '@/lib/lectura';
-import { textos } from '@/i18n';
+import { idiomaActual, textos } from '@/i18n';
+import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -96,6 +97,14 @@ export async function GET(request: Request) {
     // (051). Bajar el archivo no puede mostrar otros números que los que se
     // estaban viendo.
     const vista = vistaDeEmpresa(empresa as unknown as Empresa);
+
+    // En el idioma de quien lo baja. Las categorías y las formas de pago se
+    // guardan en español: se traducen acá, como en las pantallas, y el libro
+    // las recibe ya listas.
+    const idioma = idiomaActual();
+    const t = textos();
+    const conNombreVisible = <C extends { nombre: string }>(c: C) => ({ ...c, nombre: categoriaVisible(t, c.nombre) });
+
     const libro = construirLibro(enLaMonedaDeLaVista({
       empresa: {
         nombre: empresa.nombre, moneda: empresa.moneda,
@@ -105,17 +114,20 @@ export async function GET(request: Request) {
       hasta,
       resumen,
       ranking,
-      categorias,
-      ingresos,
+      categorias: categorias.map(conNombreVisible),
+      ingresos: ingresos.map(conNombreVisible),
       ahorro,
       serie,
-      movimientos,
+      movimientos: movimientos.map((m) => ({
+        ...m, categoria: categoriaVisible(t, m.categoria), metodo_pago: metodoVisible(t, m.metodo_pago),
+      })),
       productosBd: productos as Producto[],
+      idioma,
     }, vista));
 
     const buffer = await libro.xlsx.writeBuffer();
     const nombre = nombreArchivo(empresa.nombre, desde, hasta,
-      vista.moneda !== vista.propia ? vista.moneda : undefined);
+      vista.moneda !== vista.propia ? vista.moneda : undefined, idioma);
 
     return new NextResponse(buffer as any, {
       status: 200,

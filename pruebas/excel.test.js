@@ -9,7 +9,7 @@ const { diasDelRango } = require('../.compilado/fechas.js');
  */
 const SIN_AHORRO = { aportado: 0, retirado: 0, neto: 0, porFondo: [] };
 
-function libroDe({ empresa, desde, hasta, movimientos, productosBd = [], ahorro = SIN_AHORRO }) {
+function libroDe({ empresa, desde, hasta, movimientos, productosBd = [], ahorro = SIN_AHORRO, idioma }) {
   const dias = diasDelRango(desde, hasta, 400);
   return construirLibro({
     empresa, desde, hasta,
@@ -21,6 +21,7 @@ function libroDe({ empresa, desde, hasta, movimientos, productosBd = [], ahorro 
     serie: serieDiaria(movimientos, dias),
     movimientos,
     productosBd,
+    idioma,
   });
 }
 const ExcelJS = require('exceljs');
@@ -367,6 +368,96 @@ const productosBd = [
   ok('el nombre del archivo dice la moneda',
     nombreArchivo('Perfumería Aurora','2026-08-10','2026-08-12','USD'),
     'Orden Perfumería Aurora 2026-08-10 a 2026-08-12 en USD.xlsx');
+
+  // ---- En portugués ----
+  //
+  // El archivo sale en el idioma de quien lo baja. En el libro en portugués
+  // no puede quedar ninguna celda con un texto del libro en español.
+  const { textosExcel } = require('../.compilado/reporte-textos.js');
+  const TX_ES = textosExcel('es');
+  const TX_PT = textosExcel('pt');
+  ok('los dos idiomas tienen las mismas claves',
+    Object.keys(TX_PT).sort().join('|'), Object.keys(TX_ES).sort().join('|'));
+  ok('sin idioma, el Excel sale en español', textosExcel(undefined) === TX_ES, true);
+
+  // Las frases que cambian de un idioma al otro. Las que se escriben igual
+  // en los dos («Resultado», «Subtotal») no delatan nada.
+  const soloEnEspanol = new Set();
+  for (const clave of Object.keys(TX_ES)) {
+    const a = TX_ES[clave];
+    const b = TX_PT[clave];
+    const pares = Array.isArray(a) ? a.map((x, i) => [x, b[i]]) : typeof a === 'string' ? [[a, b]] : [];
+    for (const [x, y] of pares) if (x && x !== y && clave !== 'locale') soloEnEspanol.add(x);
+  }
+  // Y las frases armadas con datos, que no están en la lista de arriba.
+  const armadaEnEspanol = /\b(periodo|gastaste|cargaste|guardaste|operaciones|margen|ganancia|veces|días)\b/i;
+
+  const leerTextos = async (libroX, nombre) => {
+    const ruta = path.join(__dirname, '..', '.compilado', nombre);
+    await libroX.xlsx.writeFile(ruta);
+    const l = new ExcelJS.Workbook();
+    await l.xlsx.readFile(ruta);
+    const celdas = [];
+    l.worksheets.forEach((h) => h.eachRow((f) => f.eachCell((c) => {
+      if (typeof c.value === 'string') celdas.push(c.value);
+    })));
+    return { l, celdas };
+  };
+
+  const negocioPt = await leerTextos(libroDe({
+    empresa:{ nombre:'Perfumería Aurora', moneda:'PYG' },
+    desde:'2026-08-10', hasta:'2026-08-12', movimientos, productosBd, idioma:'pt',
+  }), 'negocio-pt.xlsx');
+  ok('las hojas del negocio en portugués', negocioPt.l.worksheets.map((h) => h.name),
+    ['Resumo','Produtos','Lançamentos','Despesas','Dia a dia']);
+  ok('el título del resumen', negocioPt.l.getWorksheet('Resumo').getCell('A2').value, 'RESUMO EXECUTIVO');
+  ok('el periodo', String(negocioPt.l.getWorksheet('Resumo').getCell('A3').value).startsWith('Período: '), true);
+  ok('ninguna celda fija del negocio queda en español',
+    negocioPt.celdas.filter((c) => soloEnEspanol.has(c)), []);
+  ok('ni una frase armada', negocioPt.celdas.filter((c) => armadaEnEspanol.test(c)), []);
+  ok('los mismos números que en español',
+    buscar(negocioPt.l.getWorksheet('Resumo'), 'Lucro líquido'), buscar(leido.getWorksheet('Resumen'), 'Ganancia neta'));
+  const tiposPt = new Set();
+  negocioPt.l.getWorksheet('Lançamentos').eachRow((f, n) => {
+    if (n > 6 && f.getCell(2).value) tiposPt.add(f.getCell(2).value);
+  });
+  ok('el tipo de cada lançamento', [...tiposPt].sort(), ['Despesa','Entrada','Venda']);
+
+  const personaPt = await leerTextos(libroDe({
+    empresa: cuentaPersonal, desde:'2026-08-01', hasta:'2026-08-31', movimientos: movsPersona, idioma:'pt',
+    ahorro: {
+      aportado: 500000, retirado: 100000, neto: 400000,
+      porFondo: [
+        { nombre:'Viaje', aportado:500000, retirado:0, neto:500000, saldo_hoy:1200000 },
+        { nombre:'Emergencias', aportado:0, retirado:100000, neto:-100000, saldo_hoy:300000 },
+      ],
+    },
+  }), 'personal-pt.xlsx');
+  ok('las hojas de una persona en portugués', personaPt.l.worksheets.map((h) => h.name),
+    ['Resumo','Pra onde foi','De onde veio','Reserva','Lançamentos','Dia a dia']);
+  ok('ninguna celda fija de la persona queda en español',
+    personaPt.celdas.filter((c) => soloEnEspanol.has(c)), []);
+  ok('ni una frase armada de la persona', personaPt.celdas.filter((c) => armadaEnEspanol.test(c)), []);
+  ok('sobrou lo mismo que te quedó', buscar(personaPt.l.getWorksheet('Resumo'), 'Sobrou'), 1800000);
+
+  const usdPt = await leerTextos(
+    construirLibro(enLaMonedaDeLaVista({ ...datosAurora, idioma:'pt' }, vistaUsd)), 'en-dolares-pt.xlsx');
+  ok('el cambio también se explica en portugués',
+    String(usdPt.l.getWorksheet('Resumo').getCell('A3').value).includes('ao câmbio de'), true);
+  // Las categorías y las formas de pago se guardan en español y las traduce
+  // la ruta antes de armar el libro. Si la ruta deja de hacerlo, un brasileño
+  // leería «Alquiler» y «efectivo» en un Excel en portugués.
+  const rutaExcel = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'api', 'excel', 'route.ts'), 'utf8');
+  ok('la ruta traduce las categorías', rutaExcel.includes('categorias: categorias.map(conNombreVisible)')
+    && rutaExcel.includes('ingresos: ingresos.map(conNombreVisible)')
+    && rutaExcel.includes('categoria: categoriaVisible(t, m.categoria)'), true);
+  ok('y las formas de pago', rutaExcel.includes('metodo_pago: metodoVisible(t, m.metodo_pago)'), true);
+  ok('y le pasa el idioma al libro y al nombre del archivo',
+    /\n\s+idioma,\n\s+\}, vista\)\);/.test(rutaExcel.replace(/\r/g, ''))
+    && rutaExcel.includes(': undefined, idioma);'), true);
+  ok('el nombre del archivo en portugués',
+    nombreArchivo('Perfumería Aurora','2026-08-10','2026-08-12','USD','pt'),
+    'Orden Perfumería Aurora 2026-08-10 a 2026-08-12 em USD.xlsx');
 
   console.log(fallos===0 ? '>>> EXCEL OK' : `>>> ${fallos} FALLAS`);
   process.exit(fallos?1:0);
