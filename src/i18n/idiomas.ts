@@ -41,8 +41,11 @@ export type Idioma = (typeof IDIOMAS)[number];
  * vuelve la detección por navegador y vuelve la cookie. Un renglón.
  *
  * Antes de hacerlo, terminar la traducción: es lo que faltaba.
+ *
+ * 2026-09-17: en `null` a pedido de Matías, con el portugués terminado salvo
+ * privacidad y términos, que siguen en español.
  */
-export const IDIOMA_UNICO: Idioma | null = 'es';
+export const IDIOMA_UNICO: Idioma | null = null;
 
 export const IDIOMA_POR_DEFECTO: Idioma = 'es';
 /** Al que caen las traducciones incompletas. */

@@ -737,7 +737,8 @@ export function BarraSuperior({
   // Con el rubro de la cuenta: sin esto el título decía «Productos» aunque
   // el menú de al lado dijera «Hacienda», y parecían dos pantallas distintas.
   const titulo = itemsDe(t, empresa.tipo_cuenta, empresa.rubro)
-    .find((i) => activo(ruta, i.href))?.texto ?? 'Orden';
+    .find((i) => activo(ruta, i.href))?.texto
+    ?? (activo(ruta, '/recomendar') ? t.nav.recomendar : 'Orden');
 
   function cambiar(id: string) {
     document.cookie = `${COOKIE_EMPRESA}=${id}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;

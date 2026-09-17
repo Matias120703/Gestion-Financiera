@@ -38,7 +38,7 @@ export function AvisoMonedaVista({ vista }: { vista: Vista }) {
           <span className="text-tinta/45"> · {a.cargadoEl(fechaLegible(vista.desde.slice(0, 10), true, locale))}</span>
         )}
       </p>
-      <Link href="/ajustes" className="text-[12.5px] font-semibold text-verde-fuerte hover:underline">
+      <Link href="/ajustes?ver=moneda" className="text-[12.5px] font-semibold text-verde-fuerte hover:underline">
         {a.cambiar}
       </Link>
     </div>

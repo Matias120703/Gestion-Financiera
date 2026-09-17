@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { OrbeVoz } from '@/components/OrbeVoz';
+import { LogoVoz } from '@/components/LogoVoz';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -105,7 +105,7 @@ export function BotonCaptura({
   useBloquearFondo(modo !== 'cerrado');
 
   const grabadora = useRef<MediaRecorder | null>(null);
-  // El micrófono abierto, para que la esfera se mueva con la voz (OrbeVoz).
+  // El micrófono abierto, para que el logo se mueva con la voz (LogoVoz).
   const [flujoVoz, setFlujoVoz] = useState<MediaStream | null>(null);
   const trozos = useRef<Blob[]>([]);
   const cronometro = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -630,9 +630,9 @@ export function BotonCaptura({
             {/* ---------------- GRABANDO ---------------- */}
             {modo === 'audio' && (
               <div className="py-4 text-center">
-                {/* La IA que escucha: se mueve y gira con la voz. */}
+                {/* El logo de Orden que escucha: se mueve con la voz. */}
                 <div className="py-3">
-                  <OrbeVoz flujo={flujoVoz} />
+                  <LogoVoz flujo={flujoVoz} />
                 </div>
                 <p className="mt-5 text-3xl font-titulo font-extrabold tabular-nums tracking-tight">
                   {String(Math.floor(segundos / 60)).padStart(2, '0')}:{String(segundos % 60).padStart(2, '0')}
@@ -665,8 +665,8 @@ export function BotonCaptura({
             {/* ---------------- PROCESANDO ---------------- */}
             {modo === 'procesando' && (
               <div className="py-12 text-center">
-                {/* La misma esfera, sin voz: respira mientras la IA piensa. */}
-                <OrbeVoz tamano={112} />
+                {/* El mismo logo, sin voz: gira y respira mientras la IA piensa. */}
+                <LogoVoz tamano={112} />
                 <p className="mt-6 text-[15px] font-semibold">{t.captura.interpretando}</p>
                 <p className="mt-1 text-[13.5px] text-tinta/50">{t.captura.tardaSegundos}</p>
               </div>
