@@ -35,6 +35,13 @@ export const MENSAJES_PT: Record<string, string> = {
   'No se guardó: no tenés permiso para cambiar esto.': 'Não foi salvo: você não tem permissão pra mudar isso.',
   'No se pudo completar la operación.': 'Não foi possível concluir a operação.',
 
+  // ---- los avisos que arma el servidor al revisar lo dictado (lib/acciones.ts y lib/turno-voz.ts) ----
+  'No encontré ese producto en tu catálogo. Elegilo vos.': 'Não encontrei esse produto no seu catálogo. Escolha você.',
+  '«%» es un servicio: no lleva stock.': '«%» é um serviço: não tem estoque.',
+  'Ya tenés «%» en el catálogo. Si querés cambiarle el precio o el stock, decilo así.': 'Você já tem «%» no catálogo. Se quiser mudar o preço ou o estoque, diga assim.',
+  'No entendí el nombre del cliente. Escribilo vos.': 'Não entendi o nome do cliente. Escreva você.',
+  'La fecha que entendí ya pasó. Elegí el día.': 'A data que eu entendi já passou. Escolha o dia.',
+
   // ---- los de la base (raise exception) ----
   '% está desactivado como socio. Activalo en «Socios» y volvé a anotarlo.': '% está desativado como sócio. Ative em «Socios» e anote de novo.',
   '% no te debe nada.': '% não te deve nada.',
@@ -291,6 +298,21 @@ function plantillas() {
       destino,
     }));
   return conHuecos;
+}
+
+/**
+ * Un aviso armado con varias frases pegadas («La IA dijo X. La fecha que
+ * entendí ya pasó.»). Traduce cada frase conocida adentro del texto; lo que
+ * escribió el modelo ya viene en portugués y queda como está.
+ */
+export function traducirAvisoAPortugues(texto: string): string {
+  const entero = traducirMensajeAPortugues(texto);
+  if (entero !== texto) return entero;
+  let salida = texto;
+  for (const [origen, destino] of Object.entries(MENSAJES_PT)) {
+    if (!origen.includes('%') && salida.includes(origen)) salida = salida.split(origen).join(destino);
+  }
+  return salida;
 }
 
 /**

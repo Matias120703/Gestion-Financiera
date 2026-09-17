@@ -203,7 +203,7 @@ ok('con filas, no molesta', tiro, 'no tiró');
 {
   const fs = require('fs');
   const path = require('path');
-  const { MENSAJES_PT, traducirMensajeAPortugues } = require('../.compilado/mensajes-base.js');
+  const { MENSAJES_PT, traducirMensajeAPortugues, traducirAvisoAPortugues } = require('../.compilado/mensajes-base.js');
   const { usarTraductorDeErrores } = require('../.compilado/errores.js');
 
   // Los vigentes: la ÚLTIMA definición de cada función en las migraciones.
@@ -239,6 +239,30 @@ ok('con filas, no molesta', tiro, 'no tiró');
     'Ana ainda tem horários agendados (3). Passe pra outra pessoa ou cancele em Agenda, e depois tire da equipe.');
   ok('lo que no conoce lo deja como está',
     traducirMensajeAPortugues('Un mensaje que no existe.'), 'Un mensaje que no existe.');
+
+  // Los avisos de lo dictado se arman en el servidor, en lib/acciones.ts y
+  // lib/turno-voz.ts, que no conocen el idioma. La ruta de captura los
+  // traduce al final; si una frase de esos archivos cambia y el mapa no, la
+  // persona brasileña la lee en español.
+  const fuenteAvisos = ['src/lib/acciones.ts', 'src/lib/turno-voz.ts']
+    .map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n');
+  const frasesAviso = [
+    ...[...fuenteAvisos.matchAll(/aviso = '([^']+)'/g)].map((m) => m[1]),
+    ...[...fuenteAvisos.matchAll(/aviso = `([^`]+)`/g)].map((m) => m[1].replace(/\$\{[^}]+\}/g, '%')),
+    ...[...fuenteAvisos.matchAll(/avisos\.push\('([^']+)'\)/g)].map((m) => m[1]),
+    ...[...fuenteAvisos.matchAll(/: '(No entendí[^']+)'/g)].map((m) => m[1]),
+  ];
+  ok('se encontraron las frases de aviso de la captura', frasesAviso.length >= 5, true);
+  for (const frase of frasesAviso) {
+    ok(`el aviso «${frase.slice(0, 50)}» tiene portugués`, frase in MENSAJES_PT, true);
+  }
+  ok('un aviso con un nombre adentro',
+    traducirAvisoAPortugues('«Corte de pelo» es un servicio: no lleva stock.'), '«Corte de pelo» é um serviço: não tem estoque.');
+  ok('un aviso pegado a lo que dijo el modelo traduce solo la frase nuestra',
+    traducirAvisoAPortugues('O serviço «barba» não está na lista. La fecha que entendí ya pasó. Elegí el día.'),
+    'O serviço «barba» não está na lista. A data que eu entendi já passou. Escolha o dia.');
+  ok('un aviso del modelo, ya en portugués, queda igual',
+    traducirAvisoAPortugues('Não entendi o horário.'), 'Não entendi o horário.');
 
   // Y enchufado a mensajeDeError, como lo instala el proveedor de idioma.
   usarTraductorDeErrores(traducirMensajeAPortugues);

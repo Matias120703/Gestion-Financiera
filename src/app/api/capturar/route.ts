@@ -8,7 +8,8 @@ import type { CapturaInterpretada, Producto } from '@/lib/tipos';
 import { ESQUEMA, instrucciones } from '@/lib/captura';
 import { sanearFicha, sanearProducto } from '@/lib/acciones';
 import { contextoAcciones, turnoDictado } from '@/lib/acciones-servidor';
-import { idiomaActual } from '@/i18n';
+import { idiomaActual, textos } from '@/i18n';
+import { traducirAvisoAPortugues } from '@/lib/mensajes-base';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -38,21 +39,24 @@ const PISTA_AUDIO: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
+  // Lo que se le contesta a la persona sale en su idioma.
+  const s = textos().servidor;
+
   // ---------- 1. Sesión y permisos ----------
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return respuestaVacia('Necesitás iniciar sesión.', 401);
+  if (!user) return respuestaVacia(s.necesitasSesion, 401);
 
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return respuestaVacia('No se pudo leer el envío.');
+    return respuestaVacia(s.noSeLeyoEnvio);
   }
 
   const modo = String(form.get('modo') ?? '');
   const empresaId = String(form.get('empresa_id') ?? '');
-  if (!empresaId) return respuestaVacia('Falta la empresa.');
+  if (!empresaId) return respuestaVacia(s.faltaEmpresa);
 
   // RLS se encarga: si no es miembro, no devuelve nada.
   const { data: empresa } = await supabase
@@ -60,13 +64,10 @@ export async function POST(request: Request) {
     .select('id, moneda, tipo_cuenta, rubro, zona_horaria')
     .eq('id', empresaId)
     .maybeSingle();
-  if (!empresa) return respuestaVacia('No tenés acceso a esta empresa.', 403);
+  if (!empresa) return respuestaVacia(s.sinAccesoEmpresa, 403);
 
   if (!process.env.OPENAI_API_KEY) {
-    return respuestaVacia(
-      'Falta configurar la clave de OpenAI. Agregá OPENAI_API_KEY en las variables de entorno y volvé a intentar.',
-      503,
-    );
+    return respuestaVacia(s.faltaClaveOpenAI, 503);
   }
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -121,13 +122,13 @@ export async function POST(request: Request) {
 
   if (errorCupo) {
     console.error('[capturar] cupo', errorCupo.message);
-    return respuestaVacia('No pudimos verificar tu plan. Probá de nuevo en un momento.', 503);
+    return respuestaVacia(s.noSeVerificoPlan, 503);
   }
 
   if (cupo && cupo.permitido === false) {
     return NextResponse.json(
       {
-        error: 'Se te acabaron las capturas con IA de este mes. Podés seguir cargando a mano.',
+        error: s.sinCupoIA,
         motivo: 'sin_cupo',
         usados: cupo.usados,
         tope: cupo.tope,
@@ -145,7 +146,7 @@ export async function POST(request: Request) {
   if (!esPersonal) {
     if (respProductos.error) {
       console.error('[capturar] catálogo', respProductos.error.message);
-      return respuestaVacia('No pudimos leer tu catálogo. Probá de nuevo en un momento.', 503);
+      return respuestaVacia(s.noSeLeyoCatalogo, 503);
     }
     catalogo = (Array.isArray(respProductos.data) ? respProductos.data : []) as Producto[];
   }
@@ -244,25 +245,25 @@ export async function POST(request: Request) {
     // ---------- 3. Obtener el texto según el modo ----------
     if (modo === 'texto') {
       textoUsuario = String(form.get('texto') ?? '').trim();
-      if (textoUsuario.length < 3) return respuestaVacia('Escribí un poco más.');
+      if (textoUsuario.length < 3) return respuestaVacia(s.escribiMas);
       if (textoUsuario.length > 2000) textoUsuario = textoUsuario.slice(0, 2000);
     } else if (modo === 'audio') {
       const archivo = form.get('archivo');
-      if (!(archivo instanceof File)) return respuestaVacia('No llegó el audio.');
-      if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia('El audio es demasiado largo.');
+      if (!(archivo instanceof File)) return respuestaVacia(s.noLlegoAudio);
+      if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia(s.audioLargo);
 
       transcripcion = await transcribir(openai, archivo, PISTA_AUDIO[idioma] ?? PISTA_AUDIO.es, idioma);
-      if (!transcripcion) return respuestaVacia('No se entendió el audio. Probá de nuevo hablando más cerca.');
+      if (!transcripcion) return respuestaVacia(s.audioNoEntendido);
       textoUsuario = transcripcion;
     } else if (modo === 'foto') {
       const archivo = form.get('archivo');
-      if (!(archivo instanceof File)) return respuestaVacia('No llegó la foto.');
-      if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia('La foto es demasiado pesada.');
+      if (!(archivo instanceof File)) return respuestaVacia(s.noLlegoFoto);
+      if (archivo.size > LIMITE_ARCHIVO) return respuestaVacia(s.fotoPesada);
       const buffer = Buffer.from(await archivo.arrayBuffer());
       contenidoImagen = `data:${archivo.type || 'image/jpeg'};base64,${buffer.toString('base64')}`;
       textoUsuario = 'Leé este comprobante y registrá el movimiento que representa.';
     } else {
-      return respuestaVacia('Modo de captura no reconocido.');
+      return respuestaVacia(s.modoDesconocido);
     }
 
     // ---------- 4. Interpretar ----------
@@ -287,7 +288,7 @@ export async function POST(request: Request) {
     });
 
     const crudo = completado.choices[0]?.message?.content;
-    if (!crudo) return respuestaVacia('La IA no devolvió nada. Probá otra vez.', 502);
+    if (!crudo) return respuestaVacia(s.iaVacia, 502);
 
     const datos = JSON.parse(crudo) as CapturaInterpretada;
 
@@ -347,9 +348,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         no_disponible: 'agenda',
         transcripcion,
-        aviso: esPersonal
-          ? 'Eso es un turno, y una cuenta personal no tiene agenda. La agenda es de las cuentas de negocio con rubro «Servicios y oficios».'
-          : 'Eso es un turno, y este negocio no tiene agenda. La agenda viene con el rubro «Servicios y oficios», que se elige al crear la cuenta.',
+        aviso: esPersonal ? s.turnoSinAgendaPersonal : s.turnoSinAgendaNegocio,
       });
     }
 
@@ -403,21 +402,21 @@ export async function POST(request: Request) {
     // tiene que pedir que la elija a mano.
     if (tipo === 'pago_deuda' && !infoDeuda?.deuda_id) {
       limpio.aviso = deudas.length === 0
-        ? 'Todavía no tenés deudas cargadas. Cargá la deuda primero.'
-        : 'No supe a cuál de tus deudas corresponde. Elegila vos.';
+        ? s.sinDeudasCargadas
+        : s.noSupeQueDeuda;
       limpio.confianza = Math.min(limpio.confianza, 0.4);
     }
 
     // Lo mismo con un cobro: sin saber quién pagó, se elige a mano.
     if (tipo === 'cobro_fiado' && !limpio.cliente_id) {
       limpio.aviso = deudores.length === 0
-        ? 'Nadie te debe nada todavía, así que no hay a quién cobrarle.'
-        : 'No supe quién te pagó. Elegilo vos.';
+        ? s.nadieTeDebe
+        : s.noSupeQuienPago;
       limpio.confianza = Math.min(limpio.confianza, 0.4);
     }
 
     if (limpio.monto <= 0) {
-      limpio.aviso = 'No pude sacar el monto del mensaje. Escribilo vos.';
+      limpio.aviso = s.noSaqueMonto;
       limpio.confianza = Math.min(limpio.confianza, 0.4);
     }
 
@@ -427,8 +426,8 @@ export async function POST(request: Request) {
     // aviso del monto porque importa más: si es un turno, el monto da igual.
     if (limpio.tipo === 'venta' && fechaValida > hoy) {
       limpio.aviso = tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/agenda')
-        ? 'Esto tiene fecha futura. Si es un turno, anotalo en Agenda con «Dictar».'
-        : 'Esto tiene fecha futura: una venta se carga el día que se cobra.';
+        ? s.fechaFuturaTurno
+        : s.fechaFuturaVenta;
       limpio.confianza = Math.min(limpio.confianza, 0.3);
     }
 
@@ -470,16 +469,20 @@ export async function POST(request: Request) {
       }
     }
 
+    // Los avisos de lib/acciones.ts y lib/turno-voz.ts se arman en español
+    // (esos archivos no conocen el idioma). Se traducen acá, al final.
+    if (idioma === 'pt' && limpio.aviso) limpio.aviso = traducirAvisoAPortugues(limpio.aviso);
+
     return NextResponse.json(limpio);
   } catch (e: any) {
     const detalle: string = e?.message ?? '';
     if (/api key|401|invalid_api_key/i.test(detalle)) {
-      return respuestaVacia('La clave de OpenAI no es válida. Revisá OPENAI_API_KEY.', 502);
+      return respuestaVacia(s.claveOpenAIInvalida, 502);
     }
     if (/quota|insufficient_quota|429/i.test(detalle)) {
-      return respuestaVacia('La cuenta de OpenAI se quedó sin crédito o llegó al límite.', 502);
+      return respuestaVacia(s.openAISinCredito, 502);
     }
     console.error('[capturar]', detalle);
-    return respuestaVacia('No se pudo interpretar. Probá de nuevo o cargalo a mano.', 502);
+    return respuestaVacia(s.noSeInterpreto, 502);
   }
 }

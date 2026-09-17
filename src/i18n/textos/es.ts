@@ -928,6 +928,64 @@ export const es = {
     android4: 'En Android no hace falta este paso para que lleguen los avisos —ya funcionan desde el navegador—, pero instalada se abre más rápido y ocupa toda la pantalla, sin la barra de Chrome arriba.',
   },
 
+  /**
+   * LO QUE CONTESTAN LAS RUTAS DEL SERVIDOR (app/api).
+   *
+   * Se arman con `textos()`, que lee el idioma del pedido: la respuesta ya
+   * sale en el idioma de quien la pidió, sin depender de que la pantalla la
+   * pase después por el traductor.
+   */
+  servidor: {
+    necesitasSesion: 'Necesitás iniciar sesión.',
+    noSeLeyoEnvio: 'No se pudo leer el envío.',
+    faltaEmpresa: 'Falta la empresa.',
+    sinAccesoEmpresa: 'No tenés acceso a esta empresa.',
+    faltaClaveOpenAI: 'Falta configurar la clave de OpenAI. Agregá OPENAI_API_KEY en las variables de entorno y volvé a intentar.',
+    noSeVerificoPlan: 'No pudimos verificar tu plan. Probá de nuevo en un momento.',
+    sinCupoIA: 'Se te acabaron las capturas con IA de este mes. Podés seguir cargando a mano.',
+    noSeLeyoCatalogo: 'No pudimos leer tu catálogo. Probá de nuevo en un momento.',
+    escribiMas: 'Escribí un poco más.',
+    noLlegoAudio: 'No llegó el audio.',
+    audioLargo: 'El audio es demasiado largo.',
+    audioNoEntendido: 'No se entendió el audio. Probá de nuevo hablando más cerca.',
+    noLlegoFoto: 'No llegó la foto.',
+    fotoPesada: 'La foto es demasiado pesada.',
+    modoDesconocido: 'Modo de captura no reconocido.',
+    iaVacia: 'La IA no devolvió nada. Probá otra vez.',
+    turnoSinAgendaPersonal: 'Eso es un turno, y una cuenta personal no tiene agenda. La agenda es de las cuentas de negocio con rubro «Servicios y oficios».',
+    turnoSinAgendaNegocio: 'Eso es un turno, y este negocio no tiene agenda. La agenda viene con el rubro «Servicios y oficios», que se elige al crear la cuenta.',
+    sinDeudasCargadas: 'Todavía no tenés deudas cargadas. Cargá la deuda primero.',
+    noSupeQueDeuda: 'No supe a cuál de tus deudas corresponde. Elegila vos.',
+    nadieTeDebe: 'Nadie te debe nada todavía, así que no hay a quién cobrarle.',
+    noSupeQuienPago: 'No supe quién te pagó. Elegilo vos.',
+    noSaqueMonto: 'No pude sacar el monto del mensaje. Escribilo vos.',
+    fechaFuturaTurno: 'Esto tiene fecha futura. Si es un turno, anotalo en Agenda con «Dictar».',
+    fechaFuturaVenta: 'Esto tiene fecha futura: una venta se carga el día que se cobra.',
+    claveOpenAIInvalida: 'La clave de OpenAI no es válida. Revisá OPENAI_API_KEY.',
+    openAISinCredito: 'La cuenta de OpenAI se quedó sin crédito o llegó al límite.',
+    noSeInterpreto: 'No se pudo interpretar. Probá de nuevo o cargalo a mano.',
+
+    pedidoIlegible: 'Pedido ilegible.',
+    planDesconocido: 'Plan desconocido.',
+    noEncontramosNegocio: 'No encontramos tu negocio.',
+    soloAdminContrata: 'Solo el propietario o un administrador puede contratar el plan.',
+    noSeLeyeronPrecios: 'No pudimos leer los precios.',
+    planSinMoneda: (moneda: string) => `Todavía no cobramos ese plan en ${moneda}.`,
+    pagoSinTerminar: 'Esa forma de pago todavía no está terminada.',
+    noSeAbrioPago: 'No pudimos abrir el pago. Probá de nuevo.',
+    sinFormaDePago: 'No hay una forma de pago activa.',
+
+    rangoInvalido: 'El rango de fechas no es válido.',
+    excelSoloAdmin: 'El Excel financiero incluye costos y márgenes. Pedíselo al propietario o a un administrador.',
+    excelVencida: 'Tu prueba terminó. Para seguir usando Orden y bajar el Excel hace falta activar tu plan.',
+    excelIncompleto: 'No pudimos armar el detalle completo del periodo. No generamos el archivo para no darte números incompletos.',
+    excelSinDatos: 'No pudimos leer todos los datos del periodo, así que no generamos el archivo. Probá de nuevo en un momento.',
+    excelNoSeGenero: 'No se pudo generar el archivo.',
+
+    borrarPide: (palabra: string) => `Para borrar la cuenta hay que escribir ${palabra}.`,
+    borradoIncompleto: 'No se pudo completar el borrado. Escribinos y lo resolvemos.',
+  },
+
   /** GASTOS E INGRESOS SUELTOS: la pantalla de cargar a mano. */
   gastos: {
     salioPlata: 'Salió plata',

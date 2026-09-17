@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { clienteDeServicio } from '@/lib/supabase/servicio';
+import { textos } from '@/i18n';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,21 +28,21 @@ export async function POST(request: Request) {
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json({ error: 'Necesitás iniciar sesión.' }, { status: 401 });
+    return NextResponse.json({ error: textos().servidor.necesitasSesion }, { status: 401 });
   }
 
   let cuerpo: any;
   try {
     cuerpo = await request.json();
   } catch {
-    return NextResponse.json({ error: 'Pedido ilegible.' }, { status: 400 });
+    return NextResponse.json({ error: textos().servidor.pedidoIlegible }, { status: 400 });
   }
 
   // La confirmación se comprueba también acá y no solo en la pantalla: esta
   // ruta se puede llamar desde cualquier lado.
   if (String(cuerpo?.confirmacion ?? '').trim().toUpperCase() !== PALABRA) {
     return NextResponse.json(
-      { error: `Para borrar la cuenta hay que escribir ${PALABRA}.` },
+      { error: textos().servidor.borrarPide(PALABRA) },
       { status: 400 },
     );
   }
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
   } catch (e: any) {
     console.error('[borrar-cuenta]', e?.message ?? e);
     return NextResponse.json(
-      { error: 'No se pudo completar el borrado. Escribinos y lo resolvemos.' },
+      { error: textos().servidor.borradoIncompleto },
       { status: 500 },
     );
   }

@@ -10,6 +10,7 @@ import { construirLibro, enLaMonedaDeLaVista, nombreArchivo } from '@/lib/report
 import { vistaDeEmpresa } from '@/lib/sesion';
 import type { Empresa, Producto } from '@/lib/tipos';
 import { esErrorDeLectura } from '@/lib/lectura';
+import { textos } from '@/i18n';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -17,7 +18,8 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Necesitás iniciar sesión.' }, { status: 401 });
+  const s = textos().servidor;
+  if (!user) return NextResponse.json({ error: s.necesitasSesion }, { status: 401 });
 
   const url = new URL(request.url);
   const empresaId = url.searchParams.get('empresa') ?? '';
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
 
   const esFecha = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f);
   if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) {
-    return NextResponse.json({ error: 'El rango de fechas no es válido.' }, { status: 400 });
+    return NextResponse.json({ error: s.rangoInvalido }, { status: 400 });
   }
 
   // RLS: si no es miembro de la empresa, esta consulta vuelve vacía.
@@ -35,14 +37,14 @@ export async function GET(request: Request) {
     .select('id, nombre, moneda, tipo_cuenta, rubro, moneda_vista, cotizacion, cotizacion_at')
     .eq('id', empresaId)
     .maybeSingle();
-  if (!empresa) return NextResponse.json({ error: 'No tenés acceso a esta empresa.' }, { status: 403 });
+  if (!empresa) return NextResponse.json({ error: s.sinAccesoEmpresa }, { status: 403 });
 
   // El Excel trae costos, márgenes y ganancias: es un reporte de administración.
   // Lo confirmamos contra la base, no contra lo que diga el navegador.
   const { data: esAdmin } = await supabase.rpc('es_admin', { p_empresa: empresa.id });
   if (!esAdmin) {
     return NextResponse.json(
-      { error: 'El Excel financiero incluye costos y márgenes. Pedíselo al propietario o a un administrador.' },
+      { error: s.excelSoloAdmin },
       { status: 403 },
     );
   }
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
   const { data: puedeCargar } = await supabase.rpc('puede_cargar', { p_empresa: empresa.id });
   if (!puedeCargar) {
     return NextResponse.json(
-      { error: 'Tu prueba terminó. Para seguir usando Orden y bajar el Excel hace falta activar tu plan.' },
+      { error: s.excelVencida },
       { status: 403 },
     );
   }
@@ -85,7 +87,7 @@ export async function GET(request: Request) {
     if (movimientos.length !== total) {
       console.error('[excel] detalle incompleto', { total, traidos: movimientos.length });
       return NextResponse.json(
-        { error: 'No pudimos armar el detalle completo del periodo. No generamos el archivo para no darte números incompletos.' },
+        { error: s.excelIncompleto },
         { status: 500 },
       );
     }
@@ -131,8 +133,8 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: esErrorDeLectura(e)
-          ? 'No pudimos leer todos los datos del periodo, así que no generamos el archivo. Probá de nuevo en un momento.'
-          : 'No se pudo generar el archivo.',
+          ? s.excelSinDatos
+          : s.excelNoSeGenero,
       },
       { status: 500 },
     );
