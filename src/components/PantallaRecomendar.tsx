@@ -6,7 +6,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceDeSocio } from '@/lib/referido';
-import type { PanelSocio } from '@/lib/tipos';
+import type { PanelSocio, RetiroSocio } from '@/lib/tipos';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Rico } from '@/components/Rico';
 
@@ -99,14 +99,16 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
         <Cuadro titulo={r.trajiste} valor={String(panel.traidos)} detalle={r.cuentasCreadas(panel.traidos)} />
         <Cuadro titulo={r.pagaron} valor={String(panel.pagaron)} detalle={r.deEsasCuentas} />
         <Cuadro
-          titulo={r.teDeben} valor={dinero(num(panel.por_pagar), 'PYG')}
-          detalle={num(panel.por_pagar) > 0 ? r.porTransferencia : r.nadaPendiente}
+          titulo={r.tuSaldo} valor={dinero(num(panel.por_pagar), 'PYG')}
+          detalle={num(panel.por_pagar) > 0 ? r.paraRetirar : r.nadaPendiente}
           tono={num(panel.por_pagar) > 0 ? 'verde' : undefined}
         />
         <Cuadro titulo={r.yaCobraste} valor={dinero(num(panel.pagado), 'PYG')} detalle={r.enTotal} />
       </div>
 
       <PedirCobro panel={panel} />
+
+      <Retiros retiros={panel.retiros ?? []} />
 
       <DondeCobro datos={panel} />
 
@@ -121,7 +123,7 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
           <ul className="divide-y divide-borde">
             {panel.referidos.map((ref, i) => {
               const estado = ref.estado === 'pagada' ? { texto: r.estadoPagada, clase: 'bg-verde-claro text-verde-fuerte' }
-                : ref.estado === 'por_pagar' ? { texto: r.estadoPorPagar, clase: 'bg-ambar-claro text-ambar' }
+                : ref.estado === 'por_pagar' ? { texto: r.estadoPorPagar, clase: 'bg-verde-claro text-verde-fuerte' }
                 : ref.estado === 'anulada' ? { texto: r.estadoAnulada, clase: 'bg-arena text-tinta/55' }
                 : { texto: r.estadoSinPagar, clase: 'bg-arena text-tinta/55' };
 
@@ -232,50 +234,66 @@ function Compartir({ enlace, codigo }: { enlace: string; codigo: string }) {
 }
 
 /**
- * PEDIR EL COBRO.
+ * COBRAR: RETIRAR DEL SALDO.
  *
- * Antes de esto, la comisión aparecía como «te deben» y ahí se quedaba
- * esperando a que alguien de administración se acordara de mirar el panel.
- * Alguien que trae un cliente, ve su plata en pantalla y no pasa nada
- * durante dos semanas, no vuelve a recomendar nunca más.
+ * Las comisiones suman a un saldo y el socio elige cuánto retirar (070). Del
+ * cuaderno de Matías: «al hacer click en cobrar, me sale para poner la
+ * cantidad; al darle Continuar, le tiene que salir el mensaje de que en 24 a
+ * 48 horas en días hábiles se le estará pagando».
  *
- * El botón hace dos cosas: deja el pedido anotado en la base y le manda un
- * push a la administración en el momento. Y le deja al socio la única
- * respuesta que quiere: cuándo la va a tener.
+ * El botón hace dos cosas: deja el retiro anotado en la base y le manda un
+ * push a la administración en el momento.
+ *
+ * LO QUE SE VALIDA ACÁ Y LO QUE NO
+ *
+ * El mínimo y el saldo se revisan en la pantalla solo para avisar antes de
+ * tocar. La regla de verdad está en `solicitar_retiro()`: la pantalla puede
+ * estar desactualizada, la base no.
  *
  * LO QUE SE PROMETE SE PROMETE ENTERO
  *
  * «24 a 48 horas hábiles», dicho así, con la palabra hábiles a la vista. Un
  * pedido hecho un viernes a la noche se paga el martes, y es mejor que eso
  * lo sepa antes de esperarlo el sábado.
- *
- * El botón no aparece si no hay nada por cobrar. Un botón de cobrar en cero
- * es una promesa vacía.
  */
 function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true }> }) {
-  const r = useTextos().recomendar;
+  const t = useTextos();
+  const r = t.recomendar;
   const locale = useLocale();
   const router = useRouter();
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState('');
   const [pidiendo, setPidiendo] = useState(false);
   const [error, setError] = useState('');
-  const [listo, setListo] = useState(false);
+  const [pedido, setPedido] = useState<number | null>(null);
 
-  const monto = num(panel.por_pagar);
-  if (monto <= 0) return null;
+  const saldo = num(panel.por_pagar);
+  const minimo = num(panel.minimo ?? 120000);
+  // Solo dígitos: «150.000» y «150000» son lo mismo.
+  const monto = Number(texto.replace(/\D/g, '')) || 0;
 
-  // Sin datos bancarios el pedido no se puede resolver, así que la base lo
-  // rechaza (066). Se dice acá antes de que toque, no después.
+  // Sin datos bancarios el retiro no se puede resolver, así que la base lo
+  // rechaza. Se dice acá antes de que toque, no después.
   const sinDatos = !panel.cuenta.trim() && !panel.cobra_en.trim();
-  const yaPidio = Boolean(panel.cobro_pedido_el);
+  const esperando = panel.retiro_pedido;
 
   async function pedir() {
-    setPidiendo(true);
     setError('');
+    if (monto < minimo) { setError(r.errorMinimo(dinero(minimo, 'PYG'))); return; }
+    if (monto > saldo) { setError(r.errorMaximo(dinero(saldo, 'PYG'))); return; }
+
+    setPidiendo(true);
     try {
-      const respuesta = await fetch('/api/socio/cobrar', { method: 'POST' });
+      const respuesta = await fetch('/api/socio/cobrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monto }),
+      });
       const datos = await respuesta.json().catch(() => ({}));
       if (!respuesta.ok) throw new Error(datos?.error || r.noSePidioCobro);
-      setListo(true);
+      setPedido(monto);
+      setAbierto(false);
+      setTexto('');
       router.refresh();
     } catch (e: any) {
       setError(mensajeDeError(e, r.noSePidioCobro));
@@ -284,44 +302,133 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
     }
   }
 
-  if (listo || yaPidio) {
+  // Ya pidió: la única respuesta que quiere es cuándo le llega.
+  if (pedido !== null || esperando) {
+    const cuanto = pedido ?? num(esperando?.monto);
     return (
       <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
         <p className="text-[14.5px] font-bold text-verde-fuerte">{r.cobroPedido}</p>
         <p className="mt-1 text-[13px] leading-relaxed text-tinta/65">
-          <Rico texto={r.vasARecibir(dinero(monto, 'PYG'))} negrita="text-tinta" />
+          <Rico texto={r.vasARecibir(dinero(cuanto, 'PYG'))} negrita="text-tinta" />
         </p>
-        {panel.cobro_pedido_el && (
+        {esperando?.pedido_at && (
           <p className="mt-2 text-[12.5px] text-tinta/45">
-            {r.loPedisteEl(fechaCorta(panel.cobro_pedido_el, locale))}
+            {r.loPedisteEl(fechaCorta(esperando.pedido_at, locale))}
           </p>
         )}
       </div>
     );
   }
 
+  // Un botón de cobrar en cero es una promesa vacía.
+  if (saldo <= 0) return null;
+
+  const llega = saldo >= minimo;
+
   return (
     <div className="rounded-2xl border border-verde/30 bg-verde-claro/30 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[14.5px] font-bold">{r.tenesParaCobrar(dinero(monto, 'PYG'))}</p>
+          <p className="text-[14.5px] font-bold">{r.tenesParaCobrar(dinero(saldo, 'PYG'))}</p>
           <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/60">
-            {sinDatos ? r.primeroCompleta : r.loPedis}
+            {sinDatos ? r.primeroCompleta : !llega ? r.minimoParaRetirar(dinero(minimo, 'PYG')) : r.loPedis}
           </p>
         </div>
-        <button
-          type="button" onClick={pedir} disabled={pidiendo || sinDatos}
-          className="boton-principal shrink-0 px-4 py-2.5 text-[14px]"
-        >
-          {pidiendo ? r.pidiendo : r.pedirMiCobro}
-        </button>
+        {!abierto && (
+          <button
+            type="button" onClick={() => { setAbierto(true); setError(''); }}
+            disabled={sinDatos || !llega}
+            className="boton-principal shrink-0 px-5 py-2.5 text-[14px]"
+          >
+            {r.pedirMiCobro}
+          </button>
+        )}
       </div>
+
+      {abierto && (
+        <div className="mt-3.5 rounded-2xl bg-superficie p-3.5">
+          <label className="block">
+            <span className="etiqueta">{r.cuantoRetirar}</span>
+            <div className="mt-1 flex gap-2">
+              <input
+                className="campo py-2.5 text-[16px] font-semibold tabular-nums"
+                inputMode="numeric" autoFocus placeholder={dinero(minimo, 'PYG')}
+                value={monto > 0 ? monto.toLocaleString(locale) : texto.replace(/\D/g, '')}
+                onChange={(e) => { setTexto(e.target.value); setError(''); }}
+              />
+              <button
+                type="button" onClick={() => { setTexto(String(saldo)); setError(''); }}
+                className="boton-suave shrink-0 px-3.5 text-[13.5px]"
+              >
+                {r.todo}
+              </button>
+            </div>
+          </label>
+          <p className="mt-1.5 text-[12px] text-tinta/50">
+            {r.minimoMaximo(dinero(minimo, 'PYG'), dinero(saldo, 'PYG'))}
+          </p>
+          {monto >= minimo && monto <= saldo && (
+            <p className="mt-1 text-[12.5px] font-medium text-verde-fuerte">
+              {r.teQueda(dinero(saldo - monto, 'PYG'))}
+            </p>
+          )}
+
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button" onClick={pedir} disabled={pidiendo || monto <= 0}
+              className="boton-principal flex-1 py-2.5 text-[14px]"
+            >
+              {pidiendo ? r.pidiendo : r.continuar}
+            </button>
+            <button
+              type="button" onClick={() => { setAbierto(false); setTexto(''); setError(''); }}
+              disabled={pidiendo} className="boton-suave px-4 py-2.5 text-[14px]"
+            >
+              {t.comun.cancelar}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2 text-[12.5px] font-medium text-rojo">
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+/** Lo que ya retiró: pedido, pagado o rechazado con el motivo a la vista. */
+function Retiros({ retiros }: { retiros: RetiroSocio[] }) {
+  const r = useTextos().recomendar;
+  const locale = useLocale();
+  if (retiros.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-borde bg-superficie">
+      <p className="border-b border-borde px-4 py-3 text-[14.5px] font-bold">{r.tusRetiros}</p>
+      <ul className="divide-y divide-borde">
+        {retiros.map((x) => {
+          const estado = x.estado === 'pagado' ? { texto: r.retiroPagado, clase: 'bg-verde-claro text-verde-fuerte' }
+            : x.estado === 'rechazado' ? { texto: r.retiroRechazado, clase: 'bg-rojo-claro text-rojo' }
+            : { texto: r.retiroPedido, clase: 'bg-ambar-claro text-ambar' };
+          return (
+            <li key={x.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[14px] font-semibold tabular-nums">{dinero(num(x.monto), 'PYG')}</p>
+                <p className="mt-0.5 text-[12.5px] text-tinta/45">
+                  {fechaCorta(x.resuelto_at ?? x.pedido_at, locale)}
+                </p>
+                {x.estado === 'rechazado' && x.nota && (
+                  <p className="mt-0.5 text-[12.5px] text-rojo">{r.motivo(x.nota)}</p>
+                )}
+              </div>
+              <span className={`pastilla shrink-0 ${estado.clase}`}>{estado.texto}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

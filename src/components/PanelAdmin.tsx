@@ -8,7 +8,7 @@ import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import type {
   AccionAdmin, CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
-  ResumenPanel, SocioAdmin, TipoCuenta,
+  ResumenPanel, RetiroAdmin, SocioAdmin, TipoCuenta,
 } from '@/lib/tipos';
 import { PanelSocios } from './PanelSocios';
 
@@ -81,7 +81,7 @@ function planesQueVan(tipo: TipoCuenta): { valor: PlanEfectivo; texto: string }[
 }
 
 export function PanelAdmin({
-  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], whatsapp,
+  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], retiros = [], whatsapp,
 }: {
   cuentas: CuentaAdmin[];
   resumen: ResumenPanel;
@@ -92,6 +92,8 @@ export function PanelAdmin({
   referidos: ReferidoAdmin[];
   /** Cuentas que llegaron con un enlace y cuyo código se rechazó (068). */
   rechazados?: CodigoRechazado[];
+  /** Los retiros de los socios contra su saldo (070). */
+  retiros?: RetiroAdmin[];
   whatsapp: string | null;
 }) {
   const router = useRouter();
@@ -270,6 +272,7 @@ export function PanelAdmin({
         socios={socios}
         comisiones={comisiones}
         referidos={referidos}
+        retiros={retiros}
         moneda={finanzas.configurada ? finanzas.moneda : 'PYG'}
       />
 

@@ -817,16 +817,29 @@ ok('un rubro desconocido no rompe: cae en comercio',
 // sola vez por negocio. Si la pantalla también la calculara, un día los dos
 // números no iban a coincidir y habría que adivinar cuál es el bueno.
 //
-// Lo que sí tiene que hacer la pantalla es dejar ajustar el monto al pagar:
-// medio año cobrado de una vez es mucha plata para partirla con una fórmula.
+// Lo que sí tiene que hacer la pantalla es dejar ajustar el monto: medio año
+// cobrado de una vez es mucha plata para partirla con una fórmula. Desde la
+// 070 se ajusta mientras está en el saldo, y se paga por retiros.
 {
   const fs = require('fs');
   const soc = fs.readFileSync('src/components/PanelSocios.tsx', 'utf8');
 
   ok('el panel no multiplica por ningún porcentaje',
     /porcentaje\s*\/\s*100|\*\s*0\.5|\/\s*2\b/.test(soc), false);
-  ok('marca pagada por la función de la base', soc.includes("rpc('marcar_comision_pagada'"), true);
-  ok('y deja ajustar el monto al pagar', soc.includes('p_monto:'), true);
+  ok('los retiros se pagan por la ruta que avisa al socio', soc.includes("fetch('/api/admin/retiros'"), true);
+  ok('y deja ajustar el monto de una comisión', soc.includes("rpc('ajustar_comision'") && soc.includes('p_monto:'), true);
+  ok('los totales no suman comisiones que ya se retiraron',
+    /porPagar: socios\.reduce/.test(soc) && /pagado: socios\.reduce/.test(soc), true);
+
+  const rutaRetiros = fs.readFileSync('src/app/api/admin/retiros/route.ts', 'utf8');
+  ok('pagar un retiro le avisa al socio', rutaRetiros.includes('pushPagadoTitulo') && rutaRetiros.includes('avisar('), true);
+  ok('en el idioma del socio, no en el de quien paga', rutaRetiros.includes("select('idioma')"), true);
+  ok('y el permiso lo decide la base con la sesión de quien llama',
+    rutaRetiros.includes("supabase.rpc('marcar_retiro_pagado'") && rutaRetiros.includes("supabase.rpc('rechazar_retiro'"), true);
+
+  const rutaCobrar = fs.readFileSync('src/app/api/socio/cobrar/route.ts', 'utf8');
+  ok('el socio elige cuánto retirar', rutaCobrar.includes("rpc('solicitar_retiro'"), true);
+  ok('y a la administración le llega el aviso', rutaCobrar.includes('usuarios_de_la_administracion'), true);
   ok('anular es otra acción, no un borrado', soc.includes("rpc('anular_comision'"), true);
   ok('crea socios por la función', soc.includes("rpc('guardar_socio'"), true);
 

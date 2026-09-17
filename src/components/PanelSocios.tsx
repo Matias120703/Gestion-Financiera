@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
-import type { ComisionAdmin, ReferidoAdmin, SocioAdmin } from '@/lib/tipos';
+import type { ComisionAdmin, ReferidoAdmin, RetiroAdmin, SocioAdmin } from '@/lib/tipos';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -45,17 +45,24 @@ const NOMBRE_PLAN: Record<string, string> = { pro: 'Pro', negocio: 'Premium', gr
  * acá, un día los dos números no iban a coincidir y habría que adivinar cuál
  * es el bueno.
  *
- * POR QUÉ SE PAGA A MANO
+ * CÓMO SE PAGA (070)
  *
- * Porque el monto a veces hay que mirarlo: si un negocio pagó un año por
- * adelantado, la mitad de ese pago es mucha plata. Esa decisión es de una
- * persona, no de una fórmula, así que el monto se puede ajustar al marcarla
- * pagada y queda registrado que se ajustó.
+ * Las comisiones suman a un saldo del socio, y el socio elige cuánto retirar
+ * (desde el mínimo). Acá llega cada retiro pedido con a dónde transferir; se
+ * transfiere y se marca, y al socio le llega el push «Tu pago ya fue
+ * realizado». Si no se puede pagar, se rechaza con el motivo y la plata
+ * vuelve a su saldo.
+ *
+ * El monto de una comisión a veces hay que mirarlo: si un negocio pagó un año
+ * por adelantado, la mitad de ese pago es mucha plata. Esa decisión es de una
+ * persona, no de una fórmula, así que se puede ajustar mientras está en el
+ * saldo, y queda registrado.
  */
-export function PanelSocios({ socios, comisiones, referidos, moneda }: {
+export function PanelSocios({ socios, comisiones, referidos, retiros = [], moneda }: {
   socios: SocioAdmin[];
   comisiones: ComisionAdmin[];
   referidos: ReferidoAdmin[];
+  retiros?: RetiroAdmin[];
   moneda: string;
 }) {
   const router = useRouter();
@@ -76,16 +83,18 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
     return mapa;
   }, [referidos]);
 
+  // Lo que se debe y lo pagado salen de la base por socio (070): ya descuentan
+  // los retiros. Sumar comisiones acá contaría dos veces lo ya retirado.
   const totales = useMemo(() => ({
     activos: socios.filter((s) => s.activo).length,
     traidos: socios.reduce((t, s) => t + s.traidos, 0),
-    porPagar: comisiones
-      .filter((c) => c.estado === 'por_pagar')
-      .reduce((t, c) => t + num(c.monto), 0),
-    pagado: comisiones
-      .filter((c) => c.estado === 'pagada')
-      .reduce((t, c) => t + num(c.monto), 0),
-  }), [socios, comisiones]);
+    porPagar: socios.reduce((t, s) => t + num(s.por_pagar), 0),
+    pagado: socios.reduce((t, s) => t + num(s.pagado), 0),
+  }), [socios]);
+
+  const pedidos = useMemo(() => retiros.filter((r) => r.estado === 'pedido'), [retiros]);
+  const resueltos = useMemo(() => retiros.filter((r) => r.estado !== 'pedido').slice(0, 10), [retiros]);
+  const [verResueltos, setVerResueltos] = useState(false);
 
   const visibles = useMemo(
     () => (filtro === 'todas' ? comisiones : comisiones.filter((c) => c.estado === filtro)),
@@ -119,6 +128,39 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
           tono={totales.porPagar > 0 ? 'ambar' : undefined}
         />
         <Tarjeta titulo="Pagado" valor={dinero(totales.pagado, moneda)} detalle="comisiones ya giradas" />
+      </div>
+
+      {/* ---------------- los retiros ----------------
+          Primero lo que tiene a alguien esperando, con plazo prometido. */}
+      <div className={`rounded-2xl border ${pedidos.length > 0 ? 'border-ambar/40 bg-ambar-claro/20' : 'border-borde bg-superficie'}`}>
+        <div className="flex items-center justify-between gap-3 border-b border-borde px-4 py-3">
+          <p className="text-[14.5px] font-bold">
+            {pedidos.length === 0 ? 'Sin retiros por pagar'
+              : pedidos.length === 1 ? '1 retiro por pagar' : `${pedidos.length} retiros por pagar`}
+          </p>
+          {resueltos.length > 0 && (
+            <button
+              type="button" onClick={() => setVerResueltos(!verResueltos)}
+              className="text-[12.5px] font-semibold text-tinta/50 underline decoration-dotted"
+            >
+              {verResueltos ? 'ocultar los últimos' : 'ver los últimos'}
+            </button>
+          )}
+        </div>
+        {pedidos.length === 0 && !verResueltos ? (
+          <p className="px-4 py-6 text-center text-[13px] text-tinta/45">
+            Cuando un socio pida cobrar, aparece acá y te llega un aviso.
+          </p>
+        ) : (
+          <ul className="divide-y divide-borde">
+            {pedidos.map((r) => (
+              <FilaRetiro key={r.id} retiro={r} moneda={moneda} onHecho={() => router.refresh()} />
+            ))}
+            {verResueltos && resueltos.map((r) => (
+              <FilaRetiro key={r.id} retiro={r} moneda={moneda} onHecho={() => router.refresh()} />
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* ---------------- las comisiones ---------------- */}
@@ -219,6 +261,7 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
           socio={viendo}
           traidos={traidosDe.get(viendo.id) ?? []}
           comisiones={comisiones.filter((c) => c.socio_id === viendo.id)}
+          retiros={pedidos.filter((r) => r.socio_id === viendo.id)}
           moneda={moneda}
           onCerrar={() => setViendo(null)}
           onEditar={() => { setEditando(viendo); setViendo(null); }}
@@ -237,6 +280,187 @@ export function PanelSocios({ socios, comisiones, referidos, moneda }: {
   );
 }
 
+// ---------------------------------------------------------------- retiro
+
+/**
+ * Un retiro pedido: a quién, cuánto y a dónde, con los datos para copiar.
+ *
+ * Pasa por /api/admin/retiros y no directo a la base porque al socio le
+ * tiene que llegar el push de que ya se le pagó (o de por qué no).
+ */
+function FilaRetiro({ retiro, moneda, onHecho }: {
+  retiro: RetiroAdmin;
+  moneda: string;
+  onHecho: () => void;
+}) {
+  const [modo, setModo] = useState<'' | 'pagar' | 'rechazar'>('');
+  const [medio, setMedio] = useState('transferencia');
+  const [nota, setNota] = useState('');
+  const [trabajando, setTrabajando] = useState(false);
+  const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
+
+  async function resolver(accion: 'pagar' | 'rechazar') {
+    setTrabajando(true);
+    setError('');
+    try {
+      const respuesta = await fetch('/api/admin/retiros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion, retiro: retiro.id, medio, nota }),
+      });
+      const datos = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) throw new Error(datos?.error || 'No se pudo hacer el cambio.');
+      // Un aviso no es un fallo: el retiro quedó pagado. Pero hay que decirlo.
+      if (datos?.aviso) { setAviso(String(datos.aviso)); setTrabajando(false); return; }
+      onHecho();
+    } catch (e: any) {
+      setError(mensajeDeError(e, 'No se pudo hacer el cambio.'));
+      setTrabajando(false);
+    }
+  }
+
+  const datos = [
+    { etiqueta: 'Banco', valor: retiro.banco },
+    { etiqueta: 'A nombre de', valor: retiro.titular },
+    { etiqueta: 'Cuenta', valor: retiro.cuenta },
+    { etiqueta: 'CI', valor: retiro.documento },
+  ].filter((d) => (d.valor ?? '').trim() !== '');
+
+  const pastilla = retiro.estado === 'pagado' ? 'bg-verde-claro text-verde-fuerte'
+    : retiro.estado === 'rechazado' ? 'bg-rojo-claro text-rojo'
+    : 'bg-ambar-claro text-ambar';
+
+  return (
+    <li className="px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[14.5px] font-bold">{retiro.socio}</p>
+          <p className="mt-0.5 text-[12.5px] text-tinta/50">
+            pidió el {fechaCorta(retiro.pedido_at)}
+            {retiro.estado === 'pedido' ? ' · prometido en 24 a 48 h hábiles' : ''}
+            {retiro.resuelto_at && retiro.estado !== 'pedido' ? ` · resuelto el ${fechaCorta(retiro.resuelto_at)}` : ''}
+          </p>
+          {retiro.estado === 'rechazado' && retiro.nota && (
+            <p className="mt-1 text-[12px] text-rojo">{retiro.nota}</p>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[16px] font-bold tabular-nums">{dinero(num(retiro.monto), moneda)}</p>
+          <span className={`pastilla mt-1 ${pastilla}`}>{retiro.estado}</span>
+        </div>
+      </div>
+
+      {retiro.estado === 'pedido' && (
+        <>
+          {datos.length > 0 ? (
+            <dl className="mt-3 grid gap-2 rounded-2xl bg-superficie p-3 sm:grid-cols-2">
+              {datos.map((d) => (
+                <div key={d.etiqueta} className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-tinta/45">{d.etiqueta}</dt>
+                    <dd className="truncate text-[13.5px] font-semibold">{d.valor}</dd>
+                  </div>
+                  <Copiar texto={d.valor} />
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="mt-3 rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] text-ambar">
+              No dejó datos para transferir. Escribile antes de pagar.
+            </p>
+          )}
+
+          {modo === '' && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setModo('pagar')} className="boton-principal px-3.5 py-1.5 text-[13px]">
+                Ya le transferí
+              </button>
+              <button type="button" onClick={() => setModo('rechazar')} className="boton-suave px-3.5 py-1.5 text-[13px]">
+                No se puede pagar
+              </button>
+            </div>
+          )}
+
+          {modo === 'pagar' && (
+            <div className="mt-3 rounded-2xl bg-arena p-3.5">
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <label className="block">
+                  <span className="etiqueta">Por dónde</span>
+                  <input
+                    className="campo mt-1 py-2 text-[14px]" placeholder="transferencia, Tigo Money…"
+                    value={medio} onChange={(e) => setMedio(e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="etiqueta">Nota</span>
+                  <input
+                    className="campo mt-1 py-2 text-[14px]" placeholder="Nro. de comprobante, si hace falta"
+                    value={nota} onChange={(e) => setNota(e.target.value)}
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-[12px] leading-snug text-tinta/50">
+                Queda anotado como gasto de Orden y le llega un aviso: «Tu pago ya fue realizado».
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button" onClick={() => resolver('pagar')} disabled={trabajando}
+                  className="boton-principal px-4 py-2 text-[13.5px]"
+                >
+                  {trabajando ? 'Guardando…' : `Listo, le pagué ${dinero(num(retiro.monto), moneda)}`}
+                </button>
+                <button
+                  type="button" onClick={() => { setModo(''); setError(''); }} disabled={trabajando}
+                  className="boton-suave px-4 py-2 text-[13.5px]"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {modo === 'rechazar' && (
+            <div className="mt-3 rounded-2xl bg-arena p-3.5">
+              <p className="text-[13px] leading-snug text-tinta/65">
+                La plata vuelve a su saldo y le llega un aviso con el motivo. Escribilo para él.
+              </p>
+              <input
+                className="campo mt-2.5 py-2 text-[14px]" placeholder="Motivo: la cuenta no existe, falta la cédula…"
+                value={nota} onChange={(e) => setNota(e.target.value)}
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button" onClick={() => resolver('rechazar')} disabled={trabajando || !nota.trim()}
+                  className="boton-peligro px-4 py-2 text-[13.5px]"
+                >
+                  {trabajando ? 'Guardando…' : 'Devolver a su saldo'}
+                </button>
+                <button
+                  type="button" onClick={() => { setModo(''); setError(''); }} disabled={trabajando}
+                  className="boton-suave px-4 py-2 text-[13.5px]"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {aviso && (
+        <p className="mt-2 rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] font-medium text-ambar">
+          {aviso}{' '}
+          <button type="button" onClick={onHecho} className="underline">Entendido</button>
+        </p>
+      )}
+      {error && (
+        <p className="mt-2 rounded-xl bg-rojo-claro px-3 py-2 text-[12.5px] font-medium text-rojo">{error}</p>
+      )}
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------- comisión
 
 function FilaComision({ comision, moneda, onHecho }: {
@@ -244,9 +468,8 @@ function FilaComision({ comision, moneda, onHecho }: {
   moneda: string;
   onHecho: () => void;
 }) {
-  const [modo, setModo] = useState<'' | 'pagar' | 'anular'>('');
+  const [modo, setModo] = useState<'' | 'ajustar' | 'anular'>('');
   const [monto, setMonto] = useState(String(num(comision.monto)));
-  const [medio, setMedio] = useState('transferencia');
   const [nota, setNota] = useState('');
   const [trabajando, setTrabajando] = useState(false);
   const [error, setError] = useState('');
@@ -268,11 +491,11 @@ function FilaComision({ comision, moneda, onHecho }: {
     }
   }
 
-  const pagar = () => correr(async () => clienteNavegador().rpc('marcar_comision_pagada', {
+  // (070) La comisión ya no se paga suelta: suma al saldo y el socio retira.
+  // Lo que queda es corregir el monto mientras está en el saldo.
+  const ajustar = () => correr(async () => clienteNavegador().rpc('ajustar_comision', {
     p_comision: comision.id,
-    // Vacío es null, y null en la base significa «el monto calculado».
-    p_monto: monto.trim() === '' ? null : Number(monto),
-    p_medio: medio,
+    p_monto: Number(monto.replace(/\D/g, '')),
     p_nota: nota,
   }));
 
@@ -332,15 +555,15 @@ function FilaComision({ comision, moneda, onHecho }: {
             te queda {dinero(num(comision.base) - num(comision.monto), moneda)}
           </p>
           <span className={`pastilla mt-1 ${pastilla}`}>
-            {comision.estado === 'por_pagar' ? 'por pagar' : comision.estado}
+            {comision.estado === 'por_pagar' ? 'en su saldo' : comision.estado}
           </span>
         </div>
       </div>
 
       {comision.estado === 'por_pagar' && modo === '' && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" onClick={() => setModo('pagar')} className="boton-principal px-3.5 py-1.5 text-[13px]">
-            Marcar pagada
+          <button type="button" onClick={() => setModo('ajustar')} className="boton-suave px-3.5 py-1.5 text-[13px]">
+            Ajustar monto
           </button>
           <button type="button" onClick={() => setModo('anular')} className="boton-suave px-3.5 py-1.5 text-[13px]">
             Anular
@@ -348,38 +571,34 @@ function FilaComision({ comision, moneda, onHecho }: {
         </div>
       )}
 
-      {modo === 'pagar' && (
+      {modo === 'ajustar' && (
         <div className="mt-3 rounded-2xl bg-arena p-3.5">
           <div className="grid gap-2.5 sm:grid-cols-2">
             <label className="block">
-              <span className="etiqueta">Cuánto le transferiste</span>
+              <span className="etiqueta">Monto de la comisión</span>
               <input
                 className="campo mt-1 py-2 text-[14px]" inputMode="numeric"
                 value={monto} onChange={(e) => setMonto(e.target.value)}
               />
             </label>
             <label className="block">
-              <span className="etiqueta">Por dónde</span>
+              <span className="etiqueta">Por qué</span>
               <input
-                className="campo mt-1 py-2 text-[14px]" placeholder="transferencia, Tigo Money…"
-                value={medio} onChange={(e) => setMedio(e.target.value)}
+                className="campo mt-1 py-2 text-[14px]" placeholder="Pagó un año de una…"
+                value={nota} onChange={(e) => setNota(e.target.value)}
               />
             </label>
           </div>
-          <input
-            className="campo mt-2.5 py-2 text-[14px]" placeholder="Nota, si hace falta"
-            value={nota} onChange={(e) => setNota(e.target.value)}
-          />
           <p className="mt-2 text-[12px] leading-snug text-tinta/50">
-            El monto se puede cambiar: si este cliente pagó varios meses de una, acordá lo justo y
-            escribilo acá. Queda anotado como gasto de Orden.
+            Si este cliente pagó varios meses de una, acordá lo justo y escribilo acá. El saldo del
+            socio cambia en el momento.
           </p>
           <div className="mt-3 flex gap-2">
             <button
-              type="button" onClick={pagar} disabled={trabajando}
+              type="button" onClick={ajustar} disabled={trabajando}
               className="boton-principal px-4 py-2 text-[13.5px]"
             >
-              {trabajando ? 'Guardando…' : 'Listo, ya le pagué'}
+              {trabajando ? 'Guardando…' : 'Guardar monto'}
             </button>
             <button
               type="button" onClick={() => { setModo(''); setError(''); }} disabled={trabajando}
@@ -722,10 +941,12 @@ function Tarjeta({ titulo, valor, detalle, tono }: {
  * lo que trajo y lo que se le debe. Editar sigue existiendo, en su lugar: un
  * botón aparte, para cuando de verdad hay que cambiar algo.
  */
-function FichaSocio({ socio, traidos, comisiones, moneda, onCerrar, onEditar, onHecho }: {
+function FichaSocio({ socio, traidos, comisiones, retiros, moneda, onCerrar, onEditar, onHecho }: {
   socio: SocioAdmin;
   traidos: ReferidoAdmin[];
   comisiones: ComisionAdmin[];
+  /** Su retiro pedido, si tiene uno. */
+  retiros: RetiroAdmin[];
   moneda: string;
   onCerrar: () => void;
   onEditar: () => void;
@@ -770,10 +991,10 @@ function FichaSocio({ socio, traidos, comisiones, moneda, onCerrar, onEditar, on
           {/* Cuánto se le debe: es lo primero que se viene a mirar acá. */}
           <div className="grid grid-cols-2 gap-3">
             <Tarjeta
-              titulo="Por pagar"
+              titulo="Se le debe"
               valor={dinero(num(socio.por_pagar), moneda)}
               detalle={num(socio.por_pagar) > 0
-                ? `${porPagar.length} ${porPagar.length === 1 ? 'comisión' : 'comisiones'}`
+                ? (retiros.length > 0 ? 'con un retiro pedido' : 'en su saldo')
                 : 'nada pendiente'}
               tono={num(socio.por_pagar) > 0 ? 'ambar' : undefined}
             />
@@ -831,11 +1052,22 @@ function FichaSocio({ socio, traidos, comisiones, moneda, onCerrar, onEditar, on
             )}
           </div>
 
-          {/* Lo que hay que pagarle, con el botón acá mismo: si ya estás
-              mirando su número de cuenta, ese es el momento de marcarla. */}
-          {porPagar.length > 0 && (
+          {/* El retiro que pidió, con el botón acá mismo: si ya estás mirando
+              su número de cuenta, ese es el momento de marcarlo. */}
+          {retiros.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-ambar/30 bg-ambar-claro/30">
-              <p className="titulo-seccion px-4 pt-3.5">Comisiones por pagar</p>
+              <p className="titulo-seccion px-4 pt-3.5">Retiro pedido</p>
+              <ul className="divide-y divide-borde/60">
+                {retiros.map((r) => (
+                  <FilaRetiro key={r.id} retiro={r} moneda={moneda} onHecho={onHecho} />
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {porPagar.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-borde">
+              <p className="titulo-seccion px-4 pt-3.5">Comisiones en su saldo</p>
               <ul className="divide-y divide-borde/60">
                 {porPagar.map((c) => (
                   <FilaComision key={c.id} comision={c} moneda={moneda} onHecho={onHecho} />

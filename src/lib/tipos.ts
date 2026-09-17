@@ -436,6 +436,35 @@ export interface ReferidoAdmin {
   monto: number | null;
 }
 
+export type EstadoRetiro = 'pedido' | 'pagado' | 'rechazado';
+
+/**
+ * Un pedido de plata contra el saldo del socio (070). Mientras está pedido
+ * ya descuenta del saldo; rechazado, vuelve.
+ */
+export interface RetiroSocio {
+  id: string;
+  monto: number;
+  estado: EstadoRetiro;
+  pedido_at: string;
+  resuelto_at: string | null;
+  /** El motivo, solo si se rechazó. */
+  nota: string;
+}
+
+/** El mismo retiro visto desde la administración, con a dónde transferir. */
+export interface RetiroAdmin extends RetiroSocio {
+  socio_id: string;
+  socio: string;
+  telefono: string;
+  /** Los datos del momento del pedido, no los de hoy. */
+  banco: string;
+  titular: string;
+  cuenta: string;
+  documento: string;
+  medio: string;
+}
+
 /**
  * Lo que ve el socio de sí mismo (migración 061).
  *
@@ -457,14 +486,16 @@ export type PanelSocio =
       activo: boolean;
       traidos: number;
       pagaron: number;
+      /** Su saldo: lo que puede retirar hoy, ya descontado lo pedido (070). */
       por_pagar: number;
       pagado: number;
-      /**
-       * Cuándo pidió que se le transfiera lo pendiente (066). Null = no lo
-       * pidió todavía. Es el pedido MÁS VIEJO sin pagar: es el que dice hace
-       * cuánto está esperando.
-       */
+      /** Desde cuánto se puede retirar. */
+      minimo: number;
+      /** Cuándo pidió el retiro que todavía no se pagó. Null = no hay. */
       cobro_pedido_el: string | null;
+      retiro_pedido: { id: string; monto: number; pedido_at: string } | null;
+      /** Los últimos veinte, del más nuevo al más viejo. */
+      retiros: RetiroSocio[];
       referidos: {
         negocio: string;
         desde: string;

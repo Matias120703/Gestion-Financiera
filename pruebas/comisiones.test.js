@@ -650,85 +650,145 @@ async function principal() {
   }
 
   // =====================================================================
-  grupo('14 · El socio pide su cobro (066)');
+  grupo('14 · El socio retira lo que quiere de su saldo (066 → 070)');
   // =====================================================================
   {
-    // Antes de esto la comisión quedaba en «te deben» esperando a que alguien
-    // de administración se acordara de mirar el panel. El socio no tenía
-    // botón y nosotros no teníamos aviso.
-    const pedir = (uid) => H.intentar(db, uid, () =>
-      db.query('select public.solicitar_cobro() j').then((r) => r.rows[0].j));
+    // Desde la 070 el socio no pide «todo lo pendiente»: tiene un saldo, elige
+    // cuánto retirar (con un mínimo) y el resto le queda. Del cuaderno de
+    // Matías: «tiene un millón, retira quinientos mil, queda el resto».
+    const retirar = (uid, monto) => H.intentar(db, uid, () =>
+      db.query('select public.solicitar_retiro($1::numeric) j', [monto]).then((r) => r.rows[0].j));
     const panelDe = (uid) => H.intentar(db, uid, () =>
       db.query('select public.mi_panel_socio() j').then((r) => r.rows[0].j));
+    const pagarRetiro = (id, medio = 'transferencia', nota = '') => comoJefe(() =>
+      db.query('select public.marcar_retiro_pagado($1,$2,$3) j', [id, medio, nota]).then((r) => r.rows[0].j));
+    const rechazarRetiro = (id, nota) => comoJefe(() =>
+      db.query('select public.rechazar_retiro($1,$2) j', [id, nota]).then((r) => r.rows[0].j));
+    const ajustar = (id, monto) => comoJefe(() =>
+      db.query('select public.ajustar_comision($1,$2::numeric,$3) j', [id, monto, '']).then((r) => r.rows[0].j));
+    const anularC = (id) => comoJefe(() =>
+      db.query('select public.anular_comision($1,$2) j', [id, 'prueba']).then((r) => r.rows[0].j));
 
     const pedroUid = await H.crearUsuario(db, 'pedro@correo.com');
     const P = (await guardarSocio({ nombre: 'Pedro Cañete', email: 'pedro@correo.com' })).valor;
     await db.query('update public.socios set user_id = $1 where id = $2', [pedroUid, P.id]);
 
-    // Sin nada por cobrar no hay pedido: un botón de cobrar en cero es una
+    // Sin nada ganado no hay retiro: un botón de cobrar en cero es una
     // promesa vacía.
-    rechazado('sin comisiones no se puede pedir nada', await pedir(pedroUid), 'nada por cobrar');
+    rechazado('sin comisiones no se puede retirar nada', await retirar(pedroUid, 120000), 'nada por cobrar');
 
     const N = await H.montarEmpresa(db, { email: 'dueno@pizzeria.com', nombre: 'Pizzería Sur' });
     await anotar(N.empresaId, P.codigo);
     await cobrar(N.empresaId, 'pro', 190000);
 
-    // Pedir sin decir a dónde transferir deja a administración con un aviso
-    // que no puede resolver, y al socio esperando una plata que nadie sabe
-    // mandar. Se frena en la base, no en la pantalla.
-    rechazado('sin datos bancarios tampoco', await pedir(pedroUid), 'dónde te transferimos');
+    // Sin decir a dónde transferir, el pedido no se puede resolver.
+    rechazado('sin datos bancarios tampoco', await retirar(pedroUid, 95000), 'dónde te transferimos');
 
     await H.intentar(db, pedroUid, () => db.query(
       'select public.guardar_donde_cobro($1,$2,$3,$4)',
       ['Banco Familiar', 'Pedro Cañete', '123456', '4567890']));
 
-    const primero = await pedir(pedroUid);
-    aceptado('con los datos cargados, el pedido entra', primero);
-    ok('dice cuánto se le debe', Number(primero.valor.total), 95000);
-    ok('y sobre cuántas comisiones', primero.valor.comisiones, 1);
-    ok('marca una como pedida', primero.valor.nuevas, 1);
-    ok('así que hay que avisar', primero.valor.ya_estaba, false);
-    ok('y dice a dónde transferirle', primero.valor.donde, '123456');
+    // El mínimo: menos de Gs. 120.000 no se transfiere.
+    ok('el panel dice cuál es el mínimo', Number((await panelDe(pedroUid)).valor.minimo), 120000);
+    rechazado('con menos del mínimo en el saldo no se puede retirar',
+      await retirar(pedroUid, 95000), 'al menos Gs. 120.000. Hoy tenés Gs. 95.000');
 
-    // Tocar el botón cinco veces no manda cinco avisos.
-    const segundo = await pedir(pedroUid);
-    ok('pedirlo de nuevo no vuelve a marcar nada', segundo.valor.nuevas, 0);
-    ok('y avisa que ya estaba pedido', segundo.valor.ya_estaba, true);
-    ok('sin mover la fecha del pedido original',
-      segundo.valor.pedido_el, primero.valor.pedido_el);
-
-    ok('el socio lo ve en su pantalla',
-      (await panelDe(pedroUid)).valor.cobro_pedido_el !== null, true);
-
-    const enPanel = await comoJefe(() => db.query(
-      'select public.listar_comisiones($1,$2::uuid,$3) j', ['por_pagar', P.id, 200],
-    ).then((r) => r.rows[0].j));
-    ok('y la administración ve que lo pidió',
-      enPanel.valor.every((c) => c.solicitada_at !== null), true);
-
-    // Una comisión nueva que llega DESPUÉS del pedido no queda marcada: es
-    // plata que todavía no pidió, y tiene que poder pedirla.
     const O = await H.montarEmpresa(db, { email: 'dueno@libreria.com', nombre: 'Librería Norte' });
     await anotar(O.empresaId, P.codigo);
     await cobrar(O.empresaId, 'pro', 190000);
-    const tercero = await pedir(pedroUid);
-    ok('una comisión posterior se puede pedir aparte', tercero.valor.nuevas, 1);
-    ok('y el total ya son las dos', Number(tercero.valor.total), 190000);
+    ok('el saldo suma las dos comisiones', Number((await panelDe(pedroUid)).valor.por_pagar), 190000);
 
-    // Pagarle una saca ese pedido del camino: queda pendiente solo la otra.
-    await pagar((await comisionDe(N.empresaId)).id);
-    const luego = await panelDe(pedroUid);
-    ok('pagada una, queda pendiente la otra', Number(luego.valor.por_pagar), 95000);
+    rechazado('menos del mínimo no', await retirar(pedroUid, 100000), 'mínimo para retirar es Gs. 120.000');
+    rechazado('más de lo que tiene tampoco', await retirar(pedroUid, 200000), 'tu saldo es Gs. 190.000');
+    rechazado('ni un monto vacío', await retirar(pedroUid, 0), 'cuánto querés retirar');
 
-    // Un socio pausado no puede pedir: si quedó afuera del programa, tiene
-    // que enterarse por el mensaje y no esperando una transferencia.
+    const pedido = await retirar(pedroUid, 150000);
+    aceptado('elige cuánto retira', pedido);
+    ok('y le queda el resto', Number(pedido.valor.saldo), 40000);
+    ok('con a dónde transferirle', pedido.valor.donde, '123456');
+    const idPedido = pedido.valor.retiro_id;
+
+    const conPedido = (await panelDe(pedroUid)).valor;
+    ok('el saldo ya descuenta lo pedido', Number(conPedido.por_pagar), 40000);
+    ok('y ve su retiro esperando', Number(conPedido.retiro_pedido.monto), 150000);
+    ok('con la fecha del pedido', conPedido.cobro_pedido_el !== null, true);
+
+    // Si no descontara, podría pedir el mismo millón dos veces.
+    rechazado('no puede pedir otro mientras hay uno pendiente',
+      await retirar(pedroUid, 120000), 'Ya pediste un retiro de Gs. 150.000');
+
+    const pedidos = await comoJefe(() => db.query('select public.listar_retiros($1,$2::integer) j', ['pedido', 200])
+      .then((r) => r.rows[0].j));
+    const suyo = pedidos.valor.find((r) => r.id === idPedido);
+    ok('la administración ve el pedido con sus datos', [Number(suyo.monto), suyo.cuenta, suyo.titular],
+      [150000, '123456', 'Pedro Cañete']);
+
+    const deSocios = await comoJefe(() => db.query('select public.listar_socios($1,$2::integer) j', ['Pedro', 50])
+      .then((r) => r.rows[0].j));
+    ok('y en la lista de socios lo que se le debe incluye lo pedido',
+      Number(deSocios.valor[0].por_pagar), 190000);
+
+    // Quien cobra por retiros no se paga por el camino viejo: descuadraría el saldo.
+    rechazado('una comisión suelta ya no se paga por fuera del retiro',
+      await pagar((await comisionDe(N.empresaId)).id), 'retiros desde su saldo');
+
+    rechazado('un socio no puede marcar pagado su propio retiro',
+      await H.intentar(db, pedroUid, () => db.query('select public.marcar_retiro_pagado($1,$2,$3)', [idPedido, '', ''])),
+      'solo para la administración');
+
+    const pago = await pagarRetiro(idPedido);
+    aceptado('la administración registra la transferencia', pago);
+    ok('y sabe a quién avisarle', pago.valor.socio_user_id, pedroUid);
+    ok('queda como gasto de Orden', pago.valor.gasto_anotado, true);
+    ok('por lo que se transfirió', Number(await db.query(
+      `select monto from public.movimientos where empresa_id = $1 and descripcion = 'Retiro de Pedro Cañete'`,
+      [ORDEN]).then((r) => r.rows[0].monto)), 150000);
+    rechazado('no se paga dos veces', await pagarRetiro(idPedido), 'ya está pagado');
+
+    const pagado = (await panelDe(pedroUid)).valor;
+    ok('ya cobró lo retirado', Number(pagado.pagado), 150000);
+    ok('y el resto sigue en su saldo', Number(pagado.por_pagar), 40000);
+    ok('sin retiro esperando', pagado.retiro_pedido, null);
+    ok('con el retiro en su historial', pagado.retiros[0].estado, 'pagado');
+
+    // Rechazado, la plata vuelve sola.
+    const R = await H.montarEmpresa(db, { email: 'dueno@optica.com', nombre: 'Óptica Visión' });
+    await anotar(R.empresaId, P.codigo);
+    await cobrar(R.empresaId, 'pro', 190000);
+    const otro = await retirar(pedroUid, 135000);
+    aceptado('retira todo lo que tiene', otro);
+    ok('y queda en cero', Number(otro.valor.saldo), 0);
+    rechazado('rechazar sin decir por qué no', await rechazarRetiro(otro.valor.retiro_id, ' '), 'por qué');
+    const rech = await rechazarRetiro(otro.valor.retiro_id, 'La cuenta no existe');
+    aceptado('rechazado con el motivo', rech);
+    ok('avisa a quién', rech.valor.socio_user_id, pedroUid);
+    const trasRechazo = (await panelDe(pedroUid)).valor;
+    ok('la plata vuelve a su saldo', Number(trasRechazo.por_pagar), 135000);
+    ok('y lee el motivo', [trasRechazo.retiros[0].estado, trasRechazo.retiros[0].nota],
+      ['rechazado', 'La cuenta no existe']);
+    rechazado('un retiro rechazado no se paga', await pagarRetiro(otro.valor.retiro_id), 'rechazado');
+
+    // Lo que ya se retiró no se puede anular ni bajar por debajo de lo pagado.
+    const tercero = await retirar(pedroUid, 135000);
+    await pagarRetiro(tercero.valor.retiro_id);
+    ok('retirado todo, el saldo es cero', Number((await panelDe(pedroUid)).valor.por_pagar), 0);
+    rechazado('una comisión ya retirada no se anula', await anularC((await comisionDe(N.empresaId)).id), 'ya retiró esa plata');
+    rechazado('ni se ajusta para abajo', await ajustar((await comisionDe(R.empresaId)).id, 50000), 'no puede bajar de Gs. 95.000');
+    aceptado('para arriba sí (pagó un año de una)', await ajustar((await comisionDe(R.empresaId)).id, 225000));
+    ok('y lo agregado suma al saldo', Number((await panelDe(pedroUid)).valor.por_pagar), 130000);
+
+    // Un socio pausado no puede pedir, y nadie pide por otro.
     await guardarSocio({ id: P.id, nombre: 'Pedro Cañete', activo: false });
-    rechazado('un socio pausado no puede pedir', await pedir(pedroUid), 'pausado');
+    rechazado('un socio pausado no puede retirar', await retirar(pedroUid, 120000), 'pausado');
 
-    // Y nadie puede pedir el cobro de otro: se resuelve de auth.uid().
     const ajenoUid = await H.crearUsuario(db, 'ajeno@correo.com');
-    rechazado('quien no es socio no puede pedir nada',
-      await pedir(ajenoUid), 'código de recomendación');
+    rechazado('quien no es socio no puede retirar nada',
+      await retirar(ajenoUid, 120000), 'código de recomendación');
+
+    rechazado('la tabla de retiros no se lee directo',
+      await H.intentar(db, pedroUid, () => db.query('select * from public.retiros')), 'permission denied');
+    ok('el pedido de todo junto ya no existe', await db.query(
+      `select count(*)::int n from pg_proc where proname = 'solicitar_cobro'`).then((r) => r.rows[0].n), 0);
   }
 
   // =====================================================================

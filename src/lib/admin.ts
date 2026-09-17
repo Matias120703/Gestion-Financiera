@@ -1,7 +1,7 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
 import type {
-  CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, SocioAdmin,
+  CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, RetiroAdmin, SocioAdmin,
 } from './tipos';
 
 /**
@@ -74,6 +74,13 @@ export async function traerComisiones(): Promise<ComisionAdmin[]> {
     p_estado: null, p_socio: null, p_limite: 200,
   });
   return Array.isArray(data) ? (data as ComisionAdmin[]) : [];
+}
+
+/** Los retiros de los socios (070): primero los que esperan una transferencia. */
+export async function traerRetiros(): Promise<RetiroAdmin[]> {
+  const supabase = clienteServidor();
+  const { data } = await supabase.rpc('listar_retiros', { p_estado: null, p_limite: 200 });
+  return Array.isArray(data) ? (data as RetiroAdmin[]) : [];
 }
 
 export async function traerReferidos(): Promise<ReferidoAdmin[]> {

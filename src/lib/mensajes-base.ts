@@ -43,6 +43,21 @@ export const MENSAJES_PT: Record<string, string> = {
   'La fecha que entendí ya pasó. Elegí el día.': 'A data que eu entendi já passou. Escolha o dia.',
 
   // ---- los de la base (raise exception) ----
+  // 070 · saldo y retiros
+  'Ya pediste un retiro de % el %. Cuando te lo transfiramos vas a poder pedir otro.': 'Você já pediu um saque de % em %. Quando transferirmos, vai poder pedir outro.',
+  'Para retirar necesitás al menos %. Hoy tenés %.': 'Pra sacar você precisa de pelo menos %. Hoje você tem %.',
+  'Escribí cuánto querés retirar.': 'Escreva quanto quer sacar.',
+  'El mínimo para retirar es %.': 'O mínimo pra sacar é %.',
+  'No podés retirar más de lo que tenés: tu saldo es %.': 'Você não pode sacar mais do que tem: seu saldo é %.',
+  'Ese retiro no existe.': 'Esse saque não existe.',
+  'Ese retiro ya está pagado.': 'Esse saque já está pago.',
+  'Ese retiro está rechazado: la plata volvió a su saldo.': 'Esse saque foi recusado: o dinheiro voltou pro saldo.',
+  'Solo se puede rechazar un retiro que todavía no se pagó.': 'Só dá pra recusar um saque que ainda não foi pago.',
+  'Escribí por qué no se pudo pagar: es lo que va a leer.': 'Escreva por que não deu pra pagar: é o que a pessoa vai ler.',
+  'Solo se ajusta una comisión que todavía está en el saldo.': 'Só dá pra ajustar uma comissão que ainda está no saldo.',
+  'Ese socio ya retiró parte de esa plata: el monto no puede bajar de %.': 'Esse sócio já sacou parte desse dinheiro: o valor não pode ficar abaixo de %.',
+  'Este socio cobra con retiros desde su saldo. Registrá el pago desde su pedido de retiro.': 'Este sócio recebe com saques do saldo. Registre o pagamento a partir do pedido de saque.',
+  'Ese socio ya retiró esa plata. Si hay que recuperarla, eso se arregla con la persona, no anulando la comisión.': 'Esse sócio já sacou esse dinheiro. Se for preciso recuperar, isso se resolve com a pessoa, não anulando a comissão.',
   '% está desactivado como socio. Activalo en «Socios» y volvé a anotarlo.': '% está desativado como sócio. Ative em «Socios» e anote de novo.',
   '% no te debe nada.': '% não te deve nada.',
   '% te debe %, no podés cobrarle más que eso.': '% te deve %, não dá pra cobrar mais que isso.',
