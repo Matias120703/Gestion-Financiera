@@ -38,7 +38,7 @@ import type { Rubro, TipoCuenta } from './tipos';
 export type Seccion =
   | '/panel' | '/vender' | '/gastos' | '/deudas' | '/cierre' | '/productos'
   | '/movimientos' | '/reto' | '/organizacion' | '/agenda' | '/reparto'
-  | '/lotes' | '/reportes' | '/ajustes' | '/fiado' | '/clientes';
+  | '/lotes' | '/reportes' | '/ajustes' | '/fiado' | '/clientes' | '/billetera';
 
 export interface FichaRubro {
   clave: Rubro;
@@ -112,6 +112,8 @@ const NUCLEO = {
   // paga a treinta días: no es de un rubro, es de todos.
   '/fiado': true,
   '/clientes': true,
+  // Cuánto hay en cada banco (074). Una persona y un negocio tienen bancos.
+  '/billetera': true,
   // Lo que NO es de un negocio común. Cada rubro prende lo suyo.
   '/organizacion': false,
   '/agenda': false,

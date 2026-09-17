@@ -70,6 +70,13 @@ const Ico = {
       <path d="M8 3.5v3M16 3.5v3" />
     </svg>
   ),
+  billetera: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H17v3" />
+      <path d="M4 7.5V17a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 1 4 7.5Z" />
+      <circle cx="16" cy="13.5" r="1.1" />
+    </svg>
+  ),
   deudas: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <path d="M3.5 7.5h17v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
@@ -156,7 +163,7 @@ const Ico = {
  * describe a él. La protección real está en cada página (`ctx.esAdmin`);
  * esto es que el menú no lo ofrezca.
  */
-const SOLO_ADMIN: Seccion[] = ['/deudas', '/cierre', '/movimientos', '/reto', '/reportes'];
+const SOLO_ADMIN: Seccion[] = ['/deudas', '/cierre', '/movimientos', '/reto', '/reportes', '/billetera'];
 
 /**
  * Las secciones del menú, con las palabras de cada rubro.
@@ -186,6 +193,7 @@ export function itemsDe(
     { href: '/vender',      texto: suPalabra('vender', t.nav.vender), icono: Ico.vender },
     { href: '/gastos',      texto: t.nav.gastos,      icono: Ico.gastos },
     { href: '/deudas',      texto: t.nav.deudas,      icono: Ico.deudas },
+    { href: '/billetera',   texto: t.nav.billetera,   icono: Ico.billetera },
     // «Fiado» es la palabra del mostrador; a una persona no se le fía, le
     // deben. Mismo módulo, la palabra de cada uno.
     { href: '/fiado',       texto: tipo === 'personal' ? t.nav.meDeben : t.nav.fiado, icono: Ico.fiado },

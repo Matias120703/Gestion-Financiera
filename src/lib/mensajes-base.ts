@@ -43,6 +43,13 @@ export const MENSAJES_PT: Record<string, string> = {
   'La fecha que entendí ya pasó. Elegí el día.': 'A data que eu entendi já passou. Escolha o dia.',
 
   // ---- los de la base (raise exception) ----
+  // 074 · la billetera
+  'Solo el dueño de la cuenta puede ver esto.': 'Só o dono da conta pode ver isso.',
+  'Ponele un nombre: el del banco, «Efectivo», «Tigo Money».': 'Dê um nome: o do banco, «Dinheiro», «Tigo Money».',
+  'Ese tipo de cuenta no existe.': 'Esse tipo de conta não existe.',
+  'Ya tenés 20 cuentas. Archivá alguna antes de sumar otra.': 'Você já tem 20 contas. Arquive alguma antes de adicionar outra.',
+  'Escribí cuánto dice tu banco que tenés.': 'Escreva quanto o seu banco diz que você tem.',
+  'Elegí dos cuentas distintas.': 'Escolha duas contas diferentes.',
   // 073 · ahorrar en otra moneda
   'Esa moneda no es válida.': 'Essa moeda não é válida.',
   'Ese fondo ya tiene movimientos: no se le puede cambiar la moneda. Creá otro fondo.': 'Essa reserva já tem movimentos: não dá pra mudar a moeda. Crie outra reserva.',

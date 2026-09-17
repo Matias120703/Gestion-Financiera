@@ -17,6 +17,8 @@ import { PanelPersonal } from '@/components/PanelPersonal';
 import { traerRacha } from '@/lib/habito';
 import { TarjetaRacha } from '@/components/Racha';
 import { AvisoComision, type Novedad } from '@/components/AvisoComision';
+import { TiraBilletera } from '@/components/TiraBilletera';
+import { traerBilletera } from '@/lib/billetera';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { fichaDe } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
@@ -69,14 +71,17 @@ export default async function PaginaPanel({
     // Las deudas son contexto: si fallan, el panel igual se muestra. Para el
     // número del que depende una decisión está la pantalla de Deudas, que sí
     // lanza si no puede leer.
-    const [resumenPersonal, deudasPersonal] = await Promise.all([
+    const [resumenPersonal, deudasPersonal, billeteraPersonal] = await Promise.all([
       traerResumenPersonal(ctx.empresa.id),
       traerResumenDeudas(ctx.empresa.id).catch(() => null),
+      // Contexto, como las deudas: si falla, el panel igual se muestra.
+      traerBilletera(ctx.empresa.id).catch(() => null),
     ]);
 
     return (
       <div className="space-y-4">
         <AvisoComision novedad={await novedadComision} />
+        {billeteraPersonal && <TiraBilletera billetera={billeteraPersonal} moneda={ctx.empresa.moneda} />}
         <PanelPersonal
           resumen={resumenPersonal}
           deudas={deudasPersonal}
@@ -189,9 +194,16 @@ export default async function PaginaPanel({
 
   const retoVisible = reto && retoInfo && retoInfo.medible;
 
+  // Cuánto hay en cada banco (074). Solo para quien puede verlo, y si falla
+  // el panel igual se muestra: es contexto, no el número del día.
+  const billeteraNegocio = ctx.esAdmin ? await traerBilletera(ctx.empresa.id).catch(() => null) : null;
+
   return (
     <div className="space-y-5">
       <AvisoComision novedad={await novedadComision} />
+
+      {/* Tu plata, arriba de todo, con el ojito (074). Solo quien puede verla. */}
+      {billeteraNegocio && <TiraBilletera billetera={billeteraNegocio} moneda={ctx.empresa.moneda} />}
 
       {/* La racha solo donde el hábito es diario. Ver el comentario de arriba. */}
       {!cicloLargo && <TarjetaRacha racha={racha} t={t} />}

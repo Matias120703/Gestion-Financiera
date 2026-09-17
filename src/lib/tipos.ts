@@ -436,6 +436,25 @@ export interface ReferidoAdmin {
   monto: number | null;
 }
 
+/** Una cuenta de la billetera: un banco, el efectivo o una billetera (074). */
+export type TipoCuentaDinero = 'banco' | 'efectivo' | 'billetera';
+
+export interface CuentaDinero {
+  id: string;
+  nombre: string;
+  tipo: TipoCuentaDinero;
+  /** Las formas de pago que caen solas en esta cuenta. */
+  metodos: string[];
+  saldo: number;
+  entro_mes: number;
+  salio_mes: number;
+}
+
+export interface Billetera {
+  cuentas: CuentaDinero[];
+  total: number;
+}
+
 export type EstadoRetiro = 'pedido' | 'pagado' | 'rechazado';
 
 /**

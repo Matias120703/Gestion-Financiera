@@ -291,6 +291,8 @@ const MATRIZ = {
   // persona.
   '/fiado':        [ true,     true,      true,      true,        true  ],
   '/clientes':     [ true,     true,      true,      true,        false ],
+  // Cuánto hay en cada banco: una persona y un negocio tienen bancos (074).
+  '/billetera':    [ true,     true,      true,      true,        true  ],
 };
 
 for (const [ruta, esperado] of Object.entries(MATRIZ)) {
