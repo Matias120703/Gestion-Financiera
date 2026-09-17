@@ -6,6 +6,28 @@
  * cuando alguien intenta algo que la base no permite.
  */
 
+/**
+ * EL IDIOMA DE LOS MENSAJES.
+ *
+ * Lo que sale de acá lo lee la persona, y los mensajes de la base están en
+ * español. El proveedor de idioma del navegador instala un traductor
+ * (lib/mensajes-base.ts) y todo lo que devuelve `mensajeDeError` pasa por
+ * él. Sin traductor —en español, en las pruebas, en el servidor— los
+ * mensajes salen tal cual.
+ *
+ * Es un valor del módulo y no un parámetro porque `mensajeDeError` se llama
+ * en más de cien lugares, y en el navegador hay una sola persona con un
+ * solo idioma. En el servidor no se instala nunca: ahí sí se mezclarían los
+ * pedidos de distintas personas.
+ */
+let traductor: ((texto: string) => string) | null = null;
+
+export function usarTraductorDeErrores(fn: ((texto: string) => string) | null): void {
+  traductor = fn;
+}
+
+const traducir = (texto: string) => (traductor ? traductor(texto) : texto);
+
 interface ErrorSupabase {
   message?: string;
   code?: string;
@@ -68,11 +90,11 @@ export const REGLAS: { patron: RegExp; mensaje: string }[] = [
 ];
 
 export function mensajeDeError(error: unknown, respaldo = 'No se pudo completar la operación.'): string {
-  if (!error) return respaldo;
+  if (!error) return traducir(respaldo);
 
   const e = error as ErrorSupabase;
   const crudo = (typeof error === 'string' ? error : e.message ?? '').trim();
-  if (!crudo) return respaldo;
+  if (!crudo) return traducir(respaldo);
 
   // LAS REGLAS VAN PRIMERO, y el orden importa.
   //
@@ -92,7 +114,7 @@ export function mensajeDeError(error: unknown, respaldo = 'No se pudo completar 
   // lanzan las pantallas, y falla si alguna regla tapa uno.
   for (const { patron, mensaje } of REGLAS) {
     if (patron.test(crudo) || patron.test(e.details ?? '') || patron.test(e.code ?? '')) {
-      return mensaje;
+      return traducir(mensaje);
     }
   }
 
@@ -106,9 +128,9 @@ export function mensajeDeError(error: unknown, respaldo = 'No se pudo completar 
   const esNuestro = /^[A-ZÁÉÍÓÚÑ¡¿]/.test(crudo)
     && !/^[A-Z][a-zA-Z]*Error\b/.test(crudo)
     && !/relation|column|function|constraint|violates|denied|syntax/i.test(crudo);
-  if (esNuestro) return crudo;
+  if (esNuestro) return traducir(crudo);
 
-  return respaldo;
+  return traducir(respaldo);
 }
 
 /**

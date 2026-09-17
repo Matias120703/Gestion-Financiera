@@ -192,6 +192,69 @@ ok('con filas, no molesta', tiro, 'no tiró');
   ok('ninguna regla técnica tapa un mensaje nuestro', tapados, []);
 }
 
+// ---------------------------------------------------------------
+// En portugués (2026-09-16).
+//
+// Los mensajes de la base están escritos en español y ahí se quedan: se
+// traducen en el navegador, justo antes de mostrarse. Un mensaje nuevo sin
+// traducir le llegaría en español a un brasileño, que es justo lo que la
+// regla de idiomas.ts no permite. Esta prueba es la que lo impide.
+// ---------------------------------------------------------------
+{
+  const fs = require('fs');
+  const path = require('path');
+  const { MENSAJES_PT, traducirMensajeAPortugues } = require('../.compilado/mensajes-base.js');
+  const { usarTraductorDeErrores } = require('../.compilado/errores.js');
+
+  // Los vigentes: la ÚLTIMA definición de cada función en las migraciones.
+  // Las versiones viejas de una función ya no existen en la base, y sus
+  // mensajes no le llegan a nadie.
+  const dirMig = path.join(__dirname, '..', 'supabase', 'migrations');
+  const porFuncion = new Map();
+  for (const f of fs.readdirSync(dirMig).filter((x) => x.endsWith('.sql')).sort()) {
+    const sql = fs.readFileSync(path.join(dirMig, f), 'utf8');
+    for (const m of sql.matchAll(/drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)/gi)) {
+      porFuncion.delete(m[1].toLowerCase());
+    }
+    const definicion = /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?(\w+)\s*\([\s\S]*?\bas\s+(\$\w*\$)([\s\S]*?)\2/gi;
+    for (const m of sql.matchAll(definicion)) {
+      const mensajes = [...m[3].matchAll(/raise exception\s+'((?:[^']|'')*)'/gi)].map((x) => x[1].replace(/''/g, "'"));
+      porFuncion.set(m[1].toLowerCase(), mensajes);
+    }
+  }
+  const vigentes = [...new Set([...porFuncion.values()].flat())];
+  const sinTraducir = vigentes.filter((msg) => !MENSAJES_PT[msg]);
+
+  ok('se leyeron los mensajes vigentes de la base', vigentes.length > 200, true);
+  ok('todos tienen traducción al portugués', sinTraducir, []);
+  ok('y las reglas técnicas también', REGLAS.map((r) => r.mensaje).filter((m) => !MENSAJES_PT[m]), []);
+
+  ok('un mensaje exacto se traduce',
+    traducirMensajeAPortugues('Ese horario ya no está disponible.'), 'Esse horário não está mais disponível.');
+  ok('uno con un dato adentro, con el dato en su lugar',
+    traducirMensajeAPortugues('Lucas te debe Gs. 300.000, no podés cobrarle más que eso.'),
+    'Lucas te deve Gs. 300.000, não dá pra cobrar mais que isso.');
+  ok('con dos datos, cada uno donde va',
+    traducirMensajeAPortugues('Ana todavía tiene turnos agendados (3). Pasalos a otra persona o cancelalos desde Agenda, y después lo sacás del equipo.'),
+    'Ana ainda tem horários agendados (3). Passe pra outra pessoa ou cancele em Agenda, e depois tire da equipe.');
+  ok('lo que no conoce lo deja como está',
+    traducirMensajeAPortugues('Un mensaje que no existe.'), 'Un mensaje que no existe.');
+
+  // Y enchufado a mensajeDeError, como lo instala el proveedor de idioma.
+  usarTraductorDeErrores(traducirMensajeAPortugues);
+  ok('en portugués, lo de la base llega traducido',
+    mensajeDeError({ message: 'Todavía no tenés nada por cobrar.' }), 'Você ainda não tem nada pra receber.');
+  ok('la jerga técnica también',
+    mensajeDeError({ message: 'JWT expired' }), 'Sua sessão expirou. Entre de novo.');
+  ok('y el respaldo por defecto',
+    mensajeDeError(null), 'Não foi possível concluir a operação.');
+  ok('el respaldo que ya vino traducido de la pantalla no se toca',
+    mensajeDeError(null, 'Não foi possível salvar.'), 'Não foi possível salvar.');
+  usarTraductorDeErrores(null);
+  ok('sin traductor, vuelve a salir en español',
+    mensajeDeError({ message: 'Todavía no tenés nada por cobrar.' }), 'Todavía no tenés nada por cobrar.');
+}
+
 console.log(fallos === 0
   ? '\n>>> TODAS LAS PRUEBAS DE ERRORES PASARON'
   : `\n>>> ${fallos} FALLAS DE ERRORES`);

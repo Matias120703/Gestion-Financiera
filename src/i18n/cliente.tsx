@@ -10,8 +10,10 @@
 import { createContext, useCallback, useContext, useMemo } from 'react';
 import { diccionario, type Textos } from './diccionarios';
 import {
-  COOKIE_IDIOMA, FICHA, IDIOMA_POR_DEFECTO, type Idioma,
+  COOKIE_IDIOMA, FICHA, IDIOMA_POR_DEFECTO, IDIOMA_UNICO, type Idioma,
 } from './idiomas';
+import { usarTraductorDeErrores } from '@/lib/errores';
+import { traducirMensajeAPortugues } from '@/lib/mensajes-base';
 
 const Contexto = createContext<Idioma>(IDIOMA_POR_DEFECTO);
 
@@ -21,6 +23,13 @@ export function ProveedorIdioma({
   idioma: Idioma;
   children: React.ReactNode;
 }) {
+  // Los mensajes de la base llegan en español: en portugués se traducen
+  // antes de mostrarse (ver lib/errores.ts). Solo en el navegador, donde
+  // hay una sola persona; en el servidor quedaría compartido entre pedidos.
+  if (typeof window !== 'undefined') {
+    const efectivo = IDIOMA_UNICO ?? idioma;
+    usarTraductorDeErrores(efectivo === 'pt' ? traducirMensajeAPortugues : null);
+  }
   return <Contexto.Provider value={idioma}>{children}</Contexto.Provider>;
 }
 
