@@ -142,17 +142,27 @@ export default async function PaginaPlan({
           {descuento.logrado ? (
             <>
               <p className="text-[15px] font-bold text-verde-fuerte">
-                {t.plan.descuentoLogrado(Math.round(descuento.porcentaje))}
+                {descuento.fase === 'constancia'
+                  ? t.plan.constanciaLogrado(Math.round(descuento.porcentaje))
+                  : t.plan.descuentoLogrado(Math.round(descuento.porcentaje))}
               </p>
               <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">
-                {t.plan.descuentoLogradoDetalle}
+                {descuento.fase === 'constancia'
+                  ? t.plan.constanciaLogradoDetalle(descuento.mejor)
+                  : t.plan.descuentoLogradoDetalle}
               </p>
             </>
           ) : (
             <>
-              <p className="text-[15px] font-bold">{t.plan.descuentoTitulo(Math.round(descuento.porcentaje))}</p>
+              <p className="text-[15px] font-bold">
+                {descuento.fase === 'constancia'
+                  ? t.plan.constanciaTitulo(Math.round(descuento.porcentaje))
+                  : t.plan.descuentoTitulo(Math.round(descuento.porcentaje))}
+              </p>
               <p className="mt-1 text-[13px] leading-relaxed text-tinta/60">
-                {t.plan.descuentoComo(descuento.objetivo)}
+                {descuento.fase === 'constancia'
+                  ? t.plan.constanciaComo(descuento.objetivo)
+                  : t.plan.descuentoComo(descuento.objetivo)}
               </p>
               <div className="mt-3 flex items-center justify-between gap-3 text-[12.5px] font-semibold">
                 <span className="text-tinta/70">{t.plan.descuentoVas(descuento.mejor, descuento.objetivo)}</span>
@@ -204,7 +214,11 @@ export default async function PaginaPlan({
               nombre={t.plan[plan]}
               destacado={plan === 'pro'}
               /* Mientras la promo esté ganada, el precio lleva su cartel. */
-              nota={descuento?.logrado ? t.plan.descuentoEnPrecio(Math.round(descuento.porcentaje)) : null}
+              nota={descuento?.logrado
+                ? (descuento.fase === 'constancia'
+                    ? t.plan.constanciaEnPrecio(Math.round(descuento.porcentaje))
+                    : t.plan.descuentoEnPrecio(Math.round(descuento.porcentaje)))
+                : null}
               precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : t.comun.sinDato}
               porPeriodo={periodo === 'anual' ? `/ ${t.plan.porAnio}` : `/ ${t.plan.porMes}`}
               actual={esActual}

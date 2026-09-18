@@ -94,6 +94,8 @@ export function TarjetaDescuento({ descuento, t }: { descuento: DescuentoRacha; 
 
   const pct = Math.round(descuento.porcentaje);
   const avance = Math.min(100, (descuento.mejor / Math.max(1, descuento.objetivo)) * 100);
+  // Ya paga: el premio es por sostener la racha, no por haberla juntado una vez.
+  const porConstancia = descuento.fase === 'constancia';
 
   return (
     <Link
@@ -112,14 +114,22 @@ export function TarjetaDescuento({ descuento, t }: { descuento: DescuentoRacha; 
         <div className="min-w-0 flex-1">
           {descuento.logrado ? (
             <>
-              <p className="text-[15px] font-bold tracking-tight text-verde-fuerte">{t.plan.descuentoLogrado(pct)}</p>
-              <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/55">{t.plan.descuentoLogradoDetalle}</p>
+              <p className="text-[15px] font-bold tracking-tight text-verde-fuerte">
+                {porConstancia ? t.plan.constanciaLogrado(pct) : t.plan.descuentoLogrado(pct)}
+              </p>
+              <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/55">
+                {porConstancia
+                  ? t.plan.constanciaLogradoDetalle(descuento.mejor)
+                  : t.plan.descuentoLogradoDetalle}
+              </p>
             </>
           ) : (
             <>
-              <p className="text-[15px] font-bold tracking-tight">{t.plan.descuentoTitulo(pct)}</p>
+              <p className="text-[15px] font-bold tracking-tight">
+                {porConstancia ? t.plan.constanciaTitulo(pct) : t.plan.descuentoTitulo(pct)}
+              </p>
               <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/55">
-                {t.plan.descuentoComo(descuento.objetivo)}
+                {porConstancia ? t.plan.constanciaComo(descuento.objetivo) : t.plan.descuentoComo(descuento.objetivo)}
               </p>
               <div className="mt-2.5 flex items-center justify-between gap-3 text-[12px] font-semibold">
                 <span className="text-tinta/60">{t.plan.descuentoVas(descuento.mejor, descuento.objetivo)}</span>

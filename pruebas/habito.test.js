@@ -470,6 +470,44 @@ const leerRacha = (db, uid, empresaId) =>
       await H.intentar(db, vendedorL, () => db.query('select public.descuento_por_racha($1)', [L.empresaId])),
       'dueño');
 
+    // ---- El descuento que se mantiene: racha viva de 30 días (079) ----
+    //
+    // Apenas paga, el trato cambia de forma: ya no es la mejor racha de la
+    // prueba, es la que tiene VIVA hoy. El premio deja de ser de bienvenida
+    // y pasa a ser por sostenerla.
+    await db.query(
+      "update public.suscripciones set estado = 'activa', plan = 'pro' where empresa_id = $1", [L.empresaId]);
+    dL = await descuentoL();
+    ok('al pagar, el objetivo pasa a treinta días y el premio a 20%',
+      [dL.fase, dL.objetivo, Number(dL.porcentaje)], ['constancia', 30, 20]);
+    ok('los ocho de la prueba ya no alcanzan: ahora cuenta la racha viva',
+      [dL.mejor, dL.faltan, dL.logrado], [8, 22, false]);
+
+    // Los veintidós que le faltaban, hacia atrás: la racha llega hasta hoy.
+    for (let d = 8; d <= 29; d++) await ventaL(d);
+    dL = await descuentoL();
+    ok('con treinta días seguidos se lleva el descuento de cada mes',
+      [dL.mejor, dL.faltan, dL.logrado, dL.vigente], [30, 0, true, true]);
+
+    // Y si la corta, se va con ella: por eso es «mantener la racha».
+    const N = await H.montarEmpresa(db, { email: 'duenio@november.com', nombre: 'November' });
+    await db.query(
+      "update public.suscripciones set estado = 'activa', plan = 'pro' where empresa_id = $1", [N.empresaId]);
+    for (const d of [40, 39, 38]) await db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1, 'venta', public.hoy_empresa($1) - $2::int, 'Venta', 'Ventas', 1000, 1000)`,
+      [N.empresaId, d]);
+    ok('una racha cortada hace semanas no paga descuento',
+      (await H.comoUsuario(db, N.uid, () =>
+        db.query('select public.descuento_por_racha($1) j', [N.empresaId]))).rows[0].j.mejor, 0);
+
+    // La portada muestra las dos mitades del trato sin que nadie inicie sesión.
+    const promo = (await db.query('select public.promo_de_la_prueba() j')).rows[0].j;
+    ok('la portada sabe los números de las dos etapas',
+      [Number(promo.porcentaje), promo.negocio, promo.personal,
+       Number(promo.constancia_porcentaje), promo.constancia_dias],
+      [18, 8, 5, 20, 30]);
+
     // ---- El plan Básico: el negocio entero, para uno solo (077) ----
     const basico = (await db.query("select public.limites_plan('basico') j")).rows[0].j;
     ok('el Básico es de una sola persona', basico.miembros, 1);

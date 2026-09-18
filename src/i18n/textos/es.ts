@@ -894,6 +894,8 @@ export const es = {
     // La promo de la racha durante la prueba (078).
     descuentoPrueba: (pct: number, negocio: number, personal: number) =>
       `**Ganate ${pct}% de descuento en tu primer mes.** Durante la prueba, cargá algo ${negocio} días seguidos si es un negocio —o ${personal} si son tus finanzas— y el primer mes te sale con descuento.`,
+    descuentoConstancia: (pct: number, dias: number) =>
+      `**Y después sigue: con ${dias} días seguidos cargando, pagás ${pct}% menos todos los meses.** Mientras mantengas la racha, mantenés el descuento.`,
     personalNombre: 'Personal',
     personalPara: 'Un solo plan, sin versiones ni letra chica',
     personalPuntos: [
@@ -1747,6 +1749,14 @@ export const es = {
     descuentoLogradoDetalle: 'Lo aplicamos cuando actives tu plan. No hace falta que hagas nada.',
     descuentoEnPrecio: (pct: number) => `−${pct}% tu primer mes`,
 
+    // Ya paga: el premio deja de ser de bienvenida y pasa a ser por sostenerla (079).
+    constanciaTitulo: (pct: number) => `Mantené tu racha y pagá ${pct}% menos`,
+    constanciaComo: (dias: number) => `Con ${dias} días seguidos cargando, tu suscripción tiene descuento. Mientras no cortes la racha, el descuento sigue mes a mes.`,
+    constanciaLogrado: (pct: number) => `Tenés ${pct}% de descuento en tu próximo pago`,
+    constanciaLogradoDetalle: (dias: number) => `Llevás ${dias} días seguidos. Mientras no cortes la racha, seguís pagando con descuento.`,
+    constanciaEnPrecio: (pct: number) => `−${pct}% mientras mantengas tu racha`,
+    constanciaPerdida: (dias: number) => `Si cortás la racha, el descuento se pausa hasta que vuelvas a juntar ${dias} días.`,
+
     // El mensaje que se abre en WhatsApp para pagar: lo manda la persona,
     // así que va en su idioma.
     alAnio: 'al año',
@@ -2354,6 +2364,8 @@ export const es = {
     planActivo: {
       titulo: (plan: string) => `Tu plan ${plan} está activo`,
       cuerpo: (fecha: string) => `Ya podés usar Orden sin cortes hasta el ${fecha}. ¡Gracias por confiar en nosotros!`,
+      // Apenas paga es cuando conviene contarle cómo pagar menos el mes que viene (079).
+      conRacha: (pct: number, dias: number) => ` Cargá todos los días: con ${dias} días seguidos, tu próximo mes tiene ${pct}% de descuento.`,
     },
     socio: {
       entroTitulo: (persona: string) => `${persona} entró con tu enlace`,

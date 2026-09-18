@@ -1162,6 +1162,12 @@ export interface TurnoCliente {
  * premio ganado no se pierde por tomarse un día después.
  */
 export interface DescuentoRacha {
+  /**
+   * 'prueba': todavía no pagó, el premio es del primer mes y no se pierde.
+   * 'constancia': ya paga, el premio es de cada renovación y hay que
+   * sostener la racha viva para conservarlo (079).
+   */
+  fase: 'prueba' | 'constancia';
   objetivo: number;
   mejor: number;
   faltan: number;

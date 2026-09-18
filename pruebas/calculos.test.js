@@ -1370,6 +1370,27 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('los números de la promo salen de la base, no del código',
     fs.readFileSync('src/app/page.tsx', 'utf8').includes("rpc('promo_de_la_prueba')"), true);
 
+  // El descuento que se mantiene mientras la racha siga viva (079). Las dos
+  // etapas hablan distinto: una felicita por lo ganado, la otra pide
+  // sostenerlo. Si las pantallas usaran el mismo texto, al que ya paga le
+  // prometeríamos un descuento «en su primer mes» que ya pasó.
+  ok('la tarjeta cambia de voz cuando la cuenta ya paga',
+    fs.readFileSync('src/components/Racha.tsx', 'utf8').includes("descuento.fase === 'constancia'"), true);
+  ok('y «Tu plan» también',
+    fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8').includes('t.plan.constanciaEnPrecio('), true);
+  ok('la administración ve cuánto cobrarle a quien mantiene la racha',
+    fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8').includes('Mantiene su racha'), true);
+  ok('y la portada cuenta la segunda mitad del trato',
+    fs.readFileSync('src/app/page.tsx', 'utf8').includes('p.descuentoConstancia('), true);
+
+  // Apenas pagó es cuando escucha: el aviso de plan activo le dice cómo
+  // pagar menos el mes que viene.
+  const activacion = fs.readFileSync('src/app/api/admin/aviso-activacion/route.ts', 'utf8');
+  ok('el aviso de plan activo invita a mantener la racha', activacion.includes('t.conRacha('), true);
+  ok('con los números de la base, no escritos en el código',
+    activacion.includes("servicio.rpc('promo_de_la_prueba')"), true);
+  ok('y le dice el nombre real de su plan', activacion.includes('NOMBRE_DEL_PLAN[suscripcion.plan'), true);
+
   // Ideas para recomendar: el que no sabe qué decir, no escribe.
   const rec2 = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
   ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);

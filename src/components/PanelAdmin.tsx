@@ -856,10 +856,14 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
               {descuento?.logrado && (
                 <div className="col-span-2 rounded-xl bg-verde-claro px-3.5 py-2.5">
                   <p className="text-[13px] font-semibold text-verde-fuerte">
-                    Ganó {Math.round(descuento.porcentaje)}% de descuento en su primer mes
+                    {descuento.fase === 'constancia'
+                      ? `Mantiene su racha: ${Math.round(descuento.porcentaje)}% de descuento`
+                      : `Ganó ${Math.round(descuento.porcentaje)}% de descuento en su primer mes`}
                   </p>
                   <p className="mt-0.5 text-[12px] leading-snug text-verde-fuerte/80">
-                    Cargó {descuento.mejor} días seguidos durante la prueba. Cobrale el primer mes con ese descuento.
+                    {descuento.fase === 'constancia'
+                      ? `Lleva ${descuento.mejor} días seguidos cargando. Cobrale esta renovación con ese descuento.`
+                      : `Cargó ${descuento.mejor} días seguidos durante la prueba. Cobrale el primer mes con ese descuento.`}
                   </p>
                 </div>
               )}

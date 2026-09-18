@@ -869,7 +869,9 @@ export const pt: Textos = {
     recomendarEnPlanes: '**Os convites estão em todos os planos**, inclusive enquanto você testa grátis: se você trouxer um negócio, fica com metade do primeiro pagamento dele.',
     comoFunciona: 'Como funciona',
     descuentoPrueba: (pct: number, negocio: number, personal: number) =>
-      `**Ganhe % de desconto no primeiro mês.** Durante o teste, lance algo  dias seguidos se for um negócio —ou  se forem suas finanças— e o primeiro mês sai com desconto.`,
+      `**Ganhe ${pct}% de desconto no primeiro mês.** Durante o teste, lance algo ${negocio} dias seguidos se for um negócio —ou ${personal} se forem suas finanças— e o primeiro mês sai com desconto.`,
+    descuentoConstancia: (pct: number, dias: number) =>
+      `**E depois continua: com ${dias} dias seguidos lançando, você paga ${pct}% menos todos os meses.** Enquanto mantiver a sequência, mantém o desconto.`,
     personalNombre: 'Pessoal',
     personalPara: 'Um plano só, sem versões nem letra miúda',
     personalPuntos: [
@@ -1676,6 +1678,13 @@ export const pt: Textos = {
     descuentoLogradoDetalle: 'Aplicamos quando você ativar seu plano. Não precisa fazer nada.',
     descuentoEnPrecio: (pct: number) => `−${pct}% no primeiro mês`,
 
+    constanciaTitulo: (pct: number) => `Mantenha sua sequência e pague ${pct}% menos`,
+    constanciaComo: (dias: number) => `Com ${dias} dias seguidos lançando, sua assinatura tem desconto. Enquanto não quebrar a sequência, o desconto continua mês a mês.`,
+    constanciaLogrado: (pct: number) => `Você tem ${pct}% de desconto no próximo pagamento`,
+    constanciaLogradoDetalle: (dias: number) => `Você está há ${dias} dias seguidos. Enquanto não quebrar a sequência, continua pagando com desconto.`,
+    constanciaEnPrecio: (pct: number) => `−${pct}% enquanto mantiver a sequência`,
+    constanciaPerdida: (dias: number) => `Se quebrar a sequência, o desconto pausa até juntar ${dias} dias de novo.`,
+
     alAnio: 'por ano',
     alMes: 'por mês',
     mensajeSuscribirme: (negocio: string, plan: string, precio: string, cada: string) =>
@@ -2251,6 +2260,7 @@ export const pt: Textos = {
     planActivo: {
       titulo: (plan: string) => `Seu plano ${plan} está ativo`,
       cuerpo: (fecha: string) => `Você já pode usar o Orden sem interrupção até ${fecha}. Obrigado por confiar na gente!`,
+      conRacha: (pct: number, dias: number) => ` Lance todos os dias: com ${dias} dias seguidos, seu próximo mês tem ${pct}% de desconto.`,
     },
     socio: {
       entroTitulo: (persona: string) => `${persona} entrou com seu link`,

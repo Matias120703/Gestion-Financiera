@@ -5,6 +5,8 @@ import { avisar, nombreDeLaPersona } from '@/lib/avisos';
 import { diccionario } from '@/i18n/diccionarios';
 import { FICHA, esIdioma, IDIOMA_POR_DEFECTO } from '@/i18n/idiomas';
 
+const NOMBRE_DEL_PLAN: Record<string, string> = { basico: 'Básico', pro: 'Pro', negocio: 'Premium' };
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -40,11 +42,19 @@ export async function POST(request: Request) {
 
   const servicio = clienteDeServicio();
 
-  const [{ data: empresa }, { data: suscripcion }, { data: dueños }] = await Promise.all([
+  const [{ data: empresa }, { data: suscripcion }, { data: dueños }, { data: promoCruda }] = await Promise.all([
     servicio.from('empresas').select('nombre').eq('id', empresaId).maybeSingle(),
     servicio.from('suscripciones').select('plan, estado, periodo_fin').eq('empresa_id', empresaId).maybeSingle(),
     servicio.from('miembros').select('user_id').eq('empresa_id', empresaId).in('rol', ['propietario', 'admin']),
+    // Los números salen de `ajustes_orden`, no del código: si mañana la promo
+    // cambia, el aviso lo dice sin desplegar nada (079).
+    servicio.rpc('promo_de_la_prueba'),
   ]);
+
+  const crudo = promoCruda as { constancia_porcentaje?: number; constancia_dias?: number } | null;
+  const promo = crudo && Number(crudo.constancia_porcentaje) > 0
+    ? { porcentaje: Math.round(Number(crudo.constancia_porcentaje)), dias: Number(crudo.constancia_dias) }
+    : null;
 
   let avisados = 0;
 
@@ -68,8 +78,10 @@ export async function POST(request: Request) {
           day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Asuncion',
         });
         avisados += await avisar(d.user_id, {
-          titulo: t.titulo(suscripcion.plan === 'negocio' ? 'Premium' : 'Pro'),
-          cuerpo: t.cuerpo(fecha),
+          titulo: t.titulo(NOMBRE_DEL_PLAN[suscripcion.plan as string] ?? 'Pro'),
+          // Apenas pagó es el mejor momento para contarle cómo pagar menos el
+          // mes que viene: mantener la racha (079).
+          cuerpo: t.cuerpo(fecha) + (promo ? t.conRacha(promo.porcentaje, promo.dias) : ''),
           url: '/panel',
           tag: `plan-${empresaId}`,
           idioma,
