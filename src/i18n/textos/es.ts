@@ -864,6 +864,14 @@ export const es = {
     preciosBajada: 'Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día no querés seguir, **tus datos no se borran**: quedan guardados, intactos, y vuelven a estar ahí el día que reactivás tu plan.',
     preciosDolares: 'Los precios en dólares son de referencia. Se cobra por transferencia y lo arreglamos por WhatsApp: escribinos y te decimos cómo pagar desde tu país.',
     empezarLos: (dias: string) => `Empezar los ${dias}`,
+    // El negocio entero, para el que trabaja solo (077).
+    basicoPara: 'Para el que atiende solo su negocio',
+    basicoPuntos: [
+      'Ventas, gastos, fiado, agenda y reportes',
+      'Una sola persona: vos, sin vendedores',
+      'Voz, foto y texto: 300 cargas por mes',
+      'Excel de cinco hojas y comprobantes guardados',
+    ],
     proPara: 'Para el negocio con hasta 2 vendedores',
     proPuntos: [
       'Voz, foto y texto: 600 cargas por mes',
@@ -883,6 +891,9 @@ export const es = {
     vendedoresNoPagan: '**Tus vendedores no pagan nada.** La suscripción la paga una sola persona: el dueño del negocio. Ellos entran con su cuenta, cargan lo suyo y listo.',
     recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás gratis: si traés un negocio, te llevás la mitad de su primer pago.',
     comoFunciona: 'Cómo funciona',
+    // La promo de la racha durante la prueba (078).
+    descuentoPrueba: (pct: number, negocio: number, personal: number) =>
+      `**Ganate ${pct}% de descuento en tu primer mes.** Durante la prueba, cargá algo ${negocio} días seguidos si es un negocio —o ${personal} si son tus finanzas— y el primer mes te sale con descuento.`,
     personalNombre: 'Personal',
     personalPara: 'Un solo plan, sin versiones ni letra chica',
     personalPuntos: [
@@ -1187,6 +1198,41 @@ export const es = {
     promesaDeVerdad: '· Se cobra cuando el negocio **paga de verdad**, no cuando crea la cuenta ni cuando prueba gratis.',
     promesaSinTope: '· Te lo transferimos a donde nos digas. No hay tope: podés traer uno o veinte.',
     promesaNoVale: '· No vale traerte a vos mismo ni al negocio donde trabajás.',
+
+
+    // ---- Ideas para recomendar: qué decirle a cada uno ----
+    //
+    // Matías: «quiero ayudar a las personas con ideas de qué pueden decir,
+    // según sea para un negocio o para una persona». El que no sabe qué
+    // escribir no escribe: esto le da el mensaje hecho, listo para mandar.
+    ideasTitulo: 'No sabés qué decirle',
+    ideasBajada: 'Elegí a quién se parece y mandale el mensaje tal cual, o cambiale lo que quieras.',
+    ideasCopiar: 'Copiar mensaje',
+    ideasVerMas: 'Ver ideas',
+    ideasVerMenos: 'Ocultar',
+    ideas: [
+      {
+        situacion: 'A un negocio que anota en un cuaderno',
+        mensaje: (enlace: string) =>
+          `Che, ¿seguís anotando las ventas en el cuaderno? Yo uso Orden: le hablo al celular y me anota la venta o el gasto, y me dice cuánto gané de verdad cada día. Probalo gratis: ${enlace}`,
+      },
+      {
+        situacion: 'A alguien que no sabe en qué se le va el sueldo',
+        mensaje: (enlace: string) =>
+          `Mirá esto: cargo mis gastos hablándole al celular y me dice cuánto me queda hasta el próximo cobro. Me sirvió para no llegar raspando a fin de mes. Probalo gratis: ${enlace}`,
+      },
+      {
+        situacion: 'A un local con vendedores',
+        mensaje: (enlace: string) =>
+          `Si querés saber cuánto vendió cada vendedor sin andar pidiendo el cuaderno, mirá Orden. Cada uno carga lo suyo desde su celular y vos ves todo junto, con la ganancia real. Probalo gratis: ${enlace}`,
+      },
+      {
+        situacion: 'A alguien que probó apps y las dejó',
+        mensaje: (enlace: string) =>
+          `Sé que probaste apps y las dejaste. Esta es distinta: no hay formularios largos, le hablás y listo — «vendí dos perfumes a 150 mil» y queda anotado. Probala gratis: ${enlace}`,
+      },
+    ] as { situacion: string; mensaje: (enlace: string) => string }[],
+    ideasConsejo: 'Mandáselo a uno por día, a alguien que de verdad lo necesite. Funciona mucho mejor que reenviarlo a veinte grupos.',
 
     mensajeWhatsApp: (enlace: string) => `Te paso Orden, lo uso para anotar las ventas y los gastos del negocio y ver la ganancia del día. Entrá por acá: ${enlace}`,
     tuEnlace: 'Tu enlace',
@@ -1650,6 +1696,7 @@ export const es = {
   plan: {
     titulo: 'Tu plan',
     gratis: 'Gratis',
+    basico: 'Básico',
     pro: 'Pro',
     negocio: 'Negocio',
     mensual: 'por mes',
@@ -1676,6 +1723,9 @@ export const es = {
     conAdjuntos: 'Comprobantes guardados',
     conExcel: 'Excel de cinco hojas',
     soloVos: 'Tus deudas con sus vencimientos',
+    // El Básico es el negocio entero, para uno solo (077).
+    soloUnaPersona: 'Vos solo, sin vendedores',
+    todoElNegocio: 'Ventas, gastos, fiado y reportes',
     soloManual: 'Carga manual sin límite',
     historialCompleto: 'Todo tu historial, siempre',
     irAPagar: 'Ir a pagar',
@@ -1687,6 +1737,15 @@ export const es = {
     podesBajar: 'Podés bajar lo que pagás',
     podesBajarDetalle: 'Traé un negocio con tu enlace y te llevás la mitad de su primer pago. Está en todos los planes, incluso mientras probás.',
     ver: 'Ver →',
+
+    // El descuento que se gana con la racha durante la prueba (078).
+    descuentoTitulo: (pct: number) => `Ganate ${pct}% de descuento en tu primer mes`,
+    descuentoComo: (dias: number) => `Cargá algo ${dias} días seguidos durante tu prueba y el primer mes te sale con descuento.`,
+    descuentoVas: (mejor: number, objetivo: number) => `Llevás ${mejor} de ${objetivo} días`,
+    descuentoFaltan: (n: number) => (n === 1 ? 'Te falta 1 día seguido' : `Te faltan ${n} días seguidos`),
+    descuentoLogrado: (pct: number) => `¡Listo! Ganaste ${pct}% de descuento en tu primer mes`,
+    descuentoLogradoDetalle: 'Lo aplicamos cuando actives tu plan. No hace falta que hagas nada.',
+    descuentoEnPrecio: (pct: number) => `−${pct}% tu primer mes`,
 
     // El mensaje que se abre en WhatsApp para pagar: lo manda la persona,
     // así que va en su idioma.

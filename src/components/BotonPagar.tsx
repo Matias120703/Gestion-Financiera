@@ -17,7 +17,7 @@ import { useTextos } from '@/i18n/cliente';
 export function BotonPagar({
   plan, periodo, moneda, etiqueta, sinPasarela,
 }: {
-  plan: 'pro' | 'negocio';
+  plan: 'basico' | 'pro' | 'negocio';
   periodo: 'mensual' | 'anual';
   moneda: string;
   etiqueta: string;

@@ -1,6 +1,6 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
-import type { CierreDelDia, Racha } from './tipos';
+import type { CierreDelDia, DescuentoRacha, Racha } from './tipos';
 
 /**
  * Lecturas del hábito: cierre del día y racha.
@@ -36,4 +36,20 @@ export function comparar(actual: number, referencia: number): number | null {
   if (!Number.isFinite(actual) || !Number.isFinite(referencia)) return null;
   if (referencia === 0) return null;
   return ((actual - referencia) / Math.abs(referencia)) * 100;
+}
+
+/**
+ * Cuánto le falta para ganarse el descuento del primer mes (078).
+ *
+ * Si falla no rompe la pantalla: sin este dato no se muestra la promo, que
+ * es mejor que no mostrar el panel.
+ */
+export async function traerDescuentoRacha(empresaId: string): Promise<DescuentoRacha | null> {
+  try {
+    const supabase = clienteServidor();
+    const { data } = await supabase.rpc('descuento_por_racha', { p_empresa: empresaId });
+    return (data ?? null) as DescuentoRacha | null;
+  } catch {
+    return null;
+  }
 }

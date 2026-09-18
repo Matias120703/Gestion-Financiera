@@ -15,7 +15,7 @@ import { MONEDA_DE_COBRO, type Idioma } from '@/i18n/idiomas';
  * puede requerir un despliegue.
  */
 
-export const PLANES_PAGOS = ['pro', 'negocio'] as const;
+export const PLANES_PAGOS = ['basico', 'pro', 'negocio'] as const;
 export type PlanPago = (typeof PLANES_PAGOS)[number];
 
 /** Monedas en las que sabemos cobrar hoy. */
@@ -80,6 +80,8 @@ export interface FilaDePlan {
  */
 export const LIMITES_VISIBLES: Record<'gratis' | PlanPago, FilaDePlan> = {
   gratis:  { plan: 'gratis',  capturas: 20,   miembros: 1,  adjuntos: false, excel: false },
+  // Un negocio de una sola persona: todo lo demás igual que Pro (077).
+  basico:  { plan: 'basico',  capturas: 300,  miembros: 1,  adjuntos: true,  excel: true },
   pro:     { plan: 'pro',     capturas: 600,  miembros: 3,  adjuntos: true,  excel: true },
   negocio: { plan: 'negocio', capturas: 3000, miembros: 15, adjuntos: true,  excel: true },
 };

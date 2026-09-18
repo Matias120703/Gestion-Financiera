@@ -1352,6 +1352,30 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el sueldo guarda en qué cuenta se cobra', org.includes('p_cuenta: d.cuentaId || null'), true);
   ok('y el ingreso suelto también cae donde se diga', org.includes('cuenta_id: d.cuentaId || null'), true);
 
+  // El plan Básico: el negocio entero para una sola persona (077).
+  // `precios.ts` importa el cliente del servidor, así que no se compila
+  // suelto: se mira el archivo, que igual es el que manda la pantalla.
+  const precios = fs.readFileSync('src/lib/precios.ts', 'utf8');
+  ok('hay tres planes que se venden',
+    precios.includes("PLANES_PAGOS = ['basico', 'pro', 'negocio']"), true);
+  ok('y el Básico es de uno solo', /basico:.*miembros: 1/.test(precios), true);
+  ok('la pantalla de planes ofrece los tres',
+    fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8').includes("['basico', 'pro', 'negocio']"), true);
+
+  // El descuento que se gana usando Orden en la prueba (078).
+  ok('el panel muestra cómo va el descuento',
+    fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8').includes('<TarjetaDescuento'), true);
+  ok('y la portada lo cuenta antes de registrarse',
+    fs.readFileSync('src/app/page.tsx', 'utf8').includes('p.descuentoPrueba('), true);
+  ok('los números de la promo salen de la base, no del código',
+    fs.readFileSync('src/app/page.tsx', 'utf8').includes("rpc('promo_de_la_prueba')"), true);
+
+  // Ideas para recomendar: el que no sabe qué decir, no escribe.
+  const rec2 = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
+  ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);
+  ok('con un mensaje por situación',
+    fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('ideas: ['), true);
+
   const panelAdmin = fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8');
   ok('activar un plan avisa al cliente', panelAdmin.includes('avisarActivacion('), true);
 

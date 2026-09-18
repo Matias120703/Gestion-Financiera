@@ -95,6 +95,8 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
 
       <Compartir enlace={enlace} codigo={panel.codigo} />
 
+      <Ideas enlace={enlace} />
+
       <div className="grid grid-cols-2 gap-3">
         <Cuadro titulo={r.trajiste} valor={String(panel.traidos)} detalle={r.cuentasCreadas(panel.traidos)} />
         <Cuadro titulo={r.pagaron} valor={String(panel.pagaron)} detalle={r.deEsasCuentas} />
@@ -561,6 +563,84 @@ function Cuadro({ titulo, valor, detalle, tono }: {
         {valor}
       </p>
       <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{detalle}</p>
+    </div>
+  );
+}
+
+/**
+ * QUÉ DECIRLE A CADA UNO.
+ *
+ * Matías: «quiero ayudar a las personas con ideas de qué pueden decir, si es
+ * para un negocio o para una persona». El que no sabe qué escribir no
+ * escribe: el enlace queda ahí sin usarse. Esto le da el mensaje hecho para
+ * cada situación, listo para copiar o mandar por WhatsApp, con su enlace ya
+ * adentro.
+ *
+ * Arranca plegado: el que ya sabe qué decir no tiene que pasar por encima de
+ * cuatro mensajes para llegar a sus números.
+ */
+function Ideas({ enlace }: { enlace: string }) {
+  const r = useTextos().recomendar;
+  const [abierto, setAbierto] = useState(false);
+  const [copiado, setCopiado] = useState(-1);
+
+  async function copiar(texto: string, cual: number) {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(cual);
+      setTimeout(() => setCopiado(-1), 1800);
+    } catch {
+      // Sin portapapeles el texto igual está a la vista, para copiarlo a mano.
+    }
+  }
+
+  return (
+    <div className="tarjeta overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
+      >
+        <span className="min-w-0">
+          <span className="block text-[14.5px] font-bold">{r.ideasTitulo}</span>
+          <span className="mt-0.5 block text-[12.5px] leading-snug text-tinta/55">{r.ideasBajada}</span>
+        </span>
+        <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">
+          {abierto ? r.ideasVerMenos : r.ideasVerMas}
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="space-y-3 border-t border-borde/70 px-4 py-4 aparecer">
+          {r.ideas.map((idea, i) => {
+            const mensaje = idea.mensaje(enlace);
+            return (
+              <div key={idea.situacion} className="rounded-2xl bg-arena p-3.5">
+                <p className="text-[13px] font-bold">{idea.situacion}</p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/70">«{mensaje}»</p>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  <button
+                    type="button" onClick={() => copiar(mensaje, i)}
+                    className="boton-suave px-3.5 py-1.5 text-[12.5px]"
+                  >
+                    {copiado === i ? r.copiado : r.ideasCopiar}
+                  </button>
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="boton-principal px-3.5 py-1.5 text-[12.5px]"
+                  >
+                    {r.mandarPorWhatsApp}
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+
+          <p className="text-[12.5px] leading-relaxed text-tinta/50">{r.ideasConsejo}</p>
+        </div>
+      )}
     </div>
   );
 }

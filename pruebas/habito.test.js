@@ -297,8 +297,10 @@ const leerRacha = (db, uid, empresaId) =>
     const buscar = (lista, tipo, plan, periodo) => Number(
       lista.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === periodo).importe);
 
-    // Dos para la cuenta personal (mensual y anual) y cuatro para comercio.
-    ok('hay seis precios en guaraníes', precios.length, 6);
+    // Dos para la cuenta personal (mensual y anual) y seis para comercio:
+    // Básico, Pro y Premium, cada uno mensual y anual (077).
+    ok('hay ocho precios en guaraníes', precios.length, 8);
+    ok('el Básico de un comercio', buscar(precios, 'emprendedor', 'basico', 'mensual'), 110000);
     ok('la cuenta personal', buscar(precios, 'personal', 'pro', 'mensual'), 60000);
     ok('el Pro de un comercio', buscar(precios, 'emprendedor', 'pro', 'mensual'), 190000);
     ok('y el Premium, desde', buscar(precios, 'emprendedor', 'negocio', 'mensual'), 250000);
@@ -357,7 +359,7 @@ const leerRacha = (db, uid, empresaId) =>
         db.query("update public.precios_adicionales set importe = 1")),
       'denied|policy|permission');
 
-    ok('y también están en dólares', dolares.length, 6);
+    ok('y también están en dólares', dolares.length, 8);
     ok('la cuenta personal en dólares',
       buscar(dolares, 'personal', 'pro', 'mensual'), 11);
     ok('el Pro de un comercio en dólares',
@@ -418,6 +420,66 @@ const leerRacha = (db, uid, empresaId) =>
     const k = (await delDia()).find((x) => x.empresa_id === K.empresaId);
     ok('sin cargar hoy, la racha de ayer sigue contando', k.racha.dias, 2);
     ok('y queda en riesgo: hoy todavía no cargó nada', k.racha.en_riesgo, true);
+
+    // ---- El descuento que se gana en la prueba (078) ----
+    //
+    // No es la racha de hoy: es la MEJOR racha dentro de la prueba. Quien
+    // cumplió y después se tomó un día no pierde lo que ganó.
+    const L = await H.montarEmpresa(db, { email: 'duenio@lima.com', nombre: 'Lima' });
+    // La cuenta arrancó su prueba hace diez días: la ventana del descuento es
+    // la prueba, así que lo cargado antes de existir la cuenta no cuenta.
+    await db.query(
+      `update public.suscripciones
+          set created_at = now() - interval '10 days', prueba_fin = now() + interval '1 day'
+        where empresa_id = $1`, [L.empresaId]);
+    const ventaL = (dias) => db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1, 'venta', public.hoy_empresa($1) - $2::int, 'Venta', 'Ventas', 1000, 1000)`,
+      [L.empresaId, dias]);
+    const descuentoL = async () =>
+      (await H.comoUsuario(db, L.uid, () =>
+        db.query('select public.descuento_por_racha($1) j', [L.empresaId]))).rows[0].j;
+
+    ok('sin cargar nada, no hay nada ganado',
+      [(await descuentoL()).mejor, (await descuentoL()).logrado], [0, false]);
+    ok('un negocio tiene que juntar ocho días', (await descuentoL()).objetivo, 8);
+
+    // Seis días seguidos: todavía le faltan dos.
+    for (const d of [6, 5, 4, 3, 2, 1]) await ventaL(d);
+    let dL = await descuentoL();
+    ok('con seis días seguidos todavía no alcanza', [dL.mejor, dL.faltan, dL.logrado], [6, 2, false]);
+
+    // Los dos que faltaban. La prueba dura 8 días, así que entran justo.
+    await ventaL(0);
+    await db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1, 'venta', public.hoy_empresa($1) - 7::int, 'Venta', 'Ventas', 1000, 1000)`,
+      [L.empresaId]);
+    dL = await descuentoL();
+    ok('con los ocho, el descuento queda ganado', [dL.mejor, dL.logrado, Number(dL.porcentaje)], [8, true, 18]);
+
+    // Una cuenta personal la tiene más corta: cinco días.
+    const M = await H.montarEmpresa(db, { email: 'duenia@mike.com', nombre: 'Mike' });
+    await db.query("update public.empresas set tipo_cuenta = 'personal' where id = $1", [M.empresaId]);
+    ok('una cuenta personal junta cinco',
+      (await H.comoUsuario(db, M.uid, () =>
+        db.query('select public.descuento_por_racha($1) j', [M.empresaId]))).rows[0].j.objetivo, 5);
+
+    const vendedorL = await H.sumarMiembro(db, L.empresaId, 'vende@lima.com', 'vendedor');
+    rechazado('un vendedor no ve el descuento de la cuenta',
+      await H.intentar(db, vendedorL, () => db.query('select public.descuento_por_racha($1)', [L.empresaId])),
+      'dueño');
+
+    // ---- El plan Básico: el negocio entero, para uno solo (077) ----
+    const basico = (await db.query("select public.limites_plan('basico') j")).rows[0].j;
+    ok('el Básico es de una sola persona', basico.miembros, 1);
+    ok('y tiene todo lo demás del negocio',
+      [basico.adjuntos, basico.excel, basico.escritura], [true, true, true]);
+    ok('con su propia cuota de capturas', basico.capturas_mes, 300);
+    const precioBasico = (await db.query(
+      "select importe from public.precios where plan = 'basico' and tipo_cuenta = 'emprendedor' and moneda = 'PYG' and periodo = 'mensual'"
+    )).rows[0];
+    ok('y su precio en guaraníes', Number(precioBasico.importe), 110000);
 
     // Un vendedor no ve la ganancia en la app: tampoco por notificación.
     const vend = await H.sumarMiembro(db, G.empresaId, 'vendedor@golf.com', 'vendedor');

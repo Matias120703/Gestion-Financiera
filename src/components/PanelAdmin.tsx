@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -8,7 +8,7 @@ import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { avisarActivacion } from '@/lib/avisos-cliente';
 import type {
-  AccionAdmin, CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
+  AccionAdmin, CodigoRechazado, ComisionAdmin, CuentaAdmin, DescuentoRacha, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
   ResumenPanel, RetiroAdmin, SocioAdmin, TipoCuenta,
 } from '@/lib/tipos';
 import { PanelSocios } from './PanelSocios';
@@ -49,7 +49,7 @@ function fechaCorta(iso: string | null) {
 }
 
 const NOMBRE_PLAN: Record<string, string> = {
-  gratis: 'Vencida', pro: 'Pro', negocio: 'Premium',
+  gratis: 'Vencida', basico: 'Básico', pro: 'Pro', negocio: 'Premium',
 };
 
 /**
@@ -89,7 +89,12 @@ function comoSeLlama(cuenta: { plan: string; estado: string }) {
  */
 function planesQueVan(tipo: TipoCuenta): { valor: PlanEfectivo; texto: string }[] {
   if (tipo === 'personal') return [{ valor: 'pro', texto: 'Pro' }];
-  return [{ valor: 'pro', texto: 'Pro' }, { valor: 'negocio', texto: 'Premium' }];
+  // Básico es el negocio entero para una sola persona (077).
+  return [
+    { valor: 'basico', texto: 'Básico' },
+    { valor: 'pro', texto: 'Pro' },
+    { valor: 'negocio', texto: 'Premium' },
+  ];
 }
 
 export function PanelAdmin({
@@ -476,6 +481,20 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
   onHecho: (mensaje?: string) => void;
 }) {
   const [codigoSocio, setCodigoSocio] = useState('');
+  /**
+   * Lo que esta cuenta se ganó cargando durante su prueba (078).
+   *
+   * Se pide al abrir la ficha y no viene en la lista: es un cálculo sobre
+   * los movimientos de UNA cuenta, y la lista trae todas.
+   */
+  const [descuento, setDescuento] = useState<DescuentoRacha | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    Promise.resolve(clienteNavegador().rpc('descuento_por_racha', { p_empresa: cuenta.empresa_id }))
+      .then(({ data }) => { if (vivo && data) setDescuento(data as DescuentoRacha); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [cuenta.empresa_id]);
 
   // Los planes que se le pueden vender a esta cuenta, y el que viene
   // elegido. Una cuenta personal arranca y termina en Pro: si quedó en
@@ -831,6 +850,16 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
                     {' '}Vacío deja el tope como está
                     {cuenta.tope_vendedores === null ? ' (hoy: el del plan).' : ` (hoy: ${cuenta.tope_vendedores}).`}
                     {' '}Escribí <strong className="text-tinta/70">-1</strong> para volver al del plan.
+                  </p>
+                </div>
+              )}
+              {descuento?.logrado && (
+                <div className="col-span-2 rounded-xl bg-verde-claro px-3.5 py-2.5">
+                  <p className="text-[13px] font-semibold text-verde-fuerte">
+                    Ganó {Math.round(descuento.porcentaje)}% de descuento en su primer mes
+                  </p>
+                  <p className="mt-0.5 text-[12px] leading-snug text-verde-fuerte/80">
+                    Cargó {descuento.mejor} días seguidos durante la prueba. Cobrale el primer mes con ese descuento.
                   </p>
                 </div>
               )}

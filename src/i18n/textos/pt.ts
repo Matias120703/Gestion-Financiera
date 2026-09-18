@@ -842,6 +842,13 @@ export const pt: Textos = {
     preciosBajada: 'Você testa primeiro e decide depois: não pedimos cartão pra começar. E se um dia não quiser continuar, **seus dados não são apagados**: ficam guardados, intactos, e voltam a estar lá no dia em que você reativar seu plano.',
     preciosDolares: 'Os preços em dólares são de referência. A cobrança é por transferência e combinamos pelo WhatsApp: fale com a gente e dizemos como pagar do seu país.',
     empezarLos: (dias: string) => `Começar os ${dias}`,
+    basicoPara: 'Para quem toca o negócio sozinho',
+    basicoPuntos: [
+      'Vendas, despesas, fiado, agenda e relatórios',
+      'Uma só pessoa: você, sem vendedores',
+      'Voz, foto e texto: 300 lançamentos por mês',
+      'Excel de cinco abas e comprovantes guardados',
+    ],
     proPara: 'Pro negócio com até 2 vendedores',
     proPuntos: [
       'Voz, foto e texto: 600 registros por mês',
@@ -861,6 +868,8 @@ export const pt: Textos = {
     vendedoresNoPagan: '**Seus vendedores não pagam nada.** A assinatura é paga por uma pessoa só: o dono do negócio. Eles entram com a própria conta, lançam o que é deles e pronto.',
     recomendarEnPlanes: '**Os convites estão em todos os planos**, inclusive enquanto você testa grátis: se você trouxer um negócio, fica com metade do primeiro pagamento dele.',
     comoFunciona: 'Como funciona',
+    descuentoPrueba: (pct: number, negocio: number, personal: number) =>
+      `**Ganhe % de desconto no primeiro mês.** Durante o teste, lance algo  dias seguidos se for um negócio —ou  se forem suas finanças— e o primeiro mês sai com desconto.`,
     personalNombre: 'Pessoal',
     personalPara: 'Um plano só, sem versões nem letra miúda',
     personalPuntos: [
@@ -1144,6 +1153,36 @@ export const pt: Textos = {
     promesaDeVerdad: '· Você recebe quando o negócio **paga de verdade**, não quando cria a conta nem enquanto testa grátis.',
     promesaSinTope: '· Transferimos pra onde você disser. Não há limite: você pode trazer um ou vinte.',
     promesaNoVale: '· Não vale trazer você mesmo nem o negócio onde você trabalha.',
+
+
+    ideasTitulo: 'Não sabe o que dizer',
+    ideasBajada: 'Escolha com quem a pessoa se parece e mande a mensagem assim mesmo, ou mude o que quiser.',
+    ideasCopiar: 'Copiar mensagem',
+    ideasVerMas: 'Ver ideias',
+    ideasVerMenos: 'Esconder',
+    ideas: [
+      {
+        situacion: 'Para um negócio que anota em caderno',
+        mensaje: (enlace: string) =>
+          `Você ainda anota as vendas no caderno? Eu uso o Orden: falo no celular e ele lança a venda ou a despesa, e me diz quanto lucrei de verdade a cada dia. Teste grátis: ${enlace}`,
+      },
+      {
+        situacion: 'Para quem não sabe pra onde vai o salário',
+        mensaje: (enlace: string) =>
+          `Olha só: eu lanço meus gastos falando no celular e ele me diz quanto sobra até o próximo pagamento. Me ajudou a não chegar apertado no fim do mês. Teste grátis: ${enlace}`,
+      },
+      {
+        situacion: 'Para uma loja com vendedores',
+        mensaje: (enlace: string) =>
+          `Se você quer saber quanto cada vendedor vendeu sem ficar pedindo caderno, olha o Orden. Cada um lança o dele pelo celular e você vê tudo junto, com o lucro real. Teste grátis: ${enlace}`,
+      },
+      {
+        situacion: 'Para quem já testou apps e desistiu',
+        mensaje: (enlace: string) =>
+          `Sei que você já testou apps e largou. Essa é diferente: não tem formulário longo, você fala e pronto — «vendi dois perfumes a 150 mil» e fica anotado. Teste grátis: ${enlace}`,
+      },
+    ] as { situacion: string; mensaje: (enlace: string) => string }[],
+    ideasConsejo: 'Mande para uma pessoa por dia, para quem realmente precisa. Funciona muito melhor do que encaminhar para vinte grupos.',
 
     mensajeWhatsApp: (enlace: string) => `Te passo o Orden, uso pra anotar as vendas e as despesas do negócio e ver o lucro do dia. Entra por aqui: ${enlace}`,
     tuEnlace: 'Seu link',
@@ -1588,6 +1627,7 @@ export const pt: Textos = {
   plan: {
     titulo: 'Seu plano',
     gratis: 'Grátis',
+    basico: 'Básico',
     pro: 'Pro',
     negocio: 'Negócio',
     mensual: 'por mês',
@@ -1614,6 +1654,8 @@ export const pt: Textos = {
     conAdjuntos: 'Comprovantes guardados',
     conExcel: 'Excel de cinco abas',
     soloVos: 'Suas dívidas com os vencimentos',
+    soloUnaPersona: 'Só você, sem vendedores',
+    todoElNegocio: 'Vendas, despesas, fiado e relatórios',
     soloManual: 'Lançamento manual sem limite',
     historialCompleto: 'Todo o seu histórico, sempre',
     irAPagar: 'Ir pagar',
@@ -1625,6 +1667,14 @@ export const pt: Textos = {
     podesBajar: 'Você pode pagar menos',
     podesBajarDetalle: 'Traga um negócio com seu link e fique com metade do primeiro pagamento dele. Está em todos os planos, inclusive enquanto você testa.',
     ver: 'Ver →',
+
+    descuentoTitulo: (pct: number) => `Ganhe ${pct}% de desconto no primeiro mês`,
+    descuentoComo: (dias: number) => `Lance algo ${dias} dias seguidos durante o teste e o primeiro mês sai com desconto.`,
+    descuentoVas: (mejor: number, objetivo: number) => `Você está em ${mejor} de ${objetivo} dias`,
+    descuentoFaltan: (n: number) => (n === 1 ? 'Falta 1 dia seguido' : `Faltam ${n} dias seguidos`),
+    descuentoLogrado: (pct: number) => `Pronto! Você ganhou ${pct}% de desconto no primeiro mês`,
+    descuentoLogradoDetalle: 'Aplicamos quando você ativar seu plano. Não precisa fazer nada.',
+    descuentoEnPrecio: (pct: number) => `−${pct}% no primeiro mês`,
 
     alAnio: 'por ano',
     alMes: 'por mês',

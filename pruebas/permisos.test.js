@@ -602,6 +602,11 @@ async function principal() {
       // La pantalla de planes muestra los precios antes de registrarse.
       'lista_precios',
 
+      // La portada cuenta la promo de la prueba —cuánto se descuenta y
+      // cuántos días hay que juntar— a quien todavía no tiene cuenta (078).
+      // No dice nada de ninguna cuenta: son tres números de `ajustes_orden`.
+      'promo_de_la_prueba',
+
       // LA PÁGINA PÚBLICA DE RESERVAS (migración 038). Un cliente sin cuenta
       // tiene que poder ver los horarios libres y tomar uno. Son cuatro, y
       // cada una devuelve lo mínimo:

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { Racha } from '@/lib/tipos';
+import type { DescuentoRacha, Racha } from '@/lib/tipos';
 import type { Textos } from '@/i18n';
 
 /**
@@ -73,6 +73,64 @@ export function TarjetaRacha({ racha, t }: { racha: Racha; t: Textos }) {
         <p className="mt-0.5 text-[12.5px] font-semibold leading-snug text-tinta/50">
           {enRiesgo ? t.racha.enRiesgo(racha.dias) : t.racha.mejor(racha.mejor)}
         </p>
+      </div>
+    </Link>
+  );
+}
+
+/**
+ * EL DESCUENTO QUE SE GANA EN LA PRUEBA (078).
+ *
+ * Idea de Matías: la prueba gratis sola no crea el hábito. Esto le pone
+ * plata al hábito — junta la racha durante la prueba y el primer mes te sale
+ * más barato — y por eso vive en el panel, que es la pantalla que se abre
+ * todos los días, y no escondido en «Tu plan».
+ *
+ * Solo aparece mientras se puede ganar o cuando ya se ganó: después del
+ * primer pago no tiene nada que decir.
+ */
+export function TarjetaDescuento({ descuento, t }: { descuento: DescuentoRacha; t: Textos }) {
+  if (!descuento.vigente && !descuento.logrado) return null;
+
+  const pct = Math.round(descuento.porcentaje);
+  const avance = Math.min(100, (descuento.mejor / Math.max(1, descuento.objetivo)) * 100);
+
+  return (
+    <Link
+      href="/plan"
+      className={`tarjeta block p-4 transition hover:border-verde/50 ${
+        descuento.logrado ? 'border-verde/50 bg-verde-claro/40' : ''
+      }`}
+    >
+      <div className="flex items-start gap-3.5">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
+          descuento.logrado ? 'bg-verde text-sobre-verde' : 'bg-verde-claro text-verde-fuerte'
+        }`}>
+          {Llama}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          {descuento.logrado ? (
+            <>
+              <p className="text-[15px] font-bold tracking-tight text-verde-fuerte">{t.plan.descuentoLogrado(pct)}</p>
+              <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/55">{t.plan.descuentoLogradoDetalle}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[15px] font-bold tracking-tight">{t.plan.descuentoTitulo(pct)}</p>
+              <p className="mt-0.5 text-[12.5px] leading-snug text-tinta/55">
+                {t.plan.descuentoComo(descuento.objetivo)}
+              </p>
+              <div className="mt-2.5 flex items-center justify-between gap-3 text-[12px] font-semibold">
+                <span className="text-tinta/60">{t.plan.descuentoVas(descuento.mejor, descuento.objetivo)}</span>
+                <span className="text-verde-fuerte">{t.plan.descuentoFaltan(descuento.faltan)}</span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-arena">
+                <div className="h-full rounded-full bg-verde transition-all" style={{ width: `${avance}%` }} />
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </Link>
   );

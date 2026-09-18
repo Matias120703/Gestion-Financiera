@@ -87,7 +87,7 @@ export type TipoCuenta = 'personal' | 'emprendedor';
  * Ver migración 021 y src/lib/rubros.ts.
  */
 export type Rubro = 'comercio' | 'ganaderia' | 'agricultura' | 'servicios';
-export type PlanEfectivo = 'gratis' | 'pro' | 'negocio';
+export type PlanEfectivo = 'gratis' | 'basico' | 'pro' | 'negocio';
 export type PeriodoCobro = 'mensual' | 'anual';
 export type EstadoSuscripcion = 'activa' | 'prueba' | 'vencida' | 'cancelada' | 'morosa';
 export type TipoAdjunto = 'foto' | 'audio';
@@ -719,7 +719,7 @@ export interface Precio {
    * este par decide CUÁNTO SE PAGA. Ver migración 017.
    */
   tipo_cuenta: TipoCuenta;
-  plan: 'pro' | 'negocio';
+  plan: 'basico' | 'pro' | 'negocio';
   moneda: string;
   periodo: PeriodoCobro;
   importe: number;
@@ -1153,4 +1153,20 @@ export interface TurnoCliente {
   servicio: string | null;
   profesional: string | null;
   monto: number;
+}
+
+/**
+ * El descuento que se gana usando Orden durante la prueba (078).
+ *
+ * `mejor` es la racha más larga lograda DENTRO de la prueba, así que un
+ * premio ganado no se pierde por tomarse un día después.
+ */
+export interface DescuentoRacha {
+  objetivo: number;
+  mejor: number;
+  faltan: number;
+  logrado: boolean;
+  porcentaje: number;
+  /** Todavía corre la prueba: se puede seguir sumando. */
+  vigente: boolean;
 }

@@ -13,6 +13,7 @@ import { BotonSuscribirme, BotonCotizar } from '@/components/BotonSuscribirme';
 import { BotonPagar } from '@/components/BotonPagar';
 import { TarjetaRecomendar } from '@/components/TarjetaRecomendar';
 import { clienteServidor } from '@/lib/supabase/servidor';
+import { traerDescuentoRacha } from '@/lib/habito';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,8 @@ export default async function PaginaPlan({
   // con vendedores sería venderle algo que no puede usar.
   const planesVisibles: PlanPago[] = ctx.empresa.tipo_cuenta === 'personal'
     ? ['pro']
-    : ['pro', 'negocio'];
+    // Un negocio elige entre tres: Básico (uno solo), Pro y Premium (077).
+    : ['basico', 'pro', 'negocio'];
   const sus = ctx.suscripcion;
 
   // Si es momento de ofrecerle recomendar Orden. Las reglas están en la
@@ -57,6 +59,10 @@ export default async function PaginaPlan({
     clienteServidor().rpc('momento_de_recomendar', { p_empresa: ctx.empresa.id }),
   ).then((r) => (r.data as { pedir?: boolean } | null)?.pedir === true).catch(() => false);
   const uso = ctx.capturasIA;
+
+  // El descuento que se gana cargando durante la prueba (078). Si falla, no
+  // se muestra la promo y la pantalla sigue igual.
+  const descuento = await traerDescuentoRacha(ctx.empresa.id);
 
   // Mientras el cobro sea por transferencia, el camino es WhatsApp. Si algún
   // día se enchufa una pasarela, con quitar el número vuelve solo el botón de
@@ -128,6 +134,41 @@ export default async function PaginaPlan({
         </div>
       )}
 
+      {/* ---------------- El descuento que se gana usando Orden (078) ----------------
+          Va antes de los precios a propósito: quien está mirando cuánto le
+          sale tiene que enterarse ANTES de que puede pagar menos. */}
+      {descuento && (descuento.vigente || descuento.logrado) && (
+        <div className={`tarjeta p-4 ${descuento.logrado ? 'border-verde/50 bg-verde-claro/40' : ''}`}>
+          {descuento.logrado ? (
+            <>
+              <p className="text-[15px] font-bold text-verde-fuerte">
+                {t.plan.descuentoLogrado(Math.round(descuento.porcentaje))}
+              </p>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">
+                {t.plan.descuentoLogradoDetalle}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[15px] font-bold">{t.plan.descuentoTitulo(Math.round(descuento.porcentaje))}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-tinta/60">
+                {t.plan.descuentoComo(descuento.objetivo)}
+              </p>
+              <div className="mt-3 flex items-center justify-between gap-3 text-[12.5px] font-semibold">
+                <span className="text-tinta/70">{t.plan.descuentoVas(descuento.mejor, descuento.objetivo)}</span>
+                <span className="text-verde-fuerte">{t.plan.descuentoFaltan(descuento.faltan)}</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-arena">
+                <div
+                  className="h-full rounded-full bg-verde transition-all"
+                  style={{ width: `${Math.min(100, (descuento.mejor / Math.max(1, descuento.objetivo)) * 100)}%` }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <SelectorCobro
         moneda={moneda}
         periodo={periodo}
@@ -141,7 +182,7 @@ export default async function PaginaPlan({
           Ya no aparece una tarjeta «Gratis». Gratis significa CUENTA
           VENCIDA: no se puede usar nada de Orden. Ofrecerlo como si fuera
           una opción era invitar a elegir el estado de «no poder trabajar». */}
-      <div className={`grid gap-4 ${planesVisibles.length === 1 ? 'sm:max-w-md' : 'md:grid-cols-2'}`}>
+      <div className={`grid gap-4 ${planesVisibles.length === 1 ? 'sm:max-w-md' : planesVisibles.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
         {planesVisibles.map((plan) => {
           const precio = precioDe(precios, plan, periodo);
           const limites = LIMITES_VISIBLES[plan];
@@ -160,8 +201,10 @@ export default async function PaginaPlan({
           return (
             <Tarjeta
               key={plan}
-              nombre={plan === 'pro' ? t.plan.pro : t.plan.negocio}
+              nombre={t.plan[plan]}
               destacado={plan === 'pro'}
+              /* Mientras la promo esté ganada, el precio lleva su cartel. */
+              nota={descuento?.logrado ? t.plan.descuentoEnPrecio(Math.round(descuento.porcentaje)) : null}
               precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : t.comun.sinDato}
               porPeriodo={periodo === 'anual' ? `/ ${t.plan.porAnio}` : `/ ${t.plan.porMes}`}
               actual={esActual}
@@ -175,12 +218,20 @@ export default async function PaginaPlan({
                       t.plan.conExcel,
                       t.plan.soloVos,
                     ]
-                  : [
-                      t.plan.capturasLibres,
-                      t.plan.personas(limites.miembros),
-                      t.plan.conAdjuntos,
-                      t.plan.conExcel,
-                    ]
+                  : plan === 'basico'
+                    ? [
+                        // El Básico no recorta el negocio: recorta la gente.
+                        t.plan.todoElNegocio,
+                        t.plan.soloUnaPersona,
+                        t.plan.capturasMes(limites.capturas),
+                        t.plan.conExcel,
+                      ]
+                    : [
+                        t.plan.capturasLibres,
+                        t.plan.personas(limites.miembros),
+                        t.plan.conAdjuntos,
+                        t.plan.conExcel,
+                      ]
               }
               pie={
                 esActual ? null : whatsapp ? (
@@ -192,7 +243,7 @@ export default async function PaginaPlan({
                     <BotonSuscribirme
                       whatsapp={whatsapp}
                       empresa={ctx.empresa.nombre}
-                      plan={plan === 'pro' ? t.plan.pro : t.plan.negocio}
+                      plan={t.plan[plan]}
                       precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
                       periodo={periodo}
                       etiqueta={sus.en_prueba ? t.plan.activarEstePlan : t.plan.suscribirme}
@@ -246,7 +297,7 @@ export default async function PaginaPlan({
 }
 
 function Tarjeta({
-  nombre, precio, porPeriodo, puntos, incluye, actual, etiquetaActual, destacado = false, pie = null,
+  nombre, precio, porPeriodo, puntos, incluye, actual, etiquetaActual, destacado = false, pie = null, nota = null,
 }: {
   nombre: string;
   precio: string;
@@ -257,6 +308,8 @@ function Tarjeta({
   etiquetaActual: string;
   destacado?: boolean;
   pie?: React.ReactNode;
+  /** «−18% tu primer mes», cuando la promo ya está ganada (078). */
+  nota?: string | null;
 }) {
   return (
     <div className={`tarjeta flex flex-col p-5 ${destacado ? 'border-verde/50 ring-1 ring-verde/20' : ''}`}>
@@ -271,6 +324,10 @@ function Tarjeta({
         <span className="text-[24px] font-titulo font-extrabold tracking-tight tabular-nums">{precio}</span>
         {porPeriodo && <span className="text-[13px] font-semibold text-tinta/45">{porPeriodo}</span>}
       </p>
+
+      {nota && (
+        <p className="mt-1.5 text-[12.5px] font-bold text-verde-fuerte">{nota}</p>
+      )}
 
       <p className="mt-4 titulo-seccion">{incluye}</p>
       <ul className="mt-2 flex-1 space-y-2">

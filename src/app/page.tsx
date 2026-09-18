@@ -108,9 +108,21 @@ export default async function Portada({
 
   const personalMes = precioDe('personal', 'pro');
   const personalAnio = precioDe('personal', 'pro', 'anual');
+  const basicoMes = precioDe('emprendedor', 'basico');
+  const basicoAnio = precioDe('emprendedor', 'basico', 'anual');
   const proMes = precioDe('emprendedor', 'pro');
   const proAnio = precioDe('emprendedor', 'pro', 'anual');
   const premiumMes = precioDe('emprendedor', 'negocio');
+
+  /**
+   * Los números de la promo de la racha (078) salen de `ajustes_orden`, que
+   * es donde se editan sin desplegar. Si la lectura falla quedan los de por
+   * defecto: decir un número equivocado sería peor que no decirlo.
+   */
+  const { data: promo } = await supabase.rpc('promo_de_la_prueba');
+  const descuentoPct = Math.round(Number((promo as { porcentaje?: number } | null)?.porcentaje ?? 18));
+  const rachaNegocio = Number((promo as { negocio?: number } | null)?.negocio ?? 8);
+  const rachaPersonal = Number((promo as { personal?: number } | null)?.personal ?? 5);
 
   const { data: porVendedor } = await supabase.rpc('precio_por_vendedor', { p_moneda: moneda });
   const vendedorExtra = porVendedor != null
@@ -124,6 +136,7 @@ export default async function Portada({
   };
   const ahorroPersonal = mesesGratis(personalMes, personalAnio);
   const ahorroPro = mesesGratis(proMes, proAnio);
+  const ahorroBasico = mesesGratis(basicoMes, basicoAnio);
 
   return (
     <main className="min-h-screen bg-superficie">
@@ -504,7 +517,17 @@ export default async function Portada({
             <span className="text-[13.5px] font-semibold text-tinta/45">{p.dePrueba(diasNegocio)}</span>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <Plan
+              nombre="Básico"
+              llamado={p.empezarLos(diasNegocio)}
+              enlace="/crear?para=negocio"
+              precio={importe(basicoMes)}
+              porMes={p.porMes}
+              para={p.basicoPara}
+              puntos={p.basicoPuntos}
+              nota={ahorroBasico > 0 && basicoAnio ? p.alAnio(importe(basicoAnio), ahorroBasico) : undefined}
+            />
             <Plan
               destacado
               nombre="Pro"
@@ -536,6 +559,13 @@ export default async function Portada({
 
           <p className="mt-4 rounded-xl bg-verde-claro/40 px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
             <Rico texto={p.vendedoresNoPagan} negrita="text-tinta" />
+          </p>
+
+          {/* El descuento que se gana usando Orden en la prueba (078). Va en
+              los precios porque es parte de la cuenta: quien está mirando
+              cuánto le sale tiene que saber que puede pagar menos. */}
+          <p className="mt-3 rounded-xl bg-verde-claro/40 px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
+            <Rico texto={p.descuentoPrueba(descuentoPct, rachaNegocio, rachaPersonal)} negrita="text-tinta" />
           </p>
 
           {/* Se aclara acá, en los precios, porque es donde alguien está
