@@ -1238,8 +1238,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
       personalConGastos: (g) => `PG:${g}`,
       personalSoloIngresos: (i) => `PI:${i}`,
       personalNada: 'PNADA',
+      rachaLinea: (d) => `R${d}`,
     },
-    tarde: { negocio: 'TN', personal: 'TP' },
+    tarde: {
+      negocio: 'TN', personal: 'TP',
+      negocioRacha: (d) => `TNR${d}`, personalRacha: (d) => `TPR${d}`,
+    },
     noche: {
       titulo: (n) => `Día en ${n}`,
       negocio: (v, c, g, gan) => `V:${v}${c} G:${g} GAN:${gan}`,
@@ -1251,10 +1255,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
       masQueAyer: (p) => ` +${p}%`,
       menosQueAyer: (p) => ` -${p}%`,
       igualQueAyer: ' =',
+      rachaLinea: (d) => `R${d}`,
     },
   };
   const dia = (o = {}) => ({ ventas: 0, ingresos: 0, gastos: 0, ganancia: 0, cargados: 0, ...o });
-  const cuenta = (hoy, ayer, tipo = 'emprendedor') => ({ nombre: 'Kiosco', moneda: 'PYG', tipo_cuenta: tipo, hoy: dia(hoy), ayer: dia(ayer) });
+  const cuenta = (hoy, ayer, tipo = 'emprendedor', racha) =>
+    ({ nombre: 'Kiosco', moneda: 'PYG', tipo_cuenta: tipo, hoy: dia(hoy), ayer: dia(ayer), racha });
   const gs = (n) => dinero(n, 'PYG', true, 'es-PY');
 
   ok('mañana: ayer vendió y ganó',
@@ -1293,6 +1299,31 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('noche, cuenta personal: entró y gastó',
     fraseDelDia('noche', cuenta({ ingresos: 300000, gastos: 50000, cargados: 2 }, {}, 'personal'), tx, 'es-PY').cuerpo,
     `I:${gs(300000)} G:${gs(50000)}`);
+
+  // --- La racha, con más fuerza para no necesitar un widget (076) ---
+  //
+  // No hay widget de pantalla de inicio para una PWA: eso pide una app
+  // nativa en cada tienda. Mientras tanto, los avisos dicen la racha.
+  ok('un solo día no alcanza para mencionar la racha',
+    fraseDelDia('manana', cuenta({}, {}, 'emprendedor', { dias: 1, en_riesgo: false }), tx, 'es-PY').cuerpo,
+    'NADA');
+  ok('mañana: la racha de ayer se agrega al final',
+    fraseDelDia('manana', cuenta({}, {}, 'emprendedor', { dias: 3, en_riesgo: false }), tx, 'es-PY').cuerpo,
+    'NADA R3');
+  ok('tarde: sin racha en riesgo, el empujón genérico',
+    fraseDelDia('tarde', cuenta({}, {}, 'emprendedor', { dias: 3, en_riesgo: false }), tx, 'es-PY').cuerpo,
+    'TN');
+  ok('tarde: con la racha en riesgo, el empujón pega más fuerte',
+    fraseDelDia('tarde', cuenta({}, {}, 'emprendedor', { dias: 5, en_riesgo: true }), tx, 'es-PY').cuerpo,
+    'TNR5');
+  ok('tarde, cuenta personal: su propio empujón con racha',
+    fraseDelDia('tarde', cuenta({}, {}, 'personal', { dias: 4, en_riesgo: true }), tx, 'es-PY').cuerpo,
+    'TPR4');
+  ok('noche: la racha de hoy se agrega al final',
+    fraseDelDia('noche', cuenta({ gastos: 5000, ganancia: -5000, cargados: 1 }, {}, 'emprendedor', { dias: 6, en_riesgo: false }), tx, 'es-PY').cuerpo,
+    `SV:${gs(5000)} R6`);
+  ok('sin racha en la cuenta, no explota ni la menciona',
+    fraseDelDia('manana', cuenta({}, {}), tx, 'es-PY').cuerpo, 'NADA');
 
   // Las tres corridas existen y cada una a su hora (Hobby: una vez por día cada una).
   const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));

@@ -34,12 +34,20 @@ export interface NumerosDelDia {
   cargados: number;
 }
 
+export interface RachaDelDia {
+  /** Días seguidos cargando, hasta hoy si ya cargó algo, o hasta ayer si no. */
+  dias: number;
+  /** La racha llega hasta ayer y hoy todavía está vacío: es el momento de empujar. */
+  en_riesgo: boolean;
+}
+
 export interface CuentaDelDia {
   nombre: string;
   moneda: string;
   tipo_cuenta: 'personal' | 'emprendedor' | string;
   hoy: NumerosDelDia;
   ayer: NumerosDelDia;
+  racha?: RachaDelDia;
 }
 
 export interface TextosDelDia {
@@ -51,10 +59,15 @@ export interface TextosDelDia {
     personalConGastos: (gastos: string) => string;
     personalSoloIngresos: (ingresos: string) => string;
     personalNada: string;
+    /** Se agrega al final cuando la racha (contada hasta ayer) ya vale la pena decirla. */
+    rachaLinea: (dias: number) => string;
   };
   tarde: {
     negocio: string;
     personal: string;
+    /** Con racha en juego: empuja más fuerte que el genérico. */
+    negocioRacha: (dias: number) => string;
+    personalRacha: (dias: number) => string;
   };
   noche: {
     titulo: (nombre: string) => string;
@@ -67,8 +80,18 @@ export interface TextosDelDia {
     masQueAyer: (pct: number) => string;
     menosQueAyer: (pct: number) => string;
     igualQueAyer: string;
+    /** Se agrega al final cuando hoy extendió una racha que ya vale la pena decir. */
+    rachaLinea: (dias: number) => string;
   };
 }
+
+/**
+ * Desde cuántos días seguidos la racha ya es una frase, no un detalle.
+ *
+ * Un solo día es «cargaste hoy», que el resto del mensaje ya dice. Dos es lo
+ * mínimo que empieza a sonar a racha de verdad.
+ */
+const RACHA_MINIMA = 2;
 
 export interface Frase {
   titulo: string;
@@ -99,6 +122,10 @@ export function fraseDelDia(
   const plata = (v: number) => dinero(v, cuenta.moneda, true, locale);
   const personal = cuenta.tipo_cuenta === 'personal';
   const url = '/panel';
+  const rachaDias = n(cuenta.racha?.dias);
+  const rachaEnRiesgo = Boolean(cuenta.racha?.en_riesgo);
+  const conRacha = (base: string, linea: (dias: number) => string) =>
+    rachaDias >= RACHA_MINIMA ? `${base} ${linea(rachaDias)}` : base;
 
   if (momento === 'manana') {
     const a = cuenta.ayer;
@@ -118,12 +145,19 @@ export function fraseDelDia(
     } else {
       cuerpo = tx.manana.negocioNada;
     }
-    return { titulo: cuenta.nombre, cuerpo, url };
+    // Acá la racha viene contada hasta AYER (todavía no cargó nada hoy): es
+    // lo que trae de la noche anterior, para arrancar el día sabiéndolo.
+    return { titulo: cuenta.nombre, cuerpo: conRacha(cuerpo, tx.manana.rachaLinea), url };
   }
 
   if (momento === 'tarde') {
     if (n(cuenta.hoy.cargados) > 0) return null;
-    return { titulo: cuenta.nombre, cuerpo: personal ? tx.tarde.personal : tx.tarde.negocio, url };
+    // Con una racha en juego, el empujón pega más fuerte que el genérico:
+    // no es solo «cargá algo», es «no cortés lo que venís haciendo».
+    const cuerpo = rachaEnRiesgo && rachaDias >= RACHA_MINIMA
+      ? (personal ? tx.tarde.personalRacha(rachaDias) : tx.tarde.negocioRacha(rachaDias))
+      : (personal ? tx.tarde.personal : tx.tarde.negocio);
+    return { titulo: cuenta.nombre, cuerpo, url };
   }
 
   // noche
@@ -136,17 +170,17 @@ export function fraseDelDia(
     const cuerpo = entro > 0 && n(h.gastos) > 0 ? tx.noche.personal(plata(entro), plata(n(h.gastos)))
       : n(h.gastos) > 0 ? tx.noche.personalSoloGastos(plata(n(h.gastos)))
       : tx.noche.personalSoloIngresos(plata(entro));
-    return { titulo, cuerpo, url };
+    return { titulo, cuerpo: conRacha(cuerpo, tx.noche.rachaLinea), url };
   }
 
   if (n(h.ventas) === 0) {
     // Cargó algo que no es venta ni gasto (un ingreso suelto): igual se dice.
-    return { titulo, cuerpo: tx.noche.negocioSinVentas(plata(n(h.gastos))), url };
+    return { titulo, cuerpo: conRacha(tx.noche.negocioSinVentas(plata(n(h.gastos))), tx.noche.rachaLinea), url };
   }
 
   const comparacion = comparacionConAyer(n(h.ventas), n(cuenta.ayer.ventas), tx.noche);
   const cuerpo = n(h.ganancia) >= 0
     ? tx.noche.negocio(plata(n(h.ventas)), comparacion, plata(n(h.gastos)), plata(n(h.ganancia)))
     : tx.noche.negocioConPerdida(plata(n(h.ventas)), comparacion, plata(n(h.gastos)), plata(-n(h.ganancia)));
-  return { titulo, cuerpo, url };
+  return { titulo, cuerpo: conRacha(cuerpo, tx.noche.rachaLinea), url };
 }

@@ -398,6 +398,27 @@ const leerRacha = (db, uid, empresaId) =>
     ok('con la fecha de hoy en su zona', /^\d{4}-\d{2}-\d{2}$/.test(String(g.fecha)), true);
     ok('le llega al dueño', g.destinatarios.map((d) => d.user_id), [G.uid]);
 
+    // La racha, para que el aviso pese sin necesitar un widget (076): cargó
+    // ayer y hoy, dos días seguidos, y hoy ya cargó algo así que cuenta hasta hoy.
+    ok('lleva dos días seguidos', [g.racha.dias, g.racha.en_riesgo], [2, false]);
+
+    // Un tercer día, salteado: la isla se corta y la racha vuelve a uno.
+    await venta(5, 90000, 30000);
+    const g2 = (await delDia()).find((x) => x.empresa_id === G.empresaId);
+    ok('un día salteado corta la racha', g2.racha.dias, 2);
+
+    // Sin cargar nada hoy, la racha de ayer queda «en riesgo».
+    const K = await H.montarEmpresa(db, { email: 'duenio@kilo.com', nombre: 'Kilo' });
+    const ventaK = (dias, monto) => db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1, 'venta', public.hoy_empresa($1) - $2::int, 'Venta', 'Ventas', $3, $3)`,
+      [K.empresaId, dias, monto]);
+    await ventaK(2, 50000);
+    await ventaK(1, 50000);
+    const k = (await delDia()).find((x) => x.empresa_id === K.empresaId);
+    ok('sin cargar hoy, la racha de ayer sigue contando', k.racha.dias, 2);
+    ok('y queda en riesgo: hoy todavía no cargó nada', k.racha.en_riesgo, true);
+
     // Un vendedor no ve la ganancia en la app: tampoco por notificación.
     const vend = await H.sumarMiembro(db, G.empresaId, 'vendedor@golf.com', 'vendedor');
     ok('al vendedor no le llegan los números del negocio',

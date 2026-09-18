@@ -2169,10 +2169,13 @@ export const pt: Textos = {
       personalConGastos: (gastos: string) => `Ontem você gastou ${gastos}. Lance o de hoje assim que fizer e saiba sempre quanto sobra.`,
       personalSoloIngresos: (ingresos: string) => `Ontem entraram ${ingresos}. Lance também o que gastar hoje.`,
       personalNada: 'Bom dia. Lance seus gastos de hoje assim que fizer: por voz são dez segundos.',
+      rachaLinea: (dias: number) => `🔥 Você está há ${dias} dias seguidos.`,
     },
     tarde: {
       negocio: 'Você ainda não lançou nada hoje. Vendeu algo? Fale por voz e fica anotado.',
       personal: 'Você ainda não anotou nada hoje. Gastou com algo? Fale por voz e fica anotado.',
+      negocioRacha: (dias: number) => `🔥 Você está há ${dias} dias seguidos. Vendeu algo hoje? Fale por voz e não perca a sequência.`,
+      personalRacha: (dias: number) => `🔥 Você está há ${dias} dias seguidos. Gastou com algo hoje? Fale por voz e não perca a sequência.`,
     },
     noche: {
       titulo: (nombre: string) => `Seu dia em ${nombre}`,
@@ -2187,6 +2190,7 @@ export const pt: Textos = {
       masQueAyer: (pct: number) => ` (${pct}% a mais que ontem)`,
       menosQueAyer: (pct: number) => ` (${pct}% a menos que ontem)`,
       igualQueAyer: ' (igual a ontem)',
+      rachaLinea: (dias: number) => `🔥 São ${dias} dias seguidos.`,
     },
     prueba: {
       titulo: (dias: number) => (dias <= 0 ? 'Seu teste do Orden termina hoje'

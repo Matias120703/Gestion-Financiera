@@ -2261,10 +2261,15 @@ export const es = {
       personalConGastos: (gastos: string) => `Ayer gastaste ${gastos}. Anotá lo de hoy apenas lo hagas y sabé siempre cuánto te queda.`,
       personalSoloIngresos: (ingresos: string) => `Ayer entraron ${ingresos}. Anotá también lo que gastás hoy.`,
       personalNada: 'Buen día. Anotá tus gastos de hoy apenas los hagas: por voz son diez segundos.',
+      // Racha contada hasta ayer: viene de la noche anterior (074).
+      rachaLinea: (dias: number) => `🔥 Llevás ${dias} días seguidos.`,
     },
     tarde: {
       negocio: 'Todavía no cargaste nada hoy. ¿Vendiste algo? Decilo por voz y queda anotado.',
       personal: 'Todavía no anotaste nada hoy. ¿Gastaste en algo? Decilo por voz y queda anotado.',
+      // Con una racha en juego, el empujón es más fuerte que el genérico.
+      negocioRacha: (dias: number) => `🔥 Llevás ${dias} días seguidos. ¿Vendiste algo hoy? Decilo por voz y no la cortés.`,
+      personalRacha: (dias: number) => `🔥 Llevás ${dias} días seguidos. ¿Gastaste en algo hoy? Decilo por voz y no la cortés.`,
     },
     noche: {
       titulo: (nombre: string) => `Tu día en ${nombre}`,
@@ -2279,6 +2284,7 @@ export const es = {
       masQueAyer: (pct: number) => ` (${pct}% más que ayer)`,
       menosQueAyer: (pct: number) => ` (${pct}% menos que ayer)`,
       igualQueAyer: ' (igual que ayer)',
+      rachaLinea: (dias: number) => `🔥 Van ${dias} días seguidos.`,
     },
     prueba: {
       titulo: (dias: number) => (dias <= 0 ? 'Tu prueba de Orden termina hoy'
