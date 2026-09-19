@@ -567,6 +567,7 @@ export const es = {
   panelPersonal: {
     guardado: 'Ahorro',
     esteMes: (monto: string) => `+${monto} este período`,
+    enEstePeriodo: 'en este período',
     venceEl: (fecha: string) => `próximo vencimiento: ${fecha}`,
     teDeben: 'Te deben',
     // Cobrar un fiado no es un ingreso —ya se explicó por qué en la 056— pero
@@ -1807,6 +1808,10 @@ export const es = {
     horaCierre: 'A qué hora recordarte',
     activarPush: 'Activar avisos en este dispositivo',
     pushActivo: 'Avisos activados acá',
+    probarAviso: 'Probar',
+    probandoAviso: 'Mandando…',
+    avisoLlego: 'Listo, te lo mandamos. Si no aparece en unos segundos, revisá los avisos de Orden en los ajustes del teléfono.',
+    avisoNoSalio: 'No salió. El teléfono figura registrado pero el aviso no se pudo entregar.',
     pushBloqueado: 'El navegador tiene los avisos bloqueados. Habilitalos desde sus ajustes.',
     pushNoSoportado: 'Este navegador no admite avisos.',
     pushSinConfigurar: 'Los avisos todavía no están habilitados en el sistema. No es tu navegador: nos falta terminar de configurarlos de este lado.',
@@ -2360,6 +2365,12 @@ export const es = {
         : dias === 1 ? 'Tu prueba de Orden termina mañana'
         : `Tu prueba de Orden termina en ${dias} días`),
       cuerpo: 'Activá tu plan para seguir usando Orden sin cortes. Lo que cargaste queda guardado.',
+    },
+    // El que manda el botón «Probar» de Ajustes: existe para contestar una
+    // sola pregunta —¿llega o no llega?—, así que no finge ser otra cosa.
+    avisoDePrueba: {
+      titulo: 'Así se ven los avisos de Orden',
+      cuerpo: 'Si estás leyendo esto, tu teléfono los recibe bien. Los de verdad llegan a la mañana, a la tarde y a la noche.',
     },
     planActivo: {
       titulo: (plan: string) => `Tu plan ${plan} está activo`,

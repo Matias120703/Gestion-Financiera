@@ -32,6 +32,12 @@ export interface NumerosDelDia {
   gastos: number;
   ganancia: number;
   cargados: number;
+  /**
+   * Movimientos de ahorro de hoy (080). Viaja aparte de `cargados` porque no
+   * arma resumen —un día de puro ahorro no tiene ventas ni gastos que
+   * contar— pero sí cuenta como «ya usó Orden hoy».
+   */
+  ahorros?: number;
 }
 
 export interface RachaDelDia {
@@ -151,7 +157,9 @@ export function fraseDelDia(
   }
 
   if (momento === 'tarde') {
-    if (n(cuenta.hoy.cargados) > 0) return null;
+    // Guardar plata en el fondo es usar Orden: decirle «todavía no cargaste
+    // nada hoy» a quien acaba de ahorrar enseña a ignorar el aviso (080).
+    if (n(cuenta.hoy.cargados) > 0 || n(cuenta.hoy.ahorros) > 0) return null;
     // Con una racha en juego, el empujón pega más fuerte que el genérico:
     // no es solo «cargá algo», es «no cortés lo que venís haciendo».
     const cuerpo = rachaEnRiesgo && rachaDias >= RACHA_MINIMA

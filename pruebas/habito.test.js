@@ -470,6 +470,40 @@ const leerRacha = (db, uid, empresaId) =>
       await H.intentar(db, vendedorL, () => db.query('select public.descuento_por_racha($1)', [L.empresaId])),
       'dueño');
 
+    // ---- Guardar plata en el fondo también es cargar (080) ----
+    //
+    // Va a otra tabla, así que la racha no lo veía: alguien que un día solo
+    // manda plata al fondo «Viaje» hizo lo que queremos y perdía la racha.
+    const O = await H.montarEmpresa(db, { email: 'duenio@oscar.com', nombre: 'Oscar' });
+    const fondo = (await H.comoUsuario(db, O.uid, () =>
+      db.query("select public.guardar_ahorro($1, 'Viaje') id", [O.empresaId]))).rows[0].id;
+    const rachaO = async () =>
+      (await H.comoUsuario(db, O.uid, () =>
+        db.query('select public.racha_empresa($1) j', [O.empresaId]))).rows[0].j;
+
+    ok('sin nada cargado no hay racha', (await rachaO()).dias, 0);
+    await H.comoUsuario(db, O.uid, () =>
+      db.query("select public.mover_ahorro($1, $2, 'aporte', 50000)", [O.empresaId, fondo]));
+    ok('guardar en el fondo cuenta el día', [(await rachaO()).dias, (await rachaO()).hoy_cargado], [1, true]);
+
+    // Ayer un gasto, hoy solo ahorro: son dos días seguidos, no uno.
+    await db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1, 'gasto', public.hoy_empresa($1) - 1, 'Nafta', 'Transporte', 30000, 30000)`,
+      [O.empresaId]);
+    ok('y se encadena con los movimientos de los otros días', (await rachaO()).dias, 2);
+
+    // El mismo día, un movimiento y un ahorro, es UN día: no dos.
+    await db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto)
+       values ($1, 'gasto', public.hoy_empresa($1), 'Café', 'Comida', 10000, 10000)`,
+      [O.empresaId]);
+    ok('cargar dos veces el mismo día no infla la racha', (await rachaO()).dias, 2);
+
+    // Y a la tarde no se le pide que cargue algo a quien ya guardó plata hoy.
+    const avisoO = (await delDia()).find((x) => x.empresa_id === O.empresaId);
+    ok('el ahorro de hoy viaja aparte en el aviso', avisoO.hoy.ahorros, 1);
+
     // ---- El descuento que se mantiene: racha viva de 30 días (079) ----
     //
     // Apenas paga, el trato cambia de forma: ya no es la mejor racha de la

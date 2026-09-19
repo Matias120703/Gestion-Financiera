@@ -565,6 +565,7 @@ export const pt: Textos = {
   panelPersonal: {
     guardado: 'Reserva',
     esteMes: (monto: string) => `+${monto} neste período`,
+    enEstePeriodo: 'neste período',
     venceEl: (fecha: string) => `próximo vencimento: ${fecha}`,
     teDeben: 'Te devem',
     cobrasteDeFiado: (monto: string) => `Desse total, ${monto} entraram porque te pagaram algo que te deviam.`,
@@ -1729,6 +1730,10 @@ export const pt: Textos = {
     horaCierre: 'A que horas te lembrar',
     activarPush: 'Ativar avisos neste aparelho',
     pushActivo: 'Avisos ativados aqui',
+    probarAviso: 'Testar',
+    probandoAviso: 'Enviando…',
+    avisoLlego: 'Pronto, enviamos. Se não aparecer em alguns segundos, confira os avisos do Orden nas configurações do celular.',
+    avisoNoSalio: 'Não saiu. O aparelho está registrado, mas o aviso não pôde ser entregue.',
     pushBloqueado: 'O navegador está com os avisos bloqueados. Libere nas configurações dele.',
     pushNoSoportado: 'Este navegador não aceita avisos.',
     pushSinConfigurar: 'Os avisos ainda não estão habilitados no sistema. Não é seu navegador: falta a gente terminar de configurar deste lado.',
@@ -2256,6 +2261,10 @@ export const pt: Textos = {
         : dias === 1 ? 'Seu teste do Orden termina amanhã'
         : `Seu teste do Orden termina em ${dias} dias`),
       cuerpo: 'Ative seu plano pra continuar usando o Orden sem interrupção. O que você lançou fica guardado.',
+    },
+    avisoDePrueba: {
+      titulo: 'Assim são os avisos do Orden',
+      cuerpo: 'Se você está lendo isto, seu celular recebe bem. Os de verdade chegam de manhã, de tarde e de noite.',
     },
     planActivo: {
       titulo: (plan: string) => `Seu plano ${plan} está ativo`,

@@ -10,12 +10,18 @@ import type { Billetera } from '@/lib/tipos';
 /**
  * TU PLATA, ARRIBA DE TODO EN EL PANEL.
  *
- * Primero fueron tarjetas de colores, una por banco, para deslizar. Después
- * Matías mostró la app de Wise y eligió su estilo: UNA tarjeta con el total
- * grande arriba y, adentro, la lista de cuentas —icono, nombre y monto—,
- * una fila por cuenta. Se lee de un vistazo sin tener que deslizar nada.
+ * Tres formas en tres semanas, y la tercera es la que pidió Matías mirando
+ * el panel terminado: el total arriba, más chico que antes, y las cuentas
+ * como tarjetas que se deslizan de derecha a izquierda —«me aparece el
+ * Banco Atlas, cuánto tengo, y voy deslizando para ver cada uno»—.
  *
- * Tocar una fila lleva a la billetera, donde se ajusta o se transfiere.
+ * El motivo es de espacio, no de gusto: abajo del panel personal ahora
+ * están los gastos, el ahorro, las deudas y la racha. Con seis cuentas en
+ * una lista vertical, la billetera sola ocupaba la pantalla entera y todo
+ * lo demás quedaba abajo del pliegue. Deslizando, seis cuentas ocupan lo
+ * mismo que una.
+ *
+ * Tocar una tarjeta lleva a la billetera, donde se ajusta o se transfiere.
  * Sin cuentas cargadas no se muestra un cero: se invita a cargarlas.
  */
 export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; moneda: string }) {
@@ -39,38 +45,37 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
   }
 
   return (
-    <section className="tarjeta overflow-hidden" aria-label={b.tuPlata}>
-      <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
+    <section aria-label={b.tuPlata}>
+      {/* El total, sin tarjeta propia: la tarjeta ahora es cada cuenta. */}
+      <div className="flex items-end justify-between gap-3 px-0.5">
         <div className="min-w-0">
           <p className="text-[13px] font-semibold text-tinta/55">{b.tuPlata}</p>
-          <p className="mt-1.5 truncate font-titulo text-[38px] font-extrabold leading-none tabular-nums tracking-tight">
+          <p className="mt-1 truncate font-titulo text-[30px] font-extrabold leading-none tabular-nums tracking-tight">
             {plata(billetera.total)}
           </p>
-          <p className="mt-2 text-[12.5px] text-tinta/50">{b.enNCuentas(cuentas.length)}</p>
         </div>
         <BotonOjo oculto={oculto} alCambiar={alternar} clase="shrink-0 bg-arena text-tinta/70 hover:text-tinta" />
       </div>
 
-      <ul className="px-2 pb-2">
+      {/* Se desliza de costado. El `-mx-4 px-4` hace que la primera tarjeta
+          arranque alineada con el resto del panel y la última pueda salirse
+          por el borde: así se ve que hay más y se invita a deslizar. */}
+      <div className="scroll-limpio -mx-4 mt-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
         {cuentas.map((c) => (
-          <li key={c.id}>
-            <Link
-              href="/billetera"
-              className="flex items-center gap-3 rounded-2xl px-3 py-2.5 transition hover:bg-arena active:bg-arena"
-            >
-              <IconoCuenta cuenta={c} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-semibold">{c.nombre}</span>
-                <span className="block text-[12.5px] text-tinta/50">{b.tipos[c.tipo]}</span>
-              </span>
-              <span className="shrink-0 text-[15px] font-semibold tabular-nums">{plata(Number(c.saldo))}</span>
-              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-tinta/30" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="m9 6 6 6-6 6" />
-              </svg>
-            </Link>
-          </li>
+          <Link
+            key={c.id}
+            href="/billetera"
+            className="tarjeta w-[168px] shrink-0 snap-start p-4 transition hover:border-verde/50 active:bg-arena"
+          >
+            <IconoCuenta cuenta={c} />
+            <p className="mt-3 truncate text-[14.5px] font-semibold">{c.nombre}</p>
+            <p className="text-[12px] text-tinta/50">{b.tipos[c.tipo]}</p>
+            <p className="mt-2 truncate text-[17px] font-bold tabular-nums tracking-tight">
+              {plata(Number(c.saldo))}
+            </p>
+          </Link>
         ))}
-      </ul>
+      </div>
     </section>
   );
 }

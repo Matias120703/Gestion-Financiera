@@ -18,12 +18,23 @@ import { categoriaVisible } from '@/i18n/nombres';
  * alguien que cobra un sueldo. Peor: le habla como si vendiera algo. Una
  * persona no tiene «ganancia neta», tiene lo que le queda hasta fin de mes.
  *
- * Este panel contesta cuatro preguntas, en este orden:
+ * Arriba de este panel ya está la billetera: la plata de verdad, banco por
+ * banco. Por eso acá no se repite ningún total. Tenía «Disponible» —lo que
+ * queda del ciclo— e «Ingresos del período», y tres números grandes que
+ * salen de cuentas distintas, uno abajo del otro, no informan: hacen dudar
+ * cuál es la plata. Matías: «que se vea solo el saldo que tenemos en
+ * billetera».
  *
- *   1. ¿Cuánto me queda y para cuántos días?
- *   2. ¿De dónde vino lo que entró?
- *   3. ¿Cuánto tengo guardado?
- *   4. ¿Cuánto debo?
+ * El presupuesto no se perdió, se quedó donde se calcula y se edita: en
+ * Organización están el disponible, cuánto por día, hasta qué fecha y el
+ * aviso de que falta registrar el cobro.
+ *
+ * Acá queda lo que la billetera no contesta:
+ *
+ *   1. ¿Cuánto gasté?
+ *   2. ¿Cuánto tengo guardado?
+ *   3. ¿Cuánto debo?
+ *   4. ¿De dónde vino lo que entró?
  */
 export function PanelPersonal({
   resumen, deudas, moneda, locale, t,
@@ -36,73 +47,35 @@ export function PanelPersonal({
 }) {
   const plata = (n: number) => dinero(n, moneda, true, locale);
   const corto = (n: number) => dineroCorto(n, moneda, locale, t.formato);
-  const enRojo = resumen.disponible < 0;
 
   const mayorEntrada = resumen.de_donde_vino[0] ?? null;
   const totalEntradas = resumen.de_donde_vino.reduce((s, e) => s + Number(e.monto), 0);
 
   return (
     <div className="space-y-4">
-      {/* ---------- 1. Lo único que de verdad importa ---------- */}
-      <section className="tarjeta p-5">
-        {resumen.cobro_pendiente ? (
-          <>
-            <p className="titulo-seccion text-ambar">{t.organizacion.cobroPendiente}</p>
-            <p className="mt-2 text-[15px] leading-relaxed text-tinta/65">
-              {t.organizacion.cobroPendienteDetalle}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="titulo-seccion">{t.organizacion.teQuedan}</p>
-            <p className={`mt-1 text-[40px] font-bold leading-none tracking-tight ${
-              enRojo ? 'text-rojo' : 'text-verde-fuerte'
-            }`}>
-              {plata(resumen.disponible)}
-            </p>
-            <p className="mt-2 text-[14.5px] leading-relaxed text-tinta/60">
-              {t.organizacion.paraDias(resumen.dias_restantes)}
-              {', '}
-              {resumen.ingresos_fijos.length > 0
-                ? t.organizacion.hastaEl(fechaLegible(resumen.hasta, false, locale))
-                : t.organizacion.hastaFinDeMes(fechaLegible(resumen.hasta, false, locale))}
-              .
-            </p>
-            {enRojo ? (
-              <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2 text-[13px] font-medium text-rojo">
-                {t.organizacion.enRojo}
-              </p>
-            ) : (
-              <p className="mt-3 inline-block rounded-lg bg-arena px-2.5 py-1 text-[13px] font-semibold text-tinta/70">
-                {t.organizacion.porDia(plata(resumen.por_dia))}
-              </p>
-            )}
-            {/* Cobrar un fiado no es «entró» (056), pero sí es plata real que
-                ya está adentro de Disponible (065). Sin esta línea, esa
-                plata aparecía de la nada y nadie sabía de dónde salió. */}
-            {resumen.fiado_cobrado_en_el_ciclo > 0 && (
-              <p className="mt-2 text-[12.5px] leading-relaxed text-tinta/55">
-                {t.panelPersonal.cobrasteDeFiado(plata(resumen.fiado_cobrado_en_el_ciclo))}
-              </p>
-            )}
-          </>
-        )}
-      </section>
-
-      {/* ---------- Los cuatro números de contexto ---------- */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Cuadro titulo={t.organizacion.entro} valor={corto(resumen.entro)} tono="bueno" />
-        <Cuadro titulo={t.organizacion.salio} valor={corto(resumen.salio)} tono="malo" />
-        <Cuadro
+      {/* ---------- Los números que la billetera no dice ----------
+          Eran cuadros en cuadrícula, y al quedar tres, en un teléfono
+          «Gs. 1,8 M» se partía en tres renglones y «próximo vencimiento»
+          se cortaba. Van como la billetera de arriba —una fila por número,
+          el monto entero a la derecha—, que es el estilo que eligió Matías
+          y encima entra sin abreviar. */}
+      <section className="tarjeta divide-y divide-borde">
+        <Fila
+          titulo={t.organizacion.salio}
+          valor={plata(resumen.salio)}
+          detalle={t.panelPersonal.enEstePeriodo}
+          tono="malo"
+        />
+        <Fila
           titulo={t.panelPersonal.guardado}
-          valor={corto(resumen.ahorro_total)}
+          valor={plata(resumen.ahorro_total)}
           detalle={resumen.ahorrado_en_el_ciclo > 0
             ? t.panelPersonal.esteMes(corto(resumen.ahorrado_en_el_ciclo))
             : undefined}
         />
-        <Cuadro
+        <Fila
           titulo={t.nav.deudas}
-          valor={corto(deudas?.total_debido ?? 0)}
+          valor={plata(deudas?.total_debido ?? 0)}
           tono={(deudas?.total_debido ?? 0) > 0 ? 'malo' : undefined}
           detalle={deudas?.proximo_vencimiento
             ? t.panelPersonal.venceEl(fechaLegible(deudas.proximo_vencimiento, false, locale))
@@ -111,15 +84,15 @@ export function PanelPersonal({
         {/* Lo que le deben, aparte de lo que debe: son dos cosas distintas y
             mezclarlas en un solo número confundiría cuál suma y cuál resta. */}
         {resumen.fiado_pendiente > 0 && (
-          <Cuadro
+          <Fila
             titulo={t.panelPersonal.teDeben}
-            valor={corto(resumen.fiado_pendiente)}
+            valor={plata(resumen.fiado_pendiente)}
             tono="bueno"
           />
         )}
-      </div>
+      </section>
 
-      {/* ---------- 2. De dónde vino ---------- */}
+      {/* ---------- De dónde vino lo que entró ---------- */}
       <Seccion
         titulo={t.panelPersonal.deDondeVino}
         accion={
@@ -167,7 +140,7 @@ export function PanelPersonal({
         )}
       </Seccion>
 
-      {/* ---------- 3. Lo guardado ---------- */}
+      {/* ---------- Lo guardado, fondo por fondo ---------- */}
       <Seccion
         titulo={t.panelPersonal.tusAhorros}
         accion={<Link href="/organizacion" className="boton-texto">{t.comun.verTodo}</Link>}
@@ -213,7 +186,7 @@ export function PanelPersonal({
   );
 }
 
-function Cuadro({
+function Fila({
   titulo, valor, detalle, tono,
 }: {
   titulo: string;
@@ -223,10 +196,12 @@ function Cuadro({
 }) {
   const color = tono === 'bueno' ? 'text-verde-fuerte' : tono === 'malo' ? 'text-rojo' : '';
   return (
-    <div className="tarjeta p-3.5">
-      <p className="titulo-seccion truncate">{titulo}</p>
-      <p className={`mt-1 text-[19px] font-bold tracking-tight ${color}`}>{valor}</p>
-      {detalle && <p className="mt-0.5 truncate text-[12px] text-tinta/45">{detalle}</p>}
+    <div className="flex items-center justify-between gap-3 px-5 py-3.5">
+      <span className="min-w-0">
+        <span className="block text-[14.5px] font-semibold">{titulo}</span>
+        {detalle && <span className="mt-0.5 block truncate text-[12.5px] text-tinta/50">{detalle}</span>}
+      </span>
+      <span className={`shrink-0 text-[16px] font-bold tabular-nums tracking-tight ${color}`}>{valor}</span>
     </div>
   );
 }

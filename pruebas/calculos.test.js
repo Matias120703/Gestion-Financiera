@@ -1391,6 +1391,47 @@ ok('un rubro desconocido no rompe: cae en comercio',
     activacion.includes("servicio.rpc('promo_de_la_prueba')"), true);
   ok('y le dice el nombre real de su plan', activacion.includes('NOMBRE_DEL_PLAN[suscripcion.plan'), true);
 
+  // El panel personal ya no repite totales: arriba está la billetera (la
+  // plata de verdad) y abajo lo que ella no dice.
+  const panelPersonal = fs.readFileSync('src/components/PanelPersonal.tsx', 'utf8');
+  ok('el panel personal no vuelve a mostrar el disponible',
+    panelPersonal.includes('resumen.disponible'), false);
+  ok('ni los ingresos del período', panelPersonal.includes('t.organizacion.entro'), false);
+  ok('y sí los gastos, el ahorro y las deudas',
+    panelPersonal.includes('t.organizacion.salio')
+      && panelPersonal.includes('t.panelPersonal.guardado')
+      && panelPersonal.includes('t.nav.deudas'), true);
+  // Y el disponible no se perdió: vive donde se calcula y se edita.
+  ok('el disponible sigue en Organización',
+    fs.readFileSync('src/components/PantallaOrganizacion.tsx', 'utf8').includes('t.organizacion.teQuedan'), true);
+
+  // Las cuentas de la billetera se deslizan de costado (081): con seis
+  // cuentas en vertical, todo lo demás quedaba abajo del pliegue.
+  const billeteraPanel = fs.readFileSync('src/components/BilleteraPanel.tsx', 'utf8');
+  ok('la billetera del panel se desliza',
+    billeteraPanel.includes('snap-x') && billeteraPanel.includes('overflow-x-auto'), true);
+
+  // La racha también en la cuenta personal (080). Llevaba siempre a /cierre,
+  // que una cuenta personal no tiene, y por eso nunca se le mostraba.
+  ok('la tarjeta de racha acepta a dónde llevar',
+    fs.readFileSync('src/components/Racha.tsx', 'utf8').includes("destino = '/cierre'"), true);
+  ok('y el panel personal la muestra apuntando a Gastos',
+    fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8').includes('destino="/gastos"'), true);
+
+  // Ahorrar es cargar (080): a quien hoy solo guardó plata no se le dice
+  // «todavía no cargaste nada».
+  ok('el aviso de la tarde mira también el ahorro',
+    fs.readFileSync('src/lib/frases-del-dia.ts', 'utf8').includes('n(cuenta.hoy.ahorros) > 0'), true);
+
+  // «Probar»: separa «no llega el aviso» de «no había nada que decir».
+  const probar = fs.readFileSync('src/app/api/avisos/probar/route.ts', 'utf8');
+  ok('el aviso de prueba se manda a uno mismo', probar.includes('avisar(user.id'), true);
+  // Sin `request.json()` no hay parámetro que mandar: el destinatario sale
+  // de la sesión y de ningún otro lado.
+  ok('y no acepta a quién avisar', probar.includes('request.json'), false);
+  ok('Ajustes tiene el botón de probar',
+    fs.readFileSync('src/components/Preferencias.tsx', 'utf8').includes("fetch('/api/avisos/probar'"), true);
+
   // Ideas para recomendar: el que no sabe qué decir, no escribe.
   const rec2 = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
   ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);

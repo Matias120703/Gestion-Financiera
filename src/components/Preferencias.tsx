@@ -186,6 +186,8 @@ function BotonPush() {
     'cargando' | 'sin-configurar' | 'no-soportado' | 'bloqueado' | 'apagado' | 'encendido'
   >('cargando');
   const [trabajando, setTrabajando] = useState(false);
+  // Null mientras no se probó; después, lo que contestó el servidor.
+  const [prueba, setPrueba] = useState<null | 'yendo' | 'llego' | 'fallo'>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -255,6 +257,19 @@ function BotonPush() {
     }
   }
 
+  // Ver src/app/api/avisos/probar/route.ts: el aviso sale a los
+  // dispositivos de uno mismo, para separar «no llega» de «no hay qué decir».
+  async function probar() {
+    setPrueba('yendo');
+    try {
+      const r = await fetch('/api/avisos/probar', { method: 'POST' });
+      const j = await r.json().catch(() => ({ ok: false }));
+      setPrueba(j?.ok ? 'llego' : 'fallo');
+    } catch {
+      setPrueba('fallo');
+    }
+  }
+
   async function desactivar() {
     setTrabajando(true);
     try {
@@ -282,12 +297,24 @@ function BotonPush() {
   return (
     <div className="rounded-xl border border-borde p-3.5">
       {estado === 'encendido' ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[14px] font-semibold text-verde-fuerte">{t.ajustes.pushActivo}</p>
-          <button type="button" onClick={desactivar} disabled={trabajando} className="boton-texto text-tinta/50">
-            {t.comun.cerrar}
-          </button>
-        </div>
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[14px] font-semibold text-verde-fuerte">{t.ajustes.pushActivo}</p>
+            <div className="flex shrink-0 items-center gap-3">
+              <button type="button" onClick={probar} disabled={prueba === 'yendo'} className="boton-texto">
+                {prueba === 'yendo' ? t.ajustes.probandoAviso : t.ajustes.probarAviso}
+              </button>
+              <button type="button" onClick={desactivar} disabled={trabajando} className="boton-texto text-tinta/50">
+                {t.comun.cerrar}
+              </button>
+            </div>
+          </div>
+          {(prueba === 'llego' || prueba === 'fallo') && (
+            <p className={`mt-2 text-[12.5px] leading-snug ${prueba === 'llego' ? 'text-tinta/55' : 'text-rojo'}`}>
+              {prueba === 'llego' ? t.ajustes.avisoLlego : t.ajustes.avisoNoSalio}
+            </p>
+          )}
+        </>
       ) : (
         <button type="button" onClick={activar} disabled={trabajando} className="boton-suave w-full">
           {trabajando ? t.comun.cargando : t.ajustes.activarPush}

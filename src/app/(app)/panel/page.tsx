@@ -71,19 +71,26 @@ export default async function PaginaPanel({
     // Las deudas son contexto: si fallan, el panel igual se muestra. Para el
     // número del que depende una decisión está la pantalla de Deudas, que sí
     // lanza si no puede leer.
-    const [resumenPersonal, deudasPersonal, billeteraPersonal, descuentoPersonal] = await Promise.all([
+    const [resumenPersonal, deudasPersonal, billeteraPersonal, descuentoPersonal, rachaPersonal] = await Promise.all([
       traerResumenPersonal(ctx.empresa.id),
       traerResumenDeudas(ctx.empresa.id).catch(() => null),
       // Contexto, como las deudas: si falla, el panel igual se muestra.
       traerBilletera(ctx.empresa.id).catch(() => null),
       // El descuento que se gana cargando durante la prueba (078).
       traerDescuentoRacha(ctx.empresa.id),
+      traerRacha(ctx.empresa.id),
     ]);
 
     return (
       <div className="space-y-4">
         {/* Tu plata arriba de todo: el total y cada banco para deslizar (074). */}
         {billeteraPersonal && <BilleteraPanel billetera={billeteraPersonal} moneda={ctx.empresa.moneda} />}
+        {/* La racha también acá, no solo en el negocio (080). Le pedimos
+            sostener treinta días para el descuento y hasta ahora no tenía
+            dónde verlos: la tarjeta vivía en el panel de negocio porque
+            lleva al cierre, y una cuenta personal no cierra el día. Acá
+            lleva a Gastos, que es donde esta persona carga. */}
+        <TarjetaRacha racha={rachaPersonal} t={t} destino="/gastos" />
         {descuentoPersonal && <TarjetaDescuento descuento={descuentoPersonal} t={t} />}
         <Atajos
           etiqueta={t.billetera.atajos}

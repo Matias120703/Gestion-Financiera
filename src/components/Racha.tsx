@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { DescuentoRacha, Racha } from '@/lib/tipos';
+import type { Seccion as Ruta } from '@/lib/rubros';
 import type { Textos } from '@/i18n';
 
 /**
@@ -39,12 +40,18 @@ export function PastillaRacha({ racha, t }: { racha: Racha; t: Textos }) {
   );
 }
 
-/** Tarjeta completa, para el panel y el cierre. */
-export function TarjetaRacha({ racha, t }: { racha: Racha; t: Textos }) {
+/**
+ * Tarjeta completa, para el panel y el cierre.
+ *
+ * `destino` existe porque una cuenta personal no tiene pantalla de cierre:
+ * ahí la racha lleva a Gastos, que es donde esa persona carga. Mandarla a
+ * una pantalla que su cuenta no tiene sería peor que no mostrarle la racha.
+ */
+export function TarjetaRacha({ racha, t, destino = '/cierre' }: { racha: Racha; t: Textos; destino?: Ruta }) {
   // Nada que contar todavía: no ocupamos espacio con un cero.
   if (racha.dias === 0 && racha.dias_activos === 0) {
     return (
-      <Link href="/cierre" className="tarjeta flex items-center gap-3 p-4 transition hover:border-verde/50">
+      <Link href={destino} className="tarjeta flex items-center gap-3 p-4 transition hover:border-verde/50">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-arena text-tinta/35">
           {Llama}
         </span>
@@ -57,7 +64,7 @@ export function TarjetaRacha({ racha, t }: { racha: Racha; t: Textos }) {
 
   return (
     <Link
-      href="/cierre"
+      href={destino}
       className={`tarjeta flex items-center gap-3.5 p-4 transition hover:border-verde/50 ${
         enRiesgo ? 'border-ambar/40 bg-ambar-claro/40' : ''
       }`}

@@ -45,6 +45,10 @@ export const MENSAJES_PT: Record<string, string> = {
   // ---- los de la base (raise exception) ----
   // 074 · la billetera
   'Solo el dueño de la cuenta puede ver esto.': 'Só o dono da conta pode ver isso.',
+  // No lo ve nadie —`disparar_tarea` la llama el planificador de la base
+  // (081)— pero la regla es que todo mensaje de la base esté en los dos
+  // idiomas, y una regla con excepciones deja de ser una regla.
+  'Esa no es una ruta de tareas.': 'Essa não é uma rota de tarefas.',
   'Ponele un nombre: el del banco, «Efectivo», «Tigo Money».': 'Dê um nome: o do banco, «Dinheiro», «Tigo Money».',
   'Ese tipo de cuenta no existe.': 'Esse tipo de conta não existe.',
   'Ya tenés 20 cuentas. Archivá alguna antes de sumar otra.': 'Você já tem 20 contas. Arquive alguma antes de adicionar outra.',
