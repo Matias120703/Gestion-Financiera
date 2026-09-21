@@ -205,7 +205,7 @@ function aceptado(nombre, res) {
   // Lleva las formas de pago para poder decir a dónde iría «automática»
   // (083), pero NUNCA el saldo: quien carga un gasto no tiene por qué
   // enterarse de cuánta plata hay en cada cuenta.
-  ok('y sin el saldo adentro', Object.keys(paraElegir[0]).sort(), ['id', 'metodos', 'nombre', 'tipo']);
+  ok('y sin el saldo adentro', Object.keys(paraElegir[0]).sort(), ['color', 'id', 'metodos', 'nombre', 'tipo']);
   rechazado('un vendedor no elige cuentas',
     await como(vendedor, 'select public.cuentas_para_elegir($1)', [A.empresaId]), 'dueño');
 
@@ -287,6 +287,50 @@ function aceptado(nombre, res) {
   const vendedorC = await H.sumarMiembro(db, C.empresaId, 'vende@charlie.com', 'vendedor');
   rechazado('un vendedor no ve lo que quedó suelto',
     await como(vendedorC, 'select public.movimientos_sin_cuenta($1)', [C.empresaId]), 'dueño');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('11 · El color de cada cuenta (086)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // La lista de bancos vive en la pantalla, no acá: el Atlas es rojo
+  // porque se llama Atlas, y para eso no hace falta base. Lo que sí hace
+  // falta guardar es el color que alguien elige a mano, que le gana a
+  // cualquier cosa que adivinemos por el nombre.
+
+  // El color se lee con la conexión de servicio y no como A: la tabla no
+  // se lee directo desde la app, y eso ya tiene su prueba más arriba.
+  const colorDe = async (id) =>
+    (await db.query('select color from public.cuentas_dinero where id = $1', [id])).rows[0].color;
+
+  const conti = (await valor(A.uid,
+    'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id',
+    [A.empresaId, 'Banco Continental', 'banco', 0, []])).id;
+  ok('una cuenta nueva no trae color propio', await colorDe(conti), null);
+
+  await valor(A.uid, 'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5,$6,$7) id',
+    [A.empresaId, 'Banco Continental', 'banco', 0, [], conti, 'violeta']);
+  ok('el elegido a mano se guarda', await colorDe(conti), 'violeta');
+
+  // Y llega a las dos funciones que arman cuentas para mostrar: sin esto
+  // la columna existe y no la ve nadie.
+  ok('viaja hasta el selector',
+    (await valor(A.uid, 'select public.cuentas_para_elegir($1) j', [A.empresaId])).j
+      .find((c) => c.id === conti).color, 'violeta');
+  ok('y hasta la billetera',
+    (await billetera()).cuentas.find((c) => c.id === conti).color, 'violeta');
+
+  // Un color inventado no impide guardar: se ignora. Rechazar ahí dejaría
+  // a alguien sin poder corregir el nombre de su banco por culpa de un
+  // color, que es lo de menos de esa pantalla.
+  await valor(A.uid, 'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5,$6,$7) id',
+    [A.empresaId, 'Banco Continental', 'banco', 0, [], conti, 'fucsia']);
+  ok('uno que no existe se ignora, no rechaza', await colorDe(conti), null);
+
+  // Y la tabla tampoco lo acepta por la puerta de atrás.
+  const forzado = await db.query(
+    'update public.cuentas_dinero set color = $1 where id = $2', ['dorado', conti],
+  ).then(() => ({ ok: true }), (e) => ({ ok: false, error: String(e.message || e) }));
+  rechazado('la columna no acepta cualquier cosa', forzado, 'color');
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {

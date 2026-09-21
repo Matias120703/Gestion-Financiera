@@ -443,6 +443,11 @@ export interface CuentaDinero {
   id: string;
   nombre: string;
   tipo: TipoCuentaDinero;
+  /**
+   * El color elegido a mano (086). En null lo decide la pantalla por el
+   * nombre del banco, así que nadie queda sin color.
+   */
+  color: string | null;
   /** Las formas de pago que caen solas en esta cuenta. */
   metodos: string[];
   saldo: number;
@@ -510,6 +515,8 @@ export interface CuentaParaElegir {
    * iba a ningún lado.
    */
   metodos: string[];
+  /** El color elegido a mano (086). */
+  color?: string | null;
 }
 
 export type EstadoRetiro = 'pedido' | 'pagado' | 'rechazado';

@@ -1593,6 +1593,10 @@ export const es = {
   },
 
   panel: {
+    // El saludo de arriba de todo (3.3). La hora es la de la cuenta.
+    saludoManana: 'Buen día',
+    saludoTarde: 'Buenas tardes',
+    saludoNoche: 'Buenas noches',
     gananciaNeta: 'Ganancia neta',
     vendido: 'Vendido',
     gastos: 'Gastos',
@@ -2439,6 +2443,12 @@ export const es = {
     cuantoTenesHoy: 'Cuánto tenés hoy',
     queEntraAca: 'Qué entra en esta cuenta',
     queEntraAcaDetalle: 'Lo que cobres o pagues de esa forma se anota solo acá. Cada forma va a una sola cuenta.',
+    // El color de la cuenta (086). Se propone el del banco y se puede cambiar.
+    color: 'Color',
+    colores: {
+      verde: 'Verde', rojo: 'Rojo', azul: 'Azul', celeste: 'Celeste',
+      naranja: 'Naranja', violeta: 'Violeta', rosa: 'Rosa', gris: 'Gris',
+    } as Record<string, string>,
     comoSeMueve: 'Cómo se mueve el saldo',
     comoSeMueveDetalle: 'Cada venta, gasto o ingreso va a la cuenta de su forma de pago: lo cobrado en efectivo, al efectivo; lo cobrado por transferencia, al banco que la recibe.',
     sinConexionBancos: 'Los bancos de Paraguay no se conectan con ninguna app, así que el saldo es el que calcula Orden con lo que cargás. Si no coincide con tu banco, tocá «Ajustar saldo».',

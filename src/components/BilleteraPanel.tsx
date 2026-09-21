@@ -5,6 +5,7 @@ import { dinero } from '@/lib/formato';
 import { useOcultarMontos } from '@/lib/ocultar-montos';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { BotonOjo, IconoCuenta } from '@/components/PantallaBilletera';
+import { tonoDeCuenta } from '@/lib/colores-cuenta';
 import type { Billetera } from '@/lib/tipos';
 
 /**
@@ -65,8 +66,15 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
           <Link
             key={c.id}
             href="/billetera"
-            className="tarjeta w-[168px] shrink-0 snap-start p-4 transition hover:border-verde/50 active:bg-arena"
+            className="tarjeta relative w-[168px] shrink-0 snap-start overflow-hidden p-4 transition hover:border-verde/50 active:bg-arena"
           >
+            {/* Una franja del color del banco arriba de la tarjeta (086). Es
+                lo que se ve primero al deslizar, antes de leer el nombre. */}
+            <span
+              aria-hidden
+              className="absolute inset-x-0 top-0 h-1"
+              style={{ backgroundColor: tonoDeCuenta(c) }}
+            />
             <IconoCuenta cuenta={c} />
             <p className="mt-3 truncate text-[14.5px] font-semibold">{c.nombre}</p>
             <p className="text-[12px] text-tinta/50">{b.tipos[c.tipo]}</p>

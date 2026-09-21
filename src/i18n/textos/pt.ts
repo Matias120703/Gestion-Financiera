@@ -1521,6 +1521,9 @@ export const pt: Textos = {
   },
 
   panel: {
+    saludoManana: 'Bom dia',
+    saludoTarde: 'Boa tarde',
+    saludoNoche: 'Boa noite',
     gananciaNeta: 'Lucro líquido',
     vendido: 'Vendido',
     gastos: 'Despesas',
@@ -2327,6 +2330,11 @@ export const pt: Textos = {
     cuantoTenesHoy: 'Quanto você tem hoje',
     queEntraAca: 'O que entra nesta conta',
     queEntraAcaDetalle: 'O que você receber ou pagar dessa forma é lançado aqui sozinho. Cada forma vai pra uma conta só.',
+    color: 'Cor',
+    colores: {
+      verde: 'Verde', rojo: 'Vermelho', azul: 'Azul', celeste: 'Azul-claro',
+      naranja: 'Laranja', violeta: 'Roxo', rosa: 'Rosa', gris: 'Cinza',
+    } as Record<string, string>,
     comoSeMueve: 'Como o saldo se move',
     comoSeMueveDetalle: 'Cada venda, despesa ou entrada vai pra conta da sua forma de pagamento: o recebido em dinheiro, pro dinheiro; o recebido por transferência, pro banco que recebe.',
     sinConexionBancos: 'Os bancos do Paraguai não se conectam com nenhum app, então o saldo é o que o Orden calcula com o que você lança. Se não bater com o seu banco, toque em «Ajustar saldo».',

@@ -12,6 +12,7 @@ import { metodoVisible } from '@/i18n/nombres';
 import type { Billetera, CuentaDinero, TipoCuentaDinero } from '@/lib/tipos';
 import { PlataSinCuenta } from '@/components/PlataSinCuenta';
 import { CampoMonto } from '@/components/CampoMonto';
+import { COLORES, TONO, colorDeCuenta, tonoDeCuenta, type ColorCuenta } from '@/lib/colores-cuenta';
 
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'] as const;
 const TIPOS: TipoCuentaDinero[] = ['banco', 'efectivo', 'billetera'];
@@ -130,7 +131,7 @@ export function PantallaBilletera({
                   }))}
                   alEditar={(d) => correr(() => sb().rpc('guardar_cuenta_dinero', {
                     p_empresa: empresaId, p_nombre: d.nombre, p_tipo: d.tipo, p_saldo_inicial: 0,
-                    p_metodos: d.metodos, p_id: c.id,
+                    p_metodos: d.metodos, p_id: c.id, p_color: d.color,
                   }))}
                   alQuitar={() => {
                     if (confirm(b.confirmarQuitar(c.nombre))) {
@@ -174,7 +175,7 @@ export function PantallaBilletera({
             alGuardar={async (d) => {
               const listo = await correr(() => sb().rpc('guardar_cuenta_dinero', {
                 p_empresa: empresaId, p_nombre: d.nombre, p_tipo: d.tipo,
-                p_saldo_inicial: d.saldo, p_metodos: d.metodos, p_id: null,
+                p_saldo_inicial: d.saldo, p_metodos: d.metodos, p_id: null, p_color: d.color,
               }));
               if (listo) setCreando(false);
             }}
@@ -201,7 +202,10 @@ export function PantallaBilletera({
 /** El círculo de cada cuenta: la inicial del banco, o un billete si es efectivo. */
 export function IconoCuenta({ cuenta }: { cuenta: CuentaDinero }) {
   return (
-    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-verde-claro text-[15px] font-bold text-verde-fuerte">
+    <span
+      className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[15px] font-bold text-white"
+      style={{ backgroundColor: tonoDeCuenta(cuenta) }}
+    >
       {cuenta.tipo === 'efectivo' ? (
         <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo} strokeWidth={1.9}>
           <rect x="3" y="6.5" width="18" height="11" rx="2" /><circle cx="12" cy="12" r="2.5" />
@@ -223,7 +227,7 @@ function FilaCuenta({
   ocupado: boolean;
   alAjustar: (real: number, nota: string) => Promise<boolean>;
   alTransferir: (hacia: string, monto: number) => Promise<boolean>;
-  alEditar: (d: { nombre: string; tipo: TipoCuentaDinero; metodos: string[] }) => Promise<boolean>;
+  alEditar: (d: { nombre: string; tipo: TipoCuentaDinero; metodos: string[]; color: ColorCuenta }) => Promise<boolean>;
   alQuitar: () => void;
 }) {
   const t = useTextos();
@@ -371,7 +375,7 @@ function FormularioCuenta({
   inicial?: CuentaDinero;
   ocupado: boolean;
   conSaldo?: boolean;
-  alGuardar: (d: { nombre: string; tipo: TipoCuentaDinero; metodos: string[]; saldo: number }) => void;
+  alGuardar: (d: { nombre: string; tipo: TipoCuentaDinero; metodos: string[]; saldo: number; color: ColorCuenta }) => void;
   alCancelar?: () => void;
 }) {
   const t = useTextos();
@@ -380,6 +384,17 @@ function FormularioCuenta({
   const [tipo, setTipo] = useState<TipoCuentaDinero>(inicial?.tipo ?? 'banco');
   const [metodos, setMetodos] = useState<string[]>(inicial?.metodos ?? ['transferencia']);
   const [saldo, setSaldo] = useState(0);
+  // Arranca en el que le toca por su nombre, no en uno cualquiera: el
+  // Atlas ya aparece en rojo antes de que nadie elija nada, y quien esté
+  // conforme no tiene que tocar esto.
+  const [color, setColor] = useState<ColorCuenta>(
+    colorDeCuenta({ nombre: inicial?.nombre ?? '', tipo: inicial?.tipo ?? 'banco', color: inicial?.color }),
+  );
+  // Mientras no lo toquen, el color sigue al nombre que se va escribiendo.
+  const [colorElegido, setColorElegido] = useState(Boolean(inicial?.color));
+  const colorVisible = colorElegido
+    ? color
+    : colorDeCuenta({ nombre, tipo, color: null });
 
   const elegirTipo = (x: TipoCuentaDinero) => {
     setTipo(x);
@@ -429,9 +444,29 @@ function FormularioCuenta({
         <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{b.queEntraAcaDetalle}</p>
       </div>
 
+      {/* El color, para distinguirla de un vistazo entre las tarjetas del
+          panel (086). Se propone el del banco y se puede cambiar. */}
+      <div>
+        <span className="etiqueta">{b.color}</span>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {COLORES.map((c) => (
+            <button
+              key={c} type="button"
+              onClick={() => { setColor(c); setColorElegido(true); }}
+              aria-label={b.colores[c]}
+              aria-pressed={c === colorVisible}
+              className={`h-8 w-8 rounded-full transition active:scale-90 ${
+                c === colorVisible ? 'ring-2 ring-tinta/70 ring-offset-2 ring-offset-superficie' : ''
+              }`}
+              style={{ backgroundColor: TONO[c] }}
+            />
+          ))}
+        </div>
+      </div>
+
       <div className="flex gap-2">
         <button type="button" className="boton-principal flex-1 py-2.5" disabled={ocupado || nombre.trim() === ''}
-          onClick={() => alGuardar({ nombre: nombre.trim(), tipo, metodos, saldo })}>
+          onClick={() => alGuardar({ nombre: nombre.trim(), tipo, metodos, saldo, color: colorVisible })}>
           {ocupado ? t.comun.guardando : t.comun.guardar}
         </button>
         {alCancelar && (

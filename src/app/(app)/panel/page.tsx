@@ -23,6 +23,7 @@ import { clienteServidor } from '@/lib/supabase/servidor';
 import { fichaDe, palabra, type Seccion as Ruta } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
+import { Bienvenida } from '@/components/Bienvenida';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,6 +85,7 @@ export default async function PaginaPanel({
 
     return (
       <div className="space-y-4">
+        <Bienvenida nombre={ctx.miembro.nombre} zona={ctx.zonaHoraria} t={t} />
         {/* Tu plata arriba de todo: el total y cada banco para deslizar (074). */}
         {billeteraPersonal && <BilleteraPanel billetera={billeteraPersonal} moneda={ctx.empresa.moneda} />}
         {/* La racha también acá, no solo en el negocio (080). Le pedimos
@@ -224,6 +226,8 @@ export default async function PaginaPanel({
 
   return (
     <div className="space-y-5">
+      <Bienvenida nombre={ctx.miembro.nombre} zona={ctx.zonaHoraria} t={t} />
+
       {/* Tu plata, arriba de todo: el total y cada banco para deslizar de
           costado (074). Solo quien puede verla. */}
       {billeteraNegocio && <BilleteraPanel billetera={billeteraNegocio} moneda={ctx.empresa.moneda} />}
