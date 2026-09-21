@@ -1031,6 +1031,10 @@ export const es = {
     deQueCuenta: '¿De qué cuenta salió?',
     aQueCuenta: '¿A qué cuenta entró?',
     porFormaDePago: 'La que recibe esa forma de pago',
+    // «Automática» tiene que decir a dónde va, o no es una opción: es una
+    // apuesta (083).
+    iraA: (cuenta: string) => `Va a salir de ${cuenta}`,
+    noVaANinguna: 'Ninguna cuenta recibe esa forma de pago: si lo dejás así, no se va a descontar de tu saldo. Elegí una.',
     ejemploGasto: 'Ej. Combustible para el reparto',
     ejemploIngreso: 'Ej. Aporte de socio',
     guardarMonto: (monto: string) => `Guardar ${monto}`,
@@ -2432,6 +2436,19 @@ export const es = {
     verHistorial: 'Ver el historial →',
     atajos: 'Atajos',
     tocaUnaCuenta: 'Tocá una cuenta para ajustar su saldo, transferir o editarla.',
+
+    // Lo que se cargó y no llegó a ninguna cuenta (083).
+    sinCuentaTitulo: (n: number) => (n === 1
+      ? 'Hay 1 movimiento fuera de tu billetera'
+      : `Hay ${n} movimientos fuera de tu billetera`),
+    sinCuentaDetalle: (monto: string) =>
+      `Suman ${monto} que no están en ninguna cuenta, así que tu total no los cuenta. Pasa cuando la forma de pago que usaste no está asignada a ninguna.`,
+    sinCuentaDesde: (fecha: string) => `El primero es del ${fecha}.`,
+    sinCuentaVer: 'Ver y ubicarlos',
+    sinCuentaTodos: 'O mandá todos a una sola cuenta:',
+    sinCuentaListo: 'Listo, ya no queda nada afuera.',
+    metodoSinCuenta: (metodos: string) =>
+      `Ojo: ${metodos} no está asignado a ninguna cuenta. Lo que cargues así no va a descontarse de tu saldo.`,
   },
 
   email: {

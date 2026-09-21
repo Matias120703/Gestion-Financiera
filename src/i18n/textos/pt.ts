@@ -994,6 +994,8 @@ export const pt: Textos = {
     deQueCuenta: 'De qual conta saiu?',
     aQueCuenta: 'Em qual conta entrou?',
     porFormaDePago: 'A que recebe essa forma de pagamento',
+    iraA: (cuenta: string) => `Vai sair de ${cuenta}`,
+    noVaANinguna: 'Nenhuma conta recebe essa forma de pagamento: se deixar assim, não vai sair do seu saldo. Escolha uma.',
     ejemploGasto: 'Ex. Combustível pra entrega',
     ejemploIngreso: 'Ex. Aporte de sócio',
     guardarMonto: (monto: string) => `Salvar ${monto}`,
@@ -2324,6 +2326,18 @@ export const pt: Textos = {
     verHistorial: 'Ver o histórico →',
     atajos: 'Atalhos',
     tocaUnaCuenta: 'Toque em uma conta para ajustar o saldo, transferir ou editar.',
+
+    sinCuentaTitulo: (n: number) => (n === 1
+      ? 'Há 1 lançamento fora da sua carteira'
+      : `Há ${n} lançamentos fora da sua carteira`),
+    sinCuentaDetalle: (monto: string) =>
+      `Somam ${monto} que não estão em nenhuma conta, então seu total não os conta. Acontece quando a forma de pagamento que você usou não está atribuída a nenhuma.`,
+    sinCuentaDesde: (fecha: string) => `O primeiro é de ${fecha}.`,
+    sinCuentaVer: 'Ver e localizar',
+    sinCuentaTodos: 'Ou mande todos para uma só conta:',
+    sinCuentaListo: 'Pronto, não sobrou nada de fora.',
+    metodoSinCuenta: (metodos: string) =>
+      `Atenção: ${metodos} não está atribuído a nenhuma conta. O que você lançar assim não vai sair do seu saldo.`,
   },
 
   email: {

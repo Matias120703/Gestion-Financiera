@@ -1343,11 +1343,27 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const crear = fs.readFileSync('src/app/crear/page.tsx', 'utf8');
   ok('las dos puertas de registro avisan la cuenta nueva',
     empezar.includes('avisarCuentaNueva(') && crear.includes('avisarCuentaNueva('), true);
-  // De qué cuenta salió la plata, elegido a mano (075). Con dos bancos, la
-  // forma de pago ya no alcanza para saber a cuál va.
+  // De qué cuenta salió la plata, elegido a mano (075), y desde la 083 se
+  // pregunta SIEMPRE que haya una cuenta. Antes solo con dos o más: con una
+  // sola no se preguntaba, y si su forma de pago no coincidía, el gasto se
+  // guardaba fuera de la billetera sin que nadie se enterara.
   const gas = fs.readFileSync('src/components/PantallaGastos.tsx', 'utf8');
   ok('el gasto puede decir de qué cuenta salió', gas.includes('cuenta_id: cuentaId || null'), true);
-  ok('y solo se pregunta si hay más de una', gas.includes('cuentas.length > 1'), true);
+  ok('y se pregunta desde la primera cuenta', gas.includes('cuentas.length > 0'), true);
+  // «Automática» sin decir a dónde es una apuesta, no una opción.
+  ok('«automática» dice a qué cuenta va a ir', gas.includes('t.gastos.iraA('), true);
+  ok('y avisa cuando no va a ir a ninguna', gas.includes('t.gastos.noVaANinguna'), true);
+
+  // Lo que ya quedó fuera de la billetera se ve y se arregla (083).
+  const bill = fs.readFileSync('src/components/PantallaBilletera.tsx', 'utf8');
+  ok('la billetera muestra lo que quedó afuera', bill.includes('<PlataSinCuenta'), true);
+  ok('y avisa qué forma de pago no tiene cuenta', bill.includes('b.metodoSinCuenta('), true);
+  const sueltos = fs.readFileSync('src/components/PlataSinCuenta.tsx', 'utf8');
+  ok('se puede ubicar de a uno y todos juntos',
+    sueltos.includes('asignar(c.id, m.id)') && sueltos.includes('asignar(c.id, null)'), true);
+  // No se manda a una cuenta cualquiera para que el total cierre: eso sería
+  // cambiar un número que miente por otro que miente distinto.
+  ok('pero no se elige ninguna sola', sueltos.includes('cuentas[0]'), false);
   const org = fs.readFileSync('src/components/PantallaOrganizacion.tsx', 'utf8');
   ok('el sueldo guarda en qué cuenta se cobra', org.includes('p_cuenta: d.cuentaId || null'), true);
   ok('y el ingreso suelto también cae donde se diga', org.includes('cuenta_id: d.cuentaId || null'), true);

@@ -7,9 +7,17 @@ export async function traerBilletera(empresaId: string): Promise<Billetera> {
   const supabase = clienteServidor();
   const respuesta = await supabase.rpc('billetera', { p_empresa: empresaId });
   const datos = exigir(respuesta, 'la billetera') as Billetera | null;
+  const sueltos = (datos as unknown as { sin_cuenta?: { cantidad?: number; neto?: number; desde?: string | null } } | null)?.sin_cuenta;
+  const metodos = (datos as unknown as { metodos_sin_cuenta?: unknown } | null)?.metodos_sin_cuenta;
   return {
     cuentas: Array.isArray(datos?.cuentas) ? datos!.cuentas : [],
     total: Number(datos?.total ?? 0),
+    sinCuenta: {
+      cantidad: Number(sueltos?.cantidad ?? 0),
+      neto: Number(sueltos?.neto ?? 0),
+      desde: sueltos?.desde ?? null,
+    },
+    metodosSinCuenta: Array.isArray(metodos) ? (metodos as string[]) : [],
   };
 }
 

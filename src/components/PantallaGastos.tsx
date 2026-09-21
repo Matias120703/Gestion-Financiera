@@ -65,6 +65,17 @@ export function PantallaGastos({
 
   const rapidas = tipo === 'gasto' ? RAPIDAS_GASTO : RAPIDAS_INGRESO;
 
+  /**
+   * A dónde va a parar la plata si se deja «automática» (083).
+   *
+   * Es la misma regla que aplica el trigger de la base: la cuenta que
+   * reclama esa forma de pago. Si no hay ninguna, el movimiento se guarda
+   * igual pero queda FUERA de la billetera, y eso hay que decirlo antes de
+   * guardar y no descubrirlo tres semanas después mirando un total que no
+   * cierra.
+   */
+  const destino = cuentas.find((c) => (c.metodos ?? []).includes(metodo)) ?? null;
+
   const categorias = Array.from(new Set([...categoriasUsadas, ...SUGERIDAS])).filter(Boolean);
 
   async function guardar(e: React.FormEvent) {
@@ -242,7 +253,7 @@ export function PantallaGastos({
                 encuentra sola. Con dos bancos sí, porque «transferencia» no
                 dice a cuál de los dos. «Automática» deja el reparto de la 074.
               */}
-              {cuentas.length > 1 && (
+              {cuentas.length > 0 && (
                 <div>
                   <span className="etiqueta">{tipo === 'gasto' ? t.gastos.deQueCuenta : t.gastos.aQueCuenta}</span>
                   <div className="flex flex-wrap gap-2">
@@ -262,7 +273,17 @@ export function PantallaGastos({
                     ))}
                   </div>
                   {cuentaId === '' && (
-                    <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">{t.gastos.porFormaDePago}</p>
+                    destino
+                      ? (
+                        <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">
+                          {t.gastos.iraA(destino.nombre)}
+                        </p>
+                      )
+                      : (
+                        <p className="mt-1.5 text-[12px] leading-snug font-medium text-ambar">
+                          {t.gastos.noVaANinguna}
+                        </p>
+                      )
                   )}
                 </div>
               )}

@@ -450,9 +450,47 @@ export interface CuentaDinero {
   salio_mes: number;
 }
 
+/**
+ * Lo que se cargó y no llegó a ninguna cuenta (083).
+ *
+ * `neto` y no la suma a secas: un gasto de 100 y un ingreso de 100 sueltos
+ * no son 200 de desajuste, son cero.
+ */
+export interface SinCuenta {
+  cantidad: number;
+  neto: number;
+  /** El primero que quedó suelto, para decir desde cuándo viene el lío. */
+  desde: string | null;
+}
+
 export interface Billetera {
   cuentas: CuentaDinero[];
   total: number;
+  sinCuenta: SinCuenta;
+  /**
+   * Formas de pago que no están asignadas a ninguna cuenta. Todo lo que se
+   * cargue con una de estas va a caer afuera de la billetera. Viene vacío
+   * cuando no hay ninguna cuenta creada: ahí no hay nada que arreglar
+   * todavía.
+   */
+  metodosSinCuenta: string[];
+}
+
+/**
+ * Un movimiento que quedó fuera de la billetera y hay que ubicar (083).
+ *
+ * No se llama `MovimientoSuelto` porque ese nombre ya es de los lotes, y
+ * ahí «suelto» quiere decir otra cosa: que todavía no pertenece a ningún
+ * lote. Dos cosas distintas no pueden compartir nombre.
+ */
+export interface MovimientoSinCuenta {
+  id: string;
+  fecha: string;
+  tipo: string;
+  descripcion: string;
+  categoria: string;
+  monto: number;
+  metodo_pago: string;
 }
 
 /**
@@ -465,6 +503,13 @@ export interface CuentaParaElegir {
   id: string;
   nombre: string;
   tipo: TipoCuentaDinero;
+  /**
+   * Las formas de pago que caen solas en esta cuenta (083). Sin esto, la
+   * pantalla puede ofrecer «automática» pero no puede decir qué significa
+   * —y «automática» sin decir a dónde es el agujero por el que la plata se
+   * iba a ningún lado.
+   */
+  metodos: string[];
 }
 
 export type EstadoRetiro = 'pedido' | 'pagado' | 'rechazado';

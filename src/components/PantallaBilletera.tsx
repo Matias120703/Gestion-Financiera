@@ -10,6 +10,7 @@ import { useOcultarMontos } from '@/lib/ocultar-montos';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import type { Billetera, CuentaDinero, TipoCuentaDinero } from '@/lib/tipos';
+import { PlataSinCuenta } from '@/components/PlataSinCuenta';
 
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'] as const;
 const TIPOS: TipoCuentaDinero[] = ['banco', 'efectivo', 'billetera'];
@@ -92,6 +93,10 @@ export function PantallaBilletera({
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 py-2">
+      {/* Va ARRIBA del total a propósito: es lo que hace que ese total no
+          sea cierto todavía. Ver PlataSinCuenta.tsx (083). */}
+      <PlataSinCuenta empresaId={empresaId} moneda={moneda} billetera={billetera} />
+
       {/* ---- el total y cada cuenta, en una sola tarjeta (como Wise) ---- */}
       <section className="tarjeta overflow-hidden">
         <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
@@ -138,6 +143,19 @@ export function PantallaBilletera({
           </>
         )}
       </section>
+
+      {/* Aviso ANTES de que la plata se pierda (083). Una forma de pago que
+          ninguna cuenta reclama no da error al cargar: el movimiento se
+          guarda igual y queda fuera del saldo. Decirlo acá es la diferencia
+          entre arreglarlo en un minuto y descubrirlo dentro de tres meses
+          con un total que no cierra. */}
+      {billetera.metodosSinCuenta.length > 0 && (
+        <p className="rounded-2xl bg-ambar-claro/60 px-4 py-3 text-[13px] leading-relaxed text-tinta/75">
+          {b.metodoSinCuenta(
+            billetera.metodosSinCuenta.map((m) => t.metodos[m] ?? m).join(', '),
+          )}
+        </p>
+      )}
 
       {error && (
         <p className="rounded-2xl bg-rojo-claro px-3.5 py-2.5 text-[13px] font-medium text-rojo">{error}</p>

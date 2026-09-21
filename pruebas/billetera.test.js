@@ -202,7 +202,10 @@ function aceptado(nombre, res) {
   const paraElegir = (await valor(A.uid, 'select public.cuentas_para_elegir($1) j', [A.empresaId])).j;
   ok('el selector trae las cuentas activas', paraElegir.map((c) => c.nombre),
     ['Efectivo', 'Banco Familiar', 'Banco Atlas']);
-  ok('y sin el saldo adentro', Object.keys(paraElegir[0]).sort(), ['id', 'nombre', 'tipo']);
+  // Lleva las formas de pago para poder decir a dónde iría «automática»
+  // (083), pero NUNCA el saldo: quien carga un gasto no tiene por qué
+  // enterarse de cuánta plata hay en cada cuenta.
+  ok('y sin el saldo adentro', Object.keys(paraElegir[0]).sort(), ['id', 'metodos', 'nombre', 'tipo']);
   rechazado('un vendedor no elige cuentas',
     await como(vendedor, 'select public.cuentas_para_elegir($1)', [A.empresaId]), 'dueño');
 
@@ -225,6 +228,65 @@ function aceptado(nombre, res) {
         (await valor(B.uid, 'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id',
           [B.empresaId, 'Ajena', 'banco', 0, []])).id]),
     'no existe');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('10 · Lo que quedó fuera de la billetera (083)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Cada forma de pago vive en UNA cuenta. La que no tiene casa hace que el
+  // movimiento se guarde sin cuenta y desaparezca del saldo sin avisar. En
+  // la base real había Gs. 13.000.000 así. Acá no se adivina dónde va: se
+  // muestra y se da cómo asignarlo.
+  const C = await H.montarEmpresa(db, { email: 'duenio@charlie.com', nombre: 'Charlie' });
+  const caja = (await valor(C.uid,
+    'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id',
+    [C.empresaId, 'Caja', 'efectivo', 100000, ['efectivo']])).id;
+
+  const billeteraC = async () => (await valor(C.uid, 'select public.billetera($1) j', [C.empresaId])).j;
+
+  ok('con todo asignado no hay nada suelto', (await billeteraC()).sin_cuenta.cantidad, 0);
+  ok('pero sí avisa qué formas de pago no tienen cuenta',
+    (await billeteraC()).metodos_sin_cuenta, ['credito', 'otro', 'tarjeta', 'transferencia']);
+
+  // Un gasto con una forma de pago que no reclama nadie.
+  const gastoSuelto = await cargar(C.empresaId, 'gasto', 45000, 'otro');
+  ok('el movimiento quedó sin cuenta', gastoSuelto.cuenta_id, null);
+  ok('y el saldo de la caja no lo vio', Number((await billeteraC()).cuentas[0].saldo), 100000);
+
+  let bC = await billeteraC();
+  ok('la billetera lo cuenta aparte', [bC.sin_cuenta.cantidad, Number(bC.sin_cuenta.neto)], [1, -45000]);
+  ok('y el total sigue siendo solo lo de las cuentas', Number(bC.total), 100000);
+
+  // Un ingreso suelto por el mismo monto no son 45.000 más de desajuste: es cero.
+  await cargar(C.empresaId, 'ingreso', 45000, 'otro');
+  bC = await billeteraC();
+  ok('el neto no suma lo que se cancela', [bC.sin_cuenta.cantidad, Number(bC.sin_cuenta.neto)], [2, 0]);
+
+  const lista = (await valor(C.uid, 'select public.movimientos_sin_cuenta($1) j', [C.empresaId])).j;
+  ok('la lista los trae con su forma de pago', lista.length, 2);
+  ok('y dice cuál fue', [...new Set(lista.map((x) => x.metodo_pago))], ['otro']);
+
+  // Asignar uno solo.
+  const uno = await H.intentar(db, C.uid, () =>
+    db.query('select public.asignar_cuenta_a_sueltos($1,$2,$3) j', [C.empresaId, caja, lista[0].id])
+      .then((x) => x.rows[0].j));
+  aceptado('se puede asignar de a uno', uno);
+  ok('y solo movió ese', uno.valor.asignados, 1);
+  ok('ahora queda uno suelto', (await billeteraC()).sin_cuenta.cantidad, 1);
+
+  // Y el resto de una.
+  const resto = (await valor(C.uid, 'select public.asignar_cuenta_a_sueltos($1,$2) j', [C.empresaId, caja])).j;
+  ok('el resto se asigna junto', resto.asignados, 1);
+  ok('no queda nada afuera', (await billeteraC()).sin_cuenta.cantidad, 0);
+  ok('y la caja ahora refleja los dos: se cancelan entre sí', Number((await billeteraC()).cuentas[0].saldo), 100000);
+
+  // Lo que ya tenía cuenta no se toca desde acá.
+  const yaAsignado = (await valor(C.uid, 'select public.asignar_cuenta_a_sueltos($1,$2) j', [C.empresaId, caja])).j;
+  ok('volver a correrlo no mueve nada', yaAsignado.asignados, 0);
+
+  const vendedorC = await H.sumarMiembro(db, C.empresaId, 'vende@charlie.com', 'vendedor');
+  rechazado('un vendedor no ve lo que quedó suelto',
+    await como(vendedorC, 'select public.movimientos_sin_cuenta($1)', [C.empresaId]), 'dueño');
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
