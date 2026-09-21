@@ -191,6 +191,9 @@ export default async function PaginaPanel({
   const categoriasTop = categorias.slice(0, 5);
   const bajoStock = productos.filter((p) => p.controla_stock && p.stock <= p.stock_minimo);
   const mayorGasto = categorias[0] ?? null;
+  // Ni una venta en el período: cambia lo que se muestra arriba. Ver el
+  // comentario largo en los indicadores.
+  const sinVentas = r.cantidadVentas === 0;
 
   // Progreso del reto activo
   const hoy = hoyISO(ctx.zonaHoraria);
@@ -261,30 +264,54 @@ export default async function PaginaPanel({
       </p>
 
       {/* ---------------- Indicadores principales ---------------- */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 ${sinVentas ? 'lg:grid-cols-2' : 'lg:grid-cols-4'}`}>
         {verRent ? (
           <>
+            {/* SIN UNA SOLA VENTA, «GANANCIA NETA» NO ES UNA PÉRDIDA.
+                Matías lo vio en su propia cuenta: cuatro gastos cargados,
+                ninguna venta todavía, y el panel encabezado por un número
+                rojo grande. Pero eso no es plata perdida: es plata gastada
+                antes de empezar a cobrar, que es exactamente lo que hace
+                cualquiera que abre algo. Llamarlo pérdida es acusar a
+                alguien de fracasar el día que empezó.
+
+                Así que mientras no haya ventas se muestra lo único que
+                pasó de verdad —cuánto salió— y se dice por qué falta el
+                otro número. Apenas entra la primera venta, la ganancia
+                neta vuelve a su lugar sola. */}
+            {sinVentas ? (
+              <Indicador
+                titulo={t.panel.gastosDelPeriodo} destacado
+                valor={dineroCorto(r.gastos, m)}
+                detalle={t.panel.todaviaSinVentas}
+              />
+            ) : (
+              <Indicador
+                titulo={t.panel.gananciaNeta} destacado
+                valor={dineroCorto(r.gananciaNeta, m)}
+                detalle={dinero(r.gananciaNeta, m)}
+                tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'}
+                variacion={variacion(r.gananciaNeta, rPrevio.gananciaNeta)}
+              />
+            )}
+            {!sinVentas && (
+              <Indicador
+                titulo={t.panel.vendido}
+                valor={dineroCorto(r.ventas, m)}
+                detalle={t.panel.vendidoDetalle(r.cantidadVentas)}
+                variacion={variacion(r.ventas, rPrevio.ventas)}
+              />
+            )}
             <Indicador
-              titulo={t.panel.gananciaNeta} destacado
-              valor={dineroCorto(r.gananciaNeta, m)}
-              detalle={dinero(r.gananciaNeta, m)}
-              tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'}
-              variacion={variacion(r.gananciaNeta, rPrevio.gananciaNeta)}
-            />
-            <Indicador
-              titulo={t.panel.vendido}
-              valor={dineroCorto(r.ventas, m)}
-              detalle={t.panel.vendidoDetalle(r.cantidadVentas)}
-              variacion={variacion(r.ventas, rPrevio.ventas)}
-            />
-            <Indicador
-              titulo={t.panel.gastos}
-              valor={dineroCorto(r.gastos, m)}
+              titulo={sinVentas ? t.panel.enQueSeFue : t.panel.gastos}
+              valor={sinVentas
+                ? (mayorGasto ? dineroCorto(mayorGasto.monto, m) : dineroCorto(0, m))
+                : dineroCorto(r.gastos, m)}
               detalle={mayorGasto ? t.panel.mayorGasto(mayorGasto.nombre.slice(0, 22)) : t.panel.sinGastos}
-              tono={r.gastos > 0 ? 'malo' : 'neutro'}
-              variacion={cicloLargo ? undefined : variacion(r.gastos, rPrevio.gastos)}
+              tono={!sinVentas && r.gastos > 0 ? 'malo' : 'neutro'}
+              variacion={cicloLargo || sinVentas ? undefined : variacion(r.gastos, rPrevio.gastos)}
             />
-            {cicloLargo ? (
+            {sinVentas ? null : cicloLargo ? (
               <Indicador
                 titulo={t.panel.delAnio}
                 valor={dineroCorto(delAnio?.gananciaNeta ?? 0, m)}

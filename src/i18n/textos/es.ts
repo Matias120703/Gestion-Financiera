@@ -1595,6 +1595,10 @@ export const es = {
   panel: {
     // El saludo de arriba de todo (3.3). La hora es la de la cuenta.
     saludoManana: 'Buen día',
+    // Sin una sola venta en el período no se encabeza con la ganancia
+    // neta: sería llamar pérdida a la plata que se gastó antes de empezar
+    // a cobrar.
+    todaviaSinVentas: 'todavía no cargaste ninguna venta',
     saludoTarde: 'Buenas tardes',
     saludoNoche: 'Buenas noches',
     gananciaNeta: 'Ganancia neta',

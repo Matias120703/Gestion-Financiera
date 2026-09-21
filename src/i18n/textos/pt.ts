@@ -1522,6 +1522,7 @@ export const pt: Textos = {
 
   panel: {
     saludoManana: 'Bom dia',
+    todaviaSinVentas: 'você ainda não lançou nenhuma venda',
     saludoTarde: 'Boa tarde',
     saludoNoche: 'Boa noite',
     gananciaNeta: 'Lucro líquido',
