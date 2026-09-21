@@ -6,6 +6,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import type { ComisionAdmin, ReferidoAdmin, RetiroAdmin, SocioAdmin } from '@/lib/tipos';
+import { CampoMonto } from '@/components/CampoMonto';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -469,7 +470,7 @@ function FilaComision({ comision, moneda, onHecho }: {
   onHecho: () => void;
 }) {
   const [modo, setModo] = useState<'' | 'ajustar' | 'anular'>('');
-  const [monto, setMonto] = useState(String(num(comision.monto)));
+  const [monto, setMonto] = useState(num(comision.monto));
   const [nota, setNota] = useState('');
   const [trabajando, setTrabajando] = useState(false);
   const [error, setError] = useState('');
@@ -495,7 +496,7 @@ function FilaComision({ comision, moneda, onHecho }: {
   // Lo que queda es corregir el monto mientras está en el saldo.
   const ajustar = () => correr(async () => clienteNavegador().rpc('ajustar_comision', {
     p_comision: comision.id,
-    p_monto: Number(monto.replace(/\D/g, '')),
+    p_monto: monto,
     p_nota: nota,
   }));
 
@@ -576,9 +577,9 @@ function FilaComision({ comision, moneda, onHecho }: {
           <div className="grid gap-2.5 sm:grid-cols-2">
             <label className="block">
               <span className="etiqueta">Monto de la comisión</span>
-              <input
-                className="campo mt-1 py-2 text-[14px]" inputMode="numeric"
-                value={monto} onChange={(e) => setMonto(e.target.value)}
+              <CampoMonto
+                className="campo mt-1 py-2 text-[14px]"
+                valor={monto} alCambiar={setMonto}
               />
             </label>
             <label className="block">

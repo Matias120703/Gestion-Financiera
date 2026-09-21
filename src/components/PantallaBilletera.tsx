@@ -11,6 +11,7 @@ import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import type { Billetera, CuentaDinero, TipoCuentaDinero } from '@/lib/tipos';
 import { PlataSinCuenta } from '@/components/PlataSinCuenta';
+import { CampoMonto } from '@/components/CampoMonto';
 
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'] as const;
 const TIPOS: TipoCuentaDinero[] = ['banco', 'efectivo', 'billetera'];
@@ -229,9 +230,12 @@ function FilaCuenta({
   const b = t.billetera;
   const [abierta, setAbierta] = useState(false);
   const [modo, setModo] = useState<'' | 'ajustar' | 'transferir' | 'editar'>('');
-  const [valor, setValor] = useState('');
+  const [valor, setValor] = useState(0);
+  // Cero es un saldo posible («el banco dice que no tengo nada»), así que el
+  // campo vacío no se distingue del cero por su valor: se distingue por si
+  // alguien lo tocó. Sin esto, ajustar a cero sería imposible.
+  const [escribio, setEscribio] = useState(false);
   const [hacia, setHacia] = useState(otras[0]?.id ?? '');
-  const numero = (s: string) => aNumero(s, moneda);
 
   return (
     <li className={`rounded-2xl transition ${abierta ? 'bg-arena' : ''}`}>
@@ -271,12 +275,12 @@ function FilaCuenta({
         {modo === '' && (
           <div className="mt-2 flex flex-wrap gap-2">
             <button type="button" className="boton-principal px-4 py-2 text-[13px]" disabled={ocupado}
-              onClick={() => { setModo('ajustar'); setValor(''); }}>
+              onClick={() => { setModo('ajustar'); setValor(0); setEscribio(false); }}>
               {b.ajustarSaldo}
             </button>
             {otras.length > 0 && (
               <button type="button" className="boton-suave px-4 py-2 text-[13px]" disabled={ocupado}
-                onClick={() => { setModo('transferir'); setValor(''); }}>
+                onClick={() => { setModo('transferir'); setValor(0); }}>
                 {b.transferir}
               </button>
             )}
@@ -291,14 +295,15 @@ function FilaCuenta({
           <div className="mt-2 space-y-2">
             <label className="block">
               <span className="etiqueta">{b.cuantoDiceTuBanco}</span>
-              <input className="campo mt-1 py-2 text-[15px] tabular-nums" inputMode="decimal" autoFocus
-                value={valor} onChange={(e) => setValor(e.target.value.replace(/[^\d.,-]/g, ''))} />
+              <CampoMonto className="campo mt-1 py-2 text-[15px]" autoFocus
+                decimales={decimalesDe(moneda)}
+                valor={valor} alCambiar={(n) => { setValor(n); setEscribio(true); }} />
             </label>
             <p className="text-[12px] leading-snug text-tinta/50">{b.ajustarDetalle}</p>
             <div className="flex gap-2">
               <button type="button" className="boton-principal flex-1 py-2 text-[13.5px]"
-                disabled={ocupado || valor.trim() === ''}
-                onClick={async () => { if (await alAjustar(numero(valor), '')) setModo(''); }}>
+                disabled={ocupado || !escribio}
+                onClick={async () => { if (await alAjustar(valor, '')) setModo(''); }}>
                 {t.comun.guardar}
               </button>
               <button type="button" className="boton-suave px-4 py-2 text-[13.5px]" onClick={() => setModo('')}>
@@ -313,8 +318,9 @@ function FilaCuenta({
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="etiqueta">{b.cuanto}</span>
-                <input className="campo mt-1 py-2 text-[15px] tabular-nums" inputMode="decimal" autoFocus
-                  value={valor} onChange={(e) => setValor(e.target.value.replace(/[^\d.,]/g, ''))} />
+                <CampoMonto className="campo mt-1 py-2 text-[15px]" autoFocus
+                  decimales={decimalesDe(moneda)}
+                  valor={valor} alCambiar={setValor} />
               </label>
               <label className="block">
                 <span className="etiqueta">{b.hacia}</span>
@@ -326,8 +332,8 @@ function FilaCuenta({
             <p className="text-[12px] leading-snug text-tinta/50">{b.transferirDetalle}</p>
             <div className="flex gap-2">
               <button type="button" className="boton-principal flex-1 py-2 text-[13.5px]"
-                disabled={ocupado || numero(valor) <= 0 || !hacia}
-                onClick={async () => { if (await alTransferir(hacia, numero(valor))) setModo(''); }}>
+                disabled={ocupado || valor <= 0 || !hacia}
+                onClick={async () => { if (await alTransferir(hacia, valor)) setModo(''); }}>
                 {b.transferir}
               </button>
               <button type="button" className="boton-suave px-4 py-2 text-[13.5px]" onClick={() => setModo('')}>
@@ -373,7 +379,7 @@ function FormularioCuenta({
   const [nombre, setNombre] = useState(inicial?.nombre ?? '');
   const [tipo, setTipo] = useState<TipoCuentaDinero>(inicial?.tipo ?? 'banco');
   const [metodos, setMetodos] = useState<string[]>(inicial?.metodos ?? ['transferencia']);
-  const [saldo, setSaldo] = useState('');
+  const [saldo, setSaldo] = useState(0);
 
   const elegirTipo = (x: TipoCuentaDinero) => {
     setTipo(x);
@@ -401,9 +407,8 @@ function FormularioCuenta({
       {conSaldo && (
         <label className="block">
           <span className="etiqueta">{b.cuantoTenesHoy}</span>
-          <input className="campo mt-1 tabular-nums" inputMode="decimal" value={saldo}
-            onChange={(e) => setSaldo(e.target.value.replace(/[^\d.,]/g, ''))}
-            placeholder={dinero(0, moneda)} />
+          <CampoMonto className="campo mt-1" valor={saldo} alCambiar={setSaldo}
+            decimales={decimalesDe(moneda)} placeholder={dinero(0, moneda)} />
         </label>
       )}
 
@@ -426,7 +431,7 @@ function FormularioCuenta({
 
       <div className="flex gap-2">
         <button type="button" className="boton-principal flex-1 py-2.5" disabled={ocupado || nombre.trim() === ''}
-          onClick={() => alGuardar({ nombre: nombre.trim(), tipo, metodos, saldo: aNumero(saldo, moneda) })}>
+          onClick={() => alGuardar({ nombre: nombre.trim(), tipo, metodos, saldo })}>
           {ocupado ? t.comun.guardando : t.comun.guardar}
         </button>
         {alCancelar && (
@@ -439,14 +444,3 @@ function FormularioCuenta({
   );
 }
 
-/** «755.409» en guaraníes; «1.250,50» o «1250.50» en una moneda con centavos. */
-function aNumero(s: string, moneda: string): number {
-  const limpio = s.trim();
-  if (!limpio) return 0;
-  const negativo = limpio.startsWith('-');
-  const sinSigno = limpio.replace('-', '');
-  const n = decimalesDe(moneda) === 0
-    ? Number(sinSigno.replace(/[.,]/g, ''))
-    : Number(sinSigno.includes(',') ? sinSigno.replace(/\./g, '').replace(',', '.') : sinSigno);
-  return (negativo ? -1 : 1) * (Number.isFinite(n) ? n : 0);
-}

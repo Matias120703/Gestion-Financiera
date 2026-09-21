@@ -12,6 +12,7 @@ import type {
   ResumenPanel, RetiroAdmin, SocioAdmin, TipoCuenta,
 } from '@/lib/tipos';
 import { PanelSocios } from './PanelSocios';
+import { CampoMonto } from '@/components/CampoMonto';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -506,7 +507,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     esPersonal || cuenta.plan === 'gratis' ? 'pro' : cuenta.plan,
   );
   const [meses, setMeses] = useState(1);
-  const [importe, setImporte] = useState('');
+  const [importe, setImporte] = useState(0);
   /**
    * Cuántos vendedores paga este negocio, sin contar al dueño.
    *
@@ -597,7 +598,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     p_plan: plan,
     p_meses: meses,
     p_nota: nota,
-    p_importe: Number(importe) > 0 ? Number(importe) : null,
+    p_importe: importe > 0 ? importe : null,
     // Vacío es null, y null en la base significa «dejalo como está». El cero
     // sí viaja como cero: es un trato válido —solo el dueño— y confundirlo
     // con vacío le regalaría vendedores a alguien que no los pagó.
@@ -869,10 +870,10 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
               )}
               <div className="col-span-2">
                 <label className="etiqueta">Cuánto transfirió</label>
-                <input
-                  type="number" min={0} inputMode="decimal" className="campo tabular-nums"
-                  placeholder="190000"
-                  value={importe} onChange={(e) => setImporte(e.target.value)}
+                <CampoMonto
+                  className="campo"
+                  placeholder="190.000"
+                  valor={importe} alCambiar={setImporte}
                 />
                 <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">
                   Se anota como ingreso en tus finanzas. Si lo dejás vacío, la cuenta se activa

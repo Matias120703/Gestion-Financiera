@@ -10,6 +10,7 @@ import { useZona } from '@/lib/zona';
 import type { Medida, Reto } from '@/lib/tipos';
 import { mensajeDeError } from '@/lib/errores';
 import { TextoSoloAdmin } from '@/components/TextoSoloAdmin';
+import { CampoMonto } from '@/components/CampoMonto';
 
 export function EditorReto({
   empresaId, moneda, reto, puedeGestionar,
@@ -124,10 +125,10 @@ function FormularioReto({
 
       <label className="block">
         <span className="etiqueta">{t.pantallas.meta}</span>
-        <input
-          type="number" inputMode="decimal" min={0} step={dec === 0 ? 1000 : 0.01}
-          className="campo text-[20px] font-titulo font-extrabold tabular-nums"
-          value={meta || ''} onChange={(e) => setMeta(Math.max(0, Number(e.target.value) || 0))}
+        <CampoMonto
+          decimales={dec}
+          className="campo text-[20px] font-titulo font-extrabold"
+          valor={meta} alCambiar={setMeta}
         />
         <span className="mt-1 block text-[12.5px] text-tinta/50">{dinero(meta, moneda)}</span>
       </label>

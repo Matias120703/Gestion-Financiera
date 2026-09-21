@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocale } from '@/i18n/cliente';
 
 /**
@@ -27,6 +27,14 @@ import { useLocale } from '@/i18n/cliente';
  * uno y terminás al final del número. Se resuelve contando cuántos DÍGITOS
  * había antes del cursor y volviéndolo a poner después de esos mismos
  * dígitos, ignorando los puntos. Esa cuenta no cambia aunque el agrupado sí.
+ *
+ * CUANDO EL MONTO LO CAMBIA OTRO
+ *
+ * El campo se escribe solo mientras la persona teclea, así que React no lo
+ * vuelve a dibujar y el cursor queda quieto. Pero a veces el monto lo pone un
+ * botón —«retirar todo», «pagar la cuota entera»— y entonces sí hay que
+ * escribirlo. Se distingue guardando el último número que ESTE campo informó:
+ * si el que llega de afuera no es ese, vino de otro lado y se dibuja.
  */
 export function CampoMonto({
   valor, alCambiar, className = '', decimales = 0, ...resto
@@ -40,6 +48,7 @@ export function CampoMonto({
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'>) {
   const locale = useLocale();
   const campo = useRef<HTMLInputElement>(null);
+  const informado = useRef(valor);
 
   const agrupador = new Intl.NumberFormat(locale);
   // El separador decimal de este idioma, para aceptarlo tal cual se teclea.
@@ -69,7 +78,8 @@ export function CampoMonto({
     const decimal = decimales > 0 && partes.length > 1 ? partes[1].slice(0, decimales) : '';
     const numero = Number(`${entero || '0'}.${decimal || '0'}`);
 
-    alCambiar(Number.isFinite(numero) ? numero : 0);
+    informado.current = Number.isFinite(numero) ? numero : 0;
+    alCambiar(informado.current);
 
     // Mientras se está escribiendo el decimal («1.500,» o «1.500,5») no se
     // reformatea: hacerlo borraría la coma recién tecleada.
@@ -90,6 +100,17 @@ export function CampoMonto({
       try { el.setSelectionRange(i, i); } catch { /* el campo ya no está */ }
     });
   }
+
+  // Un monto que cambió sin pasar por el teclado: lo puso un botón.
+  useEffect(() => {
+    if (valor === informado.current) return;
+    informado.current = valor;
+    const el = campo.current;
+    if (el) el.value = mostrar(valor);
+    // `mostrar` se rearma en cada render y meterlo acá haría que el efecto
+    // corriera siempre; lo que importa es el número, que es lo que se compara.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valor]);
 
   return (
     <input

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { OpcionesTipo } from '@/components/OpcionesTipo';
+import { CampoMonto } from '@/components/CampoMonto';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { mismoNombre } from '@/lib/turno-voz';
@@ -225,11 +226,11 @@ export function RevisionFiado({
 
       <div className="mt-5 rounded-2xl bg-arena p-4">
         <label className="etiqueta">{esCobro ? t.captura.cuantoTePago : t.captura.cuantoTeDebe}</label>
-        <input
-          type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-          className="campo text-[22px] font-titulo font-extrabold tabular-nums"
-          value={borrador.monto}
-          onChange={(e) => set('monto', Number(e.target.value) || 0)}
+        <CampoMonto
+          decimales={dec}
+          className="campo text-[22px] font-titulo font-extrabold"
+          valor={borrador.monto}
+          alCambiar={(n) => set('monto', n)}
         />
         <p className="mt-1.5 text-[13px] text-tinta/50">{plata(borrador.monto)}</p>
       </div>

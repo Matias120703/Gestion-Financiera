@@ -20,6 +20,7 @@ import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
 import { comprimirFoto } from '@/lib/imagen';
 import { useTextos } from '@/i18n/cliente';
 import { useBloquearFondo } from '@/lib/fondo';
+import { CampoMonto } from '@/components/CampoMonto';
 
 type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
 
@@ -941,11 +942,11 @@ function Revision({
 
             <div>
               <label className="etiqueta">{t.captura.montoPorCuota}</label>
-              <input
-                type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
+              <CampoMonto
+                decimales={dec}
                 className="campo" placeholder="—"
-                value={infoDeuda.monto_cuota ?? ''}
-                onChange={(e) => setDeuda({ monto_cuota: Number(e.target.value) || null })}
+                valor={infoDeuda.monto_cuota ?? 0}
+                alCambiar={(n) => setDeuda({ monto_cuota: n > 0 ? n : null })}
               />
             </div>
 
@@ -1034,8 +1035,8 @@ function Revision({
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-[11.5px] font-semibold text-tinta/50">{t.captura.precioCadaUno}</span>
-                    <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo py-2 text-[14px]" value={it.precio_unitario}
-                      onChange={(e) => setItem(n, { precio_unitario: Number(e.target.value) || 0 })} />
+                    <CampoMonto decimales={dec} className="campo py-2 text-[14px]" valor={it.precio_unitario}
+                      alCambiar={(v) => setItem(n, { precio_unitario: v })} />
                   </label>
                 </div>
                 {it.producto_id && (
@@ -1051,11 +1052,11 @@ function Revision({
         <label className="etiqueta">
           {esDeuda ? t.captura.cuantoDebes : esPago ? t.captura.cuantoPagaste : t.captura.total}
         </label>
-        <input
-          type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-          className="campo text-[22px] font-titulo font-extrabold tabular-nums"
-          value={borrador.monto}
-          onChange={(e) => onCambio({ ...borrador, monto: Number(e.target.value) || 0 })}
+        <CampoMonto
+          decimales={dec}
+          className="campo text-[22px] font-titulo font-extrabold"
+          valor={borrador.monto}
+          alCambiar={(n) => onCambio({ ...borrador, monto: n })}
         />
         <p className="mt-1.5 text-[13px] text-tinta/50">{dinero(borrador.monto, moneda)}</p>
       </div>

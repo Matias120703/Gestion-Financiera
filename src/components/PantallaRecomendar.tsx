@@ -9,6 +9,7 @@ import { enlaceDeSocio } from '@/lib/referido';
 import type { PanelSocio, RetiroSocio } from '@/lib/tipos';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Rico } from '@/components/Rico';
+import { CampoMonto } from '@/components/CampoMonto';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -264,7 +265,7 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
   const locale = useLocale();
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
-  const [texto, setTexto] = useState('');
+  const [monto, setMonto] = useState(0);
   const [pidiendo, setPidiendo] = useState(false);
   const [error, setError] = useState('');
   const [pedido, setPedido] = useState<number | null>(null);
@@ -272,7 +273,6 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
   const saldo = num(panel.por_pagar);
   const minimo = num(panel.minimo ?? 120000);
   // Solo dígitos: «150.000» y «150000» son lo mismo.
-  const monto = Number(texto.replace(/\D/g, '')) || 0;
 
   // Sin datos bancarios el retiro no se puede resolver, así que la base lo
   // rechaza. Se dice acá antes de que toque, no después.
@@ -295,7 +295,7 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
       if (!respuesta.ok) throw new Error(datos?.error || r.noSePidioCobro);
       setPedido(monto);
       setAbierto(false);
-      setTexto('');
+      setMonto(0);
       router.refresh();
     } catch (e: any) {
       setError(mensajeDeError(e, r.noSePidioCobro));
@@ -352,14 +352,14 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
           <label className="block">
             <span className="etiqueta">{r.cuantoRetirar}</span>
             <div className="mt-1 flex gap-2">
-              <input
-                className="campo py-2.5 text-[16px] font-semibold tabular-nums"
-                inputMode="numeric" autoFocus placeholder={dinero(minimo, 'PYG')}
-                value={monto > 0 ? monto.toLocaleString(locale) : texto.replace(/\D/g, '')}
-                onChange={(e) => { setTexto(e.target.value); setError(''); }}
+              <CampoMonto
+                className="campo py-2.5 text-[16px] font-semibold"
+                autoFocus placeholder={dinero(minimo, 'PYG')}
+                valor={monto}
+                alCambiar={(n) => { setMonto(n); setError(''); }}
               />
               <button
-                type="button" onClick={() => { setTexto(String(saldo)); setError(''); }}
+                type="button" onClick={() => { setMonto(saldo); setError(''); }}
                 className="boton-suave shrink-0 px-3.5 text-[13.5px]"
               >
                 {r.todo}
@@ -383,7 +383,7 @@ function PedirCobro({ panel }: { panel: Extract<PanelSocio, { tiene_codigo: true
               {pidiendo ? r.pidiendo : r.continuar}
             </button>
             <button
-              type="button" onClick={() => { setAbierto(false); setTexto(''); setError(''); }}
+              type="button" onClick={() => { setAbierto(false); setMonto(0); setError(''); }}
               disabled={pidiendo} className="boton-suave px-4 py-2.5 text-[14px]"
             >
               {t.comun.cancelar}

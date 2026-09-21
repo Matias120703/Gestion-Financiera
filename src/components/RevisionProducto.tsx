@@ -6,6 +6,7 @@ import { dinero, decimalesDe, numero } from '@/lib/formato';
 import { mensajeDeError, verificarAfectados } from '@/lib/errores';
 import { useTextos } from '@/i18n/cliente';
 import { OpcionesTipo } from '@/components/OpcionesTipo';
+import { CampoMonto } from '@/components/CampoMonto';
 import type { CapturaInterpretada, Producto, ProductoDictado, TipoCaptura, TipoCuenta } from '@/lib/tipos';
 
 const VACIO: ProductoDictado = {
@@ -190,8 +191,8 @@ export function RevisionProducto({
               </label>
               <label className="block">
                 <span className="etiqueta">{t.captura.loVendesA}</span>
-                <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                  placeholder="0" value={p.precio ?? ''} onChange={(e) => set({ precio: cifra(e.target.value) })} />
+                <CampoMonto decimales={dec} className="campo"
+                  placeholder="0" valor={p.precio ?? 0} alCambiar={(n) => set({ precio: n > 0 ? n : null })} />
               </label>
               <label className="block">
                 <span className="etiqueta">{t.captura.campoCategoria}</span>
@@ -201,8 +202,8 @@ export function RevisionProducto({
                 <>
                   <label className="block">
                     <span className="etiqueta">{t.captura.teCuesta}</span>
-                    <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                      placeholder="0" value={p.costo ?? ''} onChange={(e) => set({ costo: cifra(e.target.value) })} />
+                    <CampoMonto decimales={dec} className="campo"
+                      placeholder="0" valor={p.costo ?? 0} alCambiar={(n) => set({ costo: n > 0 ? n : null })} />
                   </label>
                   <label className="block">
                     <span className="etiqueta">{t.captura.cuantosTenes}</span>
@@ -238,8 +239,8 @@ export function RevisionProducto({
             {p.accion === 'precio' ? (
               <label className="block">
                 <span className="etiqueta">{t.captura.precioNuevo}</span>
-                <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                  placeholder="0" value={p.precio ?? ''} onChange={(e) => set({ precio: cifra(e.target.value) })} />
+                <CampoMonto decimales={dec} className="campo"
+                  placeholder="0" valor={p.precio ?? 0} alCambiar={(n) => set({ precio: n > 0 ? n : null })} />
                 {elegido && (
                   <span className="mt-1 block text-[12.5px] text-tinta/50">{t.captura.hoyEstaA(plata(Number(elegido.precio)))}</span>
                 )}

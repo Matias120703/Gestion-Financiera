@@ -4,9 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
-import { dinero, fechaLegible } from '@/lib/formato';
+import { decimalesDe, dinero, fechaLegible } from '@/lib/formato';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
+import { CampoMonto } from '@/components/CampoMonto';
 import type {
   Profesional, Reparto, ResumenReparto, FilaLiquidacion, MisServicios,
   Producto, Miembro,
@@ -242,7 +243,7 @@ function CobrarServicio({
   const [abierto, setAbierto] = useState(false);
   const [profesional, setProfesional] = useState(profesionales[0]?.id ?? '');
   const [servicio, setServicio] = useState(servicios[0]?.id ?? '');
-  const [precio, setPrecio] = useState('');
+  const [precio, setPrecio] = useState(0);
   const [cliente, setCliente] = useState('');
 
   const plata = (n: number) => dinero(n, moneda, true, locale);
@@ -254,8 +255,7 @@ function CobrarServicio({
   const propio = precios.find((p) => p.profesional_id === profesional && p.producto_id === servicio);
   const sugerido = propio ? Number(propio.precio) : Number(delCatalogo);
 
-  const escrito = Number(precio.replace(',', '.'));
-  const monto = escrito > 0 ? escrito : sugerido;
+  const monto = precio > 0 ? precio : sugerido;
 
   const paraElProfesional = !quien ? 0
     : quien.reparto === 'alquiler' ? monto
@@ -312,10 +312,10 @@ function CobrarServicio({
               <label className="etiqueta" htmlFor="rep-precio">
                 {t.reparto.precioSugerido} <span className="font-normal text-tinta/40">· {moneda}</span>
               </label>
-              <input
-                id="rep-precio" className="campo" inputMode="decimal"
-                placeholder={String(sugerido)}
-                value={precio} onChange={(e) => setPrecio(e.target.value.replace(/[^\d.,]/g, ''))}
+              <CampoMonto
+                id="rep-precio" className="campo" decimales={decimalesDe(moneda)}
+                placeholder={dinero(sugerido, moneda, true)}
+                valor={precio} alCambiar={setPrecio}
               />
             </div>
             <div>
@@ -347,8 +347,8 @@ function CobrarServicio({
             type="button" className="boton-principal w-full py-2.5"
             disabled={ocupado || !valido}
             onClick={() => {
-              alCobrar({ profesional, servicio, precio: escrito > 0 ? escrito : 0, cliente: cliente.trim() });
-              setPrecio('');
+              alCobrar({ profesional, servicio, precio, cliente: cliente.trim() });
+              setPrecio(0);
               setCliente('');
               setAbierto(false);
             }}
@@ -375,7 +375,7 @@ function FilaPersona({
   const t = useTextos();
   const locale = useLocale();
   const [pagando, setPagando] = useState(false);
-  const [monto, setMonto] = useState('');
+  const [monto, setMonto] = useState(0);
   const plata = (n: number) => dinero(n, moneda, true, locale);
 
   const debe = Number(fila.le_debe);
@@ -406,15 +406,16 @@ function FilaPersona({
           <div className="mt-2.5 flex flex-wrap items-end gap-2">
             <div className="min-w-[140px] flex-1">
               <label className="etiqueta">{t.reparto.cuantoLePagas}</label>
-              <input
-                className="campo py-2 text-[14px]" inputMode="decimal" autoFocus
-                placeholder={String(debe)}
-                value={monto} onChange={(e) => setMonto(e.target.value.replace(/[^\d.,]/g, ''))}
+              <CampoMonto
+                className="campo py-2 text-[14px]" autoFocus
+                decimales={decimalesDe(moneda)}
+                placeholder={dinero(debe, moneda, true)}
+                valor={monto} alCambiar={setMonto}
               />
             </div>
             <button
               type="button" className="boton-suave px-3 py-2 text-[13px]"
-              onClick={() => { setPagando(false); setMonto(''); }} disabled={ocupado}
+              onClick={() => { setPagando(false); setMonto(0); }} disabled={ocupado}
             >
               {t.comun.cancelar}
             </button>
@@ -422,10 +423,10 @@ function FilaPersona({
               type="button" className="boton-principal px-4 py-2 text-[13px]"
               disabled={ocupado}
               onClick={() => {
-                const n = Number(monto.replace(',', '.'));
-                alPagar(n > 0 ? n : debe);
+                // Vacío es «le pago todo lo que le debo», que es lo normal.
+                alPagar(monto > 0 ? monto : debe);
                 setPagando(false);
-                setMonto('');
+                setMonto(0);
               }}
             >
               {t.comun.guardar}

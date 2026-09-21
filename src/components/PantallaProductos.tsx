@@ -9,6 +9,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, decimalesDe, numero, porcentaje } from '@/lib/formato';
 import type { Producto } from '@/lib/tipos';
 import { Vacio, Indicador } from '@/components/Piezas';
+import { CampoMonto } from '@/components/CampoMonto';
 import { mensajeDeError, verificarAfectados } from '@/lib/errores';
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -482,13 +483,13 @@ function DialogoProducto({
               <div className="grid grid-cols-2 gap-2.5">
                 <label className="block">
                   <span className="etiqueta">{t.productos.teCuesta}</span>
-                  <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                    value={b.costo || ''} placeholder="0" onChange={(e) => set('costo', Math.max(0, Number(e.target.value) || 0))} />
+                  <CampoMonto decimales={dec} className="campo" placeholder="0"
+                    valor={b.costo} alCambiar={(n) => set('costo', n)} />
                 </label>
                 <label className="block">
                   <span className="etiqueta">{t.productos.loVendesA}</span>
-                  <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                    value={b.precio || ''} placeholder="0" onChange={(e) => set('precio', Math.max(0, Number(e.target.value) || 0))} />
+                  <CampoMonto decimales={dec} className="campo" placeholder="0"
+                    valor={b.precio} alCambiar={(n) => set('precio', n)} />
                 </label>
               </div>
 
@@ -519,8 +520,8 @@ function DialogoProducto({
             <>
               <label className="block">
                 <span className="etiqueta">{t.productos.colPrecio}</span>
-                <input type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01} className="campo tabular-nums"
-                  value={b.precio || ''} placeholder="0" onChange={(e) => set('precio', Math.max(0, Number(e.target.value) || 0))} />
+                <CampoMonto decimales={dec} className="campo" placeholder="0"
+                  valor={b.precio} alCambiar={(n) => set('precio', n)} />
               </label>
               <p className="text-[12.5px] leading-relaxed text-tinta/50">{t.productos.sinCostoServicio}</p>
             </>

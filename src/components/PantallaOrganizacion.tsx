@@ -10,6 +10,7 @@ import { useZona } from '@/lib/zona';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { categoriaVisible } from '@/i18n/nombres';
 import { Seccion, Vacio } from '@/components/Piezas';
+import { CampoMonto } from '@/components/CampoMonto';
 import type {
   ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta, CuentaParaElegir, TrabajoPendiente,
 } from '@/lib/tipos';
@@ -509,12 +510,12 @@ function FormularioFijo({
 }) {
   const t = useTextos();
   const [nombre, setNombre] = useState(fijo?.nombre ?? '');
-  const [importe, setImporte] = useState(fijo ? String(fijo.importe) : '');
+  const [importe, setImporte] = useState(Number(fijo?.importe) || 0);
   const [dia, setDia] = useState(String(fijo?.dia_del_mes ?? 30));
   const [principal, setPrincipal] = useState(fijo?.principal ?? true);
   const [cuentaId, setCuentaId] = useState(fijo?.cuenta_id ?? '');
 
-  const valido = nombre.trim() !== '' && Number(importe.replace(',', '.')) > 0;
+  const valido = nombre.trim() !== '' && importe > 0;
 
   return (
     <div className="mt-3 space-y-3 rounded-xl border border-borde bg-superficie p-3">
@@ -532,9 +533,9 @@ function FormularioFijo({
           <label className="etiqueta" htmlFor="fijo-importe">
             {t.organizacion.cuanto} <span className="font-normal text-tinta/40">· {moneda}</span>
           </label>
-          <input
-            id="fijo-importe" className="campo" inputMode="decimal"
-            value={importe} onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
+          <CampoMonto
+            id="fijo-importe" className="campo" decimales={decimalesDe(moneda)}
+            valor={importe} alCambiar={setImporte}
           />
         </div>
         <div>
@@ -577,7 +578,7 @@ function FormularioFijo({
           onClick={() => alGuardar({
             id: fijo?.id,
             nombre: nombre.trim(),
-            importe: Number(importe.replace(',', '.')),
+            importe,
             dia: Number(dia),
             principal,
             cuentaId,
@@ -622,7 +623,7 @@ function FormularioIngreso({
   const t = useTextos();
   const zona = useZona();
   const [concepto, setConcepto] = useState('');
-  const [monto, setMonto] = useState('');
+  const [monto, setMonto] = useState(0);
   // El mismo día que mira la base para decidir si acepta la fila. Un ingreso
   // futuro no es un ingreso: es plata que todavía no está, y mostrarla sería
   // la única mentira que Orden no se puede permitir. La base ya lo rechaza;
@@ -634,7 +635,7 @@ function FormularioIngreso({
 
   const enElFuturo = fecha > hoy;
   const valido = concepto.trim() !== ''
-    && Number(monto.replace(',', '.')) > 0
+    && monto > 0
     && fecha !== ''
     && !enElFuturo;
 
@@ -658,9 +659,9 @@ function FormularioIngreso({
           <label className="etiqueta" htmlFor="ing-monto">
             {t.organizacion.cuanto} <span className="font-normal text-tinta/40">· {moneda}</span>
           </label>
-          <input
-            id="ing-monto" className="campo" inputMode="decimal"
-            value={monto} onChange={(e) => setMonto(e.target.value.replace(/[^\d.,]/g, ''))}
+          <CampoMonto
+            id="ing-monto" className="campo" decimales={decimalesDe(moneda)}
+            valor={monto} alCambiar={setMonto}
           />
         </div>
         <div>
@@ -705,7 +706,7 @@ function FormularioIngreso({
           disabled={ocupado || !valido}
           onClick={() => alRegistrar({
             concepto: concepto.trim(),
-            monto: Number(monto.replace(',', '.')),
+            monto,
             fecha,
             categoria,
             cuentaId,
@@ -902,7 +903,7 @@ function FormularioSalida({
 }) {
   const t = useTextos();
   const [nombre, setNombre] = useState(salida?.nombre ?? '');
-  const [importe, setImporte] = useState(salida ? String(salida.importe) : '');
+  const [importe, setImporte] = useState(Number(salida?.importe) || 0);
   const [categoria, setCategoria] = useState(salida?.categoria ?? categorias[0]?.nombre ?? 'Otros');
   const [dia, setDia] = useState(salida?.dia_del_mes ? String(salida.dia_del_mes) : '');
   const [notas, setNotas] = useState(salida?.notas ?? '');
@@ -919,7 +920,7 @@ function FormularioSalida({
   const [catNombre, setCatNombre] = useState('');
   const [catPistas, setCatPistas] = useState('');
 
-  const valido = nombre.trim() !== '' && Number(importe.replace(',', '.')) > 0;
+  const valido = nombre.trim() !== '' && importe > 0;
 
   return (
     <div className="border-t border-borde bg-arena/50 px-4 py-4">
@@ -938,9 +939,9 @@ function FormularioSalida({
             <label className="etiqueta" htmlFor="salida-importe">
               {t.organizacion.cuanto} <span className="font-normal text-tinta/40">· {moneda}</span>
             </label>
-            <input
-              id="salida-importe" className="campo" inputMode="decimal"
-              value={importe} onChange={(e) => setImporte(e.target.value.replace(/[^\d.,]/g, ''))}
+            <CampoMonto
+              id="salida-importe" className="campo" decimales={decimalesDe(moneda)}
+              valor={importe} alCambiar={setImporte}
             />
           </div>
           <div>
@@ -1048,7 +1049,7 @@ function FormularioSalida({
             onClick={() => alGuardar({
               id: salida?.id,
               nombre: nombre.trim(),
-              importe: Number(importe.replace(',', '.')),
+              importe,
               categoria,
               dia: dia === '' ? null : Number(dia),
               notas: notas.trim(),
@@ -1203,7 +1204,7 @@ function FormularioFondo({
   const t = useTextos();
   const zona = useZona();
   const [nombre, setNombre] = useState(fondo?.nombre ?? '');
-  const [meta, setMeta] = useState(fondo?.meta ? String(fondo.meta) : '');
+  const [meta, setMeta] = useState(Number(fondo?.meta) || 0);
   const [fecha, setFecha] = useState(fondo?.fecha_limite ?? '');
   const [monedaFondo, setMonedaFondo] = useState(fondo?.moneda ?? moneda);
 
@@ -1255,9 +1256,9 @@ function FormularioFondo({
             {t.organizacion.metaOpcional}{' '}
             <span className="font-normal text-tinta/40">· {t.registro.opcional}</span>
           </label>
-          <input
-            id="fondo-meta" className="campo" inputMode="decimal"
-            value={meta} onChange={(e) => setMeta(e.target.value.replace(/[^\d.,]/g, ''))}
+          <CampoMonto
+            id="fondo-meta" className="campo" decimales={decimalesDe(monedaFondo ?? moneda)}
+            valor={meta} alCambiar={setMeta}
           />
         </div>
         <div>
@@ -1285,11 +1286,11 @@ function FormularioFondo({
           type="button" className="boton-principal flex-1 py-2.5"
           disabled={ocupado || nombre.trim() === ''}
           onClick={() => {
-            const n = Number(meta.replace(',', '.'));
             alGuardar({
               id: fondo?.id,
               nombre: nombre.trim(),
-              meta: n > 0 ? n : null,
+              // Sin meta es un fondo abierto: se guarda sin fecha de llegada.
+              meta: meta > 0 ? meta : null,
               fecha_limite: fecha === '' ? null : fecha,
               moneda: fondo ? undefined : monedaFondo,
             });
@@ -1315,14 +1316,12 @@ function Fondo({
   const t = useTextos();
   const locale = useLocale();
   const [accion, setAccion] = useState<'aporte' | 'retiro' | null>(null);
-  const [monto, setMonto] = useState('');
-  const [montoLocal, setMontoLocal] = useState('');
+  const [monto, setMonto] = useState(0);
+  const [montoLocal, setMontoLocal] = useState(0);
   // El saldo, la meta y el ritmo van en la moneda DEL FONDO; lo que costó, en la de la cuenta.
   const otraMoneda = Boolean(fondo.moneda && fondo.moneda !== moneda);
   const plata = (n: number) => dinero(n, fondo.moneda ?? moneda, true, locale);
   const plataLocal = (n: number) => dinero(n, moneda, true, locale);
-  // En guaraníes el punto es de miles («750.000»); en dólares la coma puede ser decimal.
-  const numero = (s: string) => (decimalesDe(moneda) === 0 ? Number(s.replace(/[.,]/g, '')) : Number(s.replace(',', '.')));
 
   const avance = fondo.meta && fondo.meta > 0
     ? Math.min(100, (fondo.saldo / fondo.meta) * 100)
@@ -1413,9 +1412,10 @@ function Fondo({
                 ? t.organizacion.cuantoEn(fondo.moneda!)
                 : accion === 'aporte' ? t.organizacion.cuantoGuardas : t.organizacion.cuantoRetiras}
             </label>
-            <input
-              className="campo py-2 text-[14px]" inputMode="decimal" autoFocus
-              value={monto} onChange={(e) => setMonto(e.target.value.replace(/[^\d.,]/g, ''))}
+            <CampoMonto
+              className="campo py-2 text-[14px]" autoFocus
+              decimales={decimalesDe(fondo.moneda ?? moneda)}
+              valor={monto} alCambiar={setMonto}
             />
           </div>
           {/* En otra moneda, además, cuánto fue en la tuya: es el cambio que
@@ -1425,26 +1425,26 @@ function Fondo({
               <label className="etiqueta">
                 {accion === 'aporte' ? t.organizacion.cuantoPagaste(moneda) : t.organizacion.cuantoRecibiste(moneda)}
               </label>
-              <input
-                className="campo py-2 text-[14px]" inputMode="decimal"
-                value={montoLocal} onChange={(e) => setMontoLocal(e.target.value.replace(/[^\d.,]/g, ''))}
+              <CampoMonto
+                className="campo py-2 text-[14px]" decimales={decimalesDe(moneda)}
+                valor={montoLocal} alCambiar={setMontoLocal}
               />
             </div>
           )}
           <button
             type="button" className="boton-suave px-3 py-2 text-[13px]"
-            onClick={() => { setAccion(null); setMonto(''); setMontoLocal(''); }} disabled={ocupado}
+            onClick={() => { setAccion(null); setMonto(0); setMontoLocal(0); }} disabled={ocupado}
           >
             {t.comun.cancelar}
           </button>
           <button
             type="button" className="boton-principal px-4 py-2 text-[13px]"
-            disabled={ocupado || Number(monto.replace(',', '.')) <= 0 || (otraMoneda && numero(montoLocal) <= 0)}
+            disabled={ocupado || monto <= 0 || (otraMoneda && montoLocal <= 0)}
             onClick={() => {
-              alMover(accion, Number(monto.replace(',', '.')), otraMoneda ? numero(montoLocal) : undefined);
+              alMover(accion, monto, otraMoneda ? montoLocal : undefined);
               setAccion(null);
-              setMonto('');
-              setMontoLocal('');
+              setMonto(0);
+              setMontoLocal(0);
             }}
           >
             {t.comun.guardar}

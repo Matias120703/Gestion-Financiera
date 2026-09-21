@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
-import { dinero, fechaLegible } from '@/lib/formato';
+import { decimalesDe, dinero, fechaLegible } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { Vacio } from '@/components/Piezas';
+import { CampoMonto } from '@/components/CampoMonto';
 import type { Deuda, PagoDeuda, ResumenDeudas, TipoDeuda } from '@/lib/tipos';
 
 /**
@@ -461,16 +462,16 @@ function FormularioDeuda({
   const [tipo, setTipo] = useState<TipoDeuda>('tarjeta');
   const [nombre, setNombre] = useState('');
   const [acreedor, setAcreedor] = useState('');
-  const [monto, setMonto] = useState('');
-  const [saldo, setSaldo] = useState('');
+  const [monto, setMonto] = useState(0);
+  const [saldo, setSaldo] = useState(0);
   const [cuotas, setCuotas] = useState('');
-  const [montoCuota, setMontoCuota] = useState('');
+  const [montoCuota, setMontoCuota] = useState(0);
   const [vence, setVence] = useState('');
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
 
-  const puede = nombre.trim().length > 0 && Number(monto) > 0;
+  const puede = nombre.trim().length > 0 && monto > 0;
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -483,11 +484,13 @@ function FormularioDeuda({
         p_nombre: nombre.trim(),
         p_tipo: tipo,
         p_acreedor: acreedor.trim(),
-        p_monto: Number(monto),
-        // Vacío significa «todavía no pagué nada», que es lo normal.
-        p_saldo: saldo === '' ? null : Number(saldo),
+        p_monto: monto,
+        // Vacío significa «todavía no pagué nada», que es lo normal. Y un
+        // saldo de cero sería una deuda ya saldada, que nadie da de alta:
+        // por eso acá vacío y cero pueden significar lo mismo.
+        p_saldo: saldo > 0 ? saldo : null,
         p_cuotas_totales: cuotas === '' ? null : Number(cuotas),
-        p_monto_cuota: montoCuota === '' ? null : Number(montoCuota),
+        p_monto_cuota: montoCuota > 0 ? montoCuota : null,
         p_vence_el: vence || null,
         p_notas: notas.trim(),
       });
@@ -538,14 +541,15 @@ function FormularioDeuda({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="etiqueta">{t.deudas.montoTotal} ({moneda})</span>
-            <input className="campo" required inputMode="numeric" min={1}
-                   value={monto} onChange={(e) => setMonto(e.target.value)} />
+            <CampoMonto className="campo" required decimales={decimalesDe(moneda)}
+                        valor={monto} alCambiar={setMonto} />
           </label>
 
           <label className="block">
             <span className="etiqueta">{t.deudas.saldoActual}</span>
-            <input className="campo" inputMode="numeric" placeholder={monto || '0'}
-                   value={saldo} onChange={(e) => setSaldo(e.target.value)} />
+            <CampoMonto className="campo" decimales={decimalesDe(moneda)}
+                        placeholder={monto > 0 ? dinero(monto, moneda, true) : '0'}
+                        valor={saldo} alCambiar={setSaldo} />
           </label>
         </div>
         <p className="-mt-1 text-[12px] leading-relaxed text-tinta/45">{t.deudas.saldoAyuda}</p>
@@ -559,8 +563,8 @@ function FormularioDeuda({
 
           <label className="block">
             <span className="etiqueta">{t.deudas.montoCuota}</span>
-            <input className="campo" inputMode="numeric"
-                   value={montoCuota} onChange={(e) => setMontoCuota(e.target.value)} />
+            <CampoMonto className="campo" decimales={decimalesDe(moneda)}
+                        valor={montoCuota} alCambiar={setMontoCuota} />
           </label>
         </div>
 
@@ -602,7 +606,7 @@ function FormularioPago({
   const locale = useLocale();
   const router = useRouter();
   // Se propone la cuota si la deuda las tiene: es lo que se paga casi siempre.
-  const [monto, setMonto] = useState(deuda.monto_cuota ? String(deuda.monto_cuota) : '');
+  const [monto, setMonto] = useState(Number(deuda.monto_cuota) || 0);
   const [metodo, setMetodo] = useState('efectivo');
   const [crearGasto, setCrearGasto] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -618,7 +622,7 @@ function FormularioPago({
       const supabase = clienteNavegador();
       const { data, error: err } = await supabase.rpc('registrar_pago_deuda', {
         p_deuda: deuda.id,
-        p_monto: Number(monto),
+        p_monto: monto,
         p_fecha: null,
         p_crear_gasto: crearGasto,
         p_metodo: metodo,
@@ -656,8 +660,8 @@ function FormularioPago({
 
         <label className="block">
           <span className="etiqueta">{t.deudas.cuantoPagaste} ({moneda})</span>
-          <input className="campo" required inputMode="numeric" autoFocus
-                 value={monto} onChange={(e) => setMonto(e.target.value)} />
+          <CampoMonto className="campo" required autoFocus decimales={decimalesDe(moneda)}
+                      valor={monto} alCambiar={setMonto} />
         </label>
 
         <div>
@@ -696,7 +700,7 @@ function FormularioPago({
 
         <div className="flex gap-2 pt-1">
           <button type="button" onClick={onCerrar} className="boton-suave flex-1">{t.comun.cancelar}</button>
-          <button className="boton-principal flex-1" disabled={Number(monto) <= 0 || guardando}>
+          <button className="boton-principal flex-1" disabled={monto <= 0 || guardando}>
             {guardando ? t.comun.guardando : t.deudas.pagar}
           </button>
         </div>

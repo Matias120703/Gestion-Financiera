@@ -13,6 +13,7 @@ import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
 import type { Producto } from '@/lib/tipos';
 import { Vacio } from '@/components/Piezas';
+import { CampoMonto } from '@/components/CampoMonto';
 import { mensajeDeError } from '@/lib/errores';
 
 /**
@@ -531,12 +532,12 @@ function Carrito(props: {
                       >+</button>
                     </div>
                     <span className="text-tinta/30">×</span>
-                    <input
-                      type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
+                    <CampoMonto
+                      decimales={dec}
                       aria-label={t.venta.precioDe(l.nombre)}
-                      className="campo flex-1 py-2 text-right font-semibold tabular-nums"
-                      value={l.precio_unitario}
-                      onChange={(e) => onCambiar(l.clave, { precio_unitario: Math.max(0, Number(e.target.value) || 0) })}
+                      className="campo flex-1 py-2 text-right font-semibold"
+                      valor={l.precio_unitario}
+                      alCambiar={(n) => onCambiar(l.clave, { precio_unitario: n })}
                     />
                   </div>
 
@@ -570,11 +571,11 @@ function Carrito(props: {
 
             <label className="block">
               <span className="etiqueta">{t.venta.descuento}</span>
-              <input
-                type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-                className="campo tabular-nums"
-                value={descuento || ''} placeholder="0"
-                onChange={(e) => setDescuento(Math.max(0, Number(e.target.value) || 0))}
+              <CampoMonto
+                decimales={dec}
+                className="campo"
+                placeholder="0"
+                valor={descuento} alCambiar={setDescuento}
               />
             </label>
 
@@ -679,11 +680,11 @@ function DialogoLibre({
         <div className="mt-4 space-y-3">
           <label className="block">
             <span className="etiqueta">{t.venta.precio}</span>
-            <input
-              type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-              className="campo text-[22px] font-titulo font-extrabold tabular-nums" autoFocus
-              value={precio || ''} placeholder="0"
-              onChange={(e) => setPrecio(Math.max(0, Number(e.target.value) || 0))}
+            <CampoMonto
+              decimales={dec}
+              className="campo text-[22px] font-titulo font-extrabold" autoFocus
+              placeholder="0"
+              valor={precio} alCambiar={setPrecio}
             />
           </label>
 
@@ -707,10 +708,10 @@ function DialogoLibre({
           {verCostos && conCosto && (
             <label className="block aparecer">
               <span className="etiqueta">{t.venta.teCosto}</span>
-              <input
-                type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-                className="campo tabular-nums" value={costo || ''} placeholder="0"
-                onChange={(e) => setCosto(Math.max(0, Number(e.target.value) || 0))}
+              <CampoMonto
+                decimales={dec}
+                className="campo" placeholder="0"
+                valor={costo} alCambiar={setCosto}
               />
               <span className="mt-1 block text-[12.5px] font-semibold text-verde-fuerte">
                 {t.venta.ganasPorUnidad(dinero(Math.max(0, precio - costo), moneda))}
