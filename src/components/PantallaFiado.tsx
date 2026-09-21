@@ -11,7 +11,7 @@ import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
-import type { DeudorFiado, LineaFiado, ResumenFiado } from '@/lib/tipos';
+import type { CuentaParaElegir, DeudorFiado, LineaFiado, ResumenFiado } from '@/lib/tipos';
 
 /** Cómo se cobra un fiado. Se guarda el código; se lee con `metodoVisible`. */
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'otro'];
@@ -47,7 +47,7 @@ function hace(t: Textos, dias: number | null): string {
  * porque es exactamente lo que alguien esperaría que pase y no pasa.
  */
 export function PantallaFiado({
-  empresaId, moneda, zona, negocio, esPersonal, resumen,
+  empresaId, moneda, zona, negocio, esPersonal, resumen, cuentas = [],
 }: {
   empresaId: string;
   moneda: string;
@@ -55,6 +55,8 @@ export function PantallaFiado({
   negocio: string;
   esPersonal: boolean;
   resumen: ResumenFiado;
+  /** Las cuentas de la billetera, para decir de cuál salió lo prestado (084). */
+  cuentas?: CuentaParaElegir[];
 }) {
   const router = useRouter();
   const t = useTextos();
@@ -107,6 +109,7 @@ export function PantallaFiado({
           plata={plata}
           onCerrar={() => setNuevo(false)}
           onListo={listo}
+          cuentas={cuentas}
         />
       ) : (
         <button type="button" className="boton-principal w-full py-3" onClick={() => setNuevo(true)}>
@@ -135,6 +138,7 @@ export function PantallaFiado({
                 abierto={abierto === d.cliente_id}
                 onAbrir={() => setAbierto(abierto === d.cliente_id ? null : d.cliente_id)}
                 onListo={listo}
+                cuentas={cuentas}
               />
             ))}
           </ul>
@@ -152,18 +156,26 @@ export function PantallaFiado({
 
 /** Anotar a mano que alguien te debe. */
 function FormularioNuevo({
-  empresaId, esPersonal, plata, onCerrar, onListo,
+  empresaId, esPersonal, plata, onCerrar, onListo, cuentas,
 }: {
   empresaId: string;
   esPersonal: boolean;
   plata: (n: number) => string;
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
+  cuentas: CuentaParaElegir[];
 }) {
   const t = useTextos();
   const [elegido, setElegido] = useState<ClienteElegido>(NADIE);
   const [monto, setMonto] = useState('');
   const [concepto, setConcepto] = useState('');
+  /**
+   * De qué cuenta salió la plata (084). Vacío = no salió de ninguna, que es
+   * lo que pasa cuando fiás una venta: entregaste mercadería, no plata.
+   * Arranca vacío a propósito: mover el saldo de alguien sin que lo haya
+   * pedido es peor que no moverlo.
+   */
+  const [cuentaId, setCuentaId] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
 
@@ -186,6 +198,7 @@ function FormularioNuevo({
         p_cliente: clienteId,
         p_monto: n,
         p_concepto: concepto.trim(),
+        p_cuenta: cuentaId || null,
       });
       if (err) throw err;
       onListo(t.fiado.anotado(elegido.nombre.trim(), plata(n)));
@@ -228,6 +241,35 @@ function FormularioNuevo({
         </label>
       </div>
 
+      {/* De dónde salió la plata (084). Fiar una venta y prestar plata se
+          anotaban igual, y son dos cosas distintas: en la venta entregás
+          mercadería y de tus cuentas no sale nada; en el préstamo sale plata
+          de verdad y el saldo tiene que bajar. */}
+      {cuentas.length > 0 && (
+        <div>
+          <span className="etiqueta">{t.fiado.salioDeTuBilletera}</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button" onClick={() => setCuentaId('')}
+              className={cuentaId === '' ? 'chip-encendido' : 'chip-apagado'}
+            >
+              {t.fiado.noSalioPlata}
+            </button>
+            {cuentas.map((c) => (
+              <button
+                key={c.id} type="button" onClick={() => setCuentaId(c.id)}
+                className={cuentaId === c.id ? 'chip-encendido' : 'chip-apagado'}
+              >
+                {c.nombre}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">
+            {cuentaId === '' ? t.fiado.noSalioPlataDetalle : t.fiado.salioDetalle}
+          </p>
+        </div>
+      )}
+
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
       <div className="flex gap-2">
@@ -242,7 +284,7 @@ function FormularioNuevo({
 
 /** Una persona que te debe, con lo necesario para cobrarle. */
 function FilaDeudor({
-  d, empresaId, zona, negocio, esPersonal, plata, locale, abierto, onAbrir, onListo,
+  d, empresaId, zona, negocio, esPersonal, plata, locale, abierto, onAbrir, onListo, cuentas,
 }: {
   d: DeudorFiado;
   empresaId: string;
@@ -254,12 +296,24 @@ function FilaDeudor({
   abierto: boolean;
   onAbrir: () => void;
   onListo: (mensaje: string) => void;
+  /** Para decir en qué cuenta entró la plata que te pagaron (084). */
+  cuentas: CuentaParaElegir[];
 }) {
   // Se propone todo lo que debe: es lo que se cobra casi siempre, y si pagó
   // una parte se corrige un número en vez de escribirlo de cero.
   const t = useTextos();
   const [monto, setMonto] = useState(String(d.saldo));
   const [metodo, setMetodo] = useState('efectivo');
+  /**
+   * En qué cuenta entró (084). Vacío = no se toca ningún saldo, que es lo
+   * correcto si te pagaron en efectivo y no llevás caja en Orden.
+   *
+   * Sube el saldo como AJUSTE y no como ingreso: la 056 sacó a propósito el
+   * ingreso que creaba el cobro porque inflaba la ganancia —la venta fiada
+   * ya se contó el día de la venta—. Un préstamo que vuelve tampoco es
+   * ganancia. El ajuste mueve la plata sin tocar ese número.
+   */
+  const [cuentaCobro, setCuentaCobro] = useState('');
   const [libro, setLibro] = useState<LineaFiado[] | null>(null);
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -299,6 +353,7 @@ function FilaDeudor({
     try {
       const { error: err } = await clienteNavegador().rpc('cobrar_fiado', {
         p_empresa: empresaId, p_cliente: d.cliente_id, p_monto: n, p_metodo: metodo,
+        p_cuenta: cuentaCobro || null,
       });
       if (err) throw err;
       onListo(n >= d.saldo
@@ -359,6 +414,18 @@ function FilaDeudor({
                 {METODOS.map((m) => <option key={m} value={m}>{metodoVisible(t, m)}</option>)}
               </select>
             </label>
+            {cuentas.length > 0 && (
+              <label className="block">
+                <span className="etiqueta">{t.fiado.enQueCuentaEntro}</span>
+                <select
+                  className="campo" value={cuentaCobro}
+                  onChange={(e) => setCuentaCobro(e.target.value)}
+                >
+                  <option value="">{t.fiado.noEntroEnNinguna}</option>
+                  {cuentas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </label>
+            )}
             <button className="boton-principal px-5 py-2.5 disabled:opacity-40" disabled={!puede}>
               {guardando ? t.fiado.cobrando : t.fiado.cobrar}
             </button>

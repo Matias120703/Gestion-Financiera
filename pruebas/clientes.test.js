@@ -670,6 +670,90 @@ async function principal() {
       await como(B.uid, 'select public.eliminar_producto($1)', [corte]), 'no pertenecés');
   }
 
+  grupo('17 · Prestar plata sale de una cuenta, y no es un gasto (084)');
+  {
+    // Fiar una venta y prestar plata se anotaban igual, y son dos cosas
+    // distintas: en la venta entregás mercadería y de tus cuentas no sale
+    // nada; en el préstamo sale plata de verdad.
+    const caja = (await valor(A.uid,
+      "select public.guardar_cuenta_dinero($1,'Caja','efectivo',500000,'{efectivo}') id",
+      [A.empresaId])).id;
+    const saldoCaja = async () => Number(uno(await db.query(
+      'select public.saldo_cuenta_dinero($1) s', [caja])).s);
+    const gastosDelMes = async () => Number(uno(await db.query(
+      `select coalesce(sum(monto),0) g from public.movimientos
+        where empresa_id=$1 and estado='activo' and tipo='gasto'`, [A.empresaId])).g);
+
+    ok('la caja arranca con lo que se cargó', await saldoCaja(), 500000);
+    const gastosAntes = await gastosDelMes();
+    const deudaAntes = await saldo(juan);
+
+    // Sin cuenta: es una venta fiada, no sale plata de ningún lado.
+    const sinCuenta = await valor(A.uid,
+      "select public.anotar_fiado($1,$2,80000,'Le fié dos remeras') id", [A.empresaId, juan]);
+    ok('fiar una venta no toca el saldo', await saldoCaja(), 500000);
+    ok('y el fiado no recuerda ninguna cuenta',
+      uno(await db.query('select cuenta_id from public.fiado where id=$1', [sinCuenta.id])).cuenta_id, null);
+
+    // Con cuenta: le prestaste plata, y esa plata salió.
+    const prestado = await valor(A.uid,
+      "select public.anotar_fiado($1,$2,300000,'Le presté',null,$3) id",
+      [A.empresaId, juan, caja]);
+    ok('prestar baja el saldo de la cuenta elegida', await saldoCaja(), 200000);
+    ok('el fiado recuerda de dónde salió',
+      uno(await db.query('select cuenta_id from public.fiado where id=$1', [prestado.id])).cuenta_id, caja);
+
+    // LO QUE MÁS IMPORTA: no es un gasto. Anotarlo como tal le inflaría los
+    // gastos del mes y le bajaría la ganancia neta por algo que no perdió.
+    ok('y NO aparece como gasto', await gastosDelMes(), gastosAntes);
+    const ajuste = uno(await db.query(
+      `select tipo, monto::numeric m, nota from public.ajustes_cuenta
+        where cuenta_id=$1 order by created_at desc limit 1`, [caja]));
+    ok('queda como un ajuste de tipo préstamo', ajuste.tipo, 'prestamo');
+    ok('por el monto, en negativo', Number(ajuste.m), -300000);
+    ok('y dice a quién le prestaste', /Juan/.test(ajuste.nota), true);
+
+    // Las dos deudas suman: lo fiado más lo prestado. Se mide el salto y
+    // no el total, porque Juan ya venía debiendo de los grupos anteriores.
+    ok('el cliente debe las dos cosas', await saldo(juan) - deudaAntes, 380000);
+
+    rechazado('una cuenta de otro negocio no sirve',
+      await como(A.uid, 'select public.anotar_fiado($1,$2,1000,$4,null,$3)',
+        [A.empresaId, juan,
+         (await valor(B.uid, "select public.guardar_cuenta_dinero($1,'Ajena','banco',0,'{}') id",
+           [B.empresaId])).id, 'x']),
+      'no existe');
+
+    // Y cobrar entra en la cuenta que se elija, por el mismo camino: un
+    // ajuste. Volver a crear el ingreso que sacó la 056 inflaría la
+    // ganancia, que es exactamente lo que esa migración vino a arreglar.
+    const ingresosAntes = Number(uno(await db.query(
+      `select coalesce(sum(monto),0) i from public.movimientos
+        where empresa_id=$1 and estado='activo' and tipo='ingreso'`, [A.empresaId])).i);
+
+    await valor(A.uid, "select public.cobrar_fiado($1,$2,100000,'transferencia',null,$3) j",
+      [A.empresaId, juan, caja]);
+    ok('cobrar con cuenta sube ese saldo', await saldoCaja(), 300000);
+    ok('y NO crea ningún ingreso', Number(uno(await db.query(
+      `select coalesce(sum(monto),0) i from public.movimientos
+        where empresa_id=$1 and estado='activo' and tipo='ingreso'`, [A.empresaId])).i), ingresosAntes);
+    ok('el cobro recuerda en qué cuenta entró',
+      uno(await db.query(
+        "select cuenta_id from public.fiado where empresa_id=$1 and tipo='cobro' order by created_at desc limit 1",
+        [A.empresaId])).cuenta_id, caja);
+
+    // Sin cuenta no se toca ningún saldo: si te pagaron en efectivo y no
+    // llevás caja en Orden, no hay nada que mover.
+    await valor(A.uid, "select public.cobrar_fiado($1,$2,50000,'efectivo') j", [A.empresaId, juan]);
+    ok('sin cuenta elegida el saldo no se mueve', await saldoCaja(), 300000);
+
+    const vendedorA = await H.sumarMiembro(db, A.empresaId, 'vende@alfa.com', 'vendedor');
+    rechazado('y un vendedor no saca plata de la billetera',
+      await como(vendedorA, 'select public.anotar_fiado($1,$2,1000,$4,null,$3)',
+        [A.empresaId, juan, caja, 'x']),
+      'billetera');
+  }
+
   console.log(`\n${fallos === 0 ? '✓' : '✗'} ${corridas - fallos}/${corridas} pruebas`);
   await db.close();
   process.exit(fallos === 0 ? 0 : 1);

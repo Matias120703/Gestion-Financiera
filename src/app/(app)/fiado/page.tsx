@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
 import { tieneSeccion } from '@/lib/rubros';
 import { traerResumenFiado } from '@/lib/fiado';
+import { traerCuentasParaElegir } from '@/lib/billetera';
 import { PantallaFiado } from '@/components/PantallaFiado';
 
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,10 @@ export default async function PaginaFiado() {
   if (!tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/fiado')) redirect('/panel');
 
   const resumen = await traerResumenFiado(ctx.empresa.id);
+  // Para poder decir de qué cuenta salió la plata prestada (084). Un
+  // vendedor no administra la billetera, así que para él viene vacía y no se
+  // le pregunta nada.
+  const cuentas = ctx.esAdmin ? await traerCuentasParaElegir(ctx.empresa.id) : [];
 
   return (
     <PantallaFiado
@@ -31,6 +36,7 @@ export default async function PaginaFiado() {
       negocio={ctx.empresa.nombre}
       esPersonal={ctx.empresa.tipo_cuenta === 'personal'}
       resumen={resumen}
+      cuentas={cuentas}
     />
   );
 }

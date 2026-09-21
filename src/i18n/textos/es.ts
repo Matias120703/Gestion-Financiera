@@ -1080,6 +1080,14 @@ export const es = {
     cuanto: 'Cuánto',
     porQue: 'Por qué',
     opcional: '· opcional',
+    // De dónde salió la plata prestada (084).
+    salioDeTuBilletera: '¿Salió plata de tu billetera?',
+    // Y el otro lado: dónde entró lo que te pagaron (084).
+    enQueCuentaEntro: '¿A qué cuenta entró?',
+    noEntroEnNinguna: 'No mover ningún saldo',
+    noSalioPlata: 'No salió plata',
+    noSalioPlataDetalle: 'Se anota lo que te debe y tu saldo no se mueve. Es lo que corresponde cuando fiaste mercadería.',
+    salioDetalle: 'Se descuenta de esa cuenta. No entra como gasto: no perdiste esa plata, la prestaste.',
     lePreste: 'Le presté',
     mercaderia: 'Mercadería',
     anotar: 'Anotar',
