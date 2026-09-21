@@ -426,6 +426,7 @@ export const es = {
     disponible: 'Disponible',
 
     cobroPendiente: 'Falta registrar tu ingreso',
+    yaLoCobre: 'Ya lo cobré',
     cobroPendienteDetalle:
       'No hay ingresos registrados en este período. Registralos y el disponible se calcula solo.',
 

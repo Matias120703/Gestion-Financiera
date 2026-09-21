@@ -94,6 +94,53 @@ export function PantallaOrganizacion({
             <p className="mt-2 text-[15px] leading-relaxed text-tinta/65">
               {t.organizacion.cobroPendienteDetalle}
             </p>
+            {/*
+              EL BOTÓN QUE FALTABA.
+
+              Matías: «cobro el 21, hoy es 21, agrego que cobro el 21 y no me
+              aparece que ya cobré». Orden ya sabía que faltaba —es lo que
+              dice este cartel— pero lo dejaba ahí, y para acreditarlo había
+              que ir a cargar el ingreso a mano repitiendo el monto y la
+              cuenta que Orden ya tiene guardados.
+
+              La fecha es la del arranque del ciclo, que es el día de cobro,
+              y no hoy: si lo marcás tres días después, el sueldo sigue
+              perteneciendo al día que lo cobraste.
+            */}
+            <div className="mt-4 space-y-2">
+              {resumen.ingresos_fijos.map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-3 rounded-xl bg-arena px-3.5 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[14px] font-semibold">{f.nombre}</span>
+                    <span className="block text-[12.5px] tabular-nums text-tinta/55">{plata(f.importe)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={ocupado}
+                    onClick={() => correr('ingreso', async () => sb().from('movimientos').insert({
+                      empresa_id: empresaId,
+                      tipo: 'ingreso',
+                      fecha: resumen.desde,
+                      descripcion: f.nombre,
+                      categoria: 'Sueldo',
+                      subtotal: f.importe,
+                      descuento: 0,
+                      monto: f.importe,
+                      costo_total: 0,
+                      metodo_pago: 'otro',
+                      contraparte: '',
+                      notas: '',
+                      // Donde se cobra, que ya quedó guardado al cargarlo (075).
+                      cuenta_id: f.cuenta_id || null,
+                      origen: 'manual',
+                    }))}
+                    className="boton-suave shrink-0 px-3.5 py-1.5 text-[13px] disabled:opacity-50"
+                  >
+                    {t.organizacion.yaLoCobre}
+                  </button>
+                </div>
+              ))}
+            </div>
           </>
         ) : (
           <>

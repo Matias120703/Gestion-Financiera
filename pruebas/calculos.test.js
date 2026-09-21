@@ -1467,6 +1467,21 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('y se enciende tocando el DOM, no con estado',
     barra.includes('classList.add') && !barra.includes('useState'), true);
 
+  // El sueldo que no se acreditaba el día que se cobra.
+  //
+  // Orden ya sabía que faltaba —lo dice `cobro_pendiente`— pero dejaba el
+  // cartel ahí, y acreditarlo pedía ir a cargar el ingreso a mano repitiendo
+  // el monto y la cuenta que Orden ya tiene guardados.
+  const orgn = fs.readFileSync('src/components/PantallaOrganizacion.tsx', 'utf8');
+  ok('el cobro pendiente trae el botón para acreditarlo',
+    orgn.includes('t.organizacion.yaLoCobre'), true);
+  // La fecha es la del arranque del ciclo, que es el día de cobro: si lo
+  // marcás tres días después, el sueldo sigue siendo del día que lo cobraste.
+  ok('y lo acredita con la fecha del cobro, no con la de hoy',
+    orgn.includes('fecha: resumen.desde'), true);
+  ok('en la cuenta donde se cobra, que ya estaba guardada',
+    orgn.includes('cuenta_id: f.cuenta_id || null'), true);
+
   // Ideas para recomendar: el que no sabe qué decir, no escribe.
   const rec2 = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
   ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);

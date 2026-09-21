@@ -437,6 +437,7 @@ export const pt: Textos = {
     disponible: 'Disponível',
 
     cobroPendiente: 'Falta lançar sua entrada',
+    yaLoCobre: 'Já recebi',
     cobroPendienteDetalle:
       'Não há entradas lançadas neste período. Lance e o disponível se calcula sozinho.',
 
