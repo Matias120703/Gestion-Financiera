@@ -244,6 +244,43 @@ const crear = async (db, uid, nombre, rubro) => {
   ).then(() => ({ ok: true }), (e) => ({ ok: false, error: String(e.message || e) }));
   rechazado('ni el constraint de la tabla', forzado, 'rubro');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('8 · Un profe no tiene link público (089)');
+
+  // Un profe no deja que un desconocido le tome un hueco: los horarios los
+  // arma él, alumno por alumno.
+  const link = (uid, empresa, slug, activo = true) => H.intentar(db, uid, () =>
+    db.query('select public.guardar_link_publico($1,$2,$3,$4,$5,$6)', [empresa, slug, activo, '', '', '']));
+  const publica = async (slug) =>
+    (await db.query('select public.agenda_publica($1) j', [slug])).rows[0].j.existe;
+
+  rechazado('un profe no puede prender un link de reservas',
+    await link(profe.uid, profe.empresaId, 'profe-ana'), 'clases no tiene link');
+
+  // El caso que sí va a pasar: una barbería con su link en Instagram que un
+  // día se pasa a clases. Su link tiene que dejar de tomar reservas.
+  const barber = await H.montarEmpresa(db, {
+    email: 'barbero@corte.com', nombre: 'Barbería del centro', rubro: 'servicios',
+  });
+  ok('la barbería publica su link', (await link(barber.uid, barber.empresaId, 'barberia-centro')).ok, true);
+  ok('y el link atiende', await publica('barberia-centro'), true);
+
+  await H.intentar(db, barber.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2)', [barber.empresaId, 'clases']));
+  ok('al pasarse a clases, el link se apaga', await publica('barberia-centro'), false);
+  ok('apagado, no borrado: la dirección sigue siendo suya',
+    (await db.query('select slug from public.turnos_publico where empresa_id = $1', [barber.empresaId])).rows[0]?.slug,
+    'barberia-centro');
+
+  // Volver a su rubro no lo reactiva solo: un link que reaparece sin que
+  // nadie lo pida sorprende tanto como uno que desaparece.
+  await H.intentar(db, barber.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2)', [barber.empresaId, 'servicios']));
+  ok('volver a su rubro no lo prende solo', await publica('barberia-centro'), false);
+  ok('pero el dueño lo puede volver a prender',
+    (await link(barber.uid, barber.empresaId, 'barberia-centro', true)).ok, true);
+  ok('y vuelve a atender', await publica('barberia-centro'), true);
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE RUBROS FALLARON`);

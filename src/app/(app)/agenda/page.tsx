@@ -44,7 +44,8 @@ export default async function PaginaAgenda({
     : hoy;
 
   const [link, turnos, profesionales, horarios, servicios, productos, excepciones] = await Promise.all([
-    ctx.esAdmin ? traerLinkPublico(ctx.empresa.id) : Promise.resolve(null),
+    // Un profe no tiene link público (089): ni se pide.
+    ctx.esAdmin && !ficha.agendaDeAlumnos ? traerLinkPublico(ctx.empresa.id) : Promise.resolve(null),
     traerAgendaDelDia(ctx.empresa.id, dia),
     traerProfesionales(ctx.empresa.id),
     traerHorarios(ctx.empresa.id),
@@ -70,6 +71,9 @@ export default async function PaginaAgenda({
       negocio={ctx.empresa.nombre}
       zona={ctx.zonaHoraria}
       origen={origen}
+      deAlumnos={ficha.agendaDeAlumnos}
+      miNombre={ctx.miembro.nombre}
+      miUsuario={ctx.miembro.user_id}
     />
   );
 }

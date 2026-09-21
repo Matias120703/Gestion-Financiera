@@ -2213,6 +2213,10 @@ export const es = {
     hasta: 'Hasta',
     sinEquipo: 'Todavía no cargaste a nadie',
     sinEquipoDetalle: 'Agregá a tu equipo en Equipo y reparto, y después definí sus horarios acá.',
+    // La agenda de un profe (089): él es el único que da clases.
+    empezarTitulo: 'Tu agenda de clases',
+    empezarDetalle: 'Vos das las clases y lo que cobrás es todo tuyo: no hay equipo que armar ni comisiones que repartir. Empezá y después cargá los días y horas en que enseñás.',
+    empezarBoton: 'Empezar mi agenda',
 
     diasEspeciales: 'Feriados y días libres',
     diasEspecialesDetalle: 'Los días que el local cierra, las vacaciones de cada uno, y los días que abrís en otro horario. Mientras estén cargados, tu link no ofrece turnos.',

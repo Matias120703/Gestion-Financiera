@@ -494,6 +494,17 @@ ok('los paquetes están solo en clases y cursos',
   ['clases']);
 ok('y nunca en una cuenta personal',
   fichaDe('clases', 'personal').paquetes, false);
+
+// Un profe da sus clases solo (089): lo que cobra es todo suyo, así que no
+// hay «Equipo y reparto» que mostrarle. La barbería sí lo conserva.
+ok('un profe no tiene equipo ni reparto',
+  fichaDe('clases', 'emprendedor').secciones['/reparto'], false);
+ok('la barbería lo conserva',
+  fichaDe('servicios', 'emprendedor').secciones['/reparto'], true);
+ok('la agenda de alumnos es solo de clases',
+  ['comercio', 'servicios', 'clases', 'ganaderia', 'agricultura']
+    .filter((r) => fichaDe(r, 'emprendedor').agendaDeAlumnos),
+  ['clases']);
 ok('pero una cuenta que ya la tenga sigue teniendo sus lotes',
   fichaDe('agricultura', 'emprendedor').secciones['/lotes'], true);
 ok('y sus palabras',

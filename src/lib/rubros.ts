@@ -96,6 +96,18 @@ export interface FichaRubro {
    * paquetes de entrenamientos se prende con una palabra.
    */
   paquetes: boolean;
+  /**
+   * SI LA AGENDA ES DE UN PROFE Y NO DE UN LOCAL (089).
+   *
+   * La agenda se hizo para una barbería: un equipo de profesionales, cada
+   * uno con su comisión, y un link público por el que cualquiera toma un
+   * hueco. Un profe no trabaja así. Es uno solo, lo que cobra es todo
+   * suyo, y los horarios los arma él alumno por alumno.
+   *
+   * En `true`: sin link público, y la agenda no pide armar un equipo —el
+   * que da las clases es el dueño—. Espejo de `rubro_de_alumnos()`.
+   */
+  agendaDeAlumnos: boolean;
 }
 
 /**
@@ -143,6 +155,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ciclosLargos: false,
     cierraElDia: true,
     paquetes: false,
+    agendaDeAlumnos: false,
   },
 
   servicios: {
@@ -172,6 +185,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ciclosLargos: false,
     cierraElDia: true,
     paquetes: false,
+    agendaDeAlumnos: false,
   },
 
   ganaderia: {
@@ -198,6 +212,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ciclosLargos: true,
     cierraElDia: false,
     paquetes: false,
+    agendaDeAlumnos: false,
   },
 
   agricultura: {
@@ -222,6 +237,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ciclosLargos: true,
     cierraElDia: false,
     paquetes: false,
+    agendaDeAlumnos: false,
   },
 
   /**
@@ -238,9 +254,10 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ejemplo: 'Profe de inglés, matemática, música, programación; online o presencial',
     secciones: {
       ...NUCLEO,
-      // Lo suyo: cuándo es cada clase, y cómo se reparte si no da solo.
+      // Lo suyo: cuándo es cada clase. Sin «Equipo y reparto»: el profe
+      // da sus clases solo, y lo que cobra es todo suyo. No hay a quién
+      // repartirle ni comisión que calcular.
       '/agenda': true,
-      '/reparto': true,
     },
     // «Alumnos» y no «clientes»: un profe no dice «tengo doce clientes».
     // Y «Clases y paquetes» porque la pantalla tiene las dos cosas.
@@ -261,6 +278,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ciclosLargos: false,
     cierraElDia: true,
     paquetes: true,
+    agendaDeAlumnos: true,
   },
 };
 
@@ -327,6 +345,7 @@ export const PERSONAL: FichaRubro = {
   ciclosLargos: false,
   cierraElDia: false,
   paquetes: false,
+  agendaDeAlumnos: false,
 };
 
 /**

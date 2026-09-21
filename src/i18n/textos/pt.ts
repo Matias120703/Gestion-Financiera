@@ -2112,6 +2112,9 @@ export const pt: Textos = {
     hasta: 'Até',
     sinEquipo: 'Você ainda não cadastrou ninguém',
     sinEquipoDetalle: 'Adicione sua equipe em Equipe e divisão, e depois defina os horários aqui.',
+    empezarTitulo: 'Sua agenda de aulas',
+    empezarDetalle: 'Você dá as aulas e o que recebe é todo seu: não há equipe para montar nem comissões para dividir. Comece e depois cadastre os dias e horários em que você ensina.',
+    empezarBoton: 'Começar minha agenda',
 
     diasEspeciales: 'Feriados e folgas',
     diasEspecialesDetalle: 'Os dias em que o local fecha, as férias de cada um, e os dias em que você abre em outro horário. Enquanto estiverem cadastrados, seu link não oferece horários.',

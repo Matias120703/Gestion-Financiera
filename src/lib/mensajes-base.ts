@@ -132,6 +132,9 @@ export const MENSAJES_PT: Record<string, string> = {
   'Le quedan % clases y querés descontar %.': 'Restam % aulas e você quer descontar %.',
   'Esa clase no existe.': 'Essa aula não existe.',
   'Solo el dueño de la cuenta puede cerrar un paquete.': 'Só o dono da conta pode fechar um pacote.',
+  // Un profe no tiene link público (089).
+  'Una cuenta de clases no tiene link de reservas: los horarios de cada alumno los armás vos.':
+    'Uma conta de aulas não tem link de reservas: os horários de cada aluno quem monta é você.',
   'Solo el dueño de la cuenta puede elegir en qué cuenta entra.':
     'Só o dono da conta pode escolher em que conta entra.',
   'Solo el dueño de la cuenta puede sacar plata de la billetera.':
