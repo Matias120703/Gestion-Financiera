@@ -17,8 +17,8 @@ import { DIAS_DE_PRUEBA, MONEDAS_DE_COBRO, monedaDeCobro } from '@/lib/precios';
 export const dynamic = 'force-dynamic';
 
 /** El título y la descripción, en el idioma de quien abre la portada. */
-export function generateMetadata(): Metadata {
-  const t = textos();
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await textos();
   return {
     title: t.portada.metaTitulo,
     description: t.portada.metaDescripcion,
@@ -60,18 +60,19 @@ export function generateMetadata(): Metadata {
  * Acá solo queda la estructura.
  */
 export default async function Portada({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   // Con sesión, esta página no aporta nada: al panel.
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
   if (user) redirect('/panel');
 
-  const t = textos();
+  const t = await textos();
   const p = t.portada;
-  const idioma = idiomaActual();
+  const idioma = await idiomaActual();
   const locale = FICHA[idioma].locale;
 
   // «8 días» / «8 dias»: el número sale de las constantes, la palabra del idioma.

@@ -20,7 +20,7 @@ import { textos } from '@/i18n';
  * Con la cuenta al día no se muestra nada. Una franja permanente pidiendo
  * plata convierte el producto en un cartel publicitario.
  */
-export function AvisoCuenta({
+export async function AvisoCuenta({
   puedeCargar, enPrueba, diasRestantes,
 }: {
   puedeCargar: boolean;
@@ -28,7 +28,7 @@ export function AvisoCuenta({
   /** Días enteros que faltan. Negativo o cero significa vencida. */
   diasRestantes: number;
 }) {
-  const t = textos();
+  const t = await textos();
   if (!puedeCargar) {
     return (
       <Franja

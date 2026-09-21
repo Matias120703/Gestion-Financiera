@@ -23,16 +23,17 @@ export const dynamic = 'force-dynamic';
  * queda vieja y le hace copiar un link roto.
  */
 export default async function PaginaAgenda({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
 
   const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
   if (!ficha.secciones['/agenda']) redirect('/panel');
 
-  const cabeceras = headers();
+  const cabeceras = await headers();
   const host = cabeceras.get('x-forwarded-host') ?? cabeceras.get('host') ?? '';
   const protocolo = cabeceras.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
   const origen = host ? `${protocolo}://${host}` : '';

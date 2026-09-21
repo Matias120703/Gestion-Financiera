@@ -412,3 +412,65 @@ html.oscuro .barra-lente {
   from { opacity: 0; transform: scale(.7); }
   to { opacity: 1; transform: none; }
 }
+
+/*
+ * LA BARRA DE CARGA AL CAMBIAR DE PANTALLA (ver components/BarraDeCarga.tsx).
+ *
+ * Reemplaza al esqueleto gris que hacía `loading.tsx`, que con Next 15 se
+ * quedaba trabado para siempre. Va fija arriba de todo, por encima de la
+ * barra superior, y no ocupa lugar: si empujara el contenido, cada
+ * navegación haría saltar la pantalla.
+ *
+ * Crece rápido al principio y se frena en el 90%: el último tramo lo
+ * completa la pantalla cuando llega de verdad.
+ *
+ * SE ANIMA `transform`, NO `width`, Y ESO NO ES UN DETALLE
+ *
+ * Animar el ancho obliga al navegador a recalcular la página en cada cuadro,
+ * y eso corre en el mismo hilo que está ocupado armando la pantalla nueva.
+ * Resultado: la barra se queda congelada justo durante el medio segundo en
+ * que hace falta que se mueva. Medido: 0 px a los 500 ms y recién después un
+ * salto. Con `transform` la animación la hace la placa de video y sigue
+ * corriendo aunque el hilo principal esté trabado.
+ */
+.barra-carga {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 60;
+  height: 3px;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(0);
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, rgb(var(--verde)), rgb(var(--verde-fuerte)));
+  box-shadow: 0 0 10px rgb(var(--verde) / .55);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.barra-carga-activa {
+  opacity: 1;
+  animation: barra-carga-avanza 2.6s cubic-bezier(.15, .85, .3, 1) forwards;
+}
+
+.barra-carga-lista {
+  animation: barra-carga-termina .32s ease-out forwards;
+}
+
+@keyframes barra-carga-avanza {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(.9); }
+}
+
+@keyframes barra-carga-termina {
+  from { transform: scaleX(.9); opacity: 1; }
+  60%  { transform: scaleX(1); opacity: 1; }
+  to   { transform: scaleX(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sin animación no hay progreso que mostrar, pero sí hace falta decir que
+     algo está pasando: se queda quieta y visible mientras carga. */
+  .barra-carga-activa { animation: none; transform: scaleX(1); opacity: .75; }
+  .barra-carga-lista { animation: none; opacity: 0; transition: opacity .2s; }
+}

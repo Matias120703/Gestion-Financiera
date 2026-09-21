@@ -4,7 +4,7 @@ import { contextoObligatorio } from '@/lib/sesion';
 import { tieneSeccion } from '@/lib/rubros';
 import { comparar, traerCierre } from '@/lib/habito';
 import { dinero, dineroCorto, fechaLarga, porcentaje } from '@/lib/formato';
-import { textos } from '@/i18n';
+import { textos, type Textos } from '@/i18n';
 import { FICHA } from '@/i18n/idiomas';
 import { permisosDe } from '@/lib/permisos';
 import { TarjetaRacha } from '@/components/Racha';
@@ -27,17 +27,18 @@ export const dynamic = 'force-dynamic';
  * hace bien: cerrar el día en diez segundos.
  */
 export default async function PaginaCierre({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
   if (!tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/cierre')) redirect('/panel');
   // Cómo cerró el día es la vista del dueño, no la de quien vendió hoy.
   if (!ctx.esAdmin) redirect('/panel');
 
-  const t = textos();
+  const t = await textos();
   const locale = FICHA[ctx.idioma].locale;
   const abrev = t.formato;
   /**
@@ -238,7 +239,7 @@ function Comparacion({
 }: {
   valor: number;
   texto: string;
-  t: ReturnType<typeof textos>;
+  t: Textos;
   locale: string;
 }) {
   // Menos de un 3% es ruido, no una tendencia. Decir "subiste 1,2%" sobre

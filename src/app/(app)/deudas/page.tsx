@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaDeudas() {
   const ctx = await contextoObligatorio();
-  const t = textos();
+  const t = await textos();
 
   if (!ctx.esAdmin) {
     return (

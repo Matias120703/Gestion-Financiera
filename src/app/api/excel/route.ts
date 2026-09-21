@@ -19,7 +19,7 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
-  const s = textos().servidor;
+  const s = (await textos()).servidor;
   if (!user) return NextResponse.json({ error: s.necesitasSesion }, { status: 401 });
 
   const url = new URL(request.url);
@@ -101,8 +101,8 @@ export async function GET(request: Request) {
     // En el idioma de quien lo baja. Las categorías y las formas de pago se
     // guardan en español: se traducen acá, como en las pantallas, y el libro
     // las recibe ya listas.
-    const idioma = idiomaActual();
-    const t = textos();
+    const idioma = await idiomaActual();
+    const t = await textos();
     const conNombreVisible = <C extends { nombre: string }>(c: C) => ({ ...c, nombre: categoriaVisible(t, c.nombre) });
 
     const libro = construirLibro(enLaMonedaDeLaVista({

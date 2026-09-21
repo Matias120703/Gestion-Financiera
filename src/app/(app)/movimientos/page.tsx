@@ -14,16 +14,17 @@ import { hoyISO } from '@/lib/fechas';
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaMovimientos({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
   // El historial completo del negocio es la vista del dueño. Un vendedor
   // igual queda con su propio recibo de cada venta —se lo confirma el
   // sistema al cargarla— pero no con el archivo entero de la empresa.
   if (!ctx.esAdmin) redirect('/panel');
-  const t = textos();
+  const t = await textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Los totales salen agregados de la base; la lista es solo la primera página.
   const [r, pagina, total] = await Promise.all([

@@ -22,7 +22,7 @@ export async function cargarPagina(
 
   const esFecha = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f);
   if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) {
-    throw new Error(textos().comun.rangoInvalido);
+    throw new Error((await textos()).comun.rangoInvalido);
   }
 
   // Si la lectura falla, el error sube hasta el componente, que muestra un

@@ -30,10 +30,11 @@ export const dynamic = 'force-dynamic';
  * local. Acá se elige qué pedir; si alguien pidiera lo otro, se lo negarían.
  */
 export default async function PaginaReparto({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
 
   // El módulo existe donde hay gente cobrando por su trabajo. En los demás

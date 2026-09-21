@@ -11,8 +11,8 @@ import { textos } from '@/i18n';
  */
 export const dynamic = 'force-dynamic';
 
-export function generateMetadata(): Metadata {
-  const p = textos().instalarPagina;
+export async function generateMetadata(): Promise<Metadata> {
+  const p = (await textos()).instalarPagina;
   return { title: p.metaTitulo, description: p.metaDescripcion };
 }
 
@@ -28,8 +28,8 @@ export function generateMetadata(): Metadata {
  * El componente (`GuiaInstalar`) es el mismo que se ve adentro de la app: se
  * escribe una vez y no hay dos guías que se puedan desactualizar por separado.
  */
-export default function PaginaInstalar() {
-  const p = textos().instalarPagina;
+export default async function PaginaInstalar() {
+  const p = (await textos()).instalarPagina;
   return (
     <main className="min-h-screen bg-superficie">
       <header className="zona-segura-arriba border-b border-borde">

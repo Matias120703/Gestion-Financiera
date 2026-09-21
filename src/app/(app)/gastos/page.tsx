@@ -13,12 +13,13 @@ import { traerCuentasParaElegir } from '@/lib/billetera';
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaGastos({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
-  const t = textos();
+  const t = await textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Los totales salen agregados; la lista es solo la primera página.
   const [r, categorias, paginaGastos, paginaIngresos, cuentas] = await Promise.all([

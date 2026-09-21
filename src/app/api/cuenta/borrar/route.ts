@@ -28,21 +28,21 @@ export async function POST(request: Request) {
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json({ error: textos().servidor.necesitasSesion }, { status: 401 });
+    return NextResponse.json({ error: (await textos()).servidor.necesitasSesion }, { status: 401 });
   }
 
   let cuerpo: any;
   try {
     cuerpo = await request.json();
   } catch {
-    return NextResponse.json({ error: textos().servidor.pedidoIlegible }, { status: 400 });
+    return NextResponse.json({ error: (await textos()).servidor.pedidoIlegible }, { status: 400 });
   }
 
   // La confirmación se comprueba también acá y no solo en la pantalla: esta
   // ruta se puede llamar desde cualquier lado.
   if (String(cuerpo?.confirmacion ?? '').trim().toUpperCase() !== PALABRA) {
     return NextResponse.json(
-      { error: textos().servidor.borrarPide(PALABRA) },
+      { error: (await textos()).servidor.borrarPide(PALABRA) },
       { status: 400 },
     );
   }
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
   } catch (e: any) {
     console.error('[borrar-cuenta]', e?.message ?? e);
     return NextResponse.json(
-      { error: textos().servidor.borradoIncompleto },
+      { error: (await textos()).servidor.borradoIncompleto },
       { status: 500 },
     );
   }

@@ -20,7 +20,7 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
-  const s = textos().servidor;
+  const s = (await textos()).servidor;
   if (!user) return NextResponse.json({ error: s.necesitasSesion }, { status: 401 });
 
   let cuerpo: any;

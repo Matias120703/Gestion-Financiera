@@ -24,8 +24,8 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaReto() {
   const ctx = await contextoObligatorio();
-  const t = textos();
-  const locale = FICHA[idiomaActual()].locale;
+  const t = await textos();
+  const locale = FICHA[(await idiomaActual())].locale;
   // Este rubro no tiene esta pantalla. Ver src/lib/rubros.ts.
   if (!tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/reto')) redirect('/panel');
 
@@ -209,7 +209,7 @@ export default async function PaginaReto() {
       {(r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
           <h2 className="mb-4 text-[15px] font-bold tracking-tight">{t.pantallas.comoVieneCadaDia}</h2>
-          <GraficoDiario datos={serie} moneda={m} textos={t.panel} locale={FICHA[idiomaActual()].locale} />
+          <GraficoDiario datos={serie} moneda={m} textos={t.panel} locale={FICHA[(await idiomaActual())].locale} />
         </div>
       )}
 
@@ -271,9 +271,9 @@ function Celda({
   );
 }
 
-function HistorialRetos({ retos, moneda }: { retos: Reto[]; moneda: string }) {
-  const t = textos();
-  const locale = FICHA[idiomaActual()].locale;
+async function HistorialRetos({ retos, moneda }: { retos: Reto[]; moneda: string }) {
+  const t = await textos();
+  const locale = FICHA[(await idiomaActual())].locale;
   if (retos.length === 0) return null;
   return (
     <Seccion titulo={t.pantallas.retosAnteriores}>

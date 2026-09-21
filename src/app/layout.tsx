@@ -15,8 +15,8 @@ const fuenteTexto = Inter({ subsets: ['latin'], variable: '--fuente-texto', disp
 const fuenteTitulo = Archivo({ subsets: ['latin'], axes: ['wdth'], variable: '--fuente-titulo', display: 'swap' });
 
 /** El título y la descripción, en el idioma de quien abre la página. */
-export function generateMetadata(): Metadata {
-  const t = textos();
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await textos();
   return {
     title: t.pantallas.metaTitulo,
     description: t.pantallas.metaDescripcion,
@@ -35,12 +35,12 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // El idioma se resuelve una sola vez, acá: de la cookie o del navegador.
   // De acá salen el `lang` del <html> —que usan los lectores de pantalla y el
   // corrector del teclado— y el contexto que leen los componentes cliente.
-  const idioma = idiomaActual();
-  const t = textos();
+  const idioma = await idiomaActual();
+  const t = await textos();
 
   return (
     // suppressHydrationWarning: los guiones del tema y de la intro le ponen

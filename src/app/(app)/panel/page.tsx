@@ -27,10 +27,11 @@ import { traerResumenFiado } from '@/lib/fiado';
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaPanel({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
 
   /**
@@ -57,7 +58,7 @@ export default async function PaginaPanel({
    * habla como si vendiera algo.
    */
   if (ctx.empresa.tipo_cuenta === 'personal') {
-    const t = textos();
+    const t = await textos();
     if (!ctx.esAdmin) {
       return (
         <div className="mx-auto max-w-lg">
@@ -107,7 +108,7 @@ export default async function PaginaPanel({
           resumen={resumenPersonal}
           deudas={deudasPersonal}
           moneda={ctx.vista}
-          locale={FICHA[idiomaActual()].locale}
+          locale={FICHA[(await idiomaActual())].locale}
           t={t}
         />
       </div>
@@ -182,7 +183,7 @@ export default async function PaginaPanel({
    * número tal cual estaría guardando dólares como guaraníes.
    */
   const m = ctx.vista;
-  const t = textos();
+  const t = await textos();
   const permisos = permisosDe(ctx.miembro.rol);
   const verRent = permisos.verRentabilidad && r.conCostos;
   const categoriasTop = categorias.slice(0, 5);
@@ -233,7 +234,7 @@ export default async function PaginaPanel({
         etiqueta={t.billetera.atajos}
         ficha={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones}
         items={[
-          { href: '/vender', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'vender', t.nav.vender, idiomaActual()) },
+          { href: '/vender', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'vender', t.nav.vender, (await idiomaActual())) },
           { href: '/gastos', texto: t.panel.cargarGasto },
           { href: '/agenda', texto: t.nav.agenda },
           ...(ctx.esAdmin ? [{ href: '/billetera' as Ruta, texto: t.nav.billetera }] : []),
@@ -386,7 +387,7 @@ export default async function PaginaPanel({
       {!cicloLargo && dias.length > 1 && (r.cantidadVentas > 0 || r.gastos > 0) && (
         <div className="tarjeta p-4">
           <h2 className="mb-4 text-[15px] font-bold tracking-tight">{t.panel.diaPorDia}</h2>
-          <GraficoDiario datos={serie} moneda={m} textos={t.panel} locale={FICHA[idiomaActual()].locale} />
+          <GraficoDiario datos={serie} moneda={m} textos={t.panel} locale={FICHA[(await idiomaActual())].locale} />
         </div>
       )}
 

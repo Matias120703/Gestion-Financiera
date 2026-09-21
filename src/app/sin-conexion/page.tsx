@@ -9,8 +9,8 @@ import { textos } from '@/i18n';
  */
 export const dynamic = 'force-static';
 
-export default function PaginaSinConexion() {
-  const t = textos();
+export default async function PaginaSinConexion() {
+  const t = await textos();
 
   return (
     <main className="grid min-h-screen place-items-center px-6">

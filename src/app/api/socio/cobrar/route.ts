@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
  * socio que no se pudo pedir cuando en realidad ya estaba pedido.
  */
 export async function POST(request: Request) {
-  const s = textos().servidor;
+  const s = (await textos()).servidor;
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   if (error) {
     // El mensaje viene escrito para una persona desde la función: «el mínimo
     // para retirar es…», «tu saldo es…». La pantalla lo pasa por el traductor.
-    return NextResponse.json({ error: error.message || textos().recomendar.noSePidioCobro }, { status: 400 });
+    return NextResponse.json({ error: error.message || (await textos()).recomendar.noSePidioCobro }, { status: 400 });
   }
 
   const r = data as {

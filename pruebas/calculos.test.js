@@ -1432,6 +1432,25 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('Ajustes tiene el botón de probar',
     fs.readFileSync('src/components/Preferencias.tsx', 'utf8').includes("fetch('/api/avisos/probar'"), true);
 
+  // La señal de que se está cambiando de pantalla.
+  //
+  // Esta comprobación existe porque volver a poner `loading.tsx` cuesta una
+  // tarde: con Next 15 la barrera de espera que crea ese archivo no se
+  // resuelve nunca y TODAS las pantallas de adentro se quedan en el
+  // esqueleto gris, en producción igual que en desarrollo. Se descartó que
+  // fuera el idioma, las cookies, o que el esqueleto fuera del navegador o
+  // del servidor: es el archivo. Si alguien lo vuelve a crear, que se entere
+  // acá y no por un cliente que ve gris para siempre.
+  ok('no hay loading.tsx en las pantallas de adentro',
+    fs.existsSync('src/app/(app)/loading.tsx'), false);
+  const barra = fs.readFileSync('src/components/BarraDeCarga.tsx', 'utf8');
+  ok('la barra de carga la reemplaza',
+    fs.readFileSync('src/app/(app)/layout.tsx', 'utf8').includes('<BarraDeCarga />'), true);
+  // Con estado de React la barra aparecía medio segundo tarde: navegar es
+  // una transición y el cambio de estado se va con ella.
+  ok('y se enciende tocando el DOM, no con estado',
+    barra.includes('classList.add') && !barra.includes('useState'), true);
+
   // Ideas para recomendar: el que no sabe qué decir, no escribe.
   const rec2 = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
   ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);

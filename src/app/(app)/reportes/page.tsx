@@ -17,15 +17,16 @@ import { permisosDe } from '@/lib/permisos';
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaReportes({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
   // Reportes trae la ganancia y el detalle financiero del negocio entero:
   // es la vista del dueño en cualquiera de las dos cuentas, personal o no.
   if (!ctx.esAdmin) redirect('/panel');
-  const t = textos();
+  const t = await textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
 
   /**
@@ -69,7 +70,7 @@ export default async function PaginaReportes({
           porOrigen={origen}
           porDestino={destino}
           moneda={ctx.vista}
-          locale={FICHA[idiomaActual()].locale}
+          locale={FICHA[(await idiomaActual())].locale}
           t={t}
         />
       </div>
@@ -109,8 +110,8 @@ export default async function PaginaReportes({
             <h2 className="text-[16px] font-bold tracking-tight">{t.pantallas.descargarExcel}</h2>
             <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
               {rango.desde === rango.hasta
-                ? fechaLegible(rango.desde, true, FICHA[idiomaActual()].locale)
-                : `${fechaLegible(rango.desde, true, FICHA[idiomaActual()].locale)} — ${fechaLegible(rango.hasta, true, FICHA[idiomaActual()].locale)}`}
+                ? fechaLegible(rango.desde, true, FICHA[(await idiomaActual())].locale)
+                : `${fechaLegible(rango.desde, true, FICHA[(await idiomaActual())].locale)} — ${fechaLegible(rango.hasta, true, FICHA[(await idiomaActual())].locale)}`}
               {' · '}{t.pantallas.cincoHojas}
             </p>
           </div>

@@ -33,12 +33,13 @@ export const dynamic = 'force-dynamic';
  * cuenta es donde se pierde la venta.
  */
 export default async function PaginaPlan({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
-  const t = textos();
+  const t = await textos();
   const locale = FICHA[ctx.idioma].locale;
 
   const moneda = monedaDeCobro(ctx.idioma, typeof searchParams.moneda === 'string' ? searchParams.moneda : null);

@@ -9,14 +9,14 @@ import { Marca } from '@/components/Marca';
  * protege a nadie. Ancho de lectura corto, tipografía grande y títulos que
  * dicen de qué habla cada parte.
  */
-export function PaginaLegal({
+export async function PaginaLegal({
   titulo, actualizado, children,
 }: {
   titulo: string;
   actualizado: string;
   children: React.ReactNode;
 }) {
-  const t = textos();
+  const t = await textos();
   return (
     <main className="min-h-screen bg-superficie">
       <header className="zona-segura-arriba border-b border-borde">

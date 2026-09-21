@@ -21,10 +21,10 @@ import { Rico } from '@/components/Rico';
  * siempre dice «todo normal» deja de leerse, y el día que importe tampoco se
  * va a leer.
  */
-export function AvisoMonedaVista({ vista }: { vista: Vista }) {
+export async function AvisoMonedaVista({ vista }: { vista: Vista }) {
   if (!estaConvertida(vista)) return null;
-  const a = textos().ajustes;
-  const locale = FICHA[idiomaActual()].locale;
+  const a = (await textos()).ajustes;
+  const locale = FICHA[(await idiomaActual())].locale;
 
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5

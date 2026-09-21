@@ -102,7 +102,7 @@ export async function contextoObligatorio(): Promise<Contexto> {
   const lista = (miembros as any[]).filter((m: any) => m.empresas) as (Miembro & { empresas: Empresa })[];
   if (lista.length === 0) redirect('/empezar');
 
-  const preferida = cookies().get(COOKIE_EMPRESA)?.value;
+  const preferida = (await cookies()).get(COOKIE_EMPRESA)?.value;
   const elegido = lista.find((m) => m.empresa_id === preferida) ?? lista[0];
 
   // Una sola llamada trae plan, límites, uso y, si corresponde, el código de
@@ -141,6 +141,6 @@ export async function contextoObligatorio(): Promise<Contexto> {
     capturasIA: info.uso_ia ?? { usados: 0, tope: 0 },
     codigoAcceso: info.codigo_acceso ?? null,
     zonaHoraria: info.zona_horaria ?? 'America/Asuncion',
-    idioma: idiomaActual(),
+    idioma: (await idiomaActual()),
   };
 }

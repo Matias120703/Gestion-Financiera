@@ -19,9 +19,10 @@ export const dynamic = 'force-dynamic';
  * el negocio, quiénes atienden y qué servicios se pueden reservar. Ni los
  * costos, ni los productos con stock, ni el id de la empresa salen de ahí.
  */
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const datos = await traer(params.slug);
-  const r = textos().reservaPublica;
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const datos = await traer(slug);
+  const r = (await textos()).reservaPublica;
   if (!datos?.existe) return { title: r.metaReservar };
   return {
     title: r.metaReservarCon(datos.negocio ?? ''),
@@ -35,12 +36,13 @@ async function traer(slug: string): Promise<AgendaPublica | null> {
   return (data ?? null) as AgendaPublica | null;
 }
 
-export default async function PaginaReservar({ params }: { params: { slug: string } }) {
-  const datos = await traer(params.slug);
+export default async function PaginaReservar({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const datos = await traer(slug);
 
   // Un link apagado y uno que no existe dan la misma pantalla. Distinguirlos
   // le diría a cualquiera qué negocios usan Orden y cuáles cerraron.
   if (!datos?.existe) notFound();
 
-  return <ReservaPublica slug={params.slug} datos={datos} />;
+  return <ReservaPublica slug={slug} datos={datos} />;
 }

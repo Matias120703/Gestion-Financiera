@@ -32,13 +32,14 @@ export const dynamic = 'force-dynamic';
  * otra pantalla puede mandar directo a la sección que corresponde.
  */
 export default async function PaginaAjustes({
-  searchParams,
+  searchParams: busqueda,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
   const supabase = clienteServidor();
-  const t = textos();
+  const t = await textos();
   const s = t.ajustes.secciones;
 
   /**

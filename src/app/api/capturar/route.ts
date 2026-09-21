@@ -40,7 +40,7 @@ const PISTA_AUDIO: Record<string, string> = {
 
 export async function POST(request: Request) {
   // Lo que se le contesta a la persona sale en su idioma.
-  const s = textos().servidor;
+  const s = (await textos()).servidor;
 
   // ---------- 1. Sesión y permisos ----------
   const supabase = clienteServidor();
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
 
   // El idioma que eligió en Orden: con ese se escucha el audio y con ese
   // se le escriben la descripción y el aviso.
-  const idioma = idiomaActual();
+  const idioma = await idiomaActual();
 
   const sistema = instrucciones(
     hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores,

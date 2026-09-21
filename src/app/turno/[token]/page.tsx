@@ -4,8 +4,8 @@ import type { ReservaPorToken } from '@/lib/tipos';
 import { textos } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
-export function generateMetadata() {
-  return { title: textos().reservaPublica.metaMiTurno };
+export async function generateMetadata() {
+  return { title: (await textos()).reservaPublica.metaMiTurno };
 }
 
 /**
@@ -20,10 +20,11 @@ export function generateMetadata() {
  * viene, en dos semanas la agenda está llena de fantasmas y el barbero deja de
  * creerle. Una agenda que miente es peor que no tener agenda.
  */
-export default async function PaginaTurno({ params }: { params: { token: string } }) {
+export default async function PaginaTurno({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
   const supabase = clienteServidor();
-  const { data } = await supabase.rpc('reserva_por_token', { p_token: params.token });
+  const { data } = await supabase.rpc('reserva_por_token', { p_token: token });
   const reserva = (data ?? { existe: false }) as ReservaPorToken;
 
-  return <CancelarTurno token={params.token} reserva={reserva} />;
+  return <CancelarTurno token={token} reserva={reserva} />;
 }

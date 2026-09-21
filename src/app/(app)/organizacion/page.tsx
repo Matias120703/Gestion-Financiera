@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaOrganizacion() {
   const ctx = await contextoObligatorio();
-  const t = textos();
+  const t = await textos();
 
   // Un comercio no tiene esta pantalla. Ver src/lib/rubros.ts.
   if (ctx.empresa.tipo_cuenta !== 'personal') redirect('/panel');

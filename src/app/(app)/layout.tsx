@@ -6,6 +6,7 @@ import { AvisoMonedaVista } from '@/components/AvisoMonedaVista';
 import { CandadoCuenta } from '@/components/CandadoCuenta';
 import { ProveedorZona } from '@/lib/zona';
 import { Intro } from '@/components/Intro';
+import { BarraDeCarga } from '@/components/BarraDeCarga';
 import { textos } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,11 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     // captura vive acá afuera y también necesita saber qué día es hoy.
     <ProveedorZona zona={ctx.zonaHoraria}>
     {/* La entrada con el logo, una vez por sesión. Ver Intro.tsx. */}
-    <Intro lema={textos().comun.lemaOrden} />
+    <Intro lema={(await textos()).comun.lemaOrden} />
+    {/* La señal de que se está cambiando de pantalla. Ocupaba ese lugar el
+        esqueleto gris de `loading.tsx`, que con Next 15 se queda trabado.
+        Ver components/BarraDeCarga.tsx. */}
+    <BarraDeCarga />
     <div className="flex min-h-screen">
       <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} />
 
