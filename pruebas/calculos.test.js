@@ -483,6 +483,17 @@ ok('cierra el día, así que tiene racha',
 // Pero una cuenta personal nunca cierra el día, sea cual sea su rubro.
 ok('salvo que sea una cuenta personal',
   fichaDe('clases', 'personal').cierraElDia, false);
+
+// Los paquetes (088), solo donde se vende así. A una barbería o a un
+// almacén, «vender un paquete de clases» en la ficha del cliente sería ruido
+// que confunde. Si algún día otro rubro los necesita, esta lista cambia a
+// propósito y no por un interruptor olvidado.
+ok('los paquetes están solo en clases y cursos',
+  ['comercio', 'servicios', 'clases', 'ganaderia', 'agricultura']
+    .filter((r) => fichaDe(r, 'emprendedor').paquetes),
+  ['clases']);
+ok('y nunca en una cuenta personal',
+  fichaDe('clases', 'personal').paquetes, false);
 ok('pero una cuenta que ya la tenga sigue teniendo sus lotes',
   fichaDe('agricultura', 'emprendedor').secciones['/lotes'], true);
 ok('y sus palabras',

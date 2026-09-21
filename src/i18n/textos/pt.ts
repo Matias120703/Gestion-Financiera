@@ -1074,6 +1074,34 @@ export const pt: Textos = {
     borrarLinea: 'Apagar esta linha',
   },
 
+  paquetes: {
+    titulo: 'Pacotes',
+    ninguno: 'Você ainda não vendeu nenhum pacote.',
+    vender: 'Vender um pacote',
+    nombre: 'O que é',
+    nombreEjemplo: '8 aulas de inglês',
+    clases: 'Quantas aulas',
+    precio: 'Preço',
+    comoPago: 'Como te pagou',
+    vence: 'Vence',
+    venceAyuda: 'Deixe vazio se não vence.',
+    usadasDe: (usadas: string, total: string) => `${usadas} de ${total} usadas`,
+    quedan: (n: string) => `restam ${n}`,
+    venceEl: (fecha: string) => `vence em ${fecha}`,
+    diUnaClase: 'Dei uma aula',
+    deshacer: 'Desfazer a última',
+    cerrar: 'Fechar pacote',
+    reabrir: 'Reabrir',
+    confirmarCerrar: (nombre: string) =>
+      `Fechar «${nombre}»? As aulas que restam não vão mais poder ser usadas. Você pode reabrir depois.`,
+    estados: {
+      activo: 'Ativo', terminado: 'Terminado', vencido: 'Vencido', cerrado: 'Fechado',
+    } as Record<string, string>,
+    falta: 'falta',
+    seCobraHoy: 'Conta inteiro como recebido hoje, mesmo que as aulas sejam dadas depois.',
+    vendido: (nombre: string) => `Pronto: ${nombre}.`,
+  },
+
   clientes: {
     estados: {
       pendiente: 'Agendado',

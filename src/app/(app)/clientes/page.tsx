@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
-import { tieneSeccion } from '@/lib/rubros';
+import { fichaDe, tieneSeccion } from '@/lib/rubros';
 import { traerClientes } from '@/lib/clientes';
 import { traerResumenFiado } from '@/lib/fiado';
 import { PantallaClientes } from '@/components/PantallaClientes';
@@ -43,6 +43,8 @@ export default async function PaginaClientes() {
       // Visitas y turnos solo significan algo donde hay agenda. En un almacén
       // «0 visitas» al lado de cada nombre sería ruido con cara de dato.
       tieneAgenda={tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/agenda')}
+      // Los paquetes de clases, solo donde se venden así (088).
+      tienePaquetes={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).paquetes}
     />
   );
 }

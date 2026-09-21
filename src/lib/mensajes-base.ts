@@ -119,6 +119,19 @@ export const MENSAJES_PT: Record<string, string> = {
   'Esa cuenta no existe.': 'Essa conta não existe.',
   'Esa deuda no existe.': 'Essa dívida não existe.',
   'Ese pago no existe.': 'Esse pagamento não existe.',
+  // El paquete de clases (088).
+  'Ponele un nombre al paquete: «8 clases de inglés».': 'Dê um nome ao pacote: «8 aulas de inglês».',
+  'El paquete tiene que tener al menos una clase.': 'O pacote precisa ter pelo menos uma aula.',
+  'Ese alumno no es de esta cuenta.': 'Esse aluno não é desta conta.',
+  'El paquete no puede vencer antes de venderse.': 'O pacote não pode vencer antes de ser vendido.',
+  'Ese paquete no existe.': 'Esse pacote não existe.',
+  'Hay que descontar al menos una clase.': 'É preciso descontar pelo menos uma aula.',
+  'Eso no es una clase ni una falta.': 'Isso não é uma aula nem uma falta.',
+  'Ese paquete está cerrado.': 'Esse pacote está fechado.',
+  'Ese paquete venció el %.': 'Esse pacote venceu em %.',
+  'Le quedan % clases y querés descontar %.': 'Restam % aulas e você quer descontar %.',
+  'Esa clase no existe.': 'Essa aula não existe.',
+  'Solo el dueño de la cuenta puede cerrar un paquete.': 'Só o dono da conta pode fechar um pacote.',
   'Solo el dueño de la cuenta puede elegir en qué cuenta entra.':
     'Só o dono da conta pode escolher em que conta entra.',
   'Solo el dueño de la cuenta puede sacar plata de la billetera.':

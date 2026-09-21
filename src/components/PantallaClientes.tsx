@@ -10,6 +10,7 @@ import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
+import { PaquetesAlumno } from '@/components/PaquetesAlumno';
 import type { ClienteLista, TurnoCliente } from '@/lib/tipos';
 
 function diasDesde(iso: string | null): number | null {
@@ -45,7 +46,7 @@ function haceTanto(t: Textos, iso: string | null): string {
  * como «0981234567». La gente escribe los teléfonos de cualquier manera.
  */
 export function PantallaClientes({
-  empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, puedeEliminar,
+  empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, tienePaquetes, puedeEliminar,
 }: {
   empresaId: string;
   moneda: string;
@@ -54,6 +55,8 @@ export function PantallaClientes({
   clientes: ClienteLista[];
   saldos: Record<string, number>;
   tieneAgenda: boolean;
+  /** Si el rubro vende en paquetes: «ocho clases por 400.000» (088). */
+  tienePaquetes: boolean;
   /** Dueño y administradores. Un vendedor carga clientes pero no los saca. */
   puedeEliminar: boolean;
 }) {
@@ -154,6 +157,8 @@ export function PantallaClientes({
                 plata={plata}
                 locale={locale}
                 tieneAgenda={tieneAgenda}
+                tienePaquetes={tienePaquetes}
+                moneda={moneda}
                 puedeEliminar={puedeEliminar}
                 abierto={abierto === c.id}
                 onAbrir={() => setAbierto(abierto === c.id ? null : c.id)}
@@ -318,7 +323,7 @@ function FormularioCliente({
 }
 
 function FilaCliente({
-  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, puedeEliminar, abierto, onAbrir, onListo,
+  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, moneda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
@@ -328,6 +333,8 @@ function FilaCliente({
   plata: (n: number) => string;
   locale: string;
   tieneAgenda: boolean;
+  tienePaquetes: boolean;
+  moneda: string;
   puedeEliminar: boolean;
   abierto: boolean;
   onAbrir: () => void;
@@ -448,6 +455,15 @@ function FilaCliente({
               </div>
 
               {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+
+              {/* Los paquetes van antes que los turnos: «¿cuántas clases le
+                  quedan?» es lo primero que un profe quiere saber de un alumno. */}
+              {tienePaquetes && (
+                <PaquetesAlumno
+                  empresaId={empresaId} clienteId={c.id} moneda={moneda} zona={zona}
+                  esAdmin={puedeEliminar}
+                />
+              )}
 
               {tieneAgenda && (
                 <div>

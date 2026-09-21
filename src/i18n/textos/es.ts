@@ -1117,6 +1117,36 @@ export const es = {
   },
 
   /** CLIENTES · A QUIÉN LE VENDÉS. */
+  /** EL PAQUETE DE CLASES (088): «ocho clases por 400.000». */
+  paquetes: {
+    titulo: 'Paquetes',
+    ninguno: 'Todavía no le vendiste ningún paquete.',
+    vender: 'Vender un paquete',
+    nombre: 'Qué es',
+    nombreEjemplo: '8 clases de inglés',
+    clases: 'Cuántas clases',
+    precio: 'Precio',
+    comoPago: 'Cómo te pagó',
+    vence: 'Vence',
+    venceAyuda: 'Dejalo vacío si no vence.',
+    usadasDe: (usadas: string, total: string) => `${usadas} de ${total} usadas`,
+    quedan: (n: string) => `quedan ${n}`,
+    venceEl: (fecha: string) => `vence el ${fecha}`,
+    diUnaClase: 'Di una clase',
+    deshacer: 'Deshacer la última',
+    cerrar: 'Cerrar paquete',
+    reabrir: 'Reabrir',
+    confirmarCerrar: (nombre: string) =>
+      `¿Cerrar «${nombre}»? Las clases que quedan ya no se van a poder usar. Podés reabrirlo después.`,
+    estados: {
+      activo: 'Activo', terminado: 'Terminado', vencido: 'Vencido', cerrado: 'Cerrado',
+    } as Record<string, string>,
+    falta: 'falta',
+    // Se dice antes de cobrar: que cuente entero hoy es la regla que se eligió.
+    seCobraHoy: 'Cuenta entero como cobrado hoy, aunque las clases se den después.',
+    vendido: (nombre: string) => `Listo: ${nombre}.`,
+  },
+
   clientes: {
     estados: {
       pendiente: 'Reservado',

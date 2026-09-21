@@ -1185,6 +1185,23 @@ export interface LineaFiado {
 }
 
 /** Un cliente en la lista, con lo que lo vuelve útil: cuándo vino y cuánto dejó (053). */
+/**
+ * Un paquete de clases de un alumno, con lo usado ya calculado (088).
+ * `usadas` y `quedan` salen de la base: la pantalla no suma nada.
+ */
+export interface PaqueteAlumno {
+  id: string;
+  nombre: string;
+  clases: number;
+  precio: number;
+  vence_el: string | null;
+  creado: string;
+  usadas: number;
+  quedan: number;
+  estado: 'activo' | 'terminado' | 'vencido' | 'cerrado';
+  historia: { id: string; fecha: string; cantidad: number; motivo: 'dada' | 'falta' }[];
+}
+
 export interface ClienteLista {
   id: string;
   nombre: string;

@@ -87,6 +87,15 @@ export interface FichaRubro {
   ciclosLargos: boolean;
   /** Espejo de `rubro_cierra_el_dia()`. La autoridad es la base. */
   cierraElDia: boolean;
+  /**
+   * Si vende sus servicios en paquetes: «ocho clases por 400.000» (088).
+   *
+   * Es un campo y no un «if rubro === 'clases'» suelto en la pantalla
+   * por lo mismo que `secciones`: así el compilador obliga a contestar la
+   * pregunta en cada rubro, y el día que el personal trainer venda
+   * paquetes de entrenamientos se prende con una palabra.
+   */
+  paquetes: boolean;
 }
 
 /**
@@ -133,6 +142,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     pt: { nombre: 'Comércio', ejemplo: 'Mercearia, loja de roupas, perfumaria, delivery', palabras: {} },
     ciclosLargos: false,
     cierraElDia: true,
+    paquetes: false,
   },
 
   servicios: {
@@ -161,6 +171,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // le mostraba un acumulado anual que no mira nadie.
     ciclosLargos: false,
     cierraElDia: true,
+    paquetes: false,
   },
 
   ganaderia: {
@@ -186,6 +197,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     },
     ciclosLargos: true,
     cierraElDia: false,
+    paquetes: false,
   },
 
   agricultura: {
@@ -209,6 +221,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     },
     ciclosLargos: true,
     cierraElDia: false,
+    paquetes: false,
   },
 
   /**
@@ -247,6 +260,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // peluquero. Por eso cierra el día y tiene racha.
     ciclosLargos: false,
     cierraElDia: true,
+    paquetes: true,
   },
 };
 
@@ -312,6 +326,7 @@ export const PERSONAL: FichaRubro = {
   pt: { nombre: 'Pessoal', ejemplo: 'Seu salário, suas despesas e suas dívidas', palabras: {} },
   ciclosLargos: false,
   cierraElDia: false,
+  paquetes: false,
 };
 
 /**
