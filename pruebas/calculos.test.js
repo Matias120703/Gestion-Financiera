@@ -460,14 +460,15 @@ ok('una cuenta personal también tiene su nombre en portugués',
 // cuenta que ya la tenga guardada sigue andando. Por eso se comprueban las
 // dos cosas: que no se ofrezca, y que igual siga funcionando.
 ok('la lista que se ofrece al registrarse',
-  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'clases', 'ganaderia']);
+  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'ganaderia']);
 ok('agricultura no se ofrece',
   LISTA_RUBROS.some((r) => r.clave === 'agricultura'), false);
 
-// Clases y cursos (087). Va después de servicios porque es de donde sale:
-// era el profe metido entre los plomeros.
-ok('clases y cursos sí se ofrece',
-  LISTA_RUBROS.some((r) => r.clave === 'clases'), true);
+// Clases y cursos (087) no se ofrece mientras se rehace para como trabaja
+// un profe de verdad (090). La ficha sigue entera y funciona; solo no está
+// en la lista del alta, igual que agricultura.
+ok('clases y cursos no se ofrece mientras se rehace',
+  LISTA_RUBROS.some((r) => r.clave === 'clases'), false);
 ok('con la agenda prendida, que es donde vive cada clase',
   fichaDe('clases', 'emprendedor').secciones['/agenda'], true);
 ok('y sin lotes, que ahí no significan nada',
@@ -477,9 +478,9 @@ ok('a sus clientes les dice alumnos',
   palabra('clases', 'emprendedor', 'clientes', 'Clientes', 'es'), 'Alumnos');
 ok('y en portugués también',
   palabra('clases', 'emprendedor', 'clientes', 'Clientes', 'pt'), 'Alunos');
-// El día es su unidad: da sus clases hoy y las cobra hoy.
-ok('cierra el día, así que tiene racha',
-  fichaDe('clases', 'emprendedor').cierraElDia, true);
+// Un profe no tiene caja que contar a la noche (090).
+ok('un profe no cierra el día',
+  fichaDe('clases', 'emprendedor').cierraElDia, false);
 // Pero una cuenta personal nunca cierra el día, sea cual sea su rubro.
 ok('salvo que sea una cuenta personal',
   fichaDe('clases', 'personal').cierraElDia, false);
@@ -501,6 +502,23 @@ ok('un profe no tiene equipo ni reparto',
   fichaDe('clases', 'emprendedor').secciones['/reparto'], false);
 ok('la barbería lo conserva',
   fichaDe('servicios', 'emprendedor').secciones['/reparto'], true);
+// UN PROFE NO COMPRA NI VENDE NADA (090). Matías: «¿cómo vas a comprar y
+// vender un curso?». Se van el catálogo con su stock, la pantalla de
+// cobrar y el cierre; queda lo que un profe mira.
+{
+  const s = fichaDe('clases', 'emprendedor').secciones;
+  ok('sin catálogo ni stock', s['/productos'], false);
+  ok('sin pantalla de cobrar', s['/vender'], false);
+  ok('sin cierre del día', s['/cierre'], false);
+  ok('con su agenda, sus alumnos, lo que entra y lo que sale',
+    [s['/agenda'], s['/clientes'], s['/gastos'], s['/billetera'], s['/fiado']], [true, true, true, true, true]);
+  ok('a lo que le deben lo llama «por cobrar»',
+    palabra('clases', 'emprendedor', 'fiado', 'Fiado', 'es'), 'Por cobrar');
+  // Y la barbería no se entera de nada de esto.
+  const b = fichaDe('servicios', 'emprendedor').secciones;
+  ok('la barbería conserva todo lo suyo',
+    [b['/productos'], b['/vender'], b['/cierre']], [true, true, true]);
+}
 ok('la agenda de alumnos es solo de clases',
   ['comercio', 'servicios', 'clases', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').agendaDeAlumnos),

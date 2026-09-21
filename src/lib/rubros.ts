@@ -69,12 +69,12 @@ export interface FichaRubro {
    * Reemplazos de vocabulario, solo en español. Lo que no esté acá usa la
    * palabra del diccionario.
    */
-  palabras: Partial<Record<'vender' | 'productos' | 'ventas' | 'clientes', string>>;
+  palabras: Partial<Record<'vender' | 'productos' | 'ventas' | 'clientes' | 'fiado', string>>;
   /** Lo mismo en portugués: nombre y ejemplo al elegirlo, y sus palabras. */
   pt: {
     nombre: string;
     ejemplo: string;
-    palabras: Partial<Record<'vender' | 'productos' | 'ventas' | 'clientes', string>>;
+    palabras: Partial<Record<'vender' | 'productos' | 'ventas' | 'clientes' | 'fiado', string>>;
   };
   /**
    * Si el negocio tiene ciclos largos —un novillo que se engorda dieciocho
@@ -252,31 +252,45 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     clave: 'clases',
     nombre: 'Clases y cursos',
     ejemplo: 'Profe de inglés, matemática, música, programación; online o presencial',
+    // UN PROFE NO COMPRA NI VENDE NADA (090).
+    //
+    // Matías, mirando la pantalla: «¿Cómo vas a comprar y vender un curso?
+    // Dice un corte, una sesión. Y aparece invertido en stock, reponer. No
+    // tiene sentido. Esto es para que el profesor se administre mejor con
+    // su agenda, con lo que entra y con lo que sale».
+    //
+    // Tenía razón: era una barbería con otras palabras. Así que se va todo
+    // lo que es de un negocio que compra y vende —productos y stock, la
+    // pantalla de cobrar, el cierre de caja— y queda lo que un profe mira:
+    // su agenda, sus alumnos, lo que entra, lo que sale y lo que le deben.
     secciones: {
       ...NUCLEO,
-      // Lo suyo: cuándo es cada clase. Sin «Equipo y reparto»: el profe
-      // da sus clases solo, y lo que cobra es todo suyo. No hay a quién
-      // repartirle ni comisión que calcular.
       '/agenda': true,
+      // Sin catálogo: lo que un profe vende es su tiempo, y el precio lo
+      // pone al inscribir a cada alumno. No hay stock que reponer.
+      '/productos': false,
+      // Sin pantalla de cobrar: el cobro se hace al inscribir al alumno.
+      '/vender': false,
+      // Sin cierre del día: no tiene caja que contar a la noche.
+      '/cierre': false,
     },
     // «Alumnos» y no «clientes»: un profe no dice «tengo doce clientes».
-    // Y «Clases y paquetes» porque la pantalla tiene las dos cosas.
+    // Y «Por cobrar» y no «Fiado»: a un alumno no se le fía, se le cobra.
     palabras: {
-      vender: 'Cobrar', productos: 'Clases y paquetes', ventas: 'Cobrado',
-      clientes: 'Alumnos',
+      ventas: 'Cobrado', clientes: 'Alumnos', fiado: 'Por cobrar',
     },
     pt: {
       nombre: 'Aulas e cursos',
       ejemplo: 'Professor de inglês, matemática, música, programação; online ou presencial',
       palabras: {
-        vender: 'Receber', productos: 'Aulas e pacotes', ventas: 'Recebido',
-        clientes: 'Alunos',
+        ventas: 'Recebido', clientes: 'Alunos', fiado: 'A receber',
       },
     },
-    // El día es su unidad: da sus clases hoy y las cobra hoy, igual que un
-    // peluquero. Por eso cierra el día y tiene racha.
+    // Sin cierre del día (arriba), y tampoco el recordatorio de la noche:
+    // «no cargaste nada hoy» a quien no da clases los sábados es regañarlo
+    // por descansar.
     ciclosLargos: false,
-    cierraElDia: true,
+    cierraElDia: false,
     paquetes: true,
     agendaDeAlumnos: true,
   },
@@ -302,8 +316,15 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
  * `RUBROS`—.
  */
 export const LISTA_RUBROS: FichaRubro[] = [
-  RUBROS.comercio, RUBROS.servicios, RUBROS.clases, RUBROS.ganaderia,
+  RUBROS.comercio, RUBROS.servicios, RUBROS.ganaderia,
 ];
+// CLASES Y CURSOS TAMPOCO SE OFRECE, POR AHORA (090).
+//
+// Se está rehaciendo para como trabaja un profe de verdad: inscribir a un
+// alumno con sus días y horario, cobrar el período, renovar. Mientras eso
+// no esté completo, alguien que se registrara hoy caería en un rubro a
+// medio armar. Vuelve a esta lista cuando el flujo esté entero, igual que
+// agricultura: la ficha sigue, la base lo acepta, solo no se ofrece.
 
 /**
  * LA CUENTA PERSONAL NO ES UN RUBRO, PERO ES UNA PUERTA.

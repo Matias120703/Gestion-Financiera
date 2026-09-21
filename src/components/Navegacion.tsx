@@ -185,7 +185,7 @@ export function itemsDe(
   esAdmin: boolean = true,
   idioma: string = 'es',
 ): ItemNav[] {
-  const suPalabra = (clave: 'vender' | 'productos' | 'ventas' | 'clientes', porDefecto: string) =>
+  const suPalabra = (clave: 'vender' | 'productos' | 'ventas' | 'clientes' | 'fiado', porDefecto: string) =>
     palabra(rubro, tipo, clave, porDefecto, idioma);
 
   const todos: ItemNav[] = [
@@ -196,7 +196,7 @@ export function itemsDe(
     { href: '/billetera',   texto: t.nav.billetera,   icono: Ico.billetera },
     // «Fiado» es la palabra del mostrador; a una persona no se le fía, le
     // deben. Mismo módulo, la palabra de cada uno.
-    { href: '/fiado',       texto: tipo === 'personal' ? t.nav.meDeben : t.nav.fiado, icono: Ico.fiado },
+    { href: '/fiado',       texto: tipo === 'personal' ? t.nav.meDeben : suPalabra('fiado', t.nav.fiado), icono: Ico.fiado },
     { href: '/clientes',    texto: suPalabra('clientes', t.nav.clientes), icono: Ico.clientes },
     { href: '/cierre',      texto: t.nav.cierre,      icono: Ico.cierre },
     { href: '/productos',   texto: suPalabra('productos', t.nav.productos), icono: Ico.productos },

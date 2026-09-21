@@ -214,8 +214,12 @@ const crear = async (db, uid, nombre, rubro) => {
   ok('nada de mercadería para revender', catsClases.includes('Mercadería'), false);
 
   // Un profe da sus clases hoy y las cobra hoy: el día es su unidad.
-  ok('cierra el día, como un peluquero',
-    (await db.query("select public.rubro_cierra_el_dia('clases') b")).rows[0].b, true);
+  // Un profe no cierra caja, y no se lo reta por no cargar nada un sábado
+  // que no da clases (090).
+  ok('no cierra el día: no le llega el recordatorio de la noche',
+    (await db.query("select public.rubro_cierra_el_dia('clases') b")).rows[0].b, false);
+  ok('la barbería sí, como siempre',
+    (await db.query("select public.rubro_cierra_el_dia('servicios') b")).rows[0].b, true);
   // Pero la cuenta personal no cierra el día sea cual sea su rubro, y esa
   // regla es de la 024: no se puede perder al agregar un rubro.
   ok('salvo que sea una cuenta personal',

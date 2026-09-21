@@ -352,8 +352,12 @@ export function PantallaAgenda({
         </>)}
       </Seccion>
 
-      {/* ---------- qué se puede reservar ---------- */}
-      {esAdmin && (
+      {/* ---------- qué se puede reservar ----------
+          Nada de esto es para un profe (090): qué se reserva, el horario de
+          atención y los feriados existen para el link público, donde un
+          desconocido mira qué hay libre. Al profe el alumno le escribe por
+          WhatsApp, y él mira su calendario y anota. */}
+      {esAdmin && !deAlumnos && (
         <ServiciosReservables
           catalogo={catalogo}
           servicios={servicios}
@@ -370,7 +374,7 @@ export function PantallaAgenda({
       )}
 
       {/* ---------- el horario de cada uno ---------- */}
-      <Horarios
+      {!deAlumnos && <Horarios
         profesionales={profesionales.filter((p) => p.activo)}
         horarios={horarios}
         ocupado={ocupado}
@@ -380,10 +384,10 @@ export function PantallaAgenda({
           }))}
         alQuitar={(id) => correr('horario', async () =>
           sb().rpc('borrar_horario', { p_empresa: empresaId, p_id: id }))}
-      />
+      />}
 
       {/* ---------- feriados, vacaciones y horarios especiales ---------- */}
-      <DiasEspeciales
+      {!deAlumnos && <DiasEspeciales
         excepciones={excepciones}
         profesionales={profesionales.filter((p) => p.activo)}
         esAdmin={esAdmin}
@@ -412,7 +416,7 @@ export function PantallaAgenda({
             p_hasta: h,
             p_motivo: mot,
           }))}
-      />
+      />}
     </div>
   );
 }
