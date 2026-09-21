@@ -796,6 +796,50 @@ const resumen = (db, uid, empresa) => H.intentar(db, uid,
     ok('con su saldo en guaraníes, para que la columna se pueda leer junta', Number(filaViaje.saldo_hoy), 440000);
   }
 
+  grupo('16 · El disponible sale de la plata que tenés de verdad (085)');
+  {
+    // Matías: «entro en mi billetera y tengo cinco mil, entro en mi
+    // presupuesto y tengo dos millones. No conecta». Eran dos formas de
+    // contar la misma plata: la billetera mira los saldos reales, el
+    // disponible arrancaba en cero cada ciclo.
+    const P = await H.montarEmpresa(db, { email: 'duenio@papa.com', nombre: 'Papa' });
+    await db.query("update public.empresas set tipo_cuenta = 'personal' where id = $1", [P.empresaId]);
+
+    const antes = await resumen(db, P.uid, P.empresaId);
+    ok('sin cuentas cargadas sigue el cálculo de siempre', antes.desde_la_billetera, undefined);
+
+    // Con una cuenta cargada, el disponible pasa a ser el saldo real.
+    await H.comoUsuario(db, P.uid, () => db.query(
+      "select public.guardar_cuenta_dinero($1,'Atlas','banco',2000000,'{transferencia}')", [P.empresaId]));
+
+    const conCuenta = await resumen(db, P.uid, P.empresaId);
+    ok('con cuentas, el disponible es la plata real', Number(conCuenta.disponible), 2000000);
+    ok('y lo dice, para que la pantalla lo pueda explicar', conCuenta.desde_la_billetera, true);
+    ok('con el saldo de las cuentas aparte', Number(conCuenta.en_cuentas), 2000000);
+
+    // Un gasto de esa cuenta baja el disponible. Es lo que pidió: «durante
+    // el mes, cada movimiento tiene que actualizar ese saldo».
+    await db.query(
+      `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria, subtotal, monto, metodo_pago)
+       values ($1,'gasto', public.hoy_empresa($1), 'Super', 'Comida', 300000, 300000, 'transferencia')`,
+      [P.empresaId]);
+    ok('un gasto de la cuenta baja el disponible',
+      Number((await resumen(db, P.uid, P.empresaId)).disponible), 1700000);
+
+    // Guardar en un fondo NO baja ningún saldo (vive en otra tabla), así que
+    // si no se restara, el disponible contaría los ahorros como para gastar.
+    const fondo = (await H.comoUsuario(db, P.uid, () =>
+      db.query("select public.guardar_ahorro($1,'Viaje') id", [P.empresaId]))).rows[0].id;
+    await H.comoUsuario(db, P.uid, () =>
+      db.query("select public.mover_ahorro($1,$2,'aporte',500000)", [P.empresaId, fondo]));
+
+    const conAhorro = await resumen(db, P.uid, P.empresaId);
+    ok('el saldo de la cuenta no cambió por ahorrar', Number(conAhorro.en_cuentas), 1700000);
+    ok('pero lo ahorrado ya no está para gastar', Number(conAhorro.disponible), 1200000);
+    ok('y el por día se reparte sobre lo que queda',
+      Number(conAhorro.por_dia) > 0 && Number(conAhorro.por_dia) <= 1200000, true);
+  }
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES PERSONALES FALLARON`);
