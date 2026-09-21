@@ -118,6 +118,9 @@ export const MENSAJES_PT: Record<string, string> = {
   'Esa cuenta no es tuya.': 'Essa conta não é sua.',
   'Esa cuenta no existe.': 'Essa conta não existe.',
   'Esa deuda no existe.': 'Essa dívida não existe.',
+  'Ese pago no existe.': 'Esse pagamento não existe.',
+  'Solo el propietario o un administrador puede deshacer un pago.':
+    'Só o dono ou um administrador pode desfazer um pagamento.',
   'Esa deuda viene de una venta. Para borrarla, anulá la venta desde el historial: así también vuelve el stock.': 'Essa dívida vem de uma venda. Pra apagar, cancele a venda no histórico: assim o estoque também volta.',
   'Esa deuda ya está saldada.': 'Essa dívida já está quitada.',
   'Esa empresa no existe.': 'Essa empresa não existe.',

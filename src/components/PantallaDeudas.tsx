@@ -311,11 +311,21 @@ function EliminarDeuda({ deuda }: { deuda: Deuda }) {
   );
 }
 
-/** Historial de pagos. Se pide recién al desplegarlo. */
+/**
+ * Historial de pagos. Se pide recién al desplegarlo.
+ *
+ * Cada pago se puede deshacer (082). Matías anotó un pago que no había
+ * hecho, borró el gasto a mano y la deuda le seguía figurando saldada: el
+ * saldo vive en la deuda y no se recalcula de los pagos. Deshacer desde acá
+ * devuelve las cuatro cosas juntas —saldo, cuota, vencimiento y gasto—, que
+ * es lo único que deja la deuda como estaba.
+ */
 function ListaPagos({ deudaId, moneda }: { deudaId: string; moneda: string }) {
   const t = useTextos();
   const locale = useLocale();
+  const router = useRouter();
   const [estado, setEstado] = useState<'cargando' | 'error' | PagoDeuda[]>('cargando');
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
     let vivo = true;
@@ -332,7 +342,7 @@ function ListaPagos({ deudaId, moneda }: { deudaId: string; moneda: string }) {
     })();
 
     return () => { vivo = false; };
-  }, [deudaId]);
+  }, [deudaId, recarga]);
 
   if (estado === 'cargando') {
     return <p className="mt-3 text-[13px] text-tinta/40">{t.comun.cargando}</p>;
@@ -347,17 +357,94 @@ function ListaPagos({ deudaId, moneda }: { deudaId: string; moneda: string }) {
   return (
     <ul className="mt-3 divide-y divide-borde border-t border-borde">
       {estado.map((p) => (
-        <li key={p.id} className="flex items-baseline justify-between gap-3 py-2">
-          <span className="text-[13px] text-tinta/55">
-            {fechaLegible(p.fecha, true, locale)}
-            {p.nota && <span className="ml-1.5 italic text-tinta/40">· {p.nota}</span>}
-          </span>
-          <span className="text-[13.5px] font-bold tabular-nums">
-            {dinero(Number(p.monto), moneda, true, locale)}
-          </span>
+        <li key={p.id} className="py-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[13px] text-tinta/55">
+              {fechaLegible(p.fecha, true, locale)}
+              {p.nota && <span className="ml-1.5 italic text-tinta/40">· {p.nota}</span>}
+            </span>
+            <span className="text-[13.5px] font-bold tabular-nums">
+              {dinero(Number(p.monto), moneda, true, locale)}
+            </span>
+          </div>
+          <DeshacerPago
+            pago={p}
+            alDeshacer={() => { setRecarga((n) => n + 1); router.refresh(); }}
+          />
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * «Me equivoqué, este pago no fue».
+ *
+ * Pide confirmación porque el pago se borra del historial, y avisa cuando la
+ * fecha de vencimiento puede haber quedado distinta: los pagos viejos, de
+ * antes de la 082, no guardaron cuál era, así que se deduce restando un mes
+ * y eso puede no ser exacto. Decirlo es más barato que una fecha en silencio.
+ */
+function DeshacerPago({ pago, alDeshacer }: { pago: PagoDeuda; alDeshacer: () => void }) {
+  const t = useTextos();
+  const [confirmar, setConfirmar] = useState(false);
+  const [trabajando, setTrabajando] = useState(false);
+  const [error, setError] = useState('');
+  const [revisar, setRevisar] = useState(false);
+
+  async function deshacer() {
+    setTrabajando(true);
+    setError('');
+    try {
+      const { data, error: err } = await clienteNavegador()
+        .rpc('anular_pago_deuda', { p_pago: pago.id });
+      if (err) throw err;
+      if ((data as { vencimiento_a_revisar?: boolean } | null)?.vencimiento_a_revisar) {
+        setRevisar(true);
+      }
+      setConfirmar(false);
+      alDeshacer();
+    } catch (e: unknown) {
+      setError(mensajeDeError(e, t.errores.generico));
+    } finally {
+      setTrabajando(false);
+    }
+  }
+
+  if (revisar) {
+    return (
+      <p className="mt-1 text-[12px] leading-snug text-ambar">{t.deudas.revisaElVencimiento}</p>
+    );
+  }
+
+  if (!confirmar) {
+    return (
+      <button
+        type="button" onClick={() => setConfirmar(true)}
+        className="mt-0.5 text-[12px] font-semibold text-tinta/40 hover:text-rojo"
+      >
+        {t.deudas.deshacerPago}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 space-y-2 rounded-xl bg-rojo-claro px-3 py-2.5 aparecer">
+      <p className="text-[12.5px] font-bold text-rojo">{t.deudas.confirmarDeshacer}</p>
+      <p className="text-[12px] leading-snug text-tinta/65">{t.deudas.deshacerDetalle}</p>
+      {error && <p className="text-[12px] font-medium text-rojo">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" className="boton-texto px-3" onClick={() => setConfirmar(false)} disabled={trabajando}>
+          {t.comun.cancelar}
+        </button>
+        <button
+          type="button" onClick={deshacer} disabled={trabajando}
+          className="flex-1 rounded-xl bg-rojo px-3 py-2 text-[13px] font-bold text-white disabled:opacity-50"
+        >
+          {trabajando ? t.comun.cargando : t.deudas.siDeshacer}
+        </button>
+      </div>
+    </div>
   );
 }
 

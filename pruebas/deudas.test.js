@@ -334,6 +334,85 @@ const saldoDe = (db, id) =>
   }
 
   // ===================================================================
+  grupo('10 · Deshacer un pago que no fue (082)');
+  // ===================================================================
+  //
+  // Matías pagó una deuda que no había pagado, borró el gasto a mano y la
+  // deuda le seguía figurando saldada: el saldo vive en `deudas.saldo` y no
+  // se recalcula de los pagos. Anular tiene que deshacer las cuatro cosas
+  // —saldo, cuota, vencimiento y gasto— o ninguna.
+  {
+    const F = await H.montarEmpresa(db, { email: 'duenio@fox.com', nombre: 'Fox' });
+    const cuota = await H.comoUsuario(db, F.uid, () =>
+      db.query(`select public.crear_deuda($1,'Moto','prestamo','Financiera',
+                                          6000000, 6000000, 6, 1000000, '2026-10-10') id`, [F.empresaId])
+        .then((x) => x.rows[0].id));
+
+    const pago = await H.comoUsuario(db, F.uid, () =>
+      db.query('select public.registrar_pago_deuda($1,$2,$3,$4,$5) r',
+        [cuota, 1000000, '2026-09-21', true, 'transferencia'])
+        .then((x) => x.rows[0].r));
+
+    ok('el pago dejó la deuda en cinco millones', Number(pago.saldo), 5000000);
+    const tras = (await db.query(
+      'select cuotas_pagadas c, vence_el::text v from public.deudas where id=$1', [cuota])).rows[0];
+    ok('con una cuota y el vencimiento corrido', [tras.c, tras.v], [1, '2026-11-10']);
+
+    const deshacer = await H.intentar(db, F.uid, () =>
+      db.query('select public.anular_pago_deuda($1) r', [pago.pago_id]).then((x) => x.rows[0].r));
+    aceptado('el dueño puede deshacerlo', deshacer);
+
+    const vuelta = (await db.query(
+      'select saldo::numeric s, cuotas_pagadas c, vence_el::text v from public.deudas where id=$1',
+      [cuota])).rows[0];
+    ok('el saldo volvió entero', Number(vuelta.s), 6000000);
+    ok('la cuota se devolvió', vuelta.c, 0);
+    ok('y el vencimiento volvió al que era', vuelta.v, '2026-10-10');
+    ok('sin pedir que se revise la fecha, porque quedó guardada',
+      deshacer.valor.vencimiento_a_revisar, false);
+
+    ok('el pago ya no está en el historial',
+      (await db.query('select count(*)::int n from public.pagos_deuda where deuda_id=$1', [cuota])).rows[0].n, 0);
+
+    // El gasto se anula, no se borra: queda el rastro y la billetera vuelve
+    // sola, porque el saldo de una cuenta solo cuenta los movimientos activos.
+    const gasto = (await db.query(
+      `select estado, motivo_anulacion from public.movimientos
+        where empresa_id=$1 and categoria='Deudas' order by created_at desc limit 1`,
+      [F.empresaId])).rows[0];
+    ok('el gasto quedó anulado, no borrado', gasto.estado, 'anulado');
+    ok('y dice por qué', /deshizo/i.test(gasto.motivo_anulacion ?? ''), true);
+
+    // Un pago que saldó la deuda: el vencimiento queda en null y solo se
+    // puede recuperar porque el pago anotó cuál era.
+    const chica = await H.comoUsuario(db, F.uid, () =>
+      db.query(`select public.crear_deuda($1,'Fiado almacén','otro','Don José',
+                                          200000, 200000, null, null, '2026-09-30') id`, [F.empresaId])
+        .then((x) => x.rows[0].id));
+    const pagoTotal = await H.comoUsuario(db, F.uid, () =>
+      db.query('select public.registrar_pago_deuda($1,$2) r', [chica, 200000]).then((x) => x.rows[0].r));
+    ok('quedó saldada', pagoTotal.saldada, true);
+    ok('y sin vencimiento',
+      (await db.query('select vence_el from public.deudas where id=$1', [chica])).rows[0].vence_el, null);
+
+    await H.comoUsuario(db, F.uid, () =>
+      db.query('select public.anular_pago_deuda($1)', [pagoTotal.pago_id]));
+    const revivida = (await db.query(
+      'select saldo::numeric s, vence_el::text v from public.deudas where id=$1', [chica])).rows[0];
+    ok('al deshacerlo la deuda vuelve a deber', Number(revivida.s), 200000);
+    ok('con su vencimiento de vuelta', revivida.v, '2026-09-30');
+
+    // Y no lo deshace cualquiera.
+    const vendedorF = await H.sumarMiembro(db, F.empresaId, 'vende@fox.com', 'vendedor');
+    const otroPago = await H.comoUsuario(db, F.uid, () =>
+      db.query('select public.registrar_pago_deuda($1,$2) r', [cuota, 500000]).then((x) => x.rows[0].r));
+    rechazado('un vendedor no puede deshacer un pago',
+      await H.intentar(db, vendedorF, () =>
+        db.query('select public.anular_pago_deuda($1)', [otroPago.pago_id])),
+      'administrador');
+  }
+
+  // ===================================================================
   grupo('9 · Las deudas se van con la empresa');
   // ===================================================================
   {
