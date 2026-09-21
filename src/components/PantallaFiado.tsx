@@ -11,6 +11,7 @@ import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
+import { CampoMonto } from '@/components/CampoMonto';
 import type { CuentaParaElegir, DeudorFiado, LineaFiado, ResumenFiado } from '@/lib/tipos';
 
 /** Cómo se cobra un fiado. Se guarda el código; se lee con `metodoVisible`. */
@@ -225,10 +226,9 @@ function FormularioNuevo({
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="etiqueta">{t.fiado.cuanto}</span>
-          <input
-            type="number" min={0} step="any" inputMode="decimal"
-            className="campo tabular-nums" placeholder="500000"
-            value={monto} onChange={(e) => setMonto(e.target.value)}
+          <CampoMonto
+            className="campo" placeholder="500000"
+            valor={Number(monto) || 0} alCambiar={(n) => setMonto(n ? String(n) : '')}
           />
         </label>
         <label className="block">
@@ -402,10 +402,9 @@ function FilaDeudor({
           <form onSubmit={cobrar} className="flex flex-wrap items-end gap-2">
             <label className="block min-w-[9rem] flex-1">
               <span className="etiqueta">{t.fiado.tePago}</span>
-              <input
-                type="number" min={0} step="any" inputMode="decimal"
-                className="campo tabular-nums"
-                value={monto} onChange={(e) => setMonto(e.target.value)}
+              <CampoMonto
+                className="campo"
+                valor={Number(monto) || 0} alCambiar={(n) => setMonto(n ? String(n) : '')}
               />
             </label>
             <label className="block">

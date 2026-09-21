@@ -1482,6 +1482,21 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('en la cuenta donde se cobra, que ya estaba guardada',
     orgn.includes('cuenta_id: f.cuenta_id || null'), true);
 
+  // Los montos se leen mientras se escriben (3.1). En guaraníes,
+  // «1500000» y «150000» se distinguen contando ceros, y uno se equivoca en
+  // su propia contabilidad por uno de menos.
+  const campoMonto = fs.readFileSync('src/components/CampoMonto.tsx', 'utf8');
+  // No puede ser type="number": el navegador no deja formatear su contenido.
+  ok('el campo de plata es de texto, con teclado numérico',
+    campoMonto.includes('type="text"') && campoMonto.includes('inputMode="decimal"'), true);
+  // Sin esto, corregir un dígito del medio manda el cursor al final y se
+  // vuelve imposible arreglar un número sin borrarlo entero.
+  ok('y devuelve el cursor donde estaba', campoMonto.includes('setSelectionRange'), true);
+  for (const p of ['src/components/PantallaGastos.tsx', 'src/components/PantallaFiado.tsx']) {
+    ok(`${p.split('/').pop()} usa el campo con separadores`,
+      fs.readFileSync(p, 'utf8').includes('<CampoMonto'), true);
+  }
+
   // Ideas para recomendar: el que no sabe qué decir, no escribe.
   const rec2 = fs.readFileSync('src/components/PantallaRecomendar.tsx', 'utf8');
   ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);

@@ -5,6 +5,7 @@ import { useTextos, useLocale } from '@/i18n/cliente';
 import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
+import { CampoMonto } from '@/components/CampoMonto';
 import { dinero, decimalesDe, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
@@ -164,11 +165,12 @@ export function PantallaGastos({
         <form onSubmit={guardar} className="mt-4 space-y-3">
           <label className="block">
             <span className="etiqueta">{t.pantallas.cuanto}</span>
-            <input
-              type="number" inputMode="decimal" min={0} step={dec === 0 ? 1 : 0.01}
-              className="campo text-[26px] font-titulo font-extrabold tabular-nums" autoFocus
-              value={monto || ''} placeholder="0"
-              onChange={(e) => setMonto(Math.max(0, Number(e.target.value) || 0))}
+            {/* Con separadores mientras se teclea: en guaraníes, «1500000»
+                y «150000» se distinguen contando ceros. Ver CampoMonto.tsx. */}
+            <CampoMonto
+              className="campo text-[26px] font-titulo font-extrabold" autoFocus
+              valor={monto} decimales={dec} placeholder="0"
+              alCambiar={(n) => setMonto(Math.max(0, n))}
             />
             {monto > 0 && <span className="mt-1 block text-[13px] font-semibold text-tinta/50">{dinero(monto, moneda)}</span>}
           </label>
