@@ -188,6 +188,62 @@ const crear = async (db, uid, nombre, rubro) => {
     (await H.intentar(db, vendedor, () =>
       db.query('select costo from public.productos limit 1'))).ok, false);
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('7 · Clases y cursos (087)');
+
+  // La lista de rubros estaba escrita cuatro veces. Esta batería existe
+  // porque una de esas copias falla EN SILENCIO: `crear_empresa` no
+  // rechaza un rubro que no conoce, lo convierte en 'comercio'. Alguien
+  // eligiría «Clases y cursos», vería la pantalla de un almacén, y no
+  // habría ningún error en ningún lado que lo delatara.
+
+  const profe = await H.montarEmpresa(db, {
+    email: 'profe@ingles.com', nombre: 'Clases de inglés', rubro: 'clases',
+  });
+  ok('la empresa queda en el rubro que se pidió',
+    (await db.query('select rubro from public.empresas where id = $1', [profe.empresaId])).rows[0].rubro,
+    'clases');
+
+  // Las categorías salen de la función de DOS argumentos, que es la que
+  // vive desde la 024. Si alguien redefiniera la de uno, esto seguiría
+  // dando las de un almacén sin avisar.
+  const catsClases = (await db.query("select public.categorias_de_rubro('clases') j")).rows[0].j
+    .map((c) => c.nombre);
+  ok('trae las suyas y no las de un almacén', catsClases.includes('Internet y plataformas'), true);
+  ok('y la que no tiene ningún otro rubro', catsClases.includes('Comisiones'), true);
+  ok('nada de mercadería para revender', catsClases.includes('Mercadería'), false);
+
+  // Un profe da sus clases hoy y las cobra hoy: el día es su unidad.
+  ok('cierra el día, como un peluquero',
+    (await db.query("select public.rubro_cierra_el_dia('clases') b")).rows[0].b, true);
+  // Pero la cuenta personal no cierra el día sea cual sea su rubro, y esa
+  // regla es de la 024: no se puede perder al agregar un rubro.
+  ok('salvo que sea una cuenta personal',
+    (await db.query("select public.rubro_cierra_el_dia('clases', 'personal') b")).rows[0].b, false);
+
+  // Y se puede cambiar a él desde cualquier otro.
+  const paso = await H.intentar(db, profe.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2) j', [profe.empresaId, 'servicios']));
+  ok('se puede salir del rubro', paso.ok, true);
+  const volvio = await H.intentar(db, profe.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2) j', [profe.empresaId, 'clases']));
+  ok('y volver a él', volvio.ok, true);
+
+  // La lista única: si alguien agrega un rubro al código y se olvida de
+  // acá, esto lo agarra.
+  ok('la lista única los tiene a todos',
+    (await db.query('select public.rubros_validos() a')).rows[0].a.sort(),
+    ['agricultura', 'clases', 'comercio', 'ganaderia', 'servicios']);
+  rechazado('y uno que no está en ella se rechaza',
+    await H.intentar(db, profe.uid, () =>
+      db.query('select public.cambiar_rubro($1,$2)', [profe.empresaId, 'astronauta'])),
+    'desconocido');
+  // La tabla tampoco lo acepta por la puerta de atrás.
+  const forzado = await db.query(
+    'update public.empresas set rubro = $1 where id = $2', ['astronauta', profe.empresaId],
+  ).then(() => ({ ok: true }), (e) => ({ ok: false, error: String(e.message || e) }));
+  rechazado('ni el constraint de la tabla', forzado, 'rubro');
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE RUBROS FALLARON`);

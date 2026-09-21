@@ -151,11 +151,20 @@ async function intentar(db, uid, fn) {
 }
 
 /** Atajo: crea empresa + productos y devuelve todo lo necesario para las pruebas. */
-async function montarEmpresa(db, { email, nombre, moneda = 'PYG' }) {
+async function montarEmpresa(db, { email, nombre, moneda = 'PYG', rubro, tipoCuenta }) {
   const uid = await crearUsuario(db, email);
   let empresaId;
   await comoUsuario(db, uid, async () => {
-    const r = await db.query('select public.crear_empresa($1, $2, $3) as id', [nombre, moneda, 'Dueño']);
+    // Sin rubro se llama con tres argumentos, como siempre: así las pruebas
+    // que ya existían siguen pasando por exactamente el mismo camino.
+    //
+    // Con rubro se usa la firma larga A PROPÓSITO, porque `crear_empresa` es
+    // donde un rubro desconocido falla en silencio —lo convierte en
+    // 'comercio' sin avisar— y probarlo por otro lado no probaría nada.
+    const r = rubro || tipoCuenta
+      ? await db.query('select public.crear_empresa($1, $2, $3, $4, $5, $6) as id',
+          [nombre, moneda, 'Dueño', 'America/Asuncion', tipoCuenta ?? 'emprendedor', rubro ?? 'comercio'])
+      : await db.query('select public.crear_empresa($1, $2, $3) as id', [nombre, moneda, 'Dueño']);
     empresaId = r.rows[0].id;
   });
   return { uid, empresaId };

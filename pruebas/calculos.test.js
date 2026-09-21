@@ -460,9 +460,29 @@ ok('una cuenta personal también tiene su nombre en portugués',
 // cuenta que ya la tenga guardada sigue andando. Por eso se comprueban las
 // dos cosas: que no se ofrezca, y que igual siga funcionando.
 ok('la lista que se ofrece al registrarse',
-  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'ganaderia']);
+  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'clases', 'ganaderia']);
 ok('agricultura no se ofrece',
   LISTA_RUBROS.some((r) => r.clave === 'agricultura'), false);
+
+// Clases y cursos (087). Va después de servicios porque es de donde sale:
+// era el profe metido entre los plomeros.
+ok('clases y cursos sí se ofrece',
+  LISTA_RUBROS.some((r) => r.clave === 'clases'), true);
+ok('con la agenda prendida, que es donde vive cada clase',
+  fichaDe('clases', 'emprendedor').secciones['/agenda'], true);
+ok('y sin lotes, que ahí no significan nada',
+  fichaDe('clases', 'emprendedor').secciones['/lotes'], false);
+// Un profe no dice «tengo doce clientes».
+ok('a sus clientes les dice alumnos',
+  palabra('clases', 'emprendedor', 'clientes', 'Clientes', 'es'), 'Alumnos');
+ok('y en portugués también',
+  palabra('clases', 'emprendedor', 'clientes', 'Clientes', 'pt'), 'Alunos');
+// El día es su unidad: da sus clases hoy y las cobra hoy.
+ok('cierra el día, así que tiene racha',
+  fichaDe('clases', 'emprendedor').cierraElDia, true);
+// Pero una cuenta personal nunca cierra el día, sea cual sea su rubro.
+ok('salvo que sea una cuenta personal',
+  fichaDe('clases', 'personal').cierraElDia, false);
 ok('pero una cuenta que ya la tenga sigue teniendo sus lotes',
   fichaDe('agricultura', 'emprendedor').secciones['/lotes'], true);
 ok('y sus palabras',

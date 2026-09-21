@@ -69,12 +69,12 @@ export interface FichaRubro {
    * Reemplazos de vocabulario, solo en español. Lo que no esté acá usa la
    * palabra del diccionario.
    */
-  palabras: Partial<Record<'vender' | 'productos' | 'ventas', string>>;
+  palabras: Partial<Record<'vender' | 'productos' | 'ventas' | 'clientes', string>>;
   /** Lo mismo en portugués: nombre y ejemplo al elegirlo, y sus palabras. */
   pt: {
     nombre: string;
     ejemplo: string;
-    palabras: Partial<Record<'vender' | 'productos' | 'ventas', string>>;
+    palabras: Partial<Record<'vender' | 'productos' | 'ventas' | 'clientes', string>>;
   };
   /**
    * Si el negocio tiene ciclos largos —un novillo que se engorda dieciocho
@@ -210,6 +210,44 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     ciclosLargos: true,
     cierraElDia: false,
   },
+
+  /**
+   * QUIEN VENDE SU TIEMPO EN CLASES (087).
+   *
+   * Estuvo un tiempo dentro de «servicios y oficios», y ahí la mitad de
+   * las palabras le quedaban mal. Un plomero cobra un trabajo y se
+   * termina; un profe tiene ALUMNOS que vuelven todas las semanas durante
+   * meses, y vende ocho clases juntas que después va dando.
+   */
+  clases: {
+    clave: 'clases',
+    nombre: 'Clases y cursos',
+    ejemplo: 'Profe de inglés, matemática, música, programación; online o presencial',
+    secciones: {
+      ...NUCLEO,
+      // Lo suyo: cuándo es cada clase, y cómo se reparte si no da solo.
+      '/agenda': true,
+      '/reparto': true,
+    },
+    // «Alumnos» y no «clientes»: un profe no dice «tengo doce clientes».
+    // Y «Clases y paquetes» porque la pantalla tiene las dos cosas.
+    palabras: {
+      vender: 'Cobrar', productos: 'Clases y paquetes', ventas: 'Cobrado',
+      clientes: 'Alumnos',
+    },
+    pt: {
+      nombre: 'Aulas e cursos',
+      ejemplo: 'Professor de inglês, matemática, música, programação; online ou presencial',
+      palabras: {
+        vender: 'Receber', productos: 'Aulas e pacotes', ventas: 'Recebido',
+        clientes: 'Alunos',
+      },
+    },
+    // El día es su unidad: da sus clases hoy y las cobra hoy, igual que un
+    // peluquero. Por eso cierra el día y tiene racha.
+    ciclosLargos: false,
+    cierraElDia: true,
+  },
 };
 
 /**
@@ -232,7 +270,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
  * `RUBROS`—.
  */
 export const LISTA_RUBROS: FichaRubro[] = [
-  RUBROS.comercio, RUBROS.servicios, RUBROS.ganaderia,
+  RUBROS.comercio, RUBROS.servicios, RUBROS.clases, RUBROS.ganaderia,
 ];
 
 /**

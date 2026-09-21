@@ -86,7 +86,7 @@ export type TipoCuenta = 'personal' | 'emprendedor';
  * NO es un permiso: lo que protege datos sigue siendo RLS y los roles.
  * Ver migración 021 y src/lib/rubros.ts.
  */
-export type Rubro = 'comercio' | 'ganaderia' | 'agricultura' | 'servicios';
+export type Rubro = 'comercio' | 'ganaderia' | 'agricultura' | 'servicios' | 'clases';
 export type PlanEfectivo = 'gratis' | 'basico' | 'pro' | 'negocio';
 export type PeriodoCobro = 'mensual' | 'anual';
 export type EstadoSuscripcion = 'activa' | 'prueba' | 'vencida' | 'cancelada' | 'morosa';
