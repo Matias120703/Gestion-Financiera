@@ -1668,6 +1668,19 @@ export const es = {
     // neta: sería llamar pérdida a la plata que se gastó antes de empezar
     // a cobrar.
     todaviaSinVentas: 'todavía no cargaste ninguna venta',
+    // El panel de un profe (092): sus clases, lo cobrado, lo que le deben.
+    clasesDeHoy: 'Tus clases de hoy',
+    sinClasesHoy: 'Hoy no tenés clases.',
+    verAgenda: 'Ver la agenda',
+    cobrado: 'Cobrado',
+    clasesDadas: (n: number) => `${n} ${n === 1 ? 'clase dada' : 'clases dadas'}`,
+    porCobrar: 'Por cobrar',
+    teDebenAlumnos: (n: number) => (n === 0 ? 'nadie te debe' : `${n} ${n === 1 ? 'alumno te debe' : 'alumnos te deben'}`),
+    alumnosActivos: 'Alumnos activos',
+    conPeriodoVigente: 'con un período vigente',
+    gastadoProfe: 'Gastaste',
+    teQueda: 'Te queda',
+    cobradoMenosGastado: 'cobrado menos gastado',
     saludoTarde: 'Buenas tardes',
     saludoNoche: 'Buenas noches',
     gananciaNeta: 'Ganancia neta',
@@ -2206,6 +2219,14 @@ export const es = {
     atender: 'Atendido, cobrar',
     atendido: 'Cobrado',
     noVino: 'No vino',
+    // La clase de un profe (092): ya está cobrada, solo se marca si pasó.
+    claseDada: 'Clase dada',
+    claseNoTenida: 'No se tuvo',
+    marcarDada: 'Clase dada',
+    marcarNoTenida: 'No se tuvo la clase',
+    preguntaDescontar: (nombre: string) =>
+      `La clase de ${nombre} no se tuvo. ¿Se la descontás del período?\n\nAceptar: sí, la pierde.\nCancelar: no, se la guardás.`,
+    dictadoInscribir: 'Lo que dictaste ya está puesto: revisá los días, el período y el precio, e inscribí.',
     confirmarNoVino: (nombre: string) => `¿Marcar que ${nombre} no vino?`,
     mover: 'Mover',
     manana: 'mañana',

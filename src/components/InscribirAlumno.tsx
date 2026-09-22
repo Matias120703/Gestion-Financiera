@@ -9,6 +9,7 @@ import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import { CampoMonto } from '@/components/CampoMonto';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
+import type { TurnoRespuesta } from '@/lib/turno-voz';
 
 /** Lunes primero, como se piensa una semana de clases. 0 es domingo (PostgreSQL). */
 const SEMANA = [1, 2, 3, 4, 5, 6, 0] as const;
@@ -46,13 +47,15 @@ function finDePeriodo(desde: string, meses: number): string {
  * su propia cuenta, algún día diría «13 clases» y la base inscribiría 12.
  */
 export function InscribirAlumno({
-  empresaId, moneda, zona, clienteId, alCancelar, alListo,
+  empresaId, moneda, zona, clienteId, dictado = null, alCancelar, alListo,
 }: {
   empresaId: string;
   moneda: string;
   zona: string;
   /** Desde la ficha el alumno ya está elegido; desde la agenda se elige acá. */
   clienteId?: string;
+  /** Lo dictado en el micrófono (092): el alumno, la hora y el día, ya puestos. */
+  dictado?: TurnoRespuesta | null;
   alCancelar: () => void;
   alListo: (mensaje: string) => void;
 }) {
@@ -60,13 +63,21 @@ export function InscribirAlumno({
   const i = t.inscribir;
   const locale = useLocale();
 
-  const [alumno, setAlumno] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
-  const [dias, setDias] = useState<number[]>([]);
-  const [horaDesde, setHoraDesde] = useState('18:00');
-  const [horaHasta, setHoraHasta] = useState('19:00');
+  const [alumno, setAlumno] = useState<ClienteElegido>(dictado?.cliente
+    ? { id: dictado.cliente.id, nombre: dictado.cliente.nombre, telefono: dictado.cliente.telefono }
+    : { id: null, nombre: dictado?.cliente_nombre ?? '', telefono: dictado?.cliente_telefono ?? '' });
+  // Lo dictado trae un día: ese día de la semana queda marcado, y el
+  // período arranca ahí. La hora dictada dura una hora; el resto se corrige a mano.
   const hoy = hoyISO(zona);
-  const [desde, setDesde] = useState(hoy);
-  const [hasta, setHasta] = useState(finDePeriodo(hoy, 1));
+  const diaDictado = dictado?.fecha && /^\d{4}-\d{2}-\d{2}$/.test(dictado.fecha) ? dictado.fecha : null;
+  const horaDictada = dictado?.hora && /^\d{2}:\d{2}$/.test(dictado.hora) ? dictado.hora : null;
+  const [dias, setDias] = useState<number[]>(
+    diaDictado ? [new Date(`${diaDictado}T12:00:00Z`).getUTCDay()] : []);
+  const [horaDesde, setHoraDesde] = useState(horaDictada ?? '18:00');
+  const [horaHasta, setHoraHasta] = useState(horaDictada
+    ? `${String((Number(horaDictada.slice(0, 2)) + 1) % 24).padStart(2, '0')}${horaDictada.slice(2)}` : '19:00');
+  const [desde, setDesde] = useState(diaDictado ?? hoy);
+  const [hasta, setHasta] = useState(finDePeriodo(diaDictado ?? hoy, 1));
   const [modo, setModo] = useState<'hora' | 'cerrado'>('hora');
   const [precioHora, setPrecioHora] = useState(() => {
     try { return Number(localStorage.getItem(CLAVE_PRECIO)) || 0; } catch { return 0; }
@@ -143,6 +154,12 @@ export function InscribirAlumno({
   return (
     <div className="space-y-4 rounded-2xl border border-verde/30 bg-superficie p-4">
       <p className="text-[16px] font-bold tracking-tight">{i.titulo}</p>
+      {dictado && (
+        <div className="rounded-xl bg-arena px-3 py-2 text-[12.5px] text-tinta/60">
+          {dictado.transcripcion && <p className="italic">«{dictado.transcripcion}»</p>}
+          <p className="mt-0.5 font-medium">{t.agenda.dictadoInscribir}</p>
+        </div>
+      )}
 
       {!clienteId && (
         <SelectorCliente

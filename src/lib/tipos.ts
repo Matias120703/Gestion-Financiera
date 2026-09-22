@@ -1086,6 +1086,19 @@ export interface TurnoDelDia {
   token: string;
   /** Si ya se le escribió para recordarle. */
   avisado: boolean;
+  /** La inscripción de la que salió esta clase (091). Null en un turno común. */
+  paquete_id?: string | null;
+}
+
+/** Lo que mira un profe al abrir Orden (092). */
+export interface PanelProfe {
+  hoy: { id: string; hora: string; alumno: string; estado: string }[];
+  clases_periodo: number;
+  cobrado: number;
+  gastado: number;
+  por_cobrar: number;
+  deben: number;
+  alumnos_activos: number;
 }
 
 export interface HorarioSemanal {

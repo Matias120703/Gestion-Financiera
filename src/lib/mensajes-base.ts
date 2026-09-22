@@ -144,6 +144,8 @@ export const MENSAJES_PT: Record<string, string> = {
   'Poné cuánto cobrás: por hora o un precio cerrado.': 'Coloque quanto você cobra: por hora ou um preço fechado.',
   'En ese período no cae ningún día de los que elegiste.': 'Nesse período não cai nenhum dos dias que você escolheu.',
   'El % a las % ya tenés a %.': 'No dia % às % você já tem %.',
+  // La clase del día (092).
+  'Esa clase no es de ninguna inscripción.': 'Essa aula não é de nenhuma inscrição.',
   // Un profe no tiene link público (089).
   'Una cuenta de clases no tiene link de reservas: los horarios de cada alumno los armás vos.':
     'Uma conta de aulas não tem link de reservas: os horários de cada aluno quem monta é você.',

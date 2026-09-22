@@ -64,6 +64,8 @@ const LMJ = [1, 2, 4];
 
   const previa = async (args) => (await valor(P.uid,
     'select public.vista_previa_inscripcion($1,$2,$3,$4,$5,$6,$7,$8) j', [P.empresaId, ...args])).j;
+  const paquetesDe = async (cliente) => (await valor(P.uid,
+    'select public.paquetes_del_alumno($1,$2) j', [P.empresaId, cliente])).j;
   const inscribir = (uid, empresa, cliente, args) => como(uid,
     'select public.inscribir_alumno($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) j',
     [empresa, cliente, ...args]);
@@ -222,6 +224,48 @@ const LMJ = [1, 2, 4];
     await como(Otro.uid, 'select public.por_cobrar_alumnos($1)', [P.empresaId]), 'pertenecés');
   rechazado('ni cobra una inscripción de acá',
     await como(Otro.uid, 'select public.cobrar_inscripcion($1,$2)', [i1.paquete, 'efectivo']), 'pertenecés');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('8 · La clase del día (092)');
+  // ═══════════════════════════════════════════════════════════
+  // Matías: «atendido y cobrar no se puede, porque yo ya cobré por
+  // adelantado. Lo que puedo marcar es que la clase se tuvo, o que no».
+  const clases = (await db.query(
+    'select id from public.turnos_reserva where paquete_id = $1 order by inicia', [i1.paquete])).rows.map((r) => r.id);
+  const agenda = (await valor(P.uid, "select public.agenda_del_dia($1, '2026-10-01') j", [P.empresaId])).j;
+  ok('la agenda del día dice de qué inscripción es cada clase', agenda[0].paquete_id, i1.paquete);
+
+  const movsAntes = (await db.query('select count(*)::int n from public.movimientos where empresa_id = $1', [P.empresaId])).rows[0].n;
+  const dada = await como(P.uid, 'select public.marcar_clase($1, true) j', [clases[0]]);
+  ok('se marca la clase como dada', dada.ok, true);
+  ok('y se descuenta del período', Number(dada.valor.rows[0].j.paquete.usadas), 1);
+  ok('sin cobrar nada: ya estaba cobrado',
+    (await db.query('select count(*)::int n from public.movimientos where empresa_id = $1', [P.empresaId])).rows[0].n, movsAntes);
+  ok('en la agenda queda dada',
+    (await db.query('select estado from public.turnos_reserva where id = $1', [clases[0]])).rows[0].estado, 'atendida');
+  rechazado('y no se marca dos veces', await como(P.uid, 'select public.marcar_clase($1, true)', [clases[0]]), 'ya se cerró');
+
+  // La clase que no se tuvo: en cada falta se decide si se descuenta.
+  const perdida = await como(P.uid, 'select public.marcar_clase($1, false, true) j', [clases[1]]);
+  ok('no se tuvo y se descuenta: cuenta como falta', Number(perdida.valor.rows[0].j.paquete.usadas), 2);
+  const guardada = await como(P.uid, 'select public.marcar_clase($1, false, false) j', [clases[2]]);
+  ok('no se tuvo y NO se descuenta: la clase sigue disponible', Number(guardada.valor.rows[0].j.paquete.usadas), 2);
+  ok('las dos quedan como no tenidas en la agenda',
+    (await db.query('select estado from public.turnos_reserva where id in ($1,$2)', [clases[1], clases[2]])).rows.map((r) => r.estado), ['no_vino', 'no_vino']);
+  ok('y en la historia del alumno se distingue la falta',
+    (await paquetesDe(matias)).find((x) => x.id === i1.paquete).historia.map((h) => h.motivo).sort(), ['dada', 'falta']);
+
+  // La racha del profe: marcar la clase es su «cargué algo hoy».
+  ok('el día de la clase dada cuenta para la racha',
+    (await db.query("select public.dias_cargados($1, '2026-12-31') d", [P.empresaId])).rows.map((r) => r.d.toISOString().slice(0, 10)).includes('2026-10-01'), true);
+
+  // El panel del profe: sin vendido ni ganancia bruta.
+  const panel = (await valor(P.uid, "select public.panel_profe($1, '2026-10-01', '2026-10-31') j", [P.empresaId])).j;
+  ok('cuenta las clases dadas del período', panel.clases_periodo, 1);
+  ok('sabe cuántos alumnos activos tiene', panel.alumnos_activos >= 1, true);
+  ok('y cuánto le falta cobrar', Number(panel.por_cobrar) > 0, true);
+  rechazado('un turno que no es de una inscripción no se marca así',
+    await como(P.uid, 'select public.marcar_clase($1, true)', ['00000000-0000-0000-0000-000000000000']), 'no existe');
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {

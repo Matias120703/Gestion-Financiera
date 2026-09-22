@@ -1,6 +1,6 @@
 import { traerProfesionales, soloServicios } from '@/lib/reparto';
 import { traerServiciosAgenda } from '@/lib/agenda';
-import { tieneSeccion } from '@/lib/rubros';
+import { fichaDe, tieneSeccion } from '@/lib/rubros';
 import {
   bloqueTurnos, sanearTurno, mismoNombre,
   type ServicioDictable, type ProfesionalDictable, type TurnoRespuesta,
@@ -65,7 +65,13 @@ export async function contextoAcciones(d: {
     }
   }
 
-  const conTurnos = servicios.length > 0 && profesionales.length > 0;
+  // Un profe no tiene servicios reservables ni equipo, pero sí agenda: lo
+  // dictado («clases con Juan los martes a las seis») llega a inscribir
+  // al alumno (092). Sin esto, el micrófono le decía que su negocio no
+  // tenía agenda.
+  const deAlumnos = !esPersonal && fichaDe(d.rubro, d.tipoCuenta).agendaDeAlumnos;
+  if (deAlumnos && servicios.length === 0) servicios = [{ id: 'clase', nombre: 'Clase', duracion_min: 60 }];
+  const conTurnos = deAlumnos || (servicios.length > 0 && profesionales.length > 0);
   const tipos: TipoCaptura[] = [];
   if (conTurnos) tipos.push('turno');
   if (hay('/productos')) tipos.push('producto');

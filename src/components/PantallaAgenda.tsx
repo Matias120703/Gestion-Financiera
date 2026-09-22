@@ -70,6 +70,26 @@ export function PantallaAgenda({
   // El formulario de inscribir a un alumno, en la agenda de un profe (091).
   const [inscribiendo, setInscribiendo] = useState(false);
   const [inscripto, setInscripto] = useState('');
+  // Lo que se dictó en el micrófono, para un profe: llega a inscribir (092).
+  const [dictadoProfe, setDictadoProfe] = useState<TurnoRespuesta | null>(null);
+  useEffect(() => {
+    if (!deAlumnos) return;
+    function levantar() {
+      let crudo: string | null = null;
+      try {
+        crudo = sessionStorage.getItem(CLAVE_TURNO_DICTADO);
+        sessionStorage.removeItem(CLAVE_TURNO_DICTADO);
+      } catch { return; }
+      if (!crudo) return;
+      try {
+        setDictadoProfe(JSON.parse(crudo) as TurnoRespuesta);
+        setInscribiendo(true);
+      } catch { /* ilegible: se inscribe a mano */ }
+    }
+    levantar();
+    window.addEventListener(EVENTO_TURNO_DICTADO, levantar);
+    return () => window.removeEventListener(EVENTO_TURNO_DICTADO, levantar);
+  }, [deAlumnos]);
 
   const plata = (n: number) => dinero(n, moneda, true, locale);
   const ocupado = trabajando !== '';
@@ -151,7 +171,8 @@ export function PantallaAgenda({
       {deAlumnos && (inscribiendo ? (
         <InscribirAlumno
           empresaId={empresaId} moneda={moneda} zona={zona}
-          alCancelar={() => setInscribiendo(false)}
+          dictado={dictadoProfe}
+          alCancelar={() => { setInscribiendo(false); setDictadoProfe(null); }}
           alListo={(m) => { setInscribiendo(false); setInscripto(m); router.refresh(); setTimeout(() => setInscripto(''), 5000); }}
         />
       ) : (
@@ -244,10 +265,10 @@ export function PantallaAgenda({
                     )}
                   </span>
                   {r.estado === 'atendida' && (
-                    <span className="pastilla bg-verde text-sobre-verde">{t.agenda.atendido}</span>
+                    <span className="pastilla bg-verde text-sobre-verde">{deAlumnos ? t.agenda.claseDada : t.agenda.atendido}</span>
                   )}
                   {r.estado === 'no_vino' && (
-                    <span className="pastilla bg-rojo-claro text-rojo">{t.agenda.noVino}</span>
+                    <span className="pastilla bg-rojo-claro text-rojo">{deAlumnos ? t.agenda.claseNoTenida : t.agenda.noVino}</span>
                   )}
                   {(r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r) && (
                     <button
@@ -269,7 +290,43 @@ export function PantallaAgenda({
                   )}
                 </p>
 
-                {(r.estado === 'pendiente' || r.estado === 'confirmada') && (
+                {(r.estado === 'pendiente' || r.estado === 'confirmada') && deAlumnos && r.paquete_id && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {/* LA CLASE YA ESTÁ COBRADA (092). Matías: «atendido y cobrar
+                        no se puede, porque yo ya cobré por adelantado». Marcar
+                        es solo decir que pasó, y descontarla del período. */}
+                    <button
+                      type="button" className="boton-principal px-3 py-1.5 text-[13px]"
+                      disabled={ocupado}
+                      onClick={() => correr('atender', async () =>
+                        sb().rpc('marcar_clase', { p_reserva: r.id, p_dada: true }))}
+                    >
+                      {t.agenda.marcarDada}
+                    </button>
+                    <button
+                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+                      disabled={ocupado}
+                      onClick={() => setMoviendo(moviendo === r.id ? null : r.id)}
+                    >
+                      {t.agenda.mover}
+                    </button>
+                    {/* En cada falta se decide si se descuenta: es la regla que
+                        eligió Matías. Aceptar la pierde; cancelar se la guarda. */}
+                    <button
+                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+                      disabled={ocupado}
+                      onClick={() => {
+                        const descontar = confirm(t.agenda.preguntaDescontar(r.cliente));
+                        correr('novino', async () =>
+                          sb().rpc('marcar_clase', { p_reserva: r.id, p_dada: false, p_descontar: descontar }));
+                      }}
+                    >
+                      {t.agenda.marcarNoTenida}
+                    </button>
+                  </div>
+                )}
+
+                {(r.estado === 'pendiente' || r.estado === 'confirmada') && !(deAlumnos && r.paquete_id) && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       type="button" className="boton-principal px-3 py-1.5 text-[13px]"

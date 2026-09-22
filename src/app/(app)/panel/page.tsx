@@ -24,6 +24,8 @@ import { fichaDe, palabra, type Seccion as Ruta } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
 import { Bienvenida } from '@/components/Bienvenida';
+import { PanelProfe } from '@/components/PanelProfe';
+import type { PanelProfe as PanelProfeDatos } from '@/lib/tipos';
 
 export const dynamic = 'force-dynamic';
 
@@ -132,6 +134,60 @@ export default async function PaginaPanel({
    */
   // Ya no hace falta descartar la cuenta personal: si llegó hasta acá, es de
   // negocio. El corte de arriba se lo llevó.
+  /**
+   * UN PROFE TIENE SU PROPIO PANEL (092).
+   *
+   * Matías: «si entro como profesor no me puede aparecer lo vendido,
+   * ganancia bruta, ganancia neta, lo que más se vendió». Se corta acá,
+   * igual que la cuenta personal: una sola pantalla para todos es cómo
+   * termina apareciendo «invertido en stock» a quien da clases.
+   */
+  if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos) {
+    const t = await textos();
+    const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
+    const [datosProfe, categoriasProfe, rachaProfe, billeteraProfe, descuentoProfe] = await Promise.all([
+      Promise.resolve(clienteServidor().rpc('panel_profe', {
+        p_empresa: ctx.empresa.id, p_desde: rango.desde, p_hasta: rango.hasta,
+      })).then((r) => { if (r.error) throw r.error; return r.data as PanelProfeDatos; }),
+      traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
+      traerRacha(ctx.empresa.id),
+      ctx.esAdmin ? traerBilletera(ctx.empresa.id).catch(() => null) : Promise.resolve(null),
+      ctx.esAdmin ? traerDescuentoRacha(ctx.empresa.id) : Promise.resolve(null),
+    ]);
+    const locale = FICHA[(await idiomaActual())].locale;
+    return (
+      <div className="space-y-5">
+        <Bienvenida nombre={ctx.miembro.nombre} zona={ctx.zonaHoraria} t={t} />
+        {billeteraProfe && <BilleteraPanel billetera={billeteraProfe} moneda={ctx.empresa.moneda} />}
+        <Atajos
+          etiqueta={t.billetera.atajos}
+          ficha={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones}
+          items={[
+            { href: '/agenda', texto: t.nav.agenda },
+            { href: '/clientes', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'clientes', t.nav.clientes, (await idiomaActual())) },
+            { href: '/gastos', texto: t.panel.cargarGasto },
+            ...(ctx.esAdmin ? [{ href: '/billetera' as Ruta, texto: t.nav.billetera }] : []),
+          ]}
+        />
+        <AvisoComision novedad={await novedadComision} />
+        {/* La racha del profe cuenta los días con clase dada (092), y lleva a la agenda. */}
+        <TarjetaRacha racha={rachaProfe} t={t} destino="/agenda" />
+        {descuentoProfe && <TarjetaDescuento descuento={descuentoProfe} t={t} />}
+        <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
+        <PanelProfe
+          datos={datosProfe}
+          categorias={categoriasProfe}
+          moneda={ctx.vista}
+          locale={locale}
+          t={t}
+          rangoTexto={rango.desde === rango.hasta
+            ? fechaLegible(rango.desde)
+            : `${fechaLegible(rango.desde)} — ${fechaLegible(rango.hasta)}`}
+        />
+      </div>
+    );
+  }
+
   const cicloLargo = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).ciclosLargos;
 
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
