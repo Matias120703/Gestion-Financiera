@@ -395,7 +395,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
  * `RUBROS`—.
  */
 export const LISTA_RUBROS: FichaRubro[] = [
-  RUBROS.comercio, RUBROS.servicios, RUBROS.ganaderia,
+  RUBROS.comercio, RUBROS.servicios, RUBROS.entrenamiento, RUBROS.ganaderia,
 ];
 // CLASES Y CURSOS TAMPOCO SE OFRECE, POR AHORA (090).
 //
@@ -405,8 +405,10 @@ export const LISTA_RUBROS: FichaRubro[] = [
 // medio armar. Vuelve a esta lista cuando el flujo esté entero, igual que
 // agricultura: la ficha sigue, la base lo acepta, solo no se ofrece.
 //
-// EL PERSONAL TRAINER TAMPOCO, HASTA QUE MATÍAS LO PRUEBE (097). Mismo
-// motivo: se ofrece cuando alguien lo haya usado de verdad.
+// EL PERSONAL TRAINER SÍ SE OFRECE (097, 22/09). Matías lo pidió para
+// probarlo creando una cuenta como cualquiera: «podés agregarlo al crear la
+// cuenta, para probar». Va después de servicios, que es su vecino más
+// parecido en la lista.
 
 /**
  * LA CUENTA PERSONAL NO ES UN RUBRO, PERO ES UNA PUERTA.

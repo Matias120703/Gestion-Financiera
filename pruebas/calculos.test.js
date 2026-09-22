@@ -460,7 +460,7 @@ ok('una cuenta personal también tiene su nombre en portugués',
 // cuenta que ya la tenga guardada sigue andando. Por eso se comprueban las
 // dos cosas: que no se ofrezca, y que igual siga funcionando.
 ok('la lista que se ofrece al registrarse',
-  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'ganaderia']);
+  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'entrenamiento', 'ganaderia']);
 ok('agricultura no se ofrece',
   LISTA_RUBROS.some((r) => r.clave === 'agricultura'), false);
 
@@ -530,8 +530,9 @@ ok('la agenda de a uno es solo del profe y del trainer',
 // Usa el motor del profe tal cual, con sus palabras. Lo que se comprueba:
 // que tenga exactamente las mismas pantallas que el profe, que hable como
 // un trainer, y que sea el único con las lesiones a la vista.
-ok('el trainer no se ofrece hasta que Matías lo pruebe',
-  LISTA_RUBROS.some((r) => r.clave === 'entrenamiento'), false);
+// Matías lo pidió en la lista del alta para probarlo como cualquiera (22/09).
+ok('el trainer se ofrece al crear una cuenta',
+  LISTA_RUBROS.some((r) => r.clave === 'entrenamiento'), true);
 ok('tiene las mismas pantallas que el profe',
   JSON.stringify(fichaDe('entrenamiento', 'emprendedor').secciones), JSON.stringify(fichaDe('clases', 'emprendedor').secciones));
 ok('a los suyos les dice clientes, no alumnos',
