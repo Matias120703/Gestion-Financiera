@@ -283,12 +283,16 @@ export function PantallaAgenda({
                   )}
                 </div>
 
-                <p className="mt-0.5 text-[12.5px] text-tinta/50">
-                  {r.servicio} · {r.profesional}
-                  {r.telefono && (
-                    <> · <a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
-                  )}
-                </p>
+                {/* Un profe da sus clases solo: «Clase · su propio nombre» debajo
+                    de cada una no dice nada (092). Queda el teléfono, si hay. */}
+                {(!deAlumnos || r.telefono) && (
+                  <p className="mt-0.5 text-[12.5px] text-tinta/50">
+                    {!deAlumnos && <>{r.servicio} · {r.profesional}</>}
+                    {r.telefono && (
+                      <>{!deAlumnos && ' · '}<a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
+                    )}
+                  </p>
+                )}
 
                 {(r.estado === 'pendiente' || r.estado === 'confirmada') && deAlumnos && r.paquete_id && (
                   <div className="mt-2 flex flex-wrap gap-2">
