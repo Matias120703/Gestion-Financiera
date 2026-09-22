@@ -1085,6 +1085,8 @@ export const pt: Textos = {
     faltaAlumno: 'Escolha ou escreva o nome do aluno.',
     materia: 'O que você ensina',
     materiaEjemplo: 'Inglês, matemática, violão…',
+    salud: 'Algo a considerar',
+    saludEjemplo: 'O que você precisa saber antes de começar…',
     dias: 'Quais dias',
     de: 'Das',
     a: 'Às',

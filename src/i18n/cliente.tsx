@@ -8,7 +8,9 @@
  * lugar decide, y no hay parpadeo de un idioma al otro al hidratar.
  */
 import { createContext, useCallback, useContext, useMemo } from 'react';
-import { diccionario, type Textos } from './diccionarios';
+import { diccionario, idiomaEfectivo, type Textos } from './diccionarios';
+import { conJerga } from './jergas';
+import type { Jerga } from '@/lib/rubros';
 import {
   COOKIE_IDIOMA, FICHA, IDIOMA_POR_DEFECTO, IDIOMA_UNICO, type Idioma,
 } from './idiomas';
@@ -16,6 +18,8 @@ import { usarTraductorDeErrores } from '@/lib/errores';
 import { traducirMensajeAPortugues } from '@/lib/mensajes-base';
 
 const Contexto = createContext<Idioma>(IDIOMA_POR_DEFECTO);
+/** Las palabras del oficio de esta cuenta (097). Null: el diccionario tal cual. */
+const ContextoJerga = createContext<Jerga | null>(null);
 
 export function ProveedorIdioma({
   idioma, children,
@@ -33,13 +37,25 @@ export function ProveedorIdioma({
   return <Contexto.Provider value={idioma}>{children}</Contexto.Provider>;
 }
 
+/**
+ * Las palabras del oficio, para todo lo que está adentro (097).
+ *
+ * Va en el layout de la aplicación, donde ya se sabe de qué cuenta es: así
+ * cada pantalla pide su texto como siempre y al trainer le llega «sesión»
+ * donde al profe le llega «clase».
+ */
+export function ProveedorJerga({ jerga, children }: { jerga: Jerga | null; children: React.ReactNode }) {
+  return <ContextoJerga.Provider value={jerga}>{children}</ContextoJerga.Provider>;
+}
+
 export function useIdioma(): Idioma {
   return useContext(Contexto);
 }
 
 export function useTextos(): Textos {
   const idioma = useContext(Contexto);
-  return useMemo(() => diccionario(idioma), [idioma]);
+  const jerga = useContext(ContextoJerga);
+  return useMemo(() => conJerga(diccionario(idioma), jerga, idiomaEfectivo(idioma)), [idioma, jerga]);
 }
 
 /** Locale de Intl del idioma activo: para formatear plata y fechas. */

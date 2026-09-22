@@ -11,6 +11,7 @@ import { SelectorRango } from '@/components/SelectorRango';
 import { Indicador, GraficoDiario, Barra, Vacio, Seccion } from '@/components/Piezas';
 import { permisosDe } from '@/lib/permisos';
 import { textos, idiomaActual, FICHA } from '@/i18n';
+import { conJerga } from '@/i18n/jergas';
 import { categoriaVisible } from '@/i18n/nombres';
 import { traerResumenPersonal } from '@/lib/personal';
 import { PanelPersonal } from '@/components/PanelPersonal';
@@ -143,7 +144,9 @@ export default async function PaginaPanel({
    * termina apareciendo «invertido en stock» a quien da clases.
    */
   if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos) {
-    const t = await textos();
+    // Con las palabras del oficio (097): al trainer, «Tus sesiones de hoy».
+    const fichaProfe = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+    const t = conJerga(await textos(), fichaProfe.jerga, await idiomaActual());
     const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
     const [datosProfe, categoriasProfe, rachaProfe, billeteraProfe, descuentoProfe] = await Promise.all([
       Promise.resolve(clienteServidor().rpc('panel_profe', {
@@ -175,6 +178,7 @@ export default async function PaginaPanel({
         {descuentoProfe && <TarjetaDescuento descuento={descuentoProfe} t={t} />}
         <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
         <PanelProfe
+          notasALaVista={fichaProfe.notasALaVista}
           datos={datosProfe}
           categorias={categoriasProfe}
           moneda={ctx.vista}

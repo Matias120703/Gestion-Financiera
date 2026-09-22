@@ -86,7 +86,7 @@ export type TipoCuenta = 'personal' | 'emprendedor';
  * NO es un permiso: lo que protege datos sigue siendo RLS y los roles.
  * Ver migración 021 y src/lib/rubros.ts.
  */
-export type Rubro = 'comercio' | 'ganaderia' | 'agricultura' | 'servicios' | 'clases';
+export type Rubro = 'comercio' | 'ganaderia' | 'agricultura' | 'servicios' | 'clases' | 'entrenamiento';
 export type PlanEfectivo = 'gratis' | 'basico' | 'pro' | 'negocio';
 export type PeriodoCobro = 'mensual' | 'anual';
 export type EstadoSuscripcion = 'activa' | 'prueba' | 'vencida' | 'cancelada' | 'morosa';
@@ -1090,11 +1090,13 @@ export interface TurnoDelDia {
   paquete_id?: string | null;
   /** Qué se le enseña en esa clase (094). Null si no se dijo. */
   materia?: string | null;
+  /** Las notas del cliente (097): para un trainer, sus lesiones. Null si no hay. */
+  notas?: string | null;
 }
 
 /** Lo que mira un profe al abrir Orden (092). */
 export interface PanelProfe {
-  hoy: { id: string; hora: string; alumno: string; estado: string; materia: string | null }[];
+  hoy: { id: string; hora: string; alumno: string; estado: string; materia: string | null; notas: string | null }[];
   clases_periodo: number;
   cobrado: number;
   gastado: number;

@@ -1129,6 +1129,10 @@ export const es = {
     faltaAlumno: 'Elegí o escribí el nombre del alumno.',
     materia: 'Qué le enseñás',
     materiaEjemplo: 'Inglés, matemática, guitarra…',
+    // Las notas de alguien nuevo, cuando el rubro las quiere a la vista
+    // (097). El trainer las llama «Salud y lesiones».
+    salud: 'Algo a tener en cuenta',
+    saludEjemplo: 'Lo que tengas que saber antes de empezar…',
     dias: 'Qué días',
     de: 'De',
     a: 'A',

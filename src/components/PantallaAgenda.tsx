@@ -29,7 +29,7 @@ import type {
 
 export function PantallaAgenda({
   empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy,
-  excepciones, negocio, zona, origen, deAlumnos = false,
+  excepciones, negocio, zona, origen, deAlumnos = false, notasALaVista = false,
 }: {
   empresaId: string;
   moneda: string;
@@ -55,6 +55,8 @@ export function PantallaAgenda({
    * sin pedir que se arme un equipo.
    */
   deAlumnos?: boolean;
+  /** Las notas de cada cliente pegadas a su sesión: las lesiones de un trainer (097). */
+  notasALaVista?: boolean;
   origen: string;
 }) {
   const t = useTextos();
@@ -172,6 +174,7 @@ export function PantallaAgenda({
         <InscribirAlumno
           empresaId={empresaId} moneda={moneda} zona={zona}
           dictado={dictadoProfe}
+          pedirSalud={notasALaVista}
           alCancelar={() => { setInscribiendo(false); setDictadoProfe(null); }}
           alListo={(m) => { setInscribiendo(false); setInscripto(m); router.refresh(); setTimeout(() => setInscripto(''), 5000); }}
         />
@@ -293,6 +296,17 @@ export function PantallaAgenda({
                     {r.telefono && (
                       <>{(!deAlumnos || r.materia) && ' · '}<a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
                     )}
+                  </p>
+                )}
+
+                {/* Las lesiones del cliente, antes de empezar (097). Entera: «sin
+                    saltos» cortado por la mitad es peor que no decirlo. */}
+                {notasALaVista && r.notas && (
+                  // El aviso en ámbar y la letra en el color de siempre: ámbar sobre
+                  // ámbar claro no llega al contraste mínimo en el modo claro.
+                  <p className="mt-1.5 flex gap-1.5 rounded-lg bg-ambar-claro px-2.5 py-1.5 text-[12.5px] font-medium leading-snug text-tinta/85">
+                    <span aria-hidden className="text-ambar">⚠</span>
+                    <span><span className="sr-only">{t.inscribir.salud}: </span>{r.notas}</span>
                   </p>
                 )}
 

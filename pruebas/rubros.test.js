@@ -237,7 +237,7 @@ const crear = async (db, uid, nombre, rubro) => {
   // acá, esto lo agarra.
   ok('la lista única los tiene a todos',
     (await db.query('select public.rubros_validos() a')).rows[0].a.sort(),
-    ['agricultura', 'clases', 'comercio', 'ganaderia', 'servicios']);
+    ['agricultura', 'clases', 'comercio', 'entrenamiento', 'ganaderia', 'servicios']);
   rechazado('y uno que no está en ella se rechaza',
     await H.intentar(db, profe.uid, () =>
       db.query('select public.cambiar_rubro($1,$2)', [profe.empresaId, 'astronauta'])),
@@ -284,6 +284,42 @@ const crear = async (db, uid, nombre, rubro) => {
   ok('pero el dueño lo puede volver a prender',
     (await link(barber.uid, barber.empresaId, 'barberia-centro', true)).ok, true);
   ok('y vuelve a atender', await publica('barberia-centro'), true);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('9 · El personal trainer (097)');
+  // ═══════════════════════════════════════════════════════════
+  // Es un rubro propio que usa el motor del profe: clientes con horario
+  // fijo, el mes cobrado por adelantado, sesiones dadas o no.
+  const trainer = await H.montarEmpresa(db, {
+    email: 'trainer@fuerza.com', nombre: 'Entrená con Lucas', rubro: 'entrenamiento',
+  });
+  ok('la empresa queda como trainer',
+    (await db.query('select rubro from public.empresas where id = $1', [trainer.empresaId])).rows[0].rubro,
+    'entrenamiento');
+  ok('su agenda es de a uno, como la del profe',
+    (await db.query("select public.rubro_de_alumnos('entrenamiento') b")).rows[0].b, true);
+  ok('y la barbería sigue siendo un local',
+    (await db.query("select public.rubro_de_alumnos('servicios') b")).rows[0].b, false);
+
+  const catsTrainer = (await db.query("select public.categorias_de_rubro('entrenamiento', 'emprendedor') j")).rows[0].j
+    .map((c) => c.nombre);
+  ok('gasta en lo suyo: el equipo', catsTrainer.includes('Equipamiento'), true);
+  ok('y el lugar donde entrena', catsTrainer.includes('Gimnasio y espacio'), true);
+  ok('no en lo del profe', catsTrainer.includes('Internet y plataformas'), false);
+  ok('ni en mercadería para revender', catsTrainer.includes('Mercadería'), false);
+
+  ok('no cierra caja a la noche',
+    (await db.query("select public.rubro_cierra_el_dia('entrenamiento', 'emprendedor') b")).rows[0].b, false);
+  rechazado('no tiene link de reservas',
+    await link(trainer.uid, trainer.empresaId, 'lucas-fuerza'), 'no tiene link');
+
+  // Un profe que también entrena y se pasa de rubro: nada se rompe.
+  const paseAlTrainer = await H.intentar(db, profe.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2)', [profe.empresaId, 'entrenamiento']));
+  ok('un profe se puede pasar a trainer', paseAlTrainer.ok, true);
+  const deVuelta = await H.intentar(db, profe.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2)', [profe.empresaId, 'clases']));
+  ok('y volver', deVuelta.ok, true);
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {

@@ -47,7 +47,7 @@ function haceTanto(t: Textos, iso: string | null): string {
  */
 export function PantallaClientes({
   empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, tienePaquetes, puedeEliminar,
-  deAlumnos = false, titulo,
+  deAlumnos = false, titulo, notasALaVista = false,
 }: {
   empresaId: string;
   moneda: string;
@@ -65,6 +65,8 @@ export function PantallaClientes({
   deAlumnos?: boolean;
   /** «Alumnos» para un profe; si no viene, «Clientes». */
   titulo?: string;
+  /** Las notas son de salud y van a la vista: el trainer (097). */
+  notasALaVista?: boolean;
   /** Dueño y administradores. Un vendedor carga clientes pero no los saca. */
   puedeEliminar: boolean;
 }) {
@@ -170,6 +172,7 @@ export function PantallaClientes({
                 tieneAgenda={tieneAgenda}
                 tienePaquetes={tienePaquetes}
                 deAlumnos={deAlumnos}
+                notasALaVista={notasALaVista}
                 moneda={moneda}
                 puedeEliminar={puedeEliminar}
                 abierto={abierto === c.id}
@@ -335,7 +338,7 @@ function FormularioCliente({
 }
 
 function FilaCliente({
-  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, moneda, puedeEliminar, abierto, onAbrir, onListo,
+  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista, moneda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
@@ -347,6 +350,7 @@ function FilaCliente({
   tieneAgenda: boolean;
   tienePaquetes: boolean;
   deAlumnos: boolean;
+  notasALaVista: boolean;
   moneda: string;
   puedeEliminar: boolean;
   abierto: boolean;
@@ -427,7 +431,16 @@ function FilaCliente({
             />
           ) : (
             <>
-              {c.notas && <p className="text-[13.5px] leading-relaxed text-tinta/70">{c.notas}</p>}
+              {/* Para un trainer las notas son lesiones (097): se leen como un
+                  aviso, con su nombre, y no como un comentario suelto. */}
+              {c.notas && (notasALaVista ? (
+                <div className="rounded-xl bg-ambar-claro px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/60"><span aria-hidden className="text-ambar">⚠ </span>{t.clientes.notas}</p>
+                  <p className="mt-0.5 text-[13.5px] font-medium leading-relaxed text-tinta/85">{c.notas}</p>
+                </div>
+              ) : (
+                <p className="text-[13.5px] leading-relaxed text-tinta/70">{c.notas}</p>
+              ))}
 
               {tieneAgenda && (
                 <div className="grid grid-cols-2 gap-2 text-[13px]">

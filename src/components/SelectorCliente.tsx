@@ -174,6 +174,8 @@ export function SelectorCliente({
  */
 export async function asegurarCliente(
   empresaId: string, c: ClienteElegido,
+  /** Las notas de alguien nuevo: al trainer, sus lesiones (097). No toca a uno que ya existe. */
+  notas = '',
 ): Promise<string | null> {
   if (c.id) return c.id;
   if (c.nombre.trim().length === 0) return null;
@@ -182,6 +184,7 @@ export async function asegurarCliente(
     p_empresa: empresaId,
     p_nombre: c.nombre.trim(),
     p_telefono: c.telefono.trim(),
+    ...(notas.trim() ? { p_notas: notas.trim() } : {}),
   });
   if (error) throw error;
   return (data as string) ?? null;

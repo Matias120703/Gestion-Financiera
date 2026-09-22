@@ -46,7 +46,7 @@ function finDePeriodo(desde: string, meses: number): string {
  * su propia cuenta, algún día diría «13 clases» y la base inscribiría 12.
  */
 export function InscribirAlumno({
-  empresaId, moneda, zona, clienteId, dictado = null, alCancelar, alListo,
+  empresaId, moneda, zona, clienteId, dictado = null, pedirSalud = false, alCancelar, alListo,
 }: {
   empresaId: string;
   moneda: string;
@@ -55,6 +55,13 @@ export function InscribirAlumno({
   clienteId?: string;
   /** Lo dictado en el micrófono (092): el alumno, la hora y el día, ya puestos. */
   dictado?: TurnoRespuesta | null;
+  /**
+   * Preguntar por la salud de alguien nuevo (097). Un trainer tiene que
+   * saber de una rodilla operada ANTES de la primera sesión, y el momento
+   * de preguntarlo es cuando lo agenda. A un cliente que ya existe no se le
+   * pregunta acá: lo suyo está en su ficha.
+   */
+  pedirSalud?: boolean;
   alCancelar: () => void;
   alListo: (mensaje: string) => void;
 }) {
@@ -79,6 +86,7 @@ export function InscribirAlumno({
   const [hasta, setHasta] = useState(finDePeriodo(diaDictado ?? hoy, 1));
   // Qué se le enseña (094). Texto libre, con las que ya usó como sugerencia.
   const [materia, setMateria] = useState('');
+  const [salud, setSalud] = useState('');
   const [sugeridas, setSugeridas] = useState<string[]>([]);
   const [modo, setModo] = useState<'hora' | 'cerrado'>('hora');
   const [precioHora, setPrecioHora] = useState(() => {
@@ -147,7 +155,7 @@ export function InscribirAlumno({
     setOcupado(true);
     setError('');
     try {
-      const cliente = clienteId ?? await asegurarCliente(empresaId, alumno);
+      const cliente = clienteId ?? await asegurarCliente(empresaId, alumno, pedirSalud ? salud : '');
       if (!cliente) throw new Error(i.faltaAlumno);
       const { error: e } = await clienteNavegador().rpc('inscribir_alumno', {
         p_empresa: empresaId, p_cliente: cliente, p_dias: dias,
@@ -185,6 +193,15 @@ export function InscribirAlumno({
           etiqueta={i.alumno} placeholder={i.alumnoEjemplo} pedirTelefono obligatorio
           ayudaTelefono={i.telefonoAyuda}
         />
+      )}
+
+      {/* Solo para alguien nuevo: el que ya existe tiene lo suyo en su ficha. */}
+      {pedirSalud && !clienteId && !alumno.id && (
+        <label className="block">
+          <span className="etiqueta">{i.salud} <span className="font-normal text-tinta/40">{t.clientes.opcional}</span></span>
+          <textarea className="campo mt-1 min-h-[64px] resize-y" maxLength={1000} rows={2} placeholder={i.saludEjemplo}
+            value={salud} onChange={(e) => setSalud(e.target.value)} />
+        </label>
       )}
 
       {/* Qué se le enseña: lo que el profe tiene que saber al mirar la agenda. */}

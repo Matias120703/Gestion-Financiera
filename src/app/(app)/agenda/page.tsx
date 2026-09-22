@@ -72,6 +72,7 @@ export default async function PaginaAgenda({
       zona={ctx.zonaHoraria}
       origen={origen}
       deAlumnos={ficha.agendaDeAlumnos}
+      notasALaVista={ficha.notasALaVista}
     />
   );
 }

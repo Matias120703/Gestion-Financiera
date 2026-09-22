@@ -48,6 +48,7 @@ export default async function PaginaClientes() {
       tienePaquetes={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).paquetes}
       // Un profe inscribe alumnos y cobra períodos, no fía (091).
       deAlumnos={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos}
+      notasALaVista={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).notasALaVista}
       titulo={palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'clientes',
         (await textos()).clientes.titulo, await idiomaActual())}
     />

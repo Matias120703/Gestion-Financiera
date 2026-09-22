@@ -22,9 +22,16 @@ export type { Textos };
 export const DICCIONARIOS: Record<Idioma, Textos> = { es, pt };
 
 export function diccionario(idioma: Idioma | string | null | undefined): Textos {
-  // Con un idioma único manda ese, aunque en las preferencias de alguien
-  // haya quedado guardado 'en' de cuando se podía elegir. Si no, los avisos
-  // de la noche le llegarían en inglés a quien ve la app en español.
-  if (IDIOMA_UNICO) return DICCIONARIOS[IDIOMA_UNICO];
-  return DICCIONARIOS[esIdioma(idioma) ? idioma : IDIOMA_POR_DEFECTO];
+  return DICCIONARIOS[idiomaEfectivo(idioma)];
+}
+
+/**
+ * El idioma que de verdad se usa. Con un idioma único manda ese, aunque en
+ * las preferencias de alguien haya quedado guardado 'en' de cuando se podía
+ * elegir. Si no, los avisos de la noche le llegarían en inglés a quien ve la
+ * app en español.
+ */
+export function idiomaEfectivo(idioma: Idioma | string | null | undefined): Idioma {
+  if (IDIOMA_UNICO) return IDIOMA_UNICO;
+  return esIdioma(idioma) ? idioma : IDIOMA_POR_DEFECTO;
 }

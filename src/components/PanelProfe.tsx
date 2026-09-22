@@ -18,7 +18,7 @@ import type { FilaCategoria } from '@/lib/calculos';
  * alumnos tengo activos?, ¿en qué se me fue la plata? Eso, y nada más.
  */
 export function PanelProfe({
-  datos, categorias, moneda, locale, t, rangoTexto,
+  datos, categorias, moneda, locale, t, rangoTexto, notasALaVista = false,
 }: {
   datos: Datos;
   categorias: FilaCategoria[];
@@ -26,6 +26,8 @@ export function PanelProfe({
   locale: string;
   t: Textos;
   rangoTexto: string;
+  /** Las lesiones de cada cliente en sus sesiones de hoy: el trainer (097). */
+  notasALaVista?: boolean;
 }) {
   const p = t.panel;
   const plata = (n: number) => dinero(n, moneda, true, locale);
@@ -52,6 +54,12 @@ export function PanelProfe({
                   <span className="min-w-0">
                     <span className="block truncate text-[14.5px] font-semibold">{c.alumno}</span>
                     {c.materia && <span className="block truncate text-[12.5px] text-tinta/50">{c.materia}</span>}
+                    {/* Hasta dos renglones: el resumen del día. Entera, en la agenda. */}
+                    {notasALaVista && c.notas && (
+                      <span className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-snug text-tinta/75">
+                        <span aria-hidden className="text-ambar">⚠ </span><span className="sr-only">{t.inscribir.salud}: </span>{c.notas}
+                      </span>
+                    )}
                   </span>
                 </span>
                 {c.estado === 'atendida' && (

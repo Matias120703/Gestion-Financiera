@@ -489,10 +489,10 @@ ok('salvo que sea una cuenta personal',
 // almacén, «vender un paquete de clases» en la ficha del cliente sería ruido
 // que confunde. Si algún día otro rubro los necesita, esta lista cambia a
 // propósito y no por un interruptor olvidado.
-ok('los paquetes están solo en clases y cursos',
-  ['comercio', 'servicios', 'clases', 'ganaderia', 'agricultura']
+ok('los paquetes están solo en clases y en el trainer',
+  ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').paquetes),
-  ['clases']);
+  ['clases', 'entrenamiento']);
 ok('y nunca en una cuenta personal',
   fichaDe('clases', 'personal').paquetes, false);
 
@@ -520,10 +520,49 @@ ok('la barbería lo conserva',
   ok('la barbería conserva todo lo suyo',
     [b['/productos'], b['/vender'], b['/cierre']], [true, true, true]);
 }
-ok('la agenda de alumnos es solo de clases',
-  ['comercio', 'servicios', 'clases', 'ganaderia', 'agricultura']
+ok('la agenda de a uno es solo del profe y del trainer',
+  ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').agendaDeAlumnos),
-  ['clases']);
+  ['clases', 'entrenamiento']);
+
+// --- El personal trainer (097) ---
+//
+// Usa el motor del profe tal cual, con sus palabras. Lo que se comprueba:
+// que tenga exactamente las mismas pantallas que el profe, que hable como
+// un trainer, y que sea el único con las lesiones a la vista.
+ok('el trainer no se ofrece hasta que Matías lo pruebe',
+  LISTA_RUBROS.some((r) => r.clave === 'entrenamiento'), false);
+ok('tiene las mismas pantallas que el profe',
+  JSON.stringify(fichaDe('entrenamiento', 'emprendedor').secciones), JSON.stringify(fichaDe('clases', 'emprendedor').secciones));
+ok('a los suyos les dice clientes, no alumnos',
+  palabra('entrenamiento', 'emprendedor', 'clientes', 'Clientes', 'es'), 'Clientes');
+ok('y a lo que entra, cobrado',
+  palabra('entrenamiento', 'emprendedor', 'ventas', 'Ventas', 'es'), 'Cobrado');
+ok('no cierra el día', fichaDe('entrenamiento', 'emprendedor').cierraElDia, false);
+ok('se llama igual en portugués',
+  rubroVisible(fichaDe('entrenamiento', 'emprendedor'), 'pt').nombre, 'Personal trainer');
+ok('solo el trainer habla con su propia jerga',
+  ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
+    .filter((r) => fichaDe(r, 'emprendedor').jerga !== null),
+  ['entrenamiento']);
+ok('y solo el trainer tiene las notas pegadas a cada sesión',
+  ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
+    .filter((r) => fichaDe(r, 'emprendedor').notasALaVista),
+  ['entrenamiento']);
+ok('una cuenta personal no tiene jerga', fichaDe('entrenamiento', 'personal').jerga, null);
+{
+  // Las palabras llegan solas a cada pantalla: si alguien saca la fusión
+  // del hook o el proveedor del layout, el trainer vuelve a leer «clase».
+  const leer = (r) => require('fs').readFileSync(r, 'utf8');
+  const cli = leer('src/i18n/cliente.tsx');
+  ok('los textos del navegador traen la jerga', /useTextos[\s\S]*conJerga\(/.test(cli), true);
+  ok('el layout la reparte a todas las pantallas', leer('src/app/(app)/layout.tsx').includes('<ProveedorJerga jerga='), true);
+  ok('y el panel, que se arma en el servidor, también', leer('src/app/(app)/panel/page.tsx').includes('conJerga(await textos()'), true);
+  const jer = leer('src/i18n/textos/entrenamiento.ts');
+  ok('el trainer da sesiones, no clases', jer.includes("claseDada: 'Sesión dada'") && jer.includes("claseDada: 'Sessão dada'"), true);
+  ok('y sus notas son de salud', jer.includes("notas: 'Salud y lesiones'"), true);
+  ok('agendar pide la salud de alguien nuevo', leer('src/components/PantallaAgenda.tsx').includes('pedirSalud={notasALaVista}'), true);
+}
 ok('pero una cuenta que ya la tenga sigue teniendo sus lotes',
   fichaDe('agricultura', 'emprendedor').secciones['/lotes'], true);
 ok('y sus palabras',

@@ -1,6 +1,15 @@
 import type { Rubro, TipoCuenta } from './tipos';
 
 /**
+ * Las palabras de un oficio que usa el motor de otro (097).
+ *
+ * El trainer usa las pantallas del profe tal cual, pero no dice «alumno»
+ * ni «clase»: dice «cliente» y «sesión». En vez de copiar las pantallas, el
+ * diccionario se pisa con las palabras del oficio (ver i18n/jergas.ts).
+ */
+export type Jerga = 'entrenamiento';
+
+/**
  * QUÉ CAMBIA SEGÚN EL RUBRO.
  *
  * Un motor, varias puertas. El 90% de Orden —entró, salió, me queda, debo
@@ -92,8 +101,8 @@ export interface FichaRubro {
    *
    * Es un campo y no un «if rubro === 'clases'» suelto en la pantalla
    * por lo mismo que `secciones`: así el compilador obliga a contestar la
-   * pregunta en cada rubro, y el día que el personal trainer venda
-   * paquetes de entrenamientos se prende con una palabra.
+   * pregunta en cada rubro. El personal trainer lo prendió con una
+   * palabra (097).
    */
   paquetes: boolean;
   /**
@@ -108,6 +117,20 @@ export interface FichaRubro {
    * que da las clases es el dueño—. Espejo de `rubro_de_alumnos()`.
    */
   agendaDeAlumnos: boolean;
+  /**
+   * Con qué palabras se habla, si no son las del diccionario (097). Null
+   * es el diccionario tal cual; el del profe ES el diccionario.
+   */
+  jerga: Jerga | null;
+  /**
+   * SI LAS NOTAS DE CADA CLIENTE VAN PEGADAS A CADA SESIÓN (097).
+   *
+   * Para un trainer, las notas de un cliente son sus lesiones: «rodilla
+   * operada, sin saltos». Tiene que leerlas antes de empezar, no ir a
+   * buscarlas a la ficha. Se ven en la agenda, en las sesiones de hoy del
+   * panel, y se piden al agendar a alguien nuevo.
+   */
+  notasALaVista: boolean;
 }
 
 /**
@@ -156,6 +179,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     cierraElDia: true,
     paquetes: false,
     agendaDeAlumnos: false,
+    jerga: null,
+    notasALaVista: false,
   },
 
   servicios: {
@@ -186,6 +211,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     cierraElDia: true,
     paquetes: false,
     agendaDeAlumnos: false,
+    jerga: null,
+    notasALaVista: false,
   },
 
   ganaderia: {
@@ -213,6 +240,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     cierraElDia: false,
     paquetes: false,
     agendaDeAlumnos: false,
+    jerga: null,
+    notasALaVista: false,
   },
 
   agricultura: {
@@ -238,6 +267,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     cierraElDia: false,
     paquetes: false,
     agendaDeAlumnos: false,
+    jerga: null,
+    notasALaVista: false,
   },
 
   /**
@@ -296,6 +327,51 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     cierraElDia: false,
     paquetes: true,
     agendaDeAlumnos: true,
+    jerga: null,
+    notasALaVista: false,
+  },
+
+  /**
+   * EL PERSONAL TRAINER (097).
+   *
+   * Matías: «ponete en el lugar de un personal trainer». Su día es el del
+   * profe con otra ropa: clientes que vuelven todas las semanas con un
+   * horario fijo, el mes cobrado por adelantado, y cada sesión que se
+   * marca como dada o no. Así que usa el mismo motor —las mismas
+   * pantallas, las mismas funciones de la base— con sus palabras.
+   *
+   * Lo que decidió Matías para arrancar: uno a uno (sin dúos ni grupos),
+   * la rutina como una nota simple por cliente, y las faltas como el
+   * profe (se decide en cada una si se descuenta). Lo único suyo de
+   * verdad: las lesiones de cada cliente, a la vista en cada sesión.
+   */
+  entrenamiento: {
+    clave: 'entrenamiento',
+    nombre: 'Personal trainer',
+    ejemplo: 'Entrenamiento personalizado: en el gimnasio, a domicilio, al aire libre u online',
+    // Lo mismo que el profe, y por lo mismo: no compra ni vende nada, no
+    // cuenta caja a la noche, y lo que le deben son planes sin cobrar.
+    secciones: {
+      ...NUCLEO,
+      '/agenda': true,
+      '/productos': false,
+      '/vender': false,
+      '/cierre': false,
+      '/fiado': false,
+    },
+    // «Clientes», que es como dice un trainer; lo cobrado, como el profe.
+    palabras: { ventas: 'Cobrado' },
+    pt: {
+      nombre: 'Personal trainer',
+      ejemplo: 'Treino personalizado: na academia, em domicílio, ao ar livre ou online',
+      palabras: { ventas: 'Recebido' },
+    },
+    ciclosLargos: false,
+    cierraElDia: false,
+    paquetes: true,
+    agendaDeAlumnos: true,
+    jerga: 'entrenamiento',
+    notasALaVista: true,
   },
 };
 
@@ -328,6 +404,9 @@ export const LISTA_RUBROS: FichaRubro[] = [
 // no esté completo, alguien que se registrara hoy caería en un rubro a
 // medio armar. Vuelve a esta lista cuando el flujo esté entero, igual que
 // agricultura: la ficha sigue, la base lo acepta, solo no se ofrece.
+//
+// EL PERSONAL TRAINER TAMPOCO, HASTA QUE MATÍAS LO PRUEBE (097). Mismo
+// motivo: se ofrece cuando alguien lo haya usado de verdad.
 
 /**
  * LA CUENTA PERSONAL NO ES UN RUBRO, PERO ES UNA PUERTA.
@@ -370,6 +449,8 @@ export const PERSONAL: FichaRubro = {
   cierraElDia: false,
   paquetes: false,
   agendaDeAlumnos: false,
+  jerga: null,
+  notasALaVista: false,
 };
 
 /**
