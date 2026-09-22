@@ -6,14 +6,13 @@ import { mensajeDeError } from '@/lib/errores';
 import { decimalesDe, dinero, fechaLegible } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useLocale, useTextos } from '@/i18n/cliente';
-import { metodoVisible } from '@/i18n/nombres';
 import { CampoMonto } from '@/components/CampoMonto';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
+import { FormaDeCobro, cuentaDelCobro, useCuentasParaElegir } from '@/components/FormaDeCobro';
 import type { TurnoRespuesta } from '@/lib/turno-voz';
 
 /** Lunes primero, como se piensa una semana de clases. 0 es domingo (PostgreSQL). */
 const SEMANA = [1, 2, 3, 4, 5, 6, 0] as const;
-const METODOS = ['efectivo', 'transferencia', 'tarjeta'] as const;
 /** El último precio por hora que usó este profe, para no tipearlo cada vez. */
 const CLAVE_PRECIO = 'orden.precioHora';
 
@@ -88,6 +87,9 @@ export function InscribirAlumno({
   const [total, setTotal] = useState(0);
   const [pagado, setPagado] = useState<boolean | null>(null);
   const [metodo, setMetodo] = useState<string>('transferencia');
+  // En qué cuenta entró, si tiene más de una donde pueda caer (095).
+  const cuentas = useCuentasParaElegir(empresaId);
+  const [cuenta, setCuenta] = useState<string | null>(null);
   const [previa, setPrevia] = useState<Previa | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
@@ -154,6 +156,7 @@ export function InscribirAlumno({
         p_total: modo === 'cerrado' ? total : null,
         p_pagado: pagado === true, p_metodo: metodo, p_nombre: nombreDeInscripcion(),
         p_materia: materia.trim() || null,
+        p_cuenta: pagado === true ? cuentaDelCobro(cuentas, metodo, cuenta) : null,
       });
       if (e) throw e;
       try { if (modo === 'hora' && precioHora > 0) localStorage.setItem(CLAVE_PRECIO, String(precioHora)); } catch { /* sin almacenamiento, se vuelve a escribir */ }
@@ -290,13 +293,13 @@ export function InscribirAlumno({
           </button>
         </div>
         {pagado === true && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {METODOS.map((m) => (
-              <button key={m} type="button" onClick={() => setMetodo(m)}
-                className={metodo === m ? 'chip-encendido' : 'chip-apagado'}>
-                {metodoVisible(t, m)}
-              </button>
-            ))}
+          <div className="mt-2">
+            <FormaDeCobro
+              cuentas={cuentas} metodo={metodo} elegida={cuenta}
+              // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+              alElegirMetodo={(m) => { setMetodo(m); setCuenta(null); }}
+              alElegirCuenta={setCuenta}
+            />
           </div>
         )}
         {pagado === false && <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{i.quedaPorCobrar}</p>}

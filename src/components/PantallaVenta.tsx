@@ -15,6 +15,9 @@ import type { Producto } from '@/lib/tipos';
 import { Vacio } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
 import { mensajeDeError } from '@/lib/errores';
+import { ElegirCuenta, cuentaDelCobro, cuentasDelMetodo, useCuentasParaElegir } from '@/components/FormaDeCobro';
+import { tonoDeCuenta } from '@/lib/colores-cuenta';
+import type { CuentaParaElegir } from '@/lib/tipos';
 
 /**
  * PANTALLA DE VENTA
@@ -87,6 +90,18 @@ export function PantallaVenta({
   const [carrito, setCarrito] = useState<LineaCarrito[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [metodo, setMetodo] = useState('efectivo');
+  /**
+   * A qué cuenta entró (096). Con dos bancos, «transferencia» no dice a
+   * cuál: se elige, y arranca en el de siempre. Null = el de esa forma de
+   * pago. Queda elegida para la venta siguiente: el que cobra tres
+   * transferencias seguidas al Continental no tiene que tocarlo tres veces.
+   */
+  const [cuentaElegida, setCuentaElegida] = useState<string | null>(null);
+  const cuentas = useCuentasParaElegir(empresaId);
+  const cuentasPosibles = cuentasDelMetodo(cuentas, metodo);
+  const cuentaMarcada = cuentaDelCobro(cuentas, metodo, cuentaElegida);
+  // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+  function elegirMetodo(m: string) { setMetodo(m); setCuentaElegida(null); }
   /**
    * A quién se le vende (052-055).
    *
@@ -241,6 +256,7 @@ export function PantallaVenta({
         p_notas: '',
         p_origen: 'manual',
         p_descuento: descuentoAplicado,
+        p_cuenta: cuentaMarcada,
       });
       if (error) throw error;
 
@@ -377,7 +393,8 @@ export function PantallaVenta({
             empresaId={empresaId} elegido={elegido} setElegido={setElegido}
             guardando={guardando} error={error}
             onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
-            setDescuento={setDescuento} setMetodo={setMetodo} setFecha={setFecha}
+            setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
+            cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
           />
         </div>
       </aside>
@@ -390,7 +407,7 @@ export function PantallaVenta({
             <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pb-1 pt-3">
               {METODOS.map((m) => (
                 <button
-                  key={m.valor} type="button" onClick={() => setMetodo(m.valor)}
+                  key={m.valor} type="button" onClick={() => elegirMetodo(m.valor)}
                   className={`inline-flex min-h-[40px] shrink-0 items-center rounded-xl px-3.5 text-[13.5px] font-bold transition active:scale-[.97] ${
                     metodo === m.valor ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
                   }`}
@@ -399,6 +416,25 @@ export function PantallaVenta({
                 </button>
               ))}
             </div>
+
+            {/* A qué banco entró (096): a la vista, como la forma de pago,
+                porque cobrar sigue siendo un toque y no hay otro momento
+                para decirlo. Solo si hay más de una cuenta posible. */}
+            {cuentasPosibles.length > 1 && (
+              <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pt-2" role="group" aria-label={t.cobro.enQueCuenta}>
+                {cuentasPosibles.map((c) => (
+                  <button
+                    key={c.id} type="button" onClick={() => setCuentaElegida(c.id)} aria-pressed={cuentaMarcada === c.id}
+                    className={`inline-flex min-h-[36px] max-w-[60vw] shrink-0 items-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold transition active:scale-[.97] ${
+                      cuentaMarcada === c.id ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
+                    }`}
+                  >
+                    <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/60" style={{ backgroundColor: tonoDeCuenta(c) }} />
+                    <span className="truncate">{c.nombre}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="flex items-stretch gap-2 p-3">
               {/* Zona de detalle, separada del botón para no cobrar sin querer. */}
@@ -440,7 +476,8 @@ export function PantallaVenta({
             empresaId={empresaId} elegido={elegido} setElegido={setElegido}
               guardando={guardando} error={error} sinMarco
               onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
-              setDescuento={setDescuento} setMetodo={setMetodo} setFecha={setFecha}
+              setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
+              cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
             />
           </div>
         </div>
@@ -469,6 +506,9 @@ function Carrito(props: {
   setMetodo: (s: string) => void;
   setFecha: (s: string) => void;
   setElegido: (c: ClienteElegido) => void;
+  cuentas: CuentaParaElegir[];
+  cuentaElegida: string | null;
+  setCuentaElegida: (c: string) => void;
 }) {
   const t = useTextos();
   const METODOS = metodosDe(t);
@@ -476,7 +516,7 @@ function Carrito(props: {
     carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha,
     empresaId, elegido, setElegido,
     guardando, error, sinMarco, onCambiar, onQuitar, onLimpiar, onCobrar,
-    setDescuento, setMetodo, setFecha,
+    setDescuento, setMetodo, setFecha, cuentas, cuentaElegida, setCuentaElegida,
   } = props;
 
   const [masOpciones, setMasOpciones] = useState(false);
@@ -568,6 +608,8 @@ function Carrito(props: {
                 ))}
               </div>
             </div>
+
+            <ElegirCuenta cuentas={cuentas} metodo={metodo} elegida={cuentaElegida} alElegir={setCuentaElegida} />
 
             <label className="block">
               <span className="etiqueta">{t.venta.descuento}</span>

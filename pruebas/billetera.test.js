@@ -332,6 +332,49 @@ function aceptado(nombre, res) {
   ).then(() => ({ ok: true }), (e) => ({ ok: false, error: String(e.message || e) }));
   rechazado('la columna no acepta cualquier cosa', forzado, 'color');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('12 · Al cobrar, a qué banco entró (096)');
+  // ═══════════════════════════════════════════════════════════
+  // Matías: «al cobrar, si selecciono transferencia, me debería aparecer
+  // la opción de a cuál banco se me va a acreditar». Un almacén con dos
+  // bancos: las transferencias caen solas en el Atlas.
+  const Al = await H.montarEmpresa(db, { email: 'dueno@almacen.com', nombre: 'Almacén Don Luis' });
+  const cajero = await H.sumarMiembro(db, Al.empresaId, 'cajero@almacen.com', 'vendedor');
+  const nueva = async (nombre, tipo, metodos, uid = Al.uid, empresa = Al.empresaId) => (await valor(uid,
+    'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id', [empresa, nombre, tipo, 0, metodos])).id;
+  const cajaAl = await nueva('Efectivo', 'efectivo', ['efectivo']);
+  const atlas = await nueva('Atlas', 'banco', ['transferencia']);
+  const conti2 = await nueva('Continental', 'banco', []);
+  const ajena = await nueva('Banco de otro', 'banco', [], B.uid, B.empresaId);
+  const saldoAl = async (id) => Number((await billetera(Al.uid, Al.empresaId)).cuentas.find((c) => c.id === id)?.saldo);
+  const vender = (uid, metodo, cuentaId, extra = {}) => como(uid,
+    'select public.registrar_venta(p_empresa => $1, p_items => $2, p_metodo_pago => $3, p_cuenta => $4, p_cliente => $5) id',
+    [Al.empresaId, JSON.stringify([{ nombre: 'Yerba', cantidad: 1, precio_unitario: 25000 }]), metodo, cuentaId, extra.cliente ?? null]);
+  const cuentaDelMov = async (id) => (await db.query('select cuenta_id from public.movimientos where id = $1', [id])).rows[0].cuenta_id;
+
+  const alConti = await vender(Al.uid, 'transferencia', conti2);
+  aceptado('se cobra una transferencia diciendo el banco', alConti);
+  ok('entra al Continental, donde llegó la plata', await cuentaDelMov(alConti.valor.rows[0].id), conti2);
+  ok('el Continental la suma y el Atlas no', [await saldoAl(conti2), await saldoAl(atlas)], [25000, 0]);
+
+  const comoSiempre = await vender(Al.uid, 'transferencia', null);
+  ok('sin decir el banco, va al de las transferencias',
+    await cuentaDelMov(comoSiempre.valor.rows[0].id), atlas);
+  ok('y una venta de siempre, sin el parámetro nuevo, sigue igual', (await valor(Al.uid,
+    'select public.registrar_venta($1, $2) id',
+    [Al.empresaId, JSON.stringify([{ nombre: 'Pan', cantidad: 2, precio_unitario: 1000 }])])).id !== null, true);
+  ok('en efectivo, a la caja', await saldoAl(cajaAl), 2000);
+
+  rechazado('no entra en la cuenta de otra empresa', await vender(Al.uid, 'transferencia', ajena), 'no existe');
+  rechazado('un cajero no elige dónde queda la plata del dueño', await vender(cajero, 'transferencia', conti2), 'dueño');
+  aceptado('pero vende igual, sin elegir', await vender(cajero, 'transferencia', null));
+
+  const vecino = (await valor(Al.uid, 'select public.guardar_cliente($1,$2,$3,$4,$5) id',
+    [Al.empresaId, 'Vecino Ramírez', '0981000000', '', null])).id;
+  rechazado('lo fiado no entra en ningún banco', await vender(Al.uid, 'credito', conti2, { cliente: vecino }), 'fiado');
+  ok('y nada de eso dejó ventas a medias', (await db.query(
+    "select count(*)::int n from public.movimientos where empresa_id = $1 and tipo = 'venta'", [Al.empresaId])).rows[0].n, 4);
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE LA BILLETERA FALLARON`);

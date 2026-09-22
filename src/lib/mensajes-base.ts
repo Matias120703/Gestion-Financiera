@@ -151,6 +151,9 @@ export const MENSAJES_PT: Record<string, string> = {
     'Uma conta de aulas não tem link de reservas: os horários de cada aluno quem monta é você.',
   'Solo el dueño de la cuenta puede elegir en qué cuenta entra.':
     'Só o dono da conta pode escolher em que conta entra.',
+  // Una venta fiada con cuenta elegida (096).
+  'Lo fiado no entra en ninguna cuenta hasta que te lo paguen.':
+    'O fiado não entra em nenhuma conta até te pagarem.',
   'Solo el dueño de la cuenta puede sacar plata de la billetera.':
     'Só o dono da conta pode tirar dinheiro da carteira.',
   'Solo el propietario o un administrador puede deshacer un pago.':

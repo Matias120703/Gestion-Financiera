@@ -15,7 +15,8 @@
  *     del servidor;
  *   · que un horario ya ocupado frene TODA la inscripción, no la mitad;
  *   · que se gane al cobrar: sin pagar no hay venta, y aparece por cobrar;
- *   · y que cerrar una inscripción libere el horario.
+ *   · que cerrar una inscripción libere el horario;
+ *   · y que el cobro entre al banco donde llegó la plata (095).
  */
 const H = require('./ayuda-db.js');
 
@@ -312,6 +313,82 @@ const LMJ = [1, 2, 4];
     (await valor(P.uid, 'select public.materias_usadas($1) j', [P.empresaId])).j.includes(''), false);
   rechazado('otra academia no ve las materias de acá',
     await como(Otro.uid, 'select public.materias_usadas($1)', [P.empresaId]), 'pertenecés');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('10 · El cobro dice a qué banco entró (095)');
+  // ═══════════════════════════════════════════════════════════
+  // Matías: «si se me transfirió en mi Continental y en Orden se me carga
+  // en el Atlas, no tiene sentido». Tres cuentas, como en su billetera: las
+  // transferencias caen por defecto en el Atlas; el Continental no reclama
+  // ninguna forma de pago.
+  const cuenta = async (nombre, tipo, metodos) => (await valor(P.uid,
+    'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id', [P.empresaId, nombre, tipo, 0, metodos])).id;
+  const enMano = await cuenta('Efectivo', 'efectivo', ['efectivo']);
+  const atlas = await cuenta('Atlas', 'banco', ['transferencia', 'tarjeta']);
+  const continental = await cuenta('Continental', 'banco', []);
+  const deOtro = (await valor(Otro.uid,
+    'select public.guardar_cuenta_dinero($1,$2,$3,$4,$5) id', [Otro.empresaId, 'Banco de otro', 'banco', 0, []])).id;
+  const saldo = async (id) => Number((await valor(P.uid, 'select public.billetera($1) j', [P.empresaId])).j
+    .cuentas.find((c) => c.id === id).saldo);
+  const cuentaDe = async (mov) => (await db.query(
+    'select cuenta_id from public.movimientos where id = $1', [mov])).rows[0].cuenta_id;
+
+  // Una inscripción sin pagar, de Gs. 200.000 cerrado, para cobrar después.
+  // Los miércoles de mayo de 2027, cada uno a su hora: no se pisan.
+  const sinPagar = async (nombre, tel, desde, hasta) => {
+    const id = await alumno(nombre, tel);
+    const r = await inscribir(P.uid, P.empresaId, id,
+      [[3], desde, hasta, '2027-05-01', '2027-05-31', null, 200000, false, 'efectivo', null]);
+    if (!r.ok) throw new Error(r.error);
+    return r.valor.rows[0].j.paquete;
+  };
+  const cobrar = (uid, paquete, metodo, cuentaId) => como(uid,
+    'select public.cobrar_inscripcion($1,$2,null,$3) j', [paquete, metodo, cuentaId]);
+
+  const pqHugo = await sinPagar('Hugo Vera', '0989000001', '06:00', '07:00');
+  const atlasAntes = await saldo(atlas);
+  const alContinental = await cobrar(P.uid, pqHugo, 'transferencia', continental);
+  ok('se cobra una transferencia diciendo el banco', alContinental.ok, true);
+  const movHugo = alContinental.valor.rows[0].j.movimiento;
+  ok('entra al Continental, que es donde llegó', await cuentaDe(movHugo), continental);
+  ok('y el Continental la suma', await saldo(continental), 200000);
+  ok('el Atlas no se entera', await saldo(atlas), atlasAntes);
+  ok('sigue siendo una transferencia', (await db.query(
+    'select metodo_pago from public.movimientos where id = $1', [movHugo])).rows[0].metodo_pago, 'transferencia');
+
+  const pqIris = await sinPagar('Iris Mereles', '0989000002', '07:00', '08:00');
+  const sinDecir = await cobrar(P.uid, pqIris, 'transferencia', null);
+  ok('si no se dice el banco, va al de las transferencias, como siempre',
+    await cuentaDe(sinDecir.valor.rows[0].j.movimiento), atlas);
+
+  const pqJuan = await sinPagar('Juan Duarte', '0989000003', '08:00', '09:00');
+  rechazado('no entra en la cuenta de otra empresa', await cobrar(P.uid, pqJuan, 'transferencia', deOtro), 'no existe');
+  ok('y ese rechazo no deja nada cobrado a medias', (await db.query(
+    'select movimiento_id from public.paquetes where id = $1', [pqJuan])).rows[0].movimiento_id, null);
+
+  // Un ayudante cobra, pero no decide dónde queda la plata del dueño.
+  const ayudante = await H.sumarMiembro(db, P.empresaId, 'ayudante@ingles.com', 'vendedor');
+  rechazado('un vendedor no elige la cuenta', await cobrar(ayudante, pqJuan, 'transferencia', continental), 'dueño');
+  const delAyudante = await cobrar(ayudante, pqJuan, 'efectivo', null);
+  ok('pero cobra igual, y va a la cuenta de esa forma de pago',
+    await cuentaDe(delAyudante.valor.rows[0].j.movimiento), enMano);
+
+  // Al inscribir, pagado en el momento, también se elige el banco.
+  const kevin = await alumno('Kevin Ortiz', '0989000004');
+  const conCuenta = (args) => como(P.uid,
+    'select public.inscribir_alumno($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) j', [P.empresaId, kevin, ...args]);
+  const pagadoAlInscribir = await conCuenta(
+    [[3], '09:00', '10:00', '2027-05-01', '2027-05-31', null, 150000, true, 'transferencia', null, 'Guitarra', continental]);
+  ok('inscribir pagado en el Continental', pagadoAlInscribir.ok, true);
+  ok('lo deja en el Continental', await cuentaDe(pagadoAlInscribir.valor.rows[0].j.movimiento), continental);
+  ok('que ya suma los dos cobros', await saldo(continental), 350000);
+
+  rechazado('ni al inscribir se cobra en la cuenta de otro',
+    await conCuenta([[3], '11:00', '12:00', '2027-05-01', '2027-05-31', null, 150000, true, 'transferencia', null, null, deOtro]),
+    'no existe');
+  // Los miércoles de mayo de 2027 son cuatro: solo los de la primera.
+  ok('y esa inscripción rechazada no dejó clases en la agenda', (await db.query(
+    'select count(*)::int n from public.turnos_reserva where cliente_id = $1', [kevin])).rows[0].n, 4);
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {

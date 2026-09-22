@@ -10,6 +10,7 @@ import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import { CampoMonto } from '@/components/CampoMonto';
 import { InscribirAlumno } from '@/components/InscribirAlumno';
+import { FormaDeCobro, cuentaDelCobro, useCuentasParaElegir } from '@/components/FormaDeCobro';
 import type { PaqueteAlumno, PorCobrarAlumnos as DatosPorCobrar } from '@/lib/tipos';
 
 /** Las formas de pago de un paquete. `credito` es el fiado (055). */
@@ -50,8 +51,13 @@ export function PaquetesAlumno({
 
   const [lista, setLista] = useState<PaqueteAlumno[] | null>(null);
   const [vendiendo, setVendiendo] = useState(false);
-  // La inscripción que se está por cobrar, para elegir cómo pagó.
+  // La inscripción que se está por cobrar, para elegir cómo pagó y a qué
+  // cuenta entró (095). Arranca en transferencia: así paga casi todo alumno
+  // de clases online.
   const [cobrando, setCobrando] = useState<string | null>(null);
+  const [metodoCobro, setMetodoCobro] = useState('transferencia');
+  const [cuentaCobro, setCuentaCobro] = useState<string | null>(null);
+  const cuentas = useCuentasParaElegir(empresaId, esAdmin);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
 
@@ -174,24 +180,34 @@ export function PaquetesAlumno({
                   pq.pagado ? (
                     <p className="mt-1.5 text-[12px] font-semibold text-verde-fuerte">✓ {t.inscribir.pagado}</p>
                   ) : cobrando === pq.id ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {(['efectivo', 'transferencia', 'tarjeta'] as const).map((m) => (
-                        <button key={m} type="button" disabled={ocupado}
+                    // Antes, tocar la forma de pago ya cobraba. Ahora, con la
+                    // cuenta en el medio, se elige y se confirma: un toque de
+                    // más, y ningún cobro en el banco equivocado.
+                    <div className="mt-2 space-y-3 rounded-xl bg-arena/60 p-3">
+                      <FormaDeCobro
+                        conPregunta cuentas={cuentas} metodo={metodoCobro} elegida={cuentaCobro} deshabilitado={ocupado}
+                        alElegirMetodo={(m) => { setMetodoCobro(m); setCuentaCobro(null); }}
+                        alElegirCuenta={setCuentaCobro}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" disabled={ocupado} className="boton-principal px-4 py-2.5 text-[13.5px]"
                           onClick={async () => {
-                            if (await correr(() => sb().rpc('cobrar_inscripcion', { p_paquete: pq.id, p_metodo: m }))) setCobrando(null);
-                          }}
-                          className="chip-apagado disabled:opacity-50">
-                          {metodoVisible(t, m)}
+                            if (await correr(() => sb().rpc('cobrar_inscripcion', {
+                              p_paquete: pq.id, p_metodo: metodoCobro,
+                              p_cuenta: cuentaDelCobro(cuentas, metodoCobro, cuentaCobro),
+                            }))) setCobrando(null);
+                          }}>
+                          {ocupado ? t.comun.guardando : t.cobro.confirmar(plata(Number(pq.precio)))}
                         </button>
-                      ))}
-                      <button type="button" onClick={() => setCobrando(null)} className="text-[12.5px] text-tinta/45">
-                        {t.comun.cancelar}
-                      </button>
+                        <button type="button" onClick={() => setCobrando(null)} disabled={ocupado} className="boton-suave px-4 py-2.5 text-[13px]">
+                          {t.comun.cancelar}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="mt-1.5 flex items-center gap-2">
                       <span className="text-[12px] font-semibold text-ambar">{t.inscribir.faltaCobrar}</span>
-                      <button type="button" onClick={() => setCobrando(pq.id)} className="boton-texto text-[12.5px]">
+                      <button type="button" onClick={() => { setCobrando(pq.id); setMetodoCobro('transferencia'); setCuentaCobro(null); }} className="boton-texto text-[12.5px]">
                         {t.inscribir.cobrar} {plata(Number(pq.precio))}
                       </button>
                     </div>
@@ -345,6 +361,9 @@ export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; mon
   const router = useRouter();
   const [datos, setDatos] = useState<DatosPorCobrar | null>(null);
   const [cobrando, setCobrando] = useState<string | null>(null);
+  const [metodo, setMetodo] = useState('transferencia');
+  const [cuenta, setCuenta] = useState<string | null>(null);
+  const cuentas = useCuentasParaElegir(empresaId);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
 
@@ -362,11 +381,19 @@ export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; mon
 
   useEffect(() => { leer(); }, [empresaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function cobrar(paquete: string, metodo: string) {
+  function abrir(paquete: string) {
+    setCobrando(paquete);
+    setMetodo('transferencia');
+    setCuenta(null);
+  }
+
+  async function cobrar(paquete: string) {
     setOcupado(true);
     setError('');
     try {
-      const { error: e } = await clienteNavegador().rpc('cobrar_inscripcion', { p_paquete: paquete, p_metodo: metodo });
+      const { error: e } = await clienteNavegador().rpc('cobrar_inscripcion', {
+        p_paquete: paquete, p_metodo: metodo, p_cuenta: cuentaDelCobro(cuentas, metodo, cuenta),
+      });
       if (e) throw e;
       setCobrando(null);
       await leer();
@@ -402,19 +429,24 @@ export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; mon
               <span className="shrink-0 text-[14px] font-bold tabular-nums">{plata(Number(x.monto))}</span>
             </div>
             {cobrando === x.paquete ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {(['efectivo', 'transferencia', 'tarjeta'] as const).map((m) => (
-                  <button key={m} type="button" disabled={ocupado} onClick={() => cobrar(x.paquete, m)}
-                    className="chip-apagado disabled:opacity-50">
-                    {metodoVisible(t, m)}
+              <div className="mt-2.5 space-y-3 rounded-xl bg-arena/60 p-3">
+                <FormaDeCobro
+                  conPregunta cuentas={cuentas} metodo={metodo} elegida={cuenta} deshabilitado={ocupado}
+                  alElegirMetodo={(m) => { setMetodo(m); setCuenta(null); }}
+                  alElegirCuenta={setCuenta}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" disabled={ocupado} onClick={() => cobrar(x.paquete)}
+                    className="boton-principal px-4 py-2.5 text-[13.5px]">
+                    {ocupado ? t.comun.guardando : t.cobro.confirmar(plata(Number(x.monto)))}
                   </button>
-                ))}
-                <button type="button" onClick={() => setCobrando(null)} className="text-[12.5px] text-tinta/45">
-                  {t.comun.cancelar}
-                </button>
+                  <button type="button" onClick={() => setCobrando(null)} disabled={ocupado} className="boton-suave px-4 py-2.5 text-[13px]">
+                    {t.comun.cancelar}
+                  </button>
+                </div>
               </div>
             ) : (
-              <button type="button" onClick={() => setCobrando(x.paquete)} className="boton-texto mt-1 text-[13px]">
+              <button type="button" onClick={() => abrir(x.paquete)} className="boton-texto mt-1 text-[13px]">
                 {i.cobrar}
               </button>
             )}

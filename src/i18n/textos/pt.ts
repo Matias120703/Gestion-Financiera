@@ -1113,6 +1113,13 @@ export const pt: Textos = {
     cobrado: (monto: string) => `Recebido: ${monto}.`,
   },
 
+  cobro: {
+    comoTePago: 'Como te pagou?',
+    enQueCuenta: 'Em qual conta entrou?',
+    enQueCuentaDetalle: 'Assim sua carteira no Orden fica igual à do seu banco.',
+    confirmar: (monto: string) => `Receber ${monto}`,
+  },
+
   paquetes: {
     titulo: 'Pacotes',
     ninguno: 'Você ainda não vendeu nenhum pacote.',

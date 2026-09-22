@@ -1158,6 +1158,14 @@ export const es = {
     cobrado: (monto: string) => `Cobrado: ${monto}.`,
   },
 
+  /** CÓMO TE PAGÓ Y A QUÉ CUENTA ENTRÓ (095). */
+  cobro: {
+    comoTePago: '¿Cómo te pagó?',
+    enQueCuenta: '¿A qué cuenta entró?',
+    enQueCuentaDetalle: 'Así tu billetera en Orden queda igual que la de tu banco.',
+    confirmar: (monto: string) => `Cobrar ${monto}`,
+  },
+
   /** EL PAQUETE DE CLASES (088): «ocho clases por 400.000». */
   paquetes: {
     titulo: 'Paquetes',
