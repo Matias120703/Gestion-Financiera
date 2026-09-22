@@ -10,7 +10,7 @@ import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
-import { PaquetesAlumno } from '@/components/PaquetesAlumno';
+import { PaquetesAlumno, PorCobrarAlumnos } from '@/components/PaquetesAlumno';
 import type { ClienteLista, TurnoCliente } from '@/lib/tipos';
 
 function diasDesde(iso: string | null): number | null {
@@ -47,6 +47,7 @@ function haceTanto(t: Textos, iso: string | null): string {
  */
 export function PantallaClientes({
   empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, tienePaquetes, puedeEliminar,
+  deAlumnos = false, titulo,
 }: {
   empresaId: string;
   moneda: string;
@@ -57,6 +58,13 @@ export function PantallaClientes({
   tieneAgenda: boolean;
   /** Si el rubro vende en paquetes: «ocho clases por 400.000» (088). */
   tienePaquetes: boolean;
+  /**
+   * Los alumnos de un profe (091): lo que falta cobrar son inscripciones,
+   * no fiado, y se ve acá arriba con el botón para cobrar.
+   */
+  deAlumnos?: boolean;
+  /** «Alumnos» para un profe; si no viene, «Clientes». */
+  titulo?: string;
   /** Dueño y administradores. Un vendedor carga clientes pero no los saca. */
   puedeEliminar: boolean;
 }) {
@@ -94,18 +102,21 @@ export function PantallaClientes({
       <div className="grid grid-cols-2 gap-3">
         <Indicador
           destacado
-          titulo={t.clientes.titulo}
+          titulo={titulo ?? t.clientes.titulo}
           valor={String(clientes.length)}
           detalle={t.clientes.cargados(clientes.length)}
         />
-        <Link href="/fiado" className="block">
+        {!deAlumnos && <Link href="/fiado" className="block">
           <Indicador
             titulo={t.clientes.teDeben}
             valor={plata(totalDeben)}
             detalle={cuantosDeben === 0 ? t.clientes.nadieTeDebe : t.clientes.debenVerFiado(cuantosDeben)}
           />
-        </Link>
+        </Link>}
       </div>
+
+      {/* Lo que le deben a un profe: inscripciones sin cobrar (091). */}
+      {deAlumnos && <PorCobrarAlumnos empresaId={empresaId} moneda={moneda} />}
 
       {aviso && (
         <p className="rounded-xl bg-verde-claro px-4 py-3 text-[13.5px] font-semibold text-verde-fuerte aparecer">
@@ -158,6 +169,7 @@ export function PantallaClientes({
                 locale={locale}
                 tieneAgenda={tieneAgenda}
                 tienePaquetes={tienePaquetes}
+                deAlumnos={deAlumnos}
                 moneda={moneda}
                 puedeEliminar={puedeEliminar}
                 abierto={abierto === c.id}
@@ -323,7 +335,7 @@ function FormularioCliente({
 }
 
 function FilaCliente({
-  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, moneda, puedeEliminar, abierto, onAbrir, onListo,
+  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, moneda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
@@ -334,6 +346,7 @@ function FilaCliente({
   locale: string;
   tieneAgenda: boolean;
   tienePaquetes: boolean;
+  deAlumnos: boolean;
   moneda: string;
   puedeEliminar: boolean;
   abierto: boolean;
@@ -461,7 +474,7 @@ function FilaCliente({
               {tienePaquetes && (
                 <PaquetesAlumno
                   empresaId={empresaId} clienteId={c.id} moneda={moneda} zona={zona}
-                  esAdmin={puedeEliminar}
+                  esAdmin={puedeEliminar} deAlumnos={deAlumnos}
                 />
               )}
 

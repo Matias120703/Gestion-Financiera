@@ -132,6 +132,18 @@ export const MENSAJES_PT: Record<string, string> = {
   'Le quedan % clases y querés descontar %.': 'Restam % aulas e você quer descontar %.',
   'Esa clase no existe.': 'Essa aula não existe.',
   'Solo el dueño de la cuenta puede cerrar un paquete.': 'Só o dono da conta pode fechar um pacote.',
+  // Inscribir a un alumno (091).
+  'Esa inscripción ya está cobrada.': 'Essa inscrição já foi cobrada.',
+  'Esa inscripción no tiene nada que cobrar.': 'Essa inscrição não tem nada para cobrar.',
+  'Para dejarlo pendiente no hace falta cobrar: ya queda por cobrar.':
+    'Para deixar pendente não precisa cobrar: já fica a receber.',
+  'Elegí al menos un día de la semana.': 'Escolha pelo menos um dia da semana.',
+  'La clase tiene que terminar después de empezar.': 'A aula precisa terminar depois de começar.',
+  'El período tiene que terminar después de empezar.': 'O período precisa terminar depois de começar.',
+  'Se puede inscribir hasta un año de una vez.': 'Dá para inscrever até um ano de uma vez.',
+  'Poné cuánto cobrás: por hora o un precio cerrado.': 'Coloque quanto você cobra: por hora ou um preço fechado.',
+  'En ese período no cae ningún día de los que elegiste.': 'Nesse período não cai nenhum dos dias que você escolheu.',
+  'El % a las % ya tenés a %.': 'No dia % às % você já tem %.',
   // Un profe no tiene link público (089).
   'Una cuenta de clases no tiene link de reservas: los horarios de cada alumno los armás vos.':
     'Uma conta de aulas não tem link de reservas: os horários de cada aluno quem monta é você.',

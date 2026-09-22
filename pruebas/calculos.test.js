@@ -511,9 +511,10 @@ ok('la barbería lo conserva',
   ok('sin pantalla de cobrar', s['/vender'], false);
   ok('sin cierre del día', s['/cierre'], false);
   ok('con su agenda, sus alumnos, lo que entra y lo que sale',
-    [s['/agenda'], s['/clientes'], s['/gastos'], s['/billetera'], s['/fiado']], [true, true, true, true, true]);
-  ok('a lo que le deben lo llama «por cobrar»',
-    palabra('clases', 'emprendedor', 'fiado', 'Fiado', 'es'), 'Por cobrar');
+    [s['/agenda'], s['/clientes'], s['/gastos'], s['/billetera']], [true, true, true, true]);
+  // Sin fiado (091): lo que le deben son inscripciones sin cobrar, arriba de
+  // sus alumnos. Una venta fiada contaría como cobrado lo que no entró.
+  ok('sin fiado: lo que le deben vive en sus alumnos', s['/fiado'], false);
   // Y la barbería no se entera de nada de esto.
   const b = fichaDe('servicios', 'emprendedor').secciones;
   ok('la barbería conserva todo lo suyo',

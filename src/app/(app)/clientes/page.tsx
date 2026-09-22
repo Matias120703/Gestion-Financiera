@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
-import { fichaDe, tieneSeccion } from '@/lib/rubros';
+import { fichaDe, palabra, tieneSeccion } from '@/lib/rubros';
+import { textos, idiomaActual } from '@/i18n';
 import { traerClientes } from '@/lib/clientes';
 import { traerResumenFiado } from '@/lib/fiado';
 import { PantallaClientes } from '@/components/PantallaClientes';
@@ -45,6 +46,10 @@ export default async function PaginaClientes() {
       tieneAgenda={tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/agenda')}
       // Los paquetes de clases, solo donde se venden así (088).
       tienePaquetes={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).paquetes}
+      // Un profe inscribe alumnos y cobra períodos, no fía (091).
+      deAlumnos={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos}
+      titulo={palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'clientes',
+        (await textos()).clientes.titulo, await idiomaActual())}
     />
   );
 }

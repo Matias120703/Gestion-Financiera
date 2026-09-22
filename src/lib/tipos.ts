@@ -1200,6 +1200,20 @@ export interface PaqueteAlumno {
   quedan: number;
   estado: 'activo' | 'terminado' | 'vencido' | 'cerrado';
   historia: { id: string; fecha: string; cantidad: number; motivo: 'dada' | 'falta' }[];
+  /** El horario, si salió de inscribir a un alumno (091). Null en un paquete suelto. */
+  dias: number[] | null;
+  hora_desde: string | null;
+  hora_hasta: string | null;
+  desde: string | null;
+  precio_hora: number | null;
+  /** Si ya se cobró: tiene su venta, o no había nada que cobrar. */
+  pagado: boolean;
+}
+
+/** Lo que falta cobrar de las inscripciones (091). */
+export interface PorCobrarAlumnos {
+  total: number;
+  lista: { paquete: string; cliente_id: string; alumno: string; nombre: string; monto: number; desde: string | null; hasta: string | null }[];
 }
 
 export interface ClienteLista {

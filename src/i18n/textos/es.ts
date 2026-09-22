@@ -1117,6 +1117,45 @@ export const es = {
   },
 
   /** CLIENTES · A QUIÉN LE VENDÉS. */
+  /** INSCRIBIR A UN ALUMNO (091): días, horario, período y precio. */
+  inscribir: {
+    titulo: 'Inscribir a un alumno',
+    boton: 'Inscribir a un alumno',
+    susClases: 'Sus clases',
+    sinClases: 'Todavía no está inscripto en ninguna clase.',
+    alumno: 'Alumno',
+    alumnoEjemplo: 'Nombre del alumno',
+    telefonoAyuda: 'Su WhatsApp, para escribirle cuando haga falta.',
+    faltaAlumno: 'Elegí o escribí el nombre del alumno.',
+    dias: 'Qué días',
+    de: 'De',
+    a: 'A',
+    periodo: 'Desde y hasta cuándo',
+    meses: (n: number) => (n === 1 ? '1 mes' : `${n} meses`),
+    cobras: 'Cómo cobrás',
+    porHora: 'Por hora',
+    precioCerrado: 'Precio cerrado',
+    laHora: 'Cuánto la hora',
+    todoElPeriodo: 'Cuánto por todo el período',
+    resumen: (clases: number, horas: string) =>
+      `${clases} ${clases === 1 ? 'clase' : 'clases'} · ${horas} ${horas === '1' ? 'hora' : 'horas'} · total`,
+    choca: (fecha: string, hora: string, alumno: string) => `El ${fecha} a las ${hora} ya tenés a ${alumno}`,
+    yMas: (n: number) => `y ${n} ${n === 1 ? 'choque más' : 'choques más'}`,
+    yaPago: '¿Ya te pagó?',
+    siAhora: 'Sí, ahora',
+    todaviaNo: 'Todavía no',
+    quedaPorCobrar: 'Queda por cobrar, y lo ves arriba de tus alumnos hasta que te pague.',
+    inscribir: 'Inscribir',
+    listo: (clases: number) => `Listo: ${clases} ${clases === 1 ? 'clase' : 'clases'} en tu agenda.`,
+    // Lo que falta cobrar, arriba de los alumnos.
+    porCobrar: 'Por cobrar',
+    porCobrarDetalle: (n: number) => `${n} ${n === 1 ? 'alumno te debe' : 'alumnos te deben'} su período`,
+    cobrar: 'Cobrar',
+    pagado: 'Pagado',
+    faltaCobrar: 'Falta cobrar',
+    cobrado: (monto: string) => `Cobrado: ${monto}.`,
+  },
+
   /** EL PAQUETE DE CLASES (088): «ocho clases por 400.000». */
   paquetes: {
     titulo: 'Paquetes',
@@ -2130,6 +2169,7 @@ export const es = {
     turnosDe: 'Turnos del',
     sinTurnos: 'Sin turnos para este día',
     sinTurnosDetalle: 'Los que reserven por tu link aparecen solos. Al que llame por teléfono, anotalo vos.',
+    sinTurnosProfe: 'Inscribí a un alumno arriba y sus clases aparecen acá, en los días y horas que acordaron.',
     diaAnterior: 'Día anterior',
     // La agenda como calendario (072).
     calendario: 'Calendario',

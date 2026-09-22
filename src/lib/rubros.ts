@@ -273,17 +273,20 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       '/vender': false,
       // Sin cierre del día: no tiene caja que contar a la noche.
       '/cierre': false,
+      // Sin fiado: a un profe le deben inscripciones sin cobrar, y eso se
+      // ve arriba de sus alumnos (091). Una venta fiada contaría como cobrado
+      // lo que todavía no entró, y el profe eligió que se gane al cobrar.
+      '/fiado': false,
     },
     // «Alumnos» y no «clientes»: un profe no dice «tengo doce clientes».
-    // Y «Por cobrar» y no «Fiado»: a un alumno no se le fía, se le cobra.
     palabras: {
-      ventas: 'Cobrado', clientes: 'Alumnos', fiado: 'Por cobrar',
+      ventas: 'Cobrado', clientes: 'Alumnos',
     },
     pt: {
       nombre: 'Aulas e cursos',
       ejemplo: 'Professor de inglês, matemática, música, programação; online ou presencial',
       palabras: {
-        ventas: 'Recebido', clientes: 'Alunos', fiado: 'A receber',
+        ventas: 'Recebido', clientes: 'Alunos',
       },
     },
     // Sin cierre del día (arriba), y tampoco el recordatorio de la noche:

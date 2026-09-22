@@ -11,6 +11,7 @@ import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import { CalendarioAgenda, SelectorVista, type VistaAgenda } from '@/components/CalendarioAgenda';
 import { SelectorCliente, type ClienteElegido } from '@/components/SelectorCliente';
+import { InscribirAlumno } from '@/components/InscribirAlumno';
 import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO, type TurnoRespuesta } from '@/lib/turno-voz';
 import type {
   Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
@@ -28,7 +29,7 @@ import type {
 
 export function PantallaAgenda({
   empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy,
-  excepciones, negocio, zona, origen, deAlumnos = false, miNombre = '', miUsuario = null,
+  excepciones, negocio, zona, origen, deAlumnos = false,
 }: {
   empresaId: string;
   moneda: string;
@@ -54,9 +55,6 @@ export function PantallaAgenda({
    * sin pedir que se arme un equipo.
    */
   deAlumnos?: boolean;
-  /** Quien mira, para cargarlo como el que da las clases. */
-  miNombre?: string;
-  miUsuario?: string | null;
   origen: string;
 }) {
   const t = useTextos();
@@ -69,6 +67,9 @@ export function PantallaAgenda({
   const [moviendo, setMoviendo] = useState<string | null>(null);
   // Cómo se mira la agenda: el día, o un calendario de semana, mes o fechas (072).
   const [vista, setVista] = useState<VistaAgenda>('dia');
+  // El formulario de inscribir a un alumno, en la agenda de un profe (091).
+  const [inscribiendo, setInscribiendo] = useState(false);
+  const [inscripto, setInscripto] = useState('');
 
   const plata = (n: number) => dinero(n, moneda, true, locale);
   const ocupado = trabajando !== '';
@@ -134,51 +135,32 @@ export function PantallaAgenda({
   const sinAvisar = turnos.filter((r) =>
     !r.avisado && (r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r)).length;
 
-  // UN PROFE NO ARMA UN EQUIPO (089).
-  //
-  // Sin nadie cargado, la agenda de la barbería manda a «Equipo y reparto»
-  // a sumar gente. Para un profe esa sección no existe: sería un callejón
-  // sin salida. Él es el único que da las clases, así que se lo carga a
-  // él, con un toque y sin comisión (`local`: todo queda para el negocio).
-  //
-  // Es un botón y no algo que pase solo al abrir la pantalla a propósito:
-  // Next precarga las páginas al pasar por un link, y una pantalla que
-  // escribe en la base con solo mirarla termina escribiendo cuando nadie
-  // lo pidió.
-  if (deAlumnos && profesionales.length === 0) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        {error && (
-          <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">
-            {error}
-          </p>
-        )}
-        <div className="tarjeta p-5">
-          <p className="text-[16px] font-bold tracking-tight">{t.agenda.empezarTitulo}</p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/60">{t.agenda.empezarDetalle}</p>
-          {esAdmin && (
-            <button
-              type="button" disabled={ocupado}
-              className="boton-principal mt-4 w-full py-2.5 disabled:opacity-50"
-              onClick={() => correr('empezar', async () => sb().rpc('guardar_profesional', {
-                p_empresa: empresaId, p_nombre: miNombre, p_reparto: 'local',
-                p_porcentaje: null, p_user: miUsuario, p_id: null,
-              }))}
-            >
-              {ocupado ? t.comun.guardando : t.agenda.empezarBoton}
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       {error && (
         <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">
           {error}
         </p>
+      )}
+
+      {/* LA AGENDA DE UN PROFE EMPIEZA POR INSCRIBIR (091).
+          Matías: «el alumno le escribe por WhatsApp, el profe entra a ver si
+          tiene libre tal día y tal hora, y cuando llegan a un acuerdo lo
+          anota». Está arriba del calendario a propósito: se mira el
+          calendario, se decide, y se inscribe sin moverse de pantalla. */}
+      {deAlumnos && (inscribiendo ? (
+        <InscribirAlumno
+          empresaId={empresaId} moneda={moneda} zona={zona}
+          alCancelar={() => setInscribiendo(false)}
+          alListo={(m) => { setInscribiendo(false); setInscripto(m); router.refresh(); setTimeout(() => setInscripto(''), 5000); }}
+        />
+      ) : (
+        <button type="button" className="boton-principal w-full py-3 text-[15px]" onClick={() => setInscribiendo(true)}>
+          + {t.inscribir.boton}
+        </button>
+      ))}
+      {inscripto && (
+        <p className="rounded-xl bg-verde-claro px-4 py-3 text-[13.5px] font-semibold text-verde-fuerte aparecer">✓ {inscripto}</p>
       )}
 
       {/* Un profe no tiene link público: los horarios los arma él (089). */}
@@ -218,7 +200,9 @@ export function PantallaAgenda({
             alElegirDia={(d) => { setVista('dia'); router.push(`/agenda?dia=${d}`); }}
           />
         ) : (<>
-        <NuevoTurno
+        {/* El turno suelto necesita servicios reservables, que un profe
+            no tiene: él inscribe al alumno arriba (091). */}
+        {!deAlumnos && <NuevoTurno
           empresaId={empresaId}
           dia={dia}
           hoy={hoy}
@@ -237,7 +221,7 @@ export function PantallaAgenda({
             // Elegido de la lista: queda atado aunque no tenga teléfono (057).
             p_cliente: d.cliente,
           }))}
-        />
+        />}
 
         {sinAvisar > 0 && (
           <p className="px-4 pb-2 text-[12.5px] text-tinta/50">{t.agenda.sinAvisar(sinAvisar)}</p>
@@ -245,7 +229,7 @@ export function PantallaAgenda({
 
         {turnos.length === 0 ? (
           <div className="px-4 pb-4">
-            <Vacio titulo={t.agenda.sinTurnos} detalle={t.agenda.sinTurnosDetalle} />
+            <Vacio titulo={t.agenda.sinTurnos} detalle={deAlumnos ? t.agenda.sinTurnosProfe : t.agenda.sinTurnosDetalle} />
           </div>
         ) : (
           <ul className="divide-y divide-borde border-t border-borde">

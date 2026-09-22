@@ -72,8 +72,6 @@ export default async function PaginaAgenda({
       zona={ctx.zonaHoraria}
       origen={origen}
       deAlumnos={ficha.agendaDeAlumnos}
-      miNombre={ctx.miembro.nombre}
-      miUsuario={ctx.miembro.user_id}
     />
   );
 }

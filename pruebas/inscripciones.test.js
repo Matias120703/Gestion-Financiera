@@ -1,0 +1,233 @@
+/**
+ * Inscribir a un alumno (migración 091).
+ *
+ * El ejemplo de Matías, tal cual: «Matías va a tener clases lunes, martes y
+ * jueves de 6 a 7 de la tarde. Yo cobro 50.000 la hora. Automáticamente se
+ * calcula cuánto sería en el plazo que marqué».
+ *
+ * Octubre de 2026 arranca un jueves. Lunes, martes y jueves de octubre son
+ * 5+4… en total 13 días: 13 clases de una hora, Gs. 650.000.
+ *
+ * LO QUE IMPORTA
+ *
+ *   · que la cuenta dé lo que el profe haría a mano;
+ *   · que las clases aparezcan en la agenda a la hora de Asunción, no a la
+ *     del servidor;
+ *   · que un horario ya ocupado frene TODA la inscripción, no la mitad;
+ *   · que se gane al cobrar: sin pagar no hay venta, y aparece por cobrar;
+ *   · y que cerrar una inscripción libere el horario.
+ */
+const H = require('./ayuda-db.js');
+
+let fallos = 0;
+let corridas = 0;
+
+function grupo(n) { console.log(`\n── ${n} ${'─'.repeat(Math.max(0, 58 - n.length))}`); }
+
+function ok(nombre, real, esperado) {
+  corridas++;
+  const a = JSON.stringify(real);
+  const b = JSON.stringify(esperado);
+  if (a !== b) { fallos++; console.log(`  ✗ ${nombre}\n      obtenido: ${a}\n      esperado: ${b}`); }
+  else console.log(`  ✓ ${nombre} → ${a}`);
+}
+
+function rechazado(nombre, res, frag) {
+  corridas++;
+  if (res.ok) { fallos++; console.log(`  ✗ ${nombre}\n      NO fue rechazada`); return; }
+  if (frag && !new RegExp(frag, 'i').test(res.error)) {
+    fallos++; console.log(`  ✗ ${nombre}\n      otro motivo: ${res.error}`); return;
+  }
+  console.log(`  ✓ ${nombre} → rechazada: ${res.error.split('\n')[0].slice(0, 64)}`);
+}
+
+// Lunes, martes y jueves, con la numeración de PostgreSQL (0 = domingo).
+const LMJ = [1, 2, 4];
+
+(async () => {
+  const db = await H.crearBase();
+
+  const P = await H.montarEmpresa(db, { email: 'profe@ingles.com', nombre: 'Clases de inglés', rubro: 'clases' });
+  const Otro = await H.montarEmpresa(db, { email: 'otro@academia.com', nombre: 'Otra academia', rubro: 'clases' });
+
+  const como = (uid, sql, args = []) => H.intentar(db, uid, () => db.query(sql, args));
+  const valor = async (uid, sql, args = []) => {
+    const r = await como(uid, sql, args);
+    if (!r.ok) throw new Error(r.error);
+    return r.valor.rows[0];
+  };
+  const alumno = async (nombre, tel) => (await valor(P.uid,
+    'select public.guardar_cliente($1,$2,$3,$4,$5) id', [P.empresaId, nombre, tel, '', null])).id;
+
+  const matias = await alumno('Matías Aranda', '0981111111');
+  const ana = await alumno('Ana Benítez', '0982222222');
+
+  const previa = async (args) => (await valor(P.uid,
+    'select public.vista_previa_inscripcion($1,$2,$3,$4,$5,$6,$7,$8) j', [P.empresaId, ...args])).j;
+  const inscribir = (uid, empresa, cliente, args) => como(uid,
+    'select public.inscribir_alumno($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) j',
+    [empresa, cliente, ...args]);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('1 · La cuenta que haría el profe a mano');
+  // ═══════════════════════════════════════════════════════════
+  const oct = await previa([LMJ, '18:00', '19:00', '2026-10-01', '2026-10-31', 50000, null]);
+  ok('lunes, martes y jueves de octubre son 13 clases', oct.clases, 13);
+  ok('de una hora cada una: 13 horas', Number(oct.horas), 13);
+  ok('a Gs. 50.000 la hora: Gs. 650.000', Number(oct.total), 650000);
+
+  const horaYMedia = await previa([LMJ, '18:00', '19:30', '2026-10-01', '2026-10-31', 50000, null]);
+  ok('si la clase es de hora y media, cobra hora y media', Number(horaYMedia.total), 975000);
+
+  const cerrado = await previa([LMJ, '18:00', '19:00', '2026-10-01', '2026-10-31', null, 300000]);
+  ok('con precio cerrado, manda el precio cerrado', Number(cerrado.total), 300000);
+  ok('y las clases se cuentan igual', cerrado.clases, 13);
+
+  const aMedias = await previa([[], '18:00', '19:00', '2026-10-01', '2026-10-31', 50000, null]);
+  ok('un formulario a medio completar da ceros, no un error', aMedias.clases, 0);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('2 · Inscribir, pagado en el momento');
+  // ═══════════════════════════════════════════════════════════
+  const r1 = await inscribir(P.uid, P.empresaId, matias,
+    [LMJ, '18:00', '19:00', '2026-10-01', '2026-10-31', 50000, null, true, 'transferencia', 'Octubre · L M J 18:00']);
+  ok('se inscribe', r1.ok, true);
+  const i1 = r1.valor.rows[0].j;
+  ok('con sus 13 clases', i1.clases, 13);
+  ok('y el total calculado', Number(i1.total), 650000);
+
+  const turnos = (await db.query(
+    `select to_char(inicia at time zone 'America/Asuncion', 'YYYY-MM-DD HH24:MI') as a,
+            estado, cliente_id, paquete_id
+     from public.turnos_reserva where paquete_id = $1 order by inicia`, [i1.paquete])).rows;
+  ok('las 13 clases están en la agenda', turnos.length, 13);
+  ok('la primera, el jueves 1 a las 18:00 de Asunción', turnos[0].a, '2026-10-01 18:00');
+  ok('la última, el jueves 29', turnos[12].a, '2026-10-29 18:00');
+  ok('confirmadas: ya se acordaron por WhatsApp', [...new Set(turnos.map((t) => t.estado))], ['confirmada']);
+  ok('cada una sabe de qué alumno es', turnos.every((t) => t.cliente_id === matias), true);
+
+  const venta = (await db.query(
+    'select tipo, monto, metodo_pago, cliente_id from public.movimientos where id = $1', [i1.movimiento])).rows[0];
+  ok('pagado: es un cobro como cualquier otro', venta.tipo, 'venta');
+  ok('por el total', Number(venta.monto), 650000);
+  ok('con la forma de pago que dijo', venta.metodo_pago, 'transferencia');
+
+  // Sin catálogo ni equipo cargado: la agenda los necesita y el profe no
+  // tiene por qué saberlo.
+  const prof = (await db.query(
+    'select reparto, user_id from public.turnos_profesional where empresa_id = $1', [P.empresaId])).rows;
+  ok('él quedó como el que da las clases', prof.length, 1);
+  ok('sin comisión: todo es suyo', prof[0].reparto, 'local');
+  ok('y es él', prof[0].user_id, P.uid);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('3 · Un horario ocupado frena todo');
+  // ═══════════════════════════════════════════════════════════
+  // Ana quiere los jueves de 18:30 a 19:30: se pisa con Matías.
+  const choca = await previa([[4], '18:30', '19:30', '2026-10-01', '2026-10-31', 50000, null]);
+  ok('la vista previa avisa con quién choca', choca.choques[0].alumno, 'Matías Aranda');
+  ok('los cinco jueves', choca.choques.length, 5);
+  rechazado('y no deja inscribir',
+    await inscribir(P.uid, P.empresaId, ana,
+      [[4], '18:30', '19:30', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null]),
+    'ya tenés a Matías');
+  ok('ni media inscripción: Ana no tiene ninguna clase',
+    (await db.query('select count(*)::int n from public.turnos_reserva where cliente_id = $1', [ana])).rows[0].n, 0);
+
+  // Justo después, sin pisarse, sí.
+  const pegada = await inscribir(P.uid, P.empresaId, ana,
+    [[4], '19:00', '20:00', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null]);
+  ok('una clase que empieza cuando termina la otra sí entra', pegada.ok, true);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('4 · Se gana al cobrar');
+  // ═══════════════════════════════════════════════════════════
+  const iAna = pegada.valor.rows[0].j;
+  ok('sin pagar no hay venta', iAna.movimiento, null);
+
+  let porCobrar = (await valor(P.uid, 'select public.por_cobrar_alumnos($1) j', [P.empresaId])).j;
+  ok('aparece por cobrar', porCobrar.lista.map((x) => x.alumno), ['Ana Benítez']);
+  ok('por su total: cinco jueves', Number(porCobrar.total), 250000);
+
+  // Hoy entró lo de Matías, que pagó al inscribirse. Lo de Ana no entró, y
+  // no puede aparecer como cobrado: es exactamente «se gana al cobrar».
+  const hoy = (await valor(P.uid,
+    'select public.resumen_financiero($1, public.hoy_empresa($1), public.hoy_empresa($1)) j', [P.empresaId])).j;
+  ok('lo cobrado hoy es solo lo que entró: lo de Matías, no lo de Ana', Number(hoy.ventas), 650000);
+
+  const pago = await como(P.uid, 'select public.cobrar_inscripcion($1,$2) j', [iAna.paquete, 'efectivo']);
+  ok('Ana paga', pago.ok, true);
+  porCobrar = (await valor(P.uid, 'select public.por_cobrar_alumnos($1) j', [P.empresaId])).j;
+  ok('y deja de estar por cobrar', porCobrar.lista.length, 0);
+  rechazado('no se cobra dos veces',
+    await como(P.uid, 'select public.cobrar_inscripcion($1,$2)', [iAna.paquete, 'efectivo']), 'ya está cobrada');
+  // Sobre una SIN cobrar: si no, la rechazaría por estar cobrada y esta
+  // prueba pasaría por el motivo equivocado.
+  const dani = await alumno('Dani Ortiz', '0985555555');
+  const sinCobrar = (await inscribir(P.uid, P.empresaId, dani,
+    [[5], '08:00', '09:00', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null])).valor.rows[0].j;
+  rechazado('y el fiado no es un pago: ya está por cobrar',
+    await como(P.uid, 'select public.cobrar_inscripcion($1,$2)', [sinCobrar.paquete, 'credito']), 'ya queda por cobrar');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('5 · El alumno que deja');
+  // ═══════════════════════════════════════════════════════════
+  // Una inscripción futura, para que tenga clases por delante.
+  const bruno = await alumno('Bruno Gómez', '0983333333');
+  const futura = (await inscribir(P.uid, P.empresaId, bruno,
+    [[3], '10:00', '11:00', '2030-03-01', '2030-03-31', 40000, null, false, 'efectivo', null])).valor.rows[0].j;
+  await como(P.uid, 'select public.cerrar_paquete($1, true)', [futura.paquete]);
+  ok('cerrar saca sus clases de la agenda',
+    (await db.query(`select count(*)::int n from public.turnos_reserva
+                     where paquete_id = $1 and estado = 'confirmada'`, [futura.paquete])).rows[0].n, 0);
+  ok('y el que dejó no queda por cobrar',
+    (await valor(P.uid, 'select public.por_cobrar_alumnos($1) j', [P.empresaId])).j.lista
+      .some((x) => x.alumno === 'Bruno Gómez'), false);
+
+  // El horario quedó libre: se lo puede dar a otro.
+  const otroAlumno = await alumno('Carla Ruiz', '0984444444');
+  ok('ese horario queda libre para otro',
+    (await inscribir(P.uid, P.empresaId, otroAlumno,
+      [[3], '10:00', '11:00', '2030-03-01', '2030-03-31', 40000, null, false, 'efectivo', null])).ok, true);
+
+  // Y si Bruno vuelve, sus clases no le pisan el lugar a Carla.
+  await como(P.uid, 'select public.cerrar_paquete($1, false)', [futura.paquete]);
+  ok('reabrir no le pisa el horario a quien lo tomó',
+    (await db.query(`select count(*)::int n from public.turnos_reserva
+                     where paquete_id = $1 and estado = 'confirmada'`, [futura.paquete])).rows[0].n, 0);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('6 · Lo que no tiene sentido no entra');
+  // ═══════════════════════════════════════════════════════════
+  const mal = (args) => inscribir(P.uid, P.empresaId, matias, args);
+  rechazado('sin días', await mal([[], '18:00', '19:00', '2027-01-01', '2027-01-31', 1, null, false, 'efectivo', null]), 'al menos un día');
+  rechazado('terminando antes de empezar',
+    await mal([LMJ, '19:00', '18:00', '2027-01-01', '2027-01-31', 1, null, false, 'efectivo', null]), 'terminar después');
+  rechazado('un período al revés',
+    await mal([LMJ, '18:00', '19:00', '2027-01-31', '2027-01-01', 1, null, false, 'efectivo', null]), 'período');
+  rechazado('más de un año de una vez',
+    await mal([LMJ, '18:00', '19:00', '2027-01-01', '2029-01-01', 1, null, false, 'efectivo', null]), 'un año');
+  rechazado('sin precio',
+    await mal([LMJ, '18:00', '19:00', '2027-01-01', '2027-01-31', null, null, false, 'efectivo', null]), 'cuánto cobrás');
+  rechazado('un período en el que no cae ninguno de esos días',
+    await mal([[0], '18:00', '19:00', '2027-01-04', '2027-01-05', 1, null, false, 'efectivo', null]), 'ningún día');
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('7 · Nadie de afuera');
+  // ═══════════════════════════════════════════════════════════
+  rechazado('otra academia no inscribe a un alumno de acá',
+    await inscribir(Otro.uid, Otro.empresaId, matias,
+      [LMJ, '08:00', '09:00', '2027-02-01', '2027-02-28', 1, null, false, 'efectivo', null]), 'no es de esta cuenta');
+  rechazado('ni mira por cobrar de acá',
+    await como(Otro.uid, 'select public.por_cobrar_alumnos($1)', [P.empresaId]), 'pertenecés');
+  rechazado('ni cobra una inscripción de acá',
+    await como(Otro.uid, 'select public.cobrar_inscripcion($1,$2)', [i1.paquete, 'efectivo']), 'pertenecés');
+
+  console.log('\n' + '═'.repeat(62));
+  if (fallos > 0) {
+    console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE INSCRIPCIONES FALLARON`);
+    process.exit(1);
+  }
+  console.log(`>>> ${corridas} COMPROBACIONES DE INSCRIPCIONES PASARON`);
+  process.exit(0);
+})().catch((e) => { console.error('\nLa prueba se rompió:', e); process.exit(1); });

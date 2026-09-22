@@ -9,7 +9,8 @@ import { hoyISO } from '@/lib/fechas';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import { CampoMonto } from '@/components/CampoMonto';
-import type { PaqueteAlumno } from '@/lib/tipos';
+import { InscribirAlumno } from '@/components/InscribirAlumno';
+import type { PaqueteAlumno, PorCobrarAlumnos as DatosPorCobrar } from '@/lib/tipos';
 
 /** Las formas de pago de un paquete. `credito` es el fiado (055). */
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito'] as const;
@@ -29,13 +30,18 @@ const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito'] as const;
  * contestar distinto cuántas clases le quedan a alguien.
  */
 export function PaquetesAlumno({
-  empresaId, clienteId, moneda, zona, esAdmin,
+  empresaId, clienteId, moneda, zona, esAdmin, deAlumnos = false,
 }: {
   empresaId: string;
   clienteId: string;
   moneda: string;
   zona: string;
   esAdmin: boolean;
+  /**
+   * Un profe no «vende paquetes»: inscribe al alumno con días, horario y
+   * período (091). El paquete suelto queda para quien lo necesite.
+   */
+  deAlumnos?: boolean;
 }) {
   const t = useTextos();
   const p = t.paquetes;
@@ -44,6 +50,8 @@ export function PaquetesAlumno({
 
   const [lista, setLista] = useState<PaqueteAlumno[] | null>(null);
   const [vendiendo, setVendiendo] = useState(false);
+  // La inscripción que se está por cobrar, para elegir cómo pagó.
+  const [cobrando, setCobrando] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
 
@@ -88,17 +96,27 @@ export function PaquetesAlumno({
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <p className="etiqueta">{p.titulo}</p>
+        <p className="etiqueta">{deAlumnos ? t.inscribir.susClases : p.titulo}</p>
         {!vendiendo && (
           <button type="button" onClick={() => setVendiendo(true)} className="boton-texto text-[13px]">
-            + {p.vender}
+            + {deAlumnos ? t.inscribir.inscribir : p.vender}
           </button>
         )}
       </div>
 
       {error && <p className="mt-2 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-      {vendiendo && (
+      {vendiendo && deAlumnos && (
+        <div className="mt-2">
+          <InscribirAlumno
+            empresaId={empresaId} moneda={moneda} zona={zona} clienteId={clienteId}
+            alCancelar={() => setVendiendo(false)}
+            alListo={async () => { setVendiendo(false); await leer(); router.refresh(); }}
+          />
+        </div>
+      )}
+
+      {vendiendo && !deAlumnos && (
         <FormularioPaquete
           moneda={moneda}
           zona={zona}
@@ -117,7 +135,7 @@ export function PaquetesAlumno({
 
       {lista === null && <p className="mt-1 text-[12.5px] text-tinta/45">{t.comun.cargando}</p>}
       {lista && lista.length === 0 && !vendiendo && (
-        <p className="mt-1 text-[12.5px] text-tinta/45">{p.ninguno}</p>
+        <p className="mt-1 text-[12.5px] text-tinta/45">{deAlumnos ? t.inscribir.sinClases : p.ninguno}</p>
       )}
 
       {lista && lista.length > 0 && (
@@ -146,6 +164,36 @@ export function PaquetesAlumno({
                     pq.vence_el ? p.venceEl(fechaLegible(pq.vence_el, true, locale)) : '',
                   ].filter(Boolean).join(' · ')}
                 </p>
+
+                {/* Si es una inscripción con precio, si ya se cobró (091). Sin
+                    cobrar no es una venta: se gana al cobrar. */}
+                {Number(pq.precio) > 0 && pq.estado !== 'cerrado' && (
+                  pq.pagado ? (
+                    <p className="mt-1.5 text-[12px] font-semibold text-verde-fuerte">✓ {t.inscribir.pagado}</p>
+                  ) : cobrando === pq.id ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {(['efectivo', 'transferencia', 'tarjeta'] as const).map((m) => (
+                        <button key={m} type="button" disabled={ocupado}
+                          onClick={async () => {
+                            if (await correr(() => sb().rpc('cobrar_inscripcion', { p_paquete: pq.id, p_metodo: m }))) setCobrando(null);
+                          }}
+                          className="chip-apagado disabled:opacity-50">
+                          {metodoVisible(t, m)}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setCobrando(null)} className="text-[12.5px] text-tinta/45">
+                        {t.comun.cancelar}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="text-[12px] font-semibold text-ambar">{t.inscribir.faltaCobrar}</span>
+                      <button type="button" onClick={() => setCobrando(pq.id)} className="boton-texto text-[12.5px]">
+                        {t.inscribir.cobrar} {plata(Number(pq.precio))}
+                      </button>
+                    </div>
+                  )
+                )}
 
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   {activo && (
@@ -276,5 +324,100 @@ function FormularioPaquete({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * LO QUE FALTA COBRAR, ARRIBA DE LOS ALUMNOS (091).
+ *
+ * Un profe no le fía a nadie: inscribe a un alumno que todavía no le pagó. Eso
+ * no es una venta fiada —se gana al cobrar, y una venta fiada contaría como
+ * cobrada el día de la inscripción—, así que no vive en el fiado. Vive acá,
+ * donde el profe está mirando a sus alumnos, con el botón para cobrar.
+ */
+export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; moneda: string }) {
+  const t = useTextos();
+  const i = t.inscribir;
+  const locale = useLocale();
+  const router = useRouter();
+  const [datos, setDatos] = useState<DatosPorCobrar | null>(null);
+  const [cobrando, setCobrando] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState('');
+
+  const plata = (n: number) => dinero(n, moneda, true, locale);
+
+  async function leer() {
+    try {
+      const { data, error: e } = await clienteNavegador().rpc('por_cobrar_alumnos', { p_empresa: empresaId });
+      if (e) throw e;
+      setDatos(data as DatosPorCobrar);
+    } catch (e) {
+      setError(mensajeDeError(e, t.errores.generico));
+    }
+  }
+
+  useEffect(() => { leer(); }, [empresaId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function cobrar(paquete: string, metodo: string) {
+    setOcupado(true);
+    setError('');
+    try {
+      const { error: e } = await clienteNavegador().rpc('cobrar_inscripcion', { p_paquete: paquete, p_metodo: metodo });
+      if (e) throw e;
+      setCobrando(null);
+      await leer();
+      router.refresh();
+    } catch (e) {
+      setError(mensajeDeError(e, t.errores.generico));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  // Nadie debe nada: no se ocupa lugar para decir cero.
+  if (!datos || datos.lista.length === 0) {
+    return error ? <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p> : null;
+  }
+
+  return (
+    <section className="tarjeta overflow-hidden border-ambar/35">
+      <div className="bg-ambar-claro/50 px-5 py-4">
+        <p className="text-[13px] font-semibold text-tinta/60">{i.porCobrar}</p>
+        <p className="mt-0.5 font-titulo text-[24px] font-extrabold tabular-nums tracking-tight">{plata(Number(datos.total))}</p>
+        <p className="text-[12.5px] text-tinta/55">{i.porCobrarDetalle(new Set(datos.lista.map((x) => x.cliente_id)).size)}</p>
+      </div>
+      {error && <p className="mx-5 mt-3 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      <ul className="divide-y divide-borde">
+        {datos.lista.map((x) => (
+          <li key={x.paquete} className="px-5 py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate text-[14px] font-semibold">{x.alumno}</span>
+                <span className="block truncate text-[12px] text-tinta/50">{x.nombre}</span>
+              </span>
+              <span className="shrink-0 text-[14px] font-bold tabular-nums">{plata(Number(x.monto))}</span>
+            </div>
+            {cobrando === x.paquete ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {(['efectivo', 'transferencia', 'tarjeta'] as const).map((m) => (
+                  <button key={m} type="button" disabled={ocupado} onClick={() => cobrar(x.paquete, m)}
+                    className="chip-apagado disabled:opacity-50">
+                    {metodoVisible(t, m)}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setCobrando(null)} className="text-[12.5px] text-tinta/45">
+                  {t.comun.cancelar}
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setCobrando(x.paquete)} className="boton-texto mt-1 text-[13px]">
+                {i.cobrar}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
