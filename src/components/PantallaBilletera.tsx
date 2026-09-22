@@ -104,7 +104,12 @@ export function PantallaBilletera({
         <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
           <div className="min-w-0">
             <p className="text-[13px] font-semibold text-tinta/55">{b.tuPlata}</p>
-            <p className="mt-1.5 truncate font-titulo text-[40px] font-extrabold leading-none tabular-nums tracking-tight">
+            {/* Un total largo («Gs. 13.000.000») no entraba a 40px en un celular
+                de 360 y salía cortado con «…». Con más de 12 letras baja a 34px
+                en pantallas angostas; los montos cortos siguen grandes. */}
+            <p className={`mt-1.5 truncate font-titulo font-extrabold leading-none tabular-nums tracking-tight ${
+              plata(billetera.total).length > 12 ? 'text-[34px] min-[400px]:text-[40px]' : 'text-[40px]'
+            }`}>
               {plata(billetera.total)}
             </p>
             <p className="mt-2 text-[12.5px] text-tinta/50">{b.enNCuentas(cuentas.length)}</p>

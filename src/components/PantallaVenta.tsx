@@ -559,7 +559,7 @@ function Carrito(props: {
                         onClick={() => onCambiar(l.clave, { cantidad: Math.max(1, l.cantidad - 1) })}
                       >−</button>
                       <input
-                        type="number" inputMode="numeric" min={1} step="any"
+                        type="number" inputMode="decimal" min={1} step="any"
                         aria-label={t.venta.cantidadDe(l.nombre)}
                         className="w-12 border-0 bg-transparent p-0 text-center text-[16px] font-bold tabular-nums outline-none"
                         value={l.cantidad}

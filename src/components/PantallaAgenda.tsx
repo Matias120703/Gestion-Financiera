@@ -1068,7 +1068,7 @@ function ServiciosReservables({
               </span>
               <label className="flex items-center gap-1.5 text-[12.5px] text-tinta/55">
                 <input
-                  type="number" className="campo w-[72px] py-1.5 text-[13px]" min={5} max={480} step={5}
+                  type="number" inputMode="numeric" className="campo w-[72px] py-1.5 text-[13px]" min={5} max={480} step={5}
                   defaultValue={duracion} disabled={ocupado}
                   onBlur={(e) => {
                     const n = Number(e.target.value);

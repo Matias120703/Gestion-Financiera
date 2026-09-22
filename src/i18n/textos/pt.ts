@@ -1674,6 +1674,7 @@ export const pt: Textos = {
     logradoDe: (logrado: string, meta: string) => `${logrado} de ${meta}`,
     faltanDias: (n: number, ritmo: string) => `Faltam ${n} ${n === 1 ? 'dia' : 'dias'} · ${ritmo} por dia`,
     deLoVendido: (p: string) => `${p} do que foi vendido`,
+    unidadesCorto: (n: string) => `${n} un.`,
     soloCargar: 'Você pode lançar vendas e despesas, ver o estoque e consultar o histórico do negócio. O detalhe de custos e rentabilidade fica com o dono e os administradores.',
     quedan: (n: string) => `restam ${n}`,
     resumenFino: (ticket: string, unidades: string, margen: string) => `Ticket médio ${ticket} · ${unidades} unidades vendidas · margem líquida ${margen}`,

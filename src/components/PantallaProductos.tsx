@@ -6,7 +6,7 @@ import { useTextos } from '@/i18n/cliente';
 import { categoriaVisible } from '@/i18n/nombres';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { dinero, decimalesDe, numero, porcentaje } from '@/lib/formato';
+import { dinero, dineroQueEntra, decimalesDe, numero, porcentaje } from '@/lib/formato';
 import type { Producto } from '@/lib/tipos';
 import { Vacio, Indicador } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
@@ -157,7 +157,7 @@ export function PantallaProductos({
             valor={numero(activosDeLaPestana.length)}
             detalle={t.productos.pausados(deLaPestana.length - activosDeLaPestana.length)}
           />
-          <Indicador titulo={t.productos.precioPromedio} valor={dinero(precioPromedio, moneda)} detalle={t.productos.deLoQueOfreces} />
+          <Indicador titulo={t.productos.precioPromedio} valor={dineroQueEntra(precioPromedio, moneda, undefined, t.formato)} detalle={t.productos.deLoQueOfreces} />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -168,13 +168,13 @@ export function PantallaProductos({
           />
           {verCostos ? (
             <>
-              <Indicador titulo={t.productos.invertido} valor={dinero(valorInventario, moneda)} detalle={t.productos.aPrecioDeCosto} />
-              <Indicador titulo={t.productos.siVendesTodo} valor={dinero(valorVenta, moneda)} detalle={t.productos.ganarias(dinero(valorVenta - valorInventario, moneda))} tono="bueno" />
+              <Indicador titulo={t.productos.invertido} valor={dineroQueEntra(valorInventario, moneda, undefined, t.formato)} detalle={t.productos.aPrecioDeCosto} />
+              <Indicador titulo={t.productos.siVendesTodo} valor={dineroQueEntra(valorVenta, moneda, undefined, t.formato)} detalle={t.productos.ganarias(dinero(valorVenta - valorInventario, moneda))} tono="bueno" />
             </>
           ) : (
             <>
               <Indicador titulo={t.productos.unidades} valor={numero(unidadesEnStock)} detalle={t.productos.disponibles} />
-              <Indicador titulo={t.productos.valorVenta} valor={dinero(valorVenta, moneda)} detalle={t.productos.siSeVendeTodo} />
+              <Indicador titulo={t.productos.valorVenta} valor={dineroQueEntra(valorVenta, moneda, undefined, t.formato)} detalle={t.productos.siSeVendeTodo} />
             </>
           )}
           <Indicador titulo={t.productos.porReponer} valor={numero(criticos.length)} detalle={t.productos.llegaronAlMinimo} tono={criticos.length ? 'malo' : 'neutro'} />

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import type { Textos } from '@/i18n/diccionarios';
-import { dinero } from '@/lib/formato';
+import { dinero, dineroQueEntra } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
@@ -109,7 +109,7 @@ export function PantallaClientes({
         {!deAlumnos && <Link href="/fiado" className="block">
           <Indicador
             titulo={t.clientes.teDeben}
-            valor={plata(totalDeben)}
+            valor={dineroQueEntra(totalDeben, moneda, locale, t.formato)}
             detalle={cuantosDeben === 0 ? t.clientes.nadieTeDebe : t.clientes.debenVerFiado(cuantosDeben)}
           />
         </Link>}

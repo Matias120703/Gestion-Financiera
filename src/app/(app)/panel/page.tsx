@@ -495,7 +495,10 @@ export default async function PaginaPanel({
                 <thead>
                   <tr>
                     <th>{t.panel.colProducto}</th>
-                    <th className="num">{t.panel.colUnidades}</th>
+                    {/* En el celular no entran cuatro columnas (la tabla medía
+                        unos 400px en una tarjeta de 326): las unidades bajan a la
+                        línea gris del producto. */}
+                    <th className="num hidden sm:table-cell">{t.panel.colUnidades}</th>
                     <th className="num">{t.panel.colVendido}</th>
                     {verRent && <th className="num">{t.panel.colGanancia}</th>}
                   </tr>
@@ -505,9 +508,12 @@ export default async function PaginaPanel({
                     <tr key={p.producto_id ?? p.nombre}>
                       <td>
                         <span className="block font-semibold">{p.nombre}</span>
-                        <span className="block text-[12px] text-tinta/45">{t.panel.deLoVendido(porcentaje(p.participacion, 0))}</span>
+                        <span className="block text-[12px] text-tinta/45">
+                          <span className="sm:hidden">{t.panel.unidadesCorto(numero(p.unidades))} · </span>
+                          {t.panel.deLoVendido(porcentaje(p.participacion, 0))}
+                        </span>
                       </td>
-                      <td className="num font-semibold">{numero(p.unidades)}</td>
+                      <td className="num hidden font-semibold sm:table-cell">{numero(p.unidades)}</td>
                       <td className="num tabular-nums">{dinero(p.ingresos, m, false)}</td>
                       {verRent && (
                         <td className={`num font-semibold tabular-nums ${

@@ -136,7 +136,7 @@ export function RevisionProducto({
       activo ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
 
   return (
-    <div className="max-h-[78vh] overflow-y-auto scroll-limpio">
+    <div>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-[19px] font-bold tracking-tight">{t.captura.revisar}</h2>

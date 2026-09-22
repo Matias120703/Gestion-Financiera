@@ -754,7 +754,11 @@ export function BarraSuperior({
   }
 
   return (
-    <header className="zona-segura-arriba sticky top-0 z-30 bg-arena/85 backdrop-blur-xl">
+    <header className="zona-segura-arriba sticky top-0 z-30">
+      {/* El vidrio va en una capa aparte y no en el header: un header con
+          backdrop-filter se vuelve el marco de sus hijos «fixed», y el velo
+          que cierra el menú al tocar afuera cubría solo el header. */}
+      <span aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-arena/85 backdrop-blur-xl" />
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 lg:px-7">
         <div className="relative flex min-w-0 items-center gap-3">
           {/* Como en Wise: arriba a la izquierda, la persona. Tocarla abre su

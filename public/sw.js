@@ -42,6 +42,7 @@ const CASCARA = [
   '/iconos/icono.svg',
   '/iconos/icono-192.png',
   '/iconos/icono-512.png',
+  '/iconos/insignia-96.png',
 ];
 
 /**
@@ -187,7 +188,10 @@ self.addEventListener('push', (evento) => {
   const opciones = {
     body: datos.cuerpo || '',
     icon: '/iconos/icono-192.png',
-    badge: '/iconos/icono-192.png',
+    // La insignia de la barra de estado: Android usa solo la transparencia.
+    // Con el ícono a color salía un cuadrado blanco lleno; esta es el anillo
+    // en blanco sobre nada. Nombre nuevo, así que no hace falta subir VERSION.
+    badge: '/iconos/insignia-96.png',
     lang: datos.idioma || 'es',
     // Con el mismo tag, un aviso nuevo reemplaza al anterior en vez de
     // apilarse. Nadie quiere ver cuatro recordatorios del mismo día.

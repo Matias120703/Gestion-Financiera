@@ -6,7 +6,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import type { Textos } from '@/i18n/diccionarios';
-import { dinero, fechaLegible } from '@/lib/formato';
+import { dinero, dineroQueEntra, fechaLegible } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
@@ -87,7 +87,8 @@ export function PantallaFiado({
         <Indicador
           destacado
           titulo={t.fiado.teDeben}
-          valor={plata(resumen.total)}
+          // En media pantalla: un total largo se partía en dos renglones.
+          valor={dineroQueEntra(resumen.total, moneda, locale, t.formato)}
           detalle={resumen.cuantos > 0 ? quienes : t.fiado.nadieTeDebeNada}
         />
         <Indicador

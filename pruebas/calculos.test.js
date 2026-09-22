@@ -1169,7 +1169,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el velo del menú no deja arrastrar', nav.includes('flex touch-none items-center'), true);
   ok('solo los cuadros se desplazan', nav.includes('touch-pan-y grid-cols-3'), true);
   ok('la barra de abajo nunca arrastra la pantalla', nav.includes('bottom-0 z-50 touch-none'), true);
-  ok('y la captura igual', cap.includes('flex touch-none items-center') && cap.includes('touch-pan-y overflow-y-auto'), true);
+  ok('y la captura igual', cap.includes('flex touch-none justify-center') && cap.includes('touch-pan-y overflow-y-auto'), true);
 
   ok('el menú flota centrado, por encima de todo',
     nav.includes('fixed inset-0 z-[60] flex touch-none items-center justify-center'), true);
@@ -1179,7 +1179,14 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('con el menú abierto la barra de abajo desaparece', nav.includes("${abierto ? 'hidden' : ''}"), true);
   ok('y se sale con una X', nav.includes('aria-label={t.comun.cerrar}'), true);
   ok('el bloqueo no le toca el overflow a la raíz', fondo.includes("raiz.style.overflow = 'hidden'"), false);
-  ok('la captura también', cap.includes('items-center justify-center overscroll-none bg-noche/70'), true);
+  ok('la captura también', cap.includes('justify-center overscroll-none bg-noche/70') && cap.includes("'items-center pt-6'"), true);
+  // Menos al escribir: centrado, el teclado del celular le tapaba los botones.
+  ok('al escribir, el cuadro va arriba y deja lugar al teclado',
+    cap.includes("modo === 'texto' ? 'items-start") && cap.includes('sm:items-center'), true);
+  // Una sola caja se desplaza: con dos, en el iPhone Guardar quedaba afuera.
+  ok('la revisión no tiene su propia caja con scroll',
+    ['CapturaInteligente', 'RevisionCliente', 'RevisionFiado', 'RevisionProducto']
+      .some((n) => fs.readFileSync(`src/components/${n}.tsx`, 'utf8').includes('max-h-[78vh]')), false);
 
   // Una sola luz, y es donde estás AHORA: con el menú abierto estás en el
   // menú, no en el panel de atrás.

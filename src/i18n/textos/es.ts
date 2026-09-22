@@ -1756,6 +1756,8 @@ export const es = {
     logradoDe: (logrado: string, meta: string) => `${logrado} de ${meta}`,
     faltanDias: (n: number, ritmo: string) => `Faltan ${n} ${n === 1 ? 'día' : 'días'} · ${ritmo} por día`,
     deLoVendido: (p: string) => `${p} de lo vendido`,
+    // En el celular las unidades van en la línea gris, no en su columna.
+    unidadesCorto: (n: string) => `${n} u.`,
     soloCargar: 'Podés cargar ventas y gastos, ver el stock y consultar el historial del negocio. El detalle de costos y rentabilidad queda para el propietario y los administradores.',
     quedan: (n: string) => `quedan ${n}`,
     resumenFino: (ticket: string, unidades: string, margen: string) => `Ticket promedio ${ticket} · ${unidades} unidades vendidas · margen neto ${margen}`,

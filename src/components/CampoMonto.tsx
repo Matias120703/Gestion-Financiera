@@ -64,8 +64,18 @@ export function CampoMonto({
 
   function alTipear(e: React.ChangeEvent<HTMLInputElement>) {
     const el = e.target;
-    const crudo = el.value;
+    let crudo = el.value;
     const cursor = el.selectionStart ?? crudo.length;
+
+    // En el iPhone, el teclado decimal trae el separador de la Región del
+    // teléfono y no el del idioma de la app: con el teléfono en inglés solo
+    // hay punto, y el punto acá es de miles. Si se acaba de apretar un punto y
+    // todavía no hay decimal, ese punto (solo ese, no los de miles que ya
+    // estaban) es la coma.
+    if (decimales > 0 && coma !== '.' && !crudo.includes(coma) && cursor > 0
+        && crudo[cursor - 1] === '.' && (e.nativeEvent as InputEvent).data === '.') {
+      crudo = crudo.slice(0, cursor - 1) + coma + crudo.slice(cursor);
+    }
     const digitosAntes = soloDigitos(crudo.slice(0, cursor));
 
     // Se queda con los dígitos y, si la moneda los admite, un solo decimal.

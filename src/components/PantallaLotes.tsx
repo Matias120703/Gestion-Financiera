@@ -367,7 +367,7 @@ function FormularioLote({
         <div className="flex gap-2">
           <div className="flex-1">
             <label className="etiqueta" htmlFor="lote-cant">{t.lotes.cantidad}</label>
-            <input id="lote-cant" type="number" className="campo" min={0} step="any" value={cantidad}
+            <input id="lote-cant" type="number" inputMode="decimal" className="campo" min={0} step="any" value={cantidad}
               disabled={ocupado} onChange={(e) => setCantidad(e.target.value)} />
           </div>
           <div className="flex-1">

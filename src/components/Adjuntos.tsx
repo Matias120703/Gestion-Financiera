@@ -116,7 +116,7 @@ export function Adjuntos({
       {puedeAgregar && (
         <>
           <input
-            ref={archivoRef} type="file" accept="image/*" capture="environment"
+            ref={archivoRef} type="file" accept="image/*"
             className="hidden" onChange={agregar}
           />
           <button

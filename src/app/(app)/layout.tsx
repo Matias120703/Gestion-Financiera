@@ -38,7 +38,10 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
           rol={ctx.miembro.rol}
         />
 
-        <main className="flex-1 px-4 pb-36 pt-5 lg:px-7 lg:pb-10">
+        {/* El aire de abajo crece con la zona segura del iPhone, como el
+            micrófono: con 144px fijos, en la app instalada el botón tapaba
+            el último renglón (anular, un monto). */}
+        <main className="flex-1 px-4 pb-[calc(10rem+env(safe-area-inset-bottom))] pt-5 lg:px-7 lg:pb-10">
           <div className="mx-auto w-full max-w-6xl">
             {/* Va en el layout y no en cada pantalla: la cuenta vencida no es
                 un asunto del panel ni de gastos, es del sistema entero. */}

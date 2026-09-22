@@ -542,7 +542,10 @@ export function BotonCaptura({
       </button>
 
       {abierto && (
-        <div className="fixed inset-0 z-[60] flex touch-none items-center justify-center overscroll-none bg-noche/70 px-4 pb-24 pt-6 backdrop-blur-sm sm:pb-6" onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
+        <div className={`fixed inset-0 z-[60] flex touch-none justify-center overscroll-none bg-noche/70 px-4 pb-24 backdrop-blur-sm sm:items-center sm:pb-6 sm:pt-6 ${
+          // Al escribir, arriba: centrado, el teclado le tapaba Atrás e Interpretar.
+          modo === 'texto' ? 'items-start pt-[calc(env(safe-area-inset-top)+16px)]' : 'items-center pt-6'
+        }`} onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
           <div
             className={`max-h-full w-full max-w-md touch-pan-y overflow-y-auto overscroll-contain aparecer ${
               modo === 'menu'
@@ -816,7 +819,10 @@ function Revision({
   const faltaElegirDeuda = esPago && !infoDeuda.deuda_id;
 
   return (
-    <div className="max-h-[78vh] overflow-y-auto scroll-limpio">
+    // Sin caja propia con scroll: el diálogo de afuera ya se desplaza. Con
+    // dos cajas, en el iPhone el 78vh medía más que lo visible y el botón
+    // Guardar quedaba fuera de alcance.
+    <div>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-[19px] font-bold tracking-tight">{t.captura.revisar}</h2>
@@ -1030,7 +1036,7 @@ function Revision({
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <label className="block">
                     <span className="mb-1 block text-[11.5px] font-semibold text-tinta/50">{t.captura.cantidad}</span>
-                    <input type="number" inputMode="numeric" min={0} step="any" className="campo py-2 text-[14px]" value={it.cantidad}
+                    <input type="number" inputMode="decimal" min={0} step="any" className="campo py-2 text-[14px]" value={it.cantidad}
                       onChange={(e) => setItem(n, { cantidad: Number(e.target.value) || 0 })} />
                   </label>
                   <label className="block">

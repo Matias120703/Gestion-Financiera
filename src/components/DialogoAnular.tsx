@@ -73,7 +73,9 @@ export function DialogoAnular({
         <div className="mt-4">
           <label className="etiqueta" htmlFor="motivo-anulacion">{t.pantallas.motivo}<span className="font-normal text-tinta/35"> {t.movimientos.opcional}</span></label>
           <input
-            id="motivo-anulacion" className="campo" maxLength={200} autoFocus
+            // Sin autoFocus: el motivo es opcional, y el teclado que subía solo
+            // tapaba las sugerencias y los botones de anular.
+            id="motivo-anulacion" className="campo" maxLength={200}
             placeholder={t.pantallas.motivoEjemplo} value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
           />

@@ -177,6 +177,22 @@ export function dineroCorto(
 }
 
 /**
+ * El monto entero si entra en una casilla de media pantalla, y si no, el
+ * corto (13,0 M).
+ *
+ * A 22px, en la mitad de un celular de 360 entran unas 12 letras:
+ * «Gs. 850.000» entra entero y se lee exacto; «Gs. 13.000.000» se partía en
+ * dos renglones («Gs.» arriba, el número abajo). Abreviar siempre perdería
+ * precisión donde no hace falta.
+ */
+export function dineroQueEntra(
+  valor: number, moneda: Moneda = 'PYG', locale?: string, abrev: Abreviaturas = ABREVIATURAS_POR_DEFECTO, max = 12,
+): string {
+  const lleno = dinero(valor, moneda, true, locale);
+  return lleno.length > max ? dineroCorto(valor, moneda, locale, abrev) : lleno;
+}
+
+/**
  * Marca de "este dato no está disponible para vos".
  * Nunca se reemplaza por un cero: un cero parece un dato, un guion no.
  */

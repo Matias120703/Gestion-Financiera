@@ -831,7 +831,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
               <div>
                 <label className="etiqueta">Meses</label>
                 <input
-                  type="number" min={1} max={24} className="campo"
+                  type="number" inputMode="numeric" min={1} max={24} className="campo"
                   value={meses} onChange={(e) => setMeses(Math.max(1, Number(e.target.value) || 1))}
                 />
               </div>
@@ -903,7 +903,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
               <p className="titulo-seccion mb-2.5">Dar unos días más</p>
               <div className="flex items-end gap-2">
                 <input
-                  type="number" min={1} max={90} className="campo flex-1"
+                  type="number" inputMode="numeric" min={1} max={90} className="campo flex-1"
                   value={dias} onChange={(e) => setDias(Math.max(1, Number(e.target.value) || 1))}
                 />
                 <button className="boton-suave shrink-0 py-2.5" onClick={estirar} disabled={ocupado}>

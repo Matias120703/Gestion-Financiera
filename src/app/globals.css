@@ -474,3 +474,14 @@ html.oscuro .barra-lente {
   .barra-carga-activa { animation: none; transform: scaleX(1); opacity: .75; }
   .barra-carga-lista { animation: none; opacity: 0; transition: opacity .2s; }
 }
+
+/* Fechas y horas en el iPhone. Safari dibuja el valor de un campo de fecha u
+   hora con su propia caja, centrada y sin alto mínimo: la fecha salía al medio
+   (el resto de los campos va a la izquierda) y un campo de fecha vacío quedaba
+   más bajo que los demás. Es lo mismo que hace Tailwind 4 en su base. Fuera de
+   las capas a propósito: Tailwind borraría una regla que no ve usada. Chrome y
+   Android no la reconocen y no cambia nada ahí. */
+input::-webkit-date-and-time-value {
+  min-height: 1.5em;
+  text-align: inherit;
+}

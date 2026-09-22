@@ -175,7 +175,10 @@ export function CalendarioAgenda({
                 </span>
                 {d.turnos > 0 ? (
                   <span className="text-[10.5px] font-bold leading-none tabular-nums text-tinta/70">
-                    {vista === 'semana' ? a.turnosN(d.turnos) : d.turnos}
+                    {/* Solo el número, también en la semana: «3 horários» no entra en
+                        una casilla de 37px y cruzaba el borde. La frase entera va en
+                        el aria-label del botón. */}
+                    {d.turnos}
                   </span>
                 ) : (
                   <span className="text-[10px] leading-none text-tinta/30">{d.estado === 'cerrado' ? '—' : ''}</span>
