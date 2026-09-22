@@ -460,15 +460,15 @@ ok('una cuenta personal también tiene su nombre en portugués',
 // cuenta que ya la tenga guardada sigue andando. Por eso se comprueban las
 // dos cosas: que no se ofrezca, y que igual siga funcionando.
 ok('la lista que se ofrece al registrarse',
-  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'entrenamiento', 'ganaderia']);
+  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia']);
 ok('agricultura no se ofrece',
   LISTA_RUBROS.some((r) => r.clave === 'agricultura'), false);
 
-// Clases y cursos (087) no se ofrece mientras se rehace para como trabaja
-// un profe de verdad (090). La ficha sigue entera y funciona; solo no está
-// en la lista del alta, igual que agricultura.
-ok('clases y cursos no se ofrece mientras se rehace',
-  LISTA_RUBROS.some((r) => r.clave === 'clases'), false);
+// Clases y cursos (087) estuvo fuera del alta mientras se rehacía (090).
+// Vuelve a la lista a pedido de Matías (22/09): un profe tiene que poder
+// crear su cuenta.
+ok('clases y cursos se ofrece al crear una cuenta',
+  LISTA_RUBROS.some((r) => r.clave === 'clases'), true);
 ok('con la agenda prendida, que es donde vive cada clase',
   fichaDe('clases', 'emprendedor').secciones['/agenda'], true);
 ok('y sin lotes, que ahí no significan nada',

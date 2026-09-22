@@ -395,15 +395,13 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
  * `RUBROS`—.
  */
 export const LISTA_RUBROS: FichaRubro[] = [
-  RUBROS.comercio, RUBROS.servicios, RUBROS.entrenamiento, RUBROS.ganaderia,
+  RUBROS.comercio, RUBROS.servicios, RUBROS.clases, RUBROS.entrenamiento, RUBROS.ganaderia,
 ];
-// CLASES Y CURSOS TAMPOCO SE OFRECE, POR AHORA (090).
-//
-// Se está rehaciendo para como trabaja un profe de verdad: inscribir a un
-// alumno con sus días y horario, cobrar el período, renovar. Mientras eso
-// no esté completo, alguien que se registrara hoy caería en un rubro a
-// medio armar. Vuelve a esta lista cuando el flujo esté entero, igual que
-// agricultura: la ficha sigue, la base lo acepta, solo no se ofrece.
+// CLASES Y CURSOS VUELVE A OFRECERSE (22/09). Estuvo afuera desde la 090
+// mientras se rehacía para como trabaja un profe de verdad (inscribir con
+// días y horario, cobrar el período, marcar la clase). Matías, al ver el
+// alta: «también falta la de los docentes, para que puedan crear su
+// cuenta».
 //
 // EL PERSONAL TRAINER SÍ SE OFRECE (097, 22/09). Matías lo pidió para
 // probarlo creando una cuenta como cualquiera: «podés agregarlo al crear la
