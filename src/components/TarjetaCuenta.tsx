@@ -41,7 +41,7 @@ export function TarjetaCuenta({
 
   return (
     <div
-      className={`relative isolate aspect-[1.586] overflow-hidden rounded-[18px] p-4 text-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.55)] ${className}`}
+      className={`relative isolate flex aspect-[1.586] flex-col justify-between overflow-hidden rounded-[18px] p-4 text-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.55)] ${className}`}
       style={{ background: fondoDeTarjeta(cuenta) }}
     >
       {/* El brillo de una tarjeta de plástico: dos círculos grandes, apenas
@@ -50,7 +50,11 @@ export function TarjetaCuenta({
       <span aria-hidden className="pointer-events-none absolute -bottom-16 -right-2 -z-10 h-36 w-36 rounded-full bg-white/[0.06]" />
       <span aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-white/[0.07] to-transparent" />
 
-      <div className="flex h-full flex-col justify-between">
+      {/* LA TARJETA MISMA REPARTE EL ESPACIO, SIN CAJA DE ALTO 100%.
+          Había una caja adentro con `h-full`, y en el iPhone (WebKit) ese
+          100% salía más alto que la tarjeta: el saldo, que va abajo, quedaba
+          afuera y cortado. En Chrome no pasaba. Ahora el reparto lo hace la
+          tarjeta, y si algo no entra la tarjeta crece en vez de cortarlo. */}
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 truncate text-[15px] font-bold leading-tight tracking-tight">{cuenta.nombre}</p>
           {/* Oscurece en vez de aclarar: sobre blanco al 15% la letra no
@@ -65,10 +69,11 @@ export function TarjetaCuenta({
 
         <Emblema tipo={cuenta.tipo} />
 
-        <p className="truncate font-titulo text-[21px] font-extrabold leading-none tabular-nums tracking-tight">
+        {/* `leading-tight` y no `leading-none`: con el recorte de `truncate`,
+            un alto de línea igual al de la letra le come las puntas. */}
+        <p className="truncate font-titulo text-[21px] font-extrabold leading-tight tabular-nums tracking-tight">
           {saldo}
         </p>
-      </div>
     </div>
   );
 }
