@@ -147,7 +147,10 @@ export function PaquetesAlumno({
             return (
               <li key={pq.id} className={`rounded-xl bg-superficie px-3.5 py-3 ${activo ? '' : 'opacity-60'}`}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 truncate text-[14px] font-bold">{pq.nombre}</span>
+                  <span className="min-w-0 truncate text-[14px] font-bold">
+                    {pq.materia && <span className="text-verde-fuerte">{pq.materia} · </span>}
+                    {pq.nombre}
+                  </span>
                   <span className={`shrink-0 text-[12px] font-semibold ${activo ? 'text-verde-fuerte' : 'text-tinta/50'}`}>
                     {activo ? p.quedan(cuantas(pq.quedan)) : p.estados[pq.estado]}
                   </span>
@@ -394,7 +397,7 @@ export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; mon
             <div className="flex items-baseline justify-between gap-3">
               <span className="min-w-0">
                 <span className="block truncate text-[14px] font-semibold">{x.alumno}</span>
-                <span className="block truncate text-[12px] text-tinta/50">{x.nombre}</span>
+                <span className="block truncate text-[12px] text-tinta/50">{x.materia ? `${x.materia} · ${x.nombre}` : x.nombre}</span>
               </span>
               <span className="shrink-0 text-[14px] font-bold tabular-nums">{plata(Number(x.monto))}</span>
             </div>

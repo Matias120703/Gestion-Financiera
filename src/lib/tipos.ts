@@ -1088,11 +1088,13 @@ export interface TurnoDelDia {
   avisado: boolean;
   /** La inscripción de la que salió esta clase (091). Null en un turno común. */
   paquete_id?: string | null;
+  /** Qué se le enseña en esa clase (094). Null si no se dijo. */
+  materia?: string | null;
 }
 
 /** Lo que mira un profe al abrir Orden (092). */
 export interface PanelProfe {
-  hoy: { id: string; hora: string; alumno: string; estado: string }[];
+  hoy: { id: string; hora: string; alumno: string; estado: string; materia: string | null }[];
   clases_periodo: number;
   cobrado: number;
   gastado: number;
@@ -1213,6 +1215,8 @@ export interface PaqueteAlumno {
   quedan: number;
   estado: 'activo' | 'terminado' | 'vencido' | 'cerrado';
   historia: { id: string; fecha: string; cantidad: number; motivo: 'dada' | 'falta' }[];
+  /** Qué se le enseña (094). Null si no se dijo. */
+  materia: string | null;
   /** El horario, si salió de inscribir a un alumno (091). Null en un paquete suelto. */
   dias: number[] | null;
   hora_desde: string | null;
@@ -1226,7 +1230,7 @@ export interface PaqueteAlumno {
 /** Lo que falta cobrar de las inscripciones (091). */
 export interface PorCobrarAlumnos {
   total: number;
-  lista: { paquete: string; cliente_id: string; alumno: string; nombre: string; monto: number; desde: string | null; hasta: string | null }[];
+  lista: { paquete: string; cliente_id: string; alumno: string; nombre: string; materia: string | null; monto: number; desde: string | null; hasta: string | null }[];
 }
 
 export interface ClienteLista {

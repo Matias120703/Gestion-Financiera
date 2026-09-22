@@ -78,6 +78,9 @@ export function InscribirAlumno({
     ? `${String((Number(horaDictada.slice(0, 2)) + 1) % 24).padStart(2, '0')}${horaDictada.slice(2)}` : '19:00');
   const [desde, setDesde] = useState(diaDictado ?? hoy);
   const [hasta, setHasta] = useState(finDePeriodo(diaDictado ?? hoy, 1));
+  // Qué se le enseña (094). Texto libre, con las que ya usó como sugerencia.
+  const [materia, setMateria] = useState('');
+  const [sugeridas, setSugeridas] = useState<string[]>([]);
   const [modo, setModo] = useState<'hora' | 'cerrado'>('hora');
   const [precioHora, setPrecioHora] = useState(() => {
     try { return Number(localStorage.getItem(CLAVE_PRECIO)) || 0; } catch { return 0; }
@@ -94,6 +97,17 @@ export function InscribirAlumno({
     const f = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' });
     return (d: number) => f.format(new Date(Date.UTC(2026, 9, 4 + d))).replace('.', '');
   }, [locale]);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const { data } = await clienteNavegador().rpc('materias_usadas', { p_empresa: empresaId });
+        if (vivo && Array.isArray(data)) setSugeridas(data as string[]);
+      } catch { /* sin sugerencias se escribe igual */ }
+    })();
+    return () => { vivo = false; };
+  }, [empresaId]);
 
   // Mientras se escribe, la base dice cuántas clases, cuánto y con quién choca.
   useEffect(() => {
@@ -139,6 +153,7 @@ export function InscribirAlumno({
         p_precio_hora: modo === 'hora' ? precioHora : null,
         p_total: modo === 'cerrado' ? total : null,
         p_pagado: pagado === true, p_metodo: metodo, p_nombre: nombreDeInscripcion(),
+        p_materia: materia.trim() || null,
       });
       if (e) throw e;
       try { if (modo === 'hora' && precioHora > 0) localStorage.setItem(CLAVE_PRECIO, String(precioHora)); } catch { /* sin almacenamiento, se vuelve a escribir */ }
@@ -168,6 +183,16 @@ export function InscribirAlumno({
           ayudaTelefono={i.telefonoAyuda}
         />
       )}
+
+      {/* Qué se le enseña: lo que el profe tiene que saber al mirar la agenda. */}
+      <label className="block">
+        <span className="etiqueta">{i.materia}</span>
+        <input className="campo mt-1" maxLength={60} list="materias-usadas" placeholder={i.materiaEjemplo}
+          value={materia} onChange={(e) => setMateria(e.target.value)} />
+        <datalist id="materias-usadas">
+          {sugeridas.map((m) => <option key={m} value={m} />)}
+        </datalist>
+      </label>
 
       <div>
         <span className="etiqueta">{i.dias}</span>

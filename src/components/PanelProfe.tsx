@@ -45,15 +45,20 @@ export function PanelProfe({
           <ul className="divide-y divide-borde">
             {datos.hoy.map((c) => (
               <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                <span className="flex items-baseline gap-3">
-                  <span className="text-[15px] font-bold tabular-nums">{c.hora}</span>
-                  <span className="text-[14.5px] font-semibold">{c.alumno}</span>
+                {/* La materia debajo del nombre y no al lado: en un celular, al
+                    lado, el nombre se partía en tres renglones angostos. */}
+                <span className="flex min-w-0 items-baseline gap-3">
+                  <span className="shrink-0 text-[15px] font-bold tabular-nums">{c.hora}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[14.5px] font-semibold">{c.alumno}</span>
+                    {c.materia && <span className="block truncate text-[12.5px] text-tinta/50">{c.materia}</span>}
+                  </span>
                 </span>
                 {c.estado === 'atendida' && (
-                  <span className="pastilla bg-verde text-sobre-verde">{t.agenda.claseDada}</span>
+                  <span className="pastilla shrink-0 whitespace-nowrap bg-verde text-sobre-verde">{t.agenda.claseDada}</span>
                 )}
                 {c.estado === 'no_vino' && (
-                  <span className="pastilla bg-rojo-claro text-rojo">{t.agenda.claseNoTenida}</span>
+                  <span className="pastilla shrink-0 whitespace-nowrap bg-rojo-claro text-rojo">{t.agenda.claseNoTenida}</span>
                 )}
               </li>
             ))}

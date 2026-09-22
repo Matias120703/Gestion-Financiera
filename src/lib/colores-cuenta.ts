@@ -130,3 +130,37 @@ export function colorDeCuenta(cuenta: {
 export function tonoDeCuenta(cuenta: { nombre: string; tipo: string; color?: string | null }): string {
   return TONO[colorDeCuenta(cuenta)];
 }
+
+/**
+ * EL COLOR DE UNA TARJETA ENTERA (094).
+ *
+ * Matías: «quiero que se vea como una tarjeta real de un banco, y con el
+ * color en toda la tarjeta, no solo en una partecita».
+ *
+ * Una tarjeta pintada entera lleva la letra blanca encima, y ahí los tonos
+ * de los círculos no alcanzan. El nombre de la cuenta va arriba a la
+ * izquierda, en letra chica (15px), justo donde el degradé todavía no
+ * oscureció: necesita 4,5 de contraste. Con los tonos de los círculos, el
+ * verde daba 3,4, el naranja 3,6 y el celeste 4,0 —una revisión lo midió
+ * píxel por píxel, con el brillo de encima incluido—.
+ *
+ * Así que esos tres arrancan más profundos: verde 4,8, celeste 5,2 y
+ * naranja 4,6, ya con el brillo. Los otros cinco pasaban. El que eligió
+ * naranja sigue viendo naranja; solo que ahora se lee lo que dice encima.
+ */
+export const TARJETA: Record<ColorCuenta, { desde: string; hasta: string }> = {
+  verde:   { desde: '#047857', hasta: '#03503A' },
+  rojo:    { desde: '#A4262C', hasta: '#5E1216' },
+  azul:    { desde: '#24508F', hasta: '#0E2241' },
+  celeste: { desde: '#0369A1', hasta: '#06507A' },
+  naranja: { desde: '#C2410C', hasta: '#8A2F0E' },
+  violeta: { desde: '#7A48B3', hasta: '#3E1A6E' },
+  rosa:    { desde: '#C4365A', hasta: '#7A1331' },
+  gris:    { desde: '#565D62', hasta: '#232629' },
+};
+
+/** El fondo de la tarjeta de una cuenta, listo para `background`. */
+export function fondoDeTarjeta(cuenta: { nombre: string; tipo: string; color?: string | null }): string {
+  const { desde, hasta } = TARJETA[colorDeCuenta(cuenta)];
+  return `linear-gradient(135deg, ${desde} 0%, ${hasta} 100%)`;
+}

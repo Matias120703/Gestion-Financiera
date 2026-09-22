@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { dinero } from '@/lib/formato';
 import { useOcultarMontos } from '@/lib/ocultar-montos';
 import { useLocale, useTextos } from '@/i18n/cliente';
-import { BotonOjo, IconoCuenta } from '@/components/PantallaBilletera';
-import { tonoDeCuenta } from '@/lib/colores-cuenta';
+import { BotonOjo } from '@/components/PantallaBilletera';
+import { TarjetaCuenta } from '@/components/TarjetaCuenta';
 import type { Billetera } from '@/lib/tipos';
 
 /**
@@ -60,27 +60,26 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
 
       {/* Se desliza de costado. El `-mx-4 px-4` hace que la primera tarjeta
           arranque alineada con el resto del panel y la última pueda salirse
-          por el borde: así se ve que hay más y se invita a deslizar. */}
-      <div className="scroll-limpio -mx-4 mt-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0">
+          por el borde: así se ve que hay más y se invita a deslizar. El
+          `scroll-px-4` es lo que hace que, al encajar, la tarjeta respete ese
+          margen: sin él, el encaje la pegaba al borde de la pantalla.
+
+          Un carrusel que se desliza de costado recorta también arriba y abajo.
+          Por eso el `pb-6 -mb-4` (la sombra de la tarjeta baja unos 22px y
+          sin ese aire se cortaba en seco) y el `pt-1` con los 4px a los
+          costados en pantalla grande: son para que el recuadro de foco del
+          teclado se vea entero. */}
+      <div className="scroll-limpio -mx-4 -mb-4 mt-2 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-6 pt-1 lg:-mx-1 lg:scroll-px-1 lg:px-1">
         {cuentas.map((c) => (
           <Link
             key={c.id}
             href="/billetera"
-            className="tarjeta relative w-[168px] shrink-0 snap-start overflow-hidden p-4 transition hover:border-verde/50 active:bg-arena"
+            className="w-[236px] shrink-0 snap-start rounded-[18px] transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-verde-fuerte"
           >
-            {/* Una franja del color del banco arriba de la tarjeta (086). Es
-                lo que se ve primero al deslizar, antes de leer el nombre. */}
-            <span
-              aria-hidden
-              className="absolute inset-x-0 top-0 h-1"
-              style={{ backgroundColor: tonoDeCuenta(c) }}
-            />
-            <IconoCuenta cuenta={c} />
-            <p className="mt-3 truncate text-[14.5px] font-semibold">{c.nombre}</p>
-            <p className="text-[12px] text-tinta/50">{b.tipos[c.tipo]}</p>
-            <p className="mt-2 truncate text-[17px] font-bold tabular-nums tracking-tight">
-              {plata(Number(c.saldo))}
-            </p>
+            {/* Una tarjeta de banco de verdad, pintada entera del color de
+                la cuenta (094). Antes era una tarjeta blanca con una franja
+                de color arriba: se distinguía, pero no resaltaba. */}
+            <TarjetaCuenta cuenta={c} tipo={b.tipos[c.tipo]} saldo={plata(Number(c.saldo))} />
           </Link>
         ))}
       </div>

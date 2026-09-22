@@ -1127,6 +1127,8 @@ export const es = {
     alumnoEjemplo: 'Nombre del alumno',
     telefonoAyuda: 'Su WhatsApp, para escribirle cuando haga falta.',
     faltaAlumno: 'Elegí o escribí el nombre del alumno.',
+    materia: 'Qué le enseñás',
+    materiaEjemplo: 'Inglés, matemática, guitarra…',
     dias: 'Qué días',
     de: 'De',
     a: 'A',

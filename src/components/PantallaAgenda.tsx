@@ -285,11 +285,13 @@ export function PantallaAgenda({
 
                 {/* Un profe da sus clases solo: «Clase · su propio nombre» debajo
                     de cada una no dice nada (092). Queda el teléfono, si hay. */}
-                {(!deAlumnos || r.telefono) && (
+                {(!deAlumnos || r.telefono || r.materia) && (
                   <p className="mt-0.5 text-[12.5px] text-tinta/50">
                     {!deAlumnos && <>{r.servicio} · {r.profesional}</>}
+                    {/* Para un profe, qué se da en esa clase (094). */}
+                    {deAlumnos && r.materia && <span className="font-semibold text-tinta/70">{r.materia}</span>}
                     {r.telefono && (
-                      <>{!deAlumnos && ' · '}<a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
+                      <>{(!deAlumnos || r.materia) && ' · '}<a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
                     )}
                   </p>
                 )}

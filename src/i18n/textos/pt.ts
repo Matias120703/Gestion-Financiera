@@ -1083,6 +1083,8 @@ export const pt: Textos = {
     alumnoEjemplo: 'Nome do aluno',
     telefonoAyuda: 'O WhatsApp dele, para escrever quando precisar.',
     faltaAlumno: 'Escolha ou escreva o nome do aluno.',
+    materia: 'O que você ensina',
+    materiaEjemplo: 'Inglês, matemática, violão…',
     dias: 'Quais dias',
     de: 'Das',
     a: 'Às',
@@ -2394,7 +2396,10 @@ export const pt: Textos = {
     verBilletera: 'Ver a carteira',
     verTodo: 'Ver tudo',
     deslizaParaVer: 'Deslize pra ver cada conta',
-    tipos: { banco: 'Banco', efectivo: 'Dinheiro', billetera: 'Carteira digital' } as Record<string, string>,
+    // «Carteira» y no «Carteira digital»: en la tarjeta del panel la etiqueta
+    // larga le cortaba el nombre a la cuenta («Mercado P…»). En español ya
+    // era «Billetera», a secas.
+    tipos: { banco: 'Banco', efectivo: 'Dinheiro', billetera: 'Carteira' } as Record<string, string>,
     recibe: (metodos: string) => `Recebe: ${metodos}`,
     noRecibeNada: 'Não recebe nada sozinha: mova com transferências ou ajustes',
     esteMes: 'Este mês:',

@@ -267,6 +267,52 @@ const LMJ = [1, 2, 4];
   rechazado('un turno que no es de una inscripción no se marca así',
     await como(P.uid, 'select public.marcar_clase($1, true)', ['00000000-0000-0000-0000-000000000000']), 'no existe');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('9 · Qué se le enseña (094)');
+  // ═══════════════════════════════════════════════════════════
+  // Matías: «especificar qué se le va a enseñar a ese alumno: inglés,
+  // matemática, o algo distinto». Se anota al inscribir y se ve donde se
+  // mira el día.
+  const conMateria = (uid, cliente, args, materia) => como(uid,
+    'select public.inscribir_alumno($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) j',
+    [P.empresaId, cliente, ...args, materia]);
+  const eva = await alumno('Eva Giménez', '0986666666');
+  const ingles = await conMateria(P.uid, eva,
+    [[6], '09:00', '10:00', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null], '  Inglés  ');
+  ok('se inscribe con su materia', ingles.ok, true);
+  const pqEva = (await paquetesDe(eva))[0];
+  ok('la ficha dice qué se le enseña, sin los espacios de más', pqEva.materia, 'Inglés');
+
+  // Sábado 3 de octubre: la clase de Eva.
+  const agendaSab = (await valor(P.uid, "select public.agenda_del_dia($1, '2026-10-03') j", [P.empresaId])).j;
+  ok('la agenda del día muestra la materia de la clase',
+    agendaSab.find((x) => x.cliente === 'Eva Giménez').materia, 'Inglés');
+  ok('y la clase que no dijo materia queda sin ella, sin inventarla',
+    (await valor(P.uid, "select public.agenda_del_dia($1, '2026-10-01') j", [P.empresaId])).j
+      .find((x) => x.cliente === 'Matías Aranda').materia, null);
+  ok('lo que falta cobrar también la dice',
+    (await valor(P.uid, 'select public.por_cobrar_alumnos($1) j', [P.empresaId])).j.lista
+      .find((x) => x.alumno === 'Eva Giménez').materia, 'Inglés');
+
+  // Las que ya usó, para sugerirlas: la más usada primero.
+  const fede = await alumno('Fede Rojas', '0987777777');
+  await conMateria(P.uid, fede,
+    [[6], '10:00', '11:00', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null], 'Matemática');
+  await conMateria(P.uid, fede,
+    [[0], '10:00', '11:00', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null], 'Inglés');
+  ok('sugiere las que ya usó, la más usada primero',
+    (await valor(P.uid, 'select public.materias_usadas($1) j', [P.empresaId])).j, ['Inglés', 'Matemática']);
+
+  // Vacía es «no se dijo», no una materia en blanco.
+  const gabi = await alumno('Gabi Paredes', '0988888888');
+  await conMateria(P.uid, gabi,
+    [[6], '11:00', '12:00', '2026-10-01', '2026-10-31', 50000, null, false, 'efectivo', null], '   ');
+  ok('una materia vacía se guarda como no dicha', (await paquetesDe(gabi))[0].materia, null);
+  ok('y no aparece entre las sugerencias',
+    (await valor(P.uid, 'select public.materias_usadas($1) j', [P.empresaId])).j.includes(''), false);
+  rechazado('otra academia no ve las materias de acá',
+    await como(Otro.uid, 'select public.materias_usadas($1)', [P.empresaId]), 'pertenecés');
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE INSCRIPCIONES FALLARON`);
