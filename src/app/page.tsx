@@ -122,7 +122,7 @@ export default async function Portada({
    */
   const { data: promo } = await supabase.rpc('promo_de_la_prueba');
   const descuentoPct = Math.round(Number((promo as { porcentaje?: number } | null)?.porcentaje ?? 18));
-  const constanciaPct = Math.round(Number((promo as { constancia_porcentaje?: number } | null)?.constancia_porcentaje ?? 20));
+  const constanciaPct = Math.round(Number((promo as { constancia_porcentaje?: number } | null)?.constancia_porcentaje ?? 5));
   const constanciaDias = Number((promo as { constancia_dias?: number } | null)?.constancia_dias ?? 30);
   const rachaNegocio = Number((promo as { negocio?: number } | null)?.negocio ?? 8);
   const rachaPersonal = Number((promo as { personal?: number } | null)?.personal ?? 5);

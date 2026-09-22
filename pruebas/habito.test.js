@@ -512,8 +512,10 @@ const leerRacha = (db, uid, empresaId) =>
     await db.query(
       "update public.suscripciones set estado = 'activa', plan = 'pro' where empresa_id = $1", [L.empresaId]);
     dL = await descuentoL();
-    ok('al pagar, el objetivo pasa a treinta días y el premio a 20%',
-      [dL.fase, dL.objetivo, Number(dL.porcentaje)], ['constancia', 30, 20]);
+    // 5% desde la 093: Matías calculó que 20% era demasiado. La prueba
+    // sigue en 18%, el que se mantiene con la racha viva baja a 5%.
+    ok('al pagar, el objetivo pasa a treinta días y el premio a 5%',
+      [dL.fase, dL.objetivo, Number(dL.porcentaje)], ['constancia', 30, 5]);
     ok('los ocho de la prueba ya no alcanzan: ahora cuenta la racha viva',
       [dL.mejor, dL.faltan, dL.logrado], [8, 22, false]);
 
@@ -540,7 +542,8 @@ const leerRacha = (db, uid, empresaId) =>
     ok('la portada sabe los números de las dos etapas',
       [Number(promo.porcentaje), promo.negocio, promo.personal,
        Number(promo.constancia_porcentaje), promo.constancia_dias],
-      [18, 8, 5, 20, 30]);
+      // La prueba en 18%, la constancia en 5% (093).
+      [18, 8, 5, 5, 30]);
 
     // ---- El plan Básico: el negocio entero, para uno solo (077) ----
     const basico = (await db.query("select public.limites_plan('basico') j")).rows[0].j;
