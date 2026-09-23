@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { contextoObligatorio } from '@/lib/sesion';
+import { contextoObligatorio, type Contexto } from '@/lib/sesion';
 import { rangoDesdeParams, traerProductos, traerRetoActivo } from '@/lib/datos';
 import {
   traerResumen, traerRanking, traerSerieDiaria, traerGastosPorCategoria, traerCobrosPorMetodo,
@@ -31,16 +31,69 @@ import { traerLotes } from '@/lib/lotes';
 import { traerRutinasDeLaAgenda } from '@/lib/agenda';
 import type { PanelProfe as PanelProfeDatos } from '@/lib/tipos';
 import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
+import { InvitarAvisos } from '@/components/InvitarAvisos';
+import { casoDeInvitacion } from '@/lib/invitar-avisos';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaPanel({
-  searchParams: busqueda,
+  searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
+
+  /**
+   * «ACTIVÁ LOS AVISOS» (23/09).
+   *
+   * Va acá, envolviendo al panel entero, y no adentro de cada rama: el panel
+   * tiene cinco salidas (personal, personal sin permiso, profe, campo y
+   * negocio) y una invitación repetida en cinco `return` es una que el día de
+   * mañana falta en la sexta.
+   *
+   * Y va en el panel y no en el layout de (app): el layout la sacaría en
+   * cualquier pantalla, también en medio de una venta o de un cierre. El
+   * panel es a donde se llega al entrar, que es el momento que pidió Matías.
+   *
+   * `caso` dice qué avisos le llegan de verdad a esta persona. Null es que
+   * hoy no le llega ninguno (un vendedor sin agenda, alguien del equipo de
+   * una cuenta personal o del campo, o el dueño de un campo que ya pagó): no
+   * se le pide un permiso para nada.
+   * Con la cuenta vencida tampoco: los avisos del día no salen a quien no
+   * puede cargar, y lo único que tiene que ver esa persona es el candado.
+   */
+  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  const bloqueada = !(ctx.limites?.escritura ?? true);
+  // En prueba es el único momento en que sale el aviso del fin de la prueba:
+  // sin esto, al campo ya pagado se le pediría el permiso para nada, y a
+  // cualquier cuenta pagada se le prometería un aviso que no va a llegar.
+  const enPrueba = ctx.suscripcion?.en_prueba ?? false;
+  const caso = bloqueada ? null : casoDeInvitacion({
+    esPersonal: ctx.empresa.tipo_cuenta === 'personal',
+    esAdmin: ctx.esAdmin,
+    enPrueba,
+    cierraElDia: ficha.secciones['/cierre'],
+    tieneAgenda: ficha.secciones['/agenda'],
+    agendaDeAlumnos: ficha.agendaDeAlumnos,
+  });
+
+  return (
+    <>
+      <ContenidoPanel searchParams={searchParams} ctx={ctx} />
+      {caso && <InvitarAvisos caso={caso} enPrueba={enPrueba} />}
+    </>
+  );
+}
+
+/** El panel de cada cuenta. El contexto llega de arriba: una sola lectura. */
+async function ContenidoPanel({
+  searchParams: busqueda,
+  ctx,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  ctx: Contexto;
+}) {
+  const searchParams = await busqueda;
 
   /**
    * «Fulano pagó su primer mes, te tocan 95.000.»

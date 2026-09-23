@@ -2690,6 +2690,71 @@ export const es = {
     bajarse: 'Si no querés recibir esto, apagalo en Ajustes.',
   },
 
+  // La hoja que ofrece prender los avisos al entrar al panel (23/09). Ver
+  // components/InvitarAvisos.tsx. Cada lista dice SOLO los avisos que hoy le
+  // llegan de verdad a esa persona (ver `casoDeInvitacion` en
+  // lib/invitar-avisos.ts): un ejemplo que no llega es una promesa rota.
+  invitarAvisos: {
+    titulo: 'Activá los avisos',
+    intro: 'Orden te escribe solo cuando hay algo que te sirve:',
+    ejemplos: {
+      negocio: [
+        'A la mañana, cómo te fue ayer.',
+        'A la tarde, si todavía no cargaste nada, para que no se te pase.',
+        'A la noche, cómo cerró el día comparado con ayer.',
+      ],
+      negocioAgenda: [
+        'Cuando alguien reserva por tu link, en el momento.',
+        'La tarde anterior, cuántos turnos tenés mañana y a quién falta avisarle.',
+        'A la mañana y a la noche, cómo te fue el día.',
+      ],
+      alumnos: [
+        'La tarde anterior, cuántas clases tenés mañana y a quién todavía no le avisaste.',
+      ],
+      // El campo solo aparece en prueba (sin prueba no le llega nada), así
+      // que su lista es directamente la línea de la prueba. El «plan activo»
+      // no va: hoy solo sale si la administración activa a mano.
+      campo: [
+        'Antes de que termine tu prueba: tres días antes, el día anterior y el último día.',
+      ],
+      personal: [
+        'A la mañana, cuánto gastaste ayer.',
+        'A la tarde, si todavía no anotaste nada, para que no se te pase.',
+        'A la noche, cómo te fue el día.',
+      ],
+      equipoAgenda: [
+        'Cuando alguien reserva por el link, en el momento.',
+        'La tarde anterior, cuántos turnos hay mañana y a quién falta avisarle.',
+      ],
+      equipoAlumnos: [
+        'La tarde anterior, cuántas clases hay mañana y a quién todavía no se le avisó.',
+      ],
+    },
+    // El fin de la prueba sale solo mientras la cuenta está en prueba (071):
+    // se suma al final de la lista únicamente entonces. A quien ya pagó no le
+    // va a llegar. El equipo no la tiene: ese aviso es del dueño.
+    prueba: {
+      negocio: 'Antes de que termine tu prueba, para que no te quedes sin poder cargar.',
+      negocioAgenda: 'Antes de que termine tu prueba.',
+      alumnos: 'Antes de que termine tu prueba, para que no te quedes sin tu agenda.',
+      personal: 'Antes de que termine tu prueba.',
+    },
+    activar: 'Activar avisos',
+    activando: 'Activando…',
+    ahoraNo: 'Ahora no',
+    seApagan: 'Los apagás cuando quieras desde Ajustes › Avisos.',
+    listo: 'Listo: los avisos van a llegar a este dispositivo.',
+    noSeActivaron: 'No se activaron. Tocá de nuevo «Activar avisos» y elegí «Permitir» en la pregunta que aparece.',
+    bloqueadoTitulo: 'Los avisos están bloqueados',
+    bloqueadoAndroid: 'En Android: tocá el candado al lado de la dirección (o los tres puntos › Información del sitio) › Notificaciones › Permitir.',
+    bloqueadoIphone: 'En iPhone: Configuración › Notificaciones › Orden › Permitir notificaciones.',
+    bloqueadoCompu: 'En la computadora: el candado al lado de la dirección › Notificaciones › Permitir.',
+    bloqueadoDespues: 'Después, en Ajustes › Avisos de Orden, tocá «Activar avisos en este dispositivo».',
+    entendido: 'Entendido',
+    iphoneTitulo: 'Primero, Orden en la pantalla de inicio',
+    iphone: 'En iPhone los avisos llegan solo si Orden está en la pantalla de inicio: es una regla de Apple. Es un minuto, y después abrís Orden desde ese ícono y los activás.',
+  },
+
   // Rutinas, medidas y progreso del personal trainer (098): cada área en su
   // archivo, para que cada pantalla tenga el suyo.
   rutinasEditor: rutinasEditorEs,

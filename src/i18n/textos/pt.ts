@@ -2543,6 +2543,61 @@ export const pt: Textos = {
     bajarse: 'Se não quiser receber isto, desligue em Configurações.',
   },
 
+  invitarAvisos: {
+    titulo: 'Ative os avisos',
+    intro: 'O Orden só te escreve quando tem algo que te serve:',
+    ejemplos: {
+      negocio: [
+        'De manhã, como foi ontem.',
+        'À tarde, se você ainda não lançou nada, pra não passar batido.',
+        'À noite, como fechou o dia comparado com ontem.',
+      ],
+      negocioAgenda: [
+        'Quando alguém reserva pelo seu link, na hora.',
+        'Na tarde anterior, quantos horários você tem amanhã e quem falta avisar.',
+        'De manhã e à noite, como foi o dia.',
+      ],
+      alumnos: [
+        'Na tarde anterior, quantas aulas você tem amanhã e quem você ainda não avisou.',
+      ],
+      campo: [
+        'Antes de terminar seu teste: três dias antes, no dia anterior e no último dia.',
+      ],
+      personal: [
+        'De manhã, quanto você gastou ontem.',
+        'À tarde, se você ainda não anotou nada, pra não passar batido.',
+        'À noite, como foi o seu dia.',
+      ],
+      equipoAgenda: [
+        'Quando alguém reserva pelo link, na hora.',
+        'Na tarde anterior, quantos horários tem amanhã e quem falta avisar.',
+      ],
+      equipoAlumnos: [
+        'Na tarde anterior, quantas aulas tem amanhã e quem ainda não foi avisado.',
+      ],
+    },
+    prueba: {
+      negocio: 'Antes de terminar seu teste, pra você não ficar sem poder lançar.',
+      negocioAgenda: 'Antes de terminar seu teste.',
+      alumnos: 'Antes de terminar seu teste, pra você não ficar sem sua agenda.',
+      personal: 'Antes de terminar seu teste.',
+    },
+    activar: 'Ativar avisos',
+    activando: 'Ativando…',
+    ahoraNo: 'Agora não',
+    seApagan: 'Você desliga quando quiser em Configurações › Avisos.',
+    listo: 'Pronto: os avisos vão chegar neste aparelho.',
+    noSeActivaron: 'Não foram ativados. Toque de novo em «Ativar avisos» e escolha «Permitir» na pergunta que aparece.',
+    bloqueadoTitulo: 'Os avisos estão bloqueados',
+    bloqueadoAndroid: 'No Android: toque no cadeado ao lado do endereço (ou nos três pontinhos › Informações do site) › Notificações › Permitir.',
+    bloqueadoIphone: 'No iPhone: Ajustes › Notificações › Orden › Permitir notificações.',
+    bloqueadoCompu: 'No computador: o cadeado ao lado do endereço › Notificações › Permitir.',
+    bloqueadoDespues: 'Depois, em Configurações › Avisos do Orden, toque em «Ativar avisos neste aparelho».',
+    entendido: 'Entendi',
+    iphoneTitulo: 'Primeiro, o Orden na tela de início',
+    iphone: 'No iPhone os avisos só chegam se o Orden estiver na tela de início: é uma regra da Apple. Leva um minuto, e depois você abre o Orden por esse ícone e ativa.',
+  },
+
   rutinasEditor: rutinasEditorPt,
   rutinasPanel: rutinasPanelPt,
   rutinaPublica: rutinaPublicaPt,

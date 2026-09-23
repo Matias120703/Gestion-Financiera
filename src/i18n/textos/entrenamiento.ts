@@ -19,6 +19,19 @@ import type { Textos } from './es';
  * anota de cada persona, y lo que tiene que leer antes de empezar.
  */
 export const entrenamientoEs: Parcial<Textos> = {
+  // La invitación a prender los avisos (23/09): el aviso de la tarde cuenta
+  // lo agendado para mañana, que para el trainer son sesiones. La línea de
+  // la prueba es la común (`invitarAvisos.prueba`): se suma solo en prueba.
+  invitarAvisos: {
+    ejemplos: {
+      alumnos: [
+        'La tarde anterior, cuántas sesiones tenés mañana y a quién todavía no le avisaste.',
+      ],
+      equipoAlumnos: [
+        'La tarde anterior, cuántas sesiones hay mañana y a quién todavía no se le avisó.',
+      ],
+    },
+  },
   inscribir: {
     titulo: 'Agendar a un cliente',
     boton: 'Agendar a un cliente',
@@ -81,6 +94,16 @@ export const entrenamientoEs: Parcial<Textos> = {
 };
 
 export const entrenamientoPt: Parcial<Textos> = {
+  invitarAvisos: {
+    ejemplos: {
+      alumnos: [
+        'Na tarde anterior, quantas sessões você tem amanhã e quem você ainda não avisou.',
+      ],
+      equipoAlumnos: [
+        'Na tarde anterior, quantas sessões tem amanhã e quem ainda não foi avisado.',
+      ],
+    },
+  },
   inscribir: {
     titulo: 'Agendar um cliente',
     boton: 'Agendar um cliente',
