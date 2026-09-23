@@ -98,6 +98,9 @@ function limpiar(s: string): string {
     .replace(/\u{1F51F}/gu, '10. ')
     .replace(/[⏱⏲⏰⌛⏳]️?\s*(?=\d)/g, ' descanso ')
     .replace(/(\d)\s*(?:[×✕⨯]|✖️?)\s*/g, '$1x')
+    // Un «×» que no está pegado a un número («4 series × 6-8 reps») es la
+    // «x» de siempre: si no, quedaba suelto y la nota arrancaba con «×».
+    .replace(/[×✕⨯]|✖️?/g, 'x')
     .replace(/(\d)\s*\*\s*(?=\d)/g, '$1x')
     .replace(RE_EMOJI, '')
     .replace(/[″“”„]/g, '"')
@@ -237,6 +240,10 @@ export function leerDescanso(texto: string | null | undefined, porDefecto: 's' |
   const f = plegar((texto ?? '').trim()).replace(/[″“”„]/g, '"').replace(/[′‘’´`]/g, "'")
     .replace(/\s+/g, ' ').replace(',', '.');
   if (!f) return null;
+  // «2-3 min», «60-90 segundos»: un rango no es UN descanso, y la base guarda
+  // uno solo. Se toma el mayor: descansar de más no lastima; de menos, sí.
+  const rango = /^(\d+(?:\.\d+)?) ?(?:-|\/|a) ?(\d+(?:\.\d+)?)( .*|[^\d:'].*)?$/.exec(f);
+  if (rango) return leerDescanso(`${Math.max(+rango[1], +rango[2])}${rango[3] ?? ''}`, porDefecto);
   let seg: number | null = null;
   let m: RegExpExecArray | null;
   if ((m = /^(\d{1,2}) ?: ?(\d{2})$/.exec(f))) {
@@ -321,8 +328,11 @@ const RE = {
   junto: /\b(?:(?:super\s*-?\s*serie|bi\s*-?\s*serie|bi\s*-?\s*set|conjugado|junto)\s+)?(?:con|com|al|ao)\s+(?:el\s+|o\s+)?anterior\b/g,
   descansoEtq: new RegExp(`\\b(?:descanso|descansar|desc\\.?|pausa|intervalo|rest|recuperacion|recuperacao)\\s*(?:de\\s+)?[:=]?\\s*(${DUR_ETQ})`, 'g'),
   descansoPost: new RegExp(`\\b(${DUR})\\s*(?:de\\s+)?(?:descanso|pausa|intervalo)\\b`, 'g'),
-  // «descanso 60-90 s»: un rango no es UN descanso; queda entero en la nota.
-  descansoRango: new RegExp(`\\b(?:descanso|descansar|desc\\.?|pausa|intervalo|rest)\\s*[:=]?\\s*\\d+(?:[.,]\\d+)?(?:\\s*(?:-|/|a)\\s*\\d+(?:[.,]\\d+)?)+\\s*(?:${UNIDAD_TIEMPO})?`, 'g'),
+  // «descanso 60-90 s», «Descanso: 2-3 min»: un rango de descanso. La base
+  // guarda UN descanso: `leerDescanso` se queda con el mayor.
+  descansoRango: new RegExp(`\\b(?:descanso|descansar|desc\\.?|pausa|intervalo|rest)\\s*(?:de\\s+)?[:=]?\\s*(\\d+(?:[.,]\\d+)?(?:\\s*(?:-|/|a)\\s*\\d+(?:[.,]\\d+)?)+\\s*(?:${UNIDAD_TIEMPO})?)`, 'g'),
+  // «2-3 min de descanso»: el rango antes de la palabra.
+  descansoRangoPost: new RegExp(`\\b(\\d+(?:[.,]\\d+)?(?:\\s*(?:-|/|a)\\s*\\d+(?:[.,]\\d+)?)+\\s*${UNIDAD_TIEMPO})\\s*(?:de\\s+)?(?:descanso|pausa|intervalo)\\b`, 'g'),
   tiempoRango: new RegExp(`\\b(\\d+(?:\\s*(?:-|/|a)\\s*\\d+)+\\s*${UNIDAD_TIEMPO})`, 'g'),
   // «3-4 x 10-12», «3 a 4 séries de 12»: las series en rango. La base guarda
   // UN número de series, y no se inventa ni el 3 ni el 4: las repeticiones
@@ -369,12 +379,17 @@ interface Campos {
   general: boolean;
   /** El renglón empezaba con los números y el nombre venía después («4x10 Press banca»). */
   nombreAlFinal: boolean;
+  /** «2-3 x 12-15», «3 a 4 séries de 12»: series en rango con sus repeticiones. Es un patrón de series. */
+  seriesEnRango: boolean;
+  /** «1-2 series» sin repeticiones detrás: un rango suelto, que en una oración es prosa. */
+  rangoSuelto: boolean;
 }
 
 function camposVacios(): Campos {
   return {
     nombre: '', series: null, reps: '', carga: '', descanso_seg: null,
     sobras: [], junto: false, datos: 0, general: false, nombreAlFinal: false,
+    seriesEnRango: false, rangoSuelto: false,
   };
 }
 
@@ -403,7 +418,7 @@ function leerCampos(texto: string): Campos {
   // Los pedazos ya leídos. Los marcados `nota` se entendieron como algo que
   // no es un dato («descanso 2»: ¿segundos o minutos?) y van enteros a la
   // nota, sin que otro patrón se lleve la mitad.
-  const usados: { a: number; b: number; nota: boolean }[] = [];
+  const usados: { a: number; b: number; nota: boolean; texto?: string }[] = [];
   const libre = (a: number, b: number) => !usados.some((u) => a < u.b && b > u.a);
   // Lo encontrado se recorta del ORIGINAL (plegar no cambia los largos).
   const orig = (m: RegExpExecArray, k: number) => {
@@ -414,11 +429,12 @@ function leerCampos(texto: string): Campos {
    * Recorre las coincidencias de un patrón. Si `alEncontrar` la rechaza, se
    * sigue buscando desde el carácter siguiente y no desde el final: en
    * «de 12 – 10 kg» un rechazo sobre «12» no puede saltearse el «10 kg».
-   * Con `grupo`, el pedazo usado es solo ese grupo.
+   * Con `grupo`, el pedazo usado es solo ese grupo. Si devuelve `{ nota }`,
+   * a la nota va ese texto y no el pedazo crudo («2-3 series» por «2-3x12-15»).
    */
   const buscar = (
     re: RegExp,
-    alEncontrar: (m: RegExpExecArray, desde: number) => boolean | 'nota',
+    alEncontrar: (m: RegExpExecArray, desde: number) => boolean | 'nota' | { nota: string },
     grupo?: number,
   ) => {
     const tramo = (m: RegExpExecArray): [number, number] => {
@@ -448,7 +464,7 @@ function leerCampos(texto: string): Campos {
         }
       }
       const r = libre(a, b) ? alEncontrar(m, a) : false;
-      if (r) usados.push({ a, b, nota: r === 'nota' });
+      if (r) usados.push({ a, b, nota: r !== true, texto: typeof r === 'object' ? r.nota : undefined });
       else re.lastIndex = m.index + 1;
     }
   };
@@ -476,7 +492,18 @@ function leerCampos(texto: string): Campos {
 
   buscar(RE.junto, () => { c.junto = true; return true; });
 
-  buscar(RE.descansoRango, () => 'nota');
+  // «Descanso: 2-3 min», «60-90 segundos de descanso»: la base guarda UN
+  // descanso y `leerDescanso` se queda con el mayor. Si ni así se entiende
+  // («descanso 2-3»: ¿segundos o minutos?), queda entero en la nota.
+  const descansoDeRango = (m: RegExpExecArray) => {
+    if (c.descanso_seg !== null) return 'nota' as const;
+    const s = leerDescanso(orig(m, 1));
+    if (s === null || (s < 10 && /^\s*pausa/.test(m[0]))) return 'nota' as const;
+    c.descanso_seg = s;
+    return true;
+  };
+  buscar(RE.descansoRango, descansoDeRango);
+  buscar(RE.descansoRangoPost, descansoDeRango);
   buscar(RE.descansoEtq, (m) => {
     if (c.descanso_seg !== null) return 'nota';
     const s = leerDescanso(orig(m, 1));
@@ -499,8 +526,17 @@ function leerCampos(texto: string): Campos {
   // las series en rango: si no, «3-4 x 10» daría 4 series y un «Sentadilla 3».
   buscar(RE.seriesRango, (m) => {
     if (c.series !== null || c.reps || !serieValida(m[1]) || !serieValida(m[2]) || +m[1] >= +m[2]) return false;
-    if (m[3] !== undefined && !ponerReps(orig(m, 3))) return false;
-    return 'nota';
+    if (m[3] === undefined) {
+      // «1-2 series» sin repeticiones: queda tal cual («hacer 1-2 series con poco peso»).
+      c.rangoSuelto = true;
+      return 'nota';
+    }
+    if (!ponerReps(orig(m, 3))) return false;
+    c.seriesEnRango = true;
+    // A la nota va «2-3 series» y no el texto crudo «2-3x12-15»: las
+    // repeticiones ya se leyeron. La palabra, como la escribió («séries»).
+    const palabra = /series|serie|sets?|tandas/.exec(m[0]);
+    return { nota: `${m[1]}-${m[2]} ${palabra ? principal.substr(m.index + palabra.index, palabra[0].length) : 'series'}` };
   });
   buscar(RE.sxr, (m) => {
     if (c.series !== null || c.reps || !serieValida(m[1])) return false;
@@ -596,21 +632,27 @@ function leerCampos(texto: string): Campos {
   let pos = 0;
   for (const u of usados) {
     if (u.a > pos) trozos.push({ desde: pos, texto: principal.slice(pos, u.a), nota: false });
-    if (u.nota) trozos.push({ desde: u.a, texto: principal.slice(u.a, u.b), nota: true });
+    if (u.nota) trozos.push({ desde: u.a, texto: u.texto ?? principal.slice(u.a, u.b), nota: true });
     pos = Math.max(pos, u.b);
   }
   if (pos < principal.length) trozos.push({ desde: pos, texto: principal.slice(pos), nota: false });
 
+  // La primera sobra vino de un pedazo entendido como nota («2-3 series»):
+  // no puede pasar a ser el nombre.
+  let primeraEsNota = false;
   for (const t of trozos) {
     const esPrimero = t.desde === 0 && !t.nota;
     const limpio = t.nota ? t.texto.replace(/\s+/g, ' ').trim() : limpiarTrozo(t.texto, esPrimero);
     if (!limpio) continue;
     if (RE.etiquetaSuelta.test(plegar(limpio))) continue;
     if (esPrimero && tieneLetra(limpio)) c.nombre = limpio;
-    else c.sobras.push(limpio);
+    else {
+      if (!c.sobras.length) primeraEsNota = t.nota;
+      c.sobras.push(limpio);
+    }
   }
   // «4x10 Press banca 40kg»: el nombre vino después de los números.
-  if (!c.nombre && usados.length && c.sobras.length && tieneLetra(c.sobras[0])) {
+  if (!c.nombre && usados.length && c.sobras.length && !primeraEsNota && tieneLetra(c.sobras[0])) {
     c.nombre = c.sobras.shift() as string;
     c.nombreAlFinal = true;
   }
@@ -658,6 +700,15 @@ function leerEstructurado(s: string): Campos | null {
       }
     }
     const cs = leerCampos(seg);
+    // «2-3x12-15», «2 a 3 series de 12»: series en rango. Las repeticiones
+    // sí; «2-3 series» va a la nota, y no se inventa ninguna serie.
+    if (cs.seriesEnRango && c.series === null && !c.reps && !cs.carga && cs.descanso_seg === null) {
+      c.reps = cs.reps;
+      c.sobras.push(...cs.sobras);
+      c.seriesEnRango = true;
+      primero = false;
+      continue;
+    }
     const soloSeriesYReps = cs.series !== null && !cs.carga && cs.descanso_seg === null && !cs.junto;
     const sobro = !!cs.nombre || cs.sobras.length > 0;
     if (soloSeriesYReps && sobro && c.series === null && !c.reps) {
@@ -688,6 +739,13 @@ function leerEstructurado(s: string): Campos | null {
     // «Burpees — AMRAP»), salvo que traigan una carga o un descanso que se
     // reconoce solo. Así las escribe `renglonDe`, que a una carga sin
     // repeticiones le pone la etiqueta. En cualquier otro lugar, la carga.
+    // Una oración («Bajar la barra al pecho, sin rebotar.») no es una carga
+    // ni unas repeticiones: el cliente la leería como el peso. Va a la nota.
+    if (esProsa(seg)) {
+      c.sobras.push(seg);
+      primero = false;
+      continue;
+    }
     if (primero && c.series === null && !c.reps && !cs.carga && cs.descanso_seg === null && !cs.junto) {
       const reps = normalizarReps(seg);
       if (reps.length <= LARGOS.reps) {
@@ -791,6 +849,13 @@ type Renglon =
       siNoTitulo?: Renglon;
     }
   | { tipo: 'seccion'; texto: string; conTexto: boolean; original: string }
+  /** «REGLAS GENERALES», «Notas:», «DICAS»: abre un bloque de indicaciones. */
+  | { tipo: 'bloqueNotas'; original: string }
+  /**
+   * Una oración («Bajar la barra al pecho, sin rebotar.»): nunca un ejercicio.
+   * `soloLarga`: lo es solo por el largo, y puede ser un nombre con los datos abajo.
+   */
+  | { tipo: 'oracion'; texto: string; soloLarga: boolean; campos: Campos; original: string }
   | { tipo: 'nota'; texto: string; sinEtiqueta: string; italica: boolean; original: string }
   | { tipo: 'superserie'; cuantos: number; original: string }
   | { tipo: 'datos'; campos: Campos; texto: string; original: string }
@@ -827,6 +892,17 @@ const RE_SECCION_SIEMPRE = /^(?:calentamiento|entrada\s+en\s+calor|entrar\s+en\s
 // Estas solo con «:» o raya: «Movilidad» o «Estiramientos» sola puede ser
 // el nombre de un día de verdad.
 const RE_SECCION_CON_DOS_PUNTOS = /^(?:estiramientos?|elongacion(?:es)?|alongamentos?|movilidad|mobilidade|parte\s+principal|bloque\s+principal|parte\s+central|principal)\s*[:\-–—]/;
+
+// «REGLAS GENERALES», «NOTAS:», «Recomendaciones», «REGRAS GERAIS», «DICAS»:
+// un encabezado solo en el renglón abre un bloque de indicaciones. Lo que
+// sigue va a las notas de la rutina (o del día, si ya hay uno abierto) y
+// nunca es un día ni un ejercicio: sin esto, «REGLAS GENERALES» era un día
+// y cada regla entraba a la biblioteca como un ejercicio. Con texto después
+// de los dos puntos («Nota: bajar despacio») es la nota de siempre.
+const RE_BLOQUE_NOTAS = /^(?:(?:notas?|indicaciones|indicacoes|recomendaciones|recomendacoes|reglas|regras|pautas|orientaciones|orientacoes|observaciones|observacoes|instrucciones|instrucoes|consideraciones|consideracoes|consejos|conselhos|dicas|tips?|aclaraciones|lembretes|avisos)(?:\s+(?:generales|gerais|basicas|basicos|importantes|previas|finales|finais|del\s+dia|do\s+dia|de\s+la\s+rutina|de\s+la\s+semana|do\s+treino|da\s+semana|de\s+entrenamiento|de\s+treino))?|obs\.?|importante|atencion|atencao|ojo|(?:cosas\s+)?a\s+tener\s+en\s+cuenta|tener\s+en\s+cuenta|antes\s+de\s+empezar|antes\s+de\s+comecar)\s*[:\-–—]*\s*$/;
+// «Rutina de gym», «Plan de 8 semanas», «Treino de hipertrofia»: un renglón
+// que dice ser la rutina. Al principio, es su nombre.
+const RE_NOMBRE_RUTINA = /^(?:(?:mi|tu|la|el|o|a|seu|sua|meu|minha|nueva|nova)\s+)?(?:rutina|treino|plan|programa|planificacion|planejamento)\b/;
 
 const RE_SUPERSERIE = /^(super\s*-?\s*serie|bi\s*-?\s*serie|bi\s*-?\s*set|tri\s*-?\s*serie|tri\s*-?\s*set|conjugado|biset|triset)s?\b\s*[:\-–—]?\s*/;
 const RE_CIRCUITO = /^(?:circuito|circuit|hiit|tabata|emom|amrap)\b/;
@@ -888,6 +964,74 @@ function esMayusculas(s: string): boolean {
 
 function palabras(s: string): number {
   return s.split(/\s+/).filter(Boolean).length;
+}
+
+// Cómo empieza una instrucción y no un nombre de ejercicio: «Sin balancear
+// el cuerpo.», «Apretar los glúteos arriba.», «Não treinar com dor.».
+const RE_INSTRUCCION = /^(?:no|nao|si|se|sin|sem|con|com|al|ao|para|antes|despues|depois|durante|entre|cada|siempre|sempre|nunca|evitar|evita|evite|mantener|manter|mantene|hacer|fazer|intentar|tentar|tratar|bajar|descer|subir|apretar|apertar|sentir|controlar|llevar|levar|usar|dejar|deixar|terminar|buscar|priorizar|respirar|exhalar|inhalar|expirar|inspirar|dormir|comer|beber|tomar|descansar|calentar|aquecer|estirar|alongar|recordar|lembrar|cuidar|mirar|olhar|empezar|comecar|ir|volver|voltar|pausar|frenar|aguantar|segurar|soltar|tirar|puxar|empujar|empurrar)\b/;
+
+function palabrasConLetra(s: string): number {
+  return s.split(/\s+/).filter((p) => /\p{L}/u.test(p)).length;
+}
+
+/**
+ * Un pedazo del formato de Orden que es prosa y no un dato: termina en
+ * punto, o son cuatro palabras o más sin ningún número. «barra sola»,
+ * «peso corporal», «hasta el fallo» y «banda extra fuerte» siguen siendo datos.
+ */
+function esProsa(s: string): boolean {
+  const t = s.trim();
+  if (/[^.]\.$/.test(t) && palabrasConLetra(t) >= 2) return true;
+  return !/\d/.test(t) && palabrasConLetra(t) >= 4;
+}
+
+/**
+ * ¿Es una oración y no un ejercicio? «Bajar la barra al pecho, sin
+ * rebotar.», «Subida: controlada pero con fuerza», «No buscar el fallo en
+ * todas las series. Intentar…», «Antes del primer ejercicio pesado: hacer
+ * 1-2 series con poco peso para calentar». Con un patrón de series («4x10»,
+ * «3 series de 12», «2-3x12-15», «4x10 Press banca») es un ejercicio, diga
+ * lo que diga después. 'larga' es una oración solo por el largo (más de
+ * seis palabras): puede ser un nombre largo con los datos en el renglón de
+ * abajo, y eso lo mira `leerRutina`.
+ */
+function esOracion(s: string, c: Campos, item: boolean, conocido: boolean): false | 'si' | 'larga' {
+  if (c.series !== null || c.seriesEnRango || c.nombreAlFinal || c.junto || c.datos >= 2) return false;
+  const n = palabras(s);
+  const mayus = esMayusculas(s);
+  // «Sentadilla.»: el de la lista base con un punto de más.
+  if (conocido && n <= 6 && !/[:,]/.test(s)) return false;
+  // Termina en punto. Un título en mayúsculas («PECHO Y TRÍCEPS.») no lo
+  // es; con dos puntos o coma («PRIORIDAD: TÉCNICA > PESO.») sí.
+  if (/[^.]\.$/.test(s)) {
+    if (item) {
+      // Con viñeta, «- Peso muerto rumano.» sigue siendo un ejercicio: es
+      // oración con coma o dos puntos, cinco palabras o más, o un verbo o
+      // una palabra de instrucción al principio («Sin balancear el cuerpo.»).
+      if (n >= 5 || /[:,;]/.test(s) || (n >= 3 && RE_INSTRUCCION.test(plegar(s)))) return 'si';
+    } else if (n >= 3 && !(mayus && n <= 6 && !/[:,]/.test(s))) return 'si';
+    else if (n < 3 && !mayus) return 'si';
+  }
+  // Un punto en el medio y otra oración con mayúscula («…series. Intentar…»),
+  // con tres palabras antes: «Elev. Laterales» es una abreviatura.
+  const punto = /\.\s+\p{Lu}/u.exec(s);
+  if (punto && palabras(s.slice(0, punto.index)) >= 3) return 'si';
+  // Dos puntos y prosa detrás (tres palabras o más, sin números):
+  // «Subida: controlada pero con fuerza». «Cardio: 20 min en cinta» no.
+  const dp = /:\s+(.+)$/.exec(s);
+  if (dp && !mayus && !/\d/.test(dp[1]) && palabrasConLetra(dp[1]) >= 3) return 'si';
+  // «hacer 1-2 series con poco peso»: un rango de series suelto en medio de una frase.
+  if (c.rangoSuelto && palabrasConLetra(c.nombre) >= 3 && c.sobras.length >= 2) return 'si';
+  // Larga: sin ningún dato, el renglón entero; con un dato («Caminhada na
+  // esteira 30 min velocidade 6»), solo lo que quedó como nombre.
+  const largo = c.datos === 0 ? n : palabrasConLetra(c.nombre);
+  return largo > 6 ? 'larga' : false;
+}
+
+/** Un renglón para las notas, como se escribió: sin la viñeta ni el número, sin negritas, con sus emojis. */
+function textoDeNota(tal: string): string {
+  const sinEmoji = tal.replace(/^[\p{Extended_Pictographic}️‍\s]+/u, '');
+  return quitarNumero(quitarVineta(quitarFormato(sinEmoji)).texto).texto;
 }
 
 function nota(texto: string, original: string, italica: boolean): Renglon {
@@ -954,6 +1098,7 @@ function clasificarTexto(crudo: string, original: string): Renglon {
     const titulo = neg[1].replace(/\s+/g, ' ').trim();
     const dentro = quitarFormato(limpiar(neg[1]));
     const fd = plegar(dentro);
+    if (RE_BLOQUE_NOTAS.test(fd)) return { tipo: 'bloqueNotas', original };
     const numerado = quitarNumero(dentro);
     const lectura = leerLinea(numerado.texto);
     const ejercicio = lectura.datos > 0 && (numerado.numero || (!!lectura.nombre && !!buscarBase(lectura.nombre)));
@@ -973,6 +1118,11 @@ function clasificarTexto(crudo: string, original: string): Renglon {
   s = quitarFormato(s);
   if (!s) return { tipo: 'vacio' };
   let f = plegar(s);
+
+  // Un encabezado de indicaciones solo en el renglón («REGLAS GENERALES»,
+  // «Notas:», «# Recomendaciones»): abre el bloque. Antes que «Nota:», que
+  // con texto después es una nota, y sola no es nada.
+  if (RE_BLOQUE_NOTAS.test(plegar(quitarVineta(s).texto))) return { tipo: 'bloqueNotas', original };
 
   if (RE_ETIQUETA_NOTA.exec(f)?.index === 0 && /^(?:notas?|obs|observaci|importante|ojo|tip|aclaracion)/.test(f)) {
     return nota(s, original, false);
@@ -1040,6 +1190,26 @@ function clasificarTexto(crudo: string, original: string): Renglon {
   }
 
   const c = leerLinea(s);
+  // «Sentadilla.»: el de la lista base con un punto de más, que no es parte del nombre.
+  const conocido = !!buscarBase((c.nombre || s).replace(/[.]+$/, ''));
+  if (conocido && c.nombre) c.nombre = c.nombre.replace(/[.]+$/, '');
+
+  // Una oración no es un ejercicio, aunque venga con viñeta o con números:
+  // «Bajar la barra al pecho, sin rebotar.», «Subida: controlada pero con
+  // fuerza», «Ejercicios pesados: descansar 2-3 minutos entre series.». Va
+  // a la nota del ejercicio de arriba, o a las del día o de la rutina (lo
+  // decide `leerRutina`). Un nombre corto («Dominadas», «Face pull») sigue
+  // siendo un ejercicio.
+  const oracion = esOracion(s, c, item, conocido);
+  const comoOracion = (soloLarga: boolean): Renglon => ({ tipo: 'oracion', texto: textoDeNota(tal), soloLarga, campos: c, original });
+  if (oracion === 'si') return comoOracion(false);
+  // «Rutina de gym», «Plan de 8 semanas»: dice que es la rutina. Un título,
+  // aunque no vaya en mayúsculas ni termine en dos puntos.
+  if (!item && c.datos === 0 && !c.junto && RE_NOMBRE_RUTINA.test(plegar(s)) && Array.from(s).length <= LARGOS.nombreRutina + 10) {
+    return { tipo: 'titulo', texto: limpiarTitulo(s), dia: false, original };
+  }
+  if (oracion === 'larga') return comoOracion(true);
+
   if (c.datos > 0 || c.junto) {
     if (!c.nombre || c.general) return { tipo: 'datos', campos: c, texto: s, original };
     if (c.nombre.length > LARGOS.ejercicio || RE_VUELTAS.test(plegar(c.nombre))) return { tipo: 'otro', original };
@@ -1048,7 +1218,6 @@ function clasificarTexto(crudo: string, original: string): Renglon {
   }
 
   // Sin datos: un título, un ejercicio con solo el nombre, o algo que no se entiende.
-  const conocido = !!buscarBase(c.nombre || s);
   if (!item && !conocido) {
     const corto = palabras(s) <= 6 && s.length <= LARGOS.nombreDia + 10 && !/[!?¡¿]/.test(s);
     if (corto && (encabezado || /:$/.test(s) || esMayusculas(s))) {
@@ -1251,9 +1420,31 @@ interface DiaArmado { nombre: string; notas: string[]; ejercicios: EjercicioLeid
  * - Una planilla con encabezado (Ejercicio / Series / Reps / Peso /
  *   Descanso, también en portugués, y una columna Día si la tiene) se lee
  *   por columnas.
+ * - «REGLAS GENERALES», «Notas:», «Recomendaciones», «REGRAS GERAIS» solo
+ *   en un renglón abren un bloque: lo que sigue (sin las viñetas) son las
+ *   indicaciones de la rutina o, si ya hay un día abierto, las de ese día.
+ *   Nunca un día ni ejercicios. El bloque termina en un título, en un
+ *   ejercicio con series o en un renglón vacío.
+ * - Una oración («Bajar la barra al pecho, sin rebotar.») nunca es un
+ *   ejercicio: pegada debajo de uno es su nota; si no, va a las notas del
+ *   día o, antes del primer día, a las de la rutina.
+ * - El primer renglón, si no es un día y dice «rutina», «plan», «treino» o
+ *   «programa», es el nombre de la rutina: nunca un ejercicio.
  */
 export function leerRutina(texto: string): RutinaLeidaConNotas {
   const lineas = (texto ?? '').replace(/\r\n?/g, '\n').split('\n');
+  // «4 ×» al final de un renglón y «6-8» en el siguiente (o «4» y «× 6-8»):
+  // el salto de línea partió el patrón de series. Se vuelven a unir; si no,
+  // las repeticiones se perdían y la nota arrancaba con «×». Un «10.» al
+  // principio del siguiente es una numeración, no la continuación.
+  for (let i = 0; i + 1 < lineas.length; i++) {
+    const a = lineas[i].trimEnd(), b = lineas[i + 1].trimStart();
+    const sigueNumero = /^\d+(?:[-/]\d+)*(?![\d.)º°])/.test(b);
+    if ((/\d\s*[×✕⨯x]$/i.test(a) && sigueNumero) || (/\d$/.test(a) && /^[×✕⨯]\s*\d/.test(b))) {
+      lineas.splice(i, 2, `${a} ${b}`);
+      i--;
+    }
+  }
   const tabla: EstadoTabla = { columnas: null };
   const R = lineas.map((l) => clasificar(l, tabla));
   // Una negrita entera con datos es un título si arranca un bloque (el
@@ -1275,6 +1466,12 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
   let ultimo: { ej: EjercicioLeido; grupo: string | null } | null = null;
   let bloque: { quedan: number; primero: boolean } | null = null;
   let huboEjercicio = false;
+  // Un bloque de indicaciones abierto («REGLAS GENERALES»), y si ya tiene algo.
+  let enBloque = false;
+  let bloqueConTexto = false;
+  // El último ejercicio está pegado (sin un renglón vacío en el medio): una
+  // oración debajo es su técnica.
+  let pegadoAlUltimo = false;
 
   // Un título más largo que lo que entra en la base se corta en un espacio,
   // y lo que sobra va a las notas: no puede desaparecer en silencio.
@@ -1284,6 +1481,14 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
     dias.push(dia);
     ultimo = null;
     bloque = null;
+    enBloque = false;
+  };
+  /** Un renglón entero para las notas de un bloque: sin la viñeta ni el número, como se escribió. */
+  const notaDeRenglon = (original: string) =>
+    textoDeNota(espacios(original).replace(/^>\s*/, '').replace(/^#{1,6}\s+/, ''));
+  const alBloque = (t: string) => {
+    if (t) notaDeContexto(t);
+    bloqueConTexto = true;
   };
   const nombrarRutina = (n: string) => {
     const [cabeza, sobra] = partirTitulo(n, LARGOS.nombreRutina);
@@ -1294,7 +1499,7 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
     if (dia) (dia as DiaArmado).notas.push(t);
     else notasRutina.push(t);
   };
-  const saltable = (r: Renglon) => r.tipo === 'vacio' || r.tipo === 'nada' || r.tipo === 'nota'
+  const saltable = (r: Renglon) => r.tipo === 'vacio' || r.tipo === 'nada' || r.tipo === 'nota' || r.tipo === 'oracion'
     || r.tipo === 'otro' || r.tipo === 'superserie' || (r.tipo === 'seccion' && r.conTexto);
   const siguiente = (i: number): Renglon | undefined => {
     for (let j = i + 1; j < R.length; j++) if (!saltable(R[j])) return R[j];
@@ -1326,6 +1531,7 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
     d.ejercicios.push(ej);
     ultimo = { ej, grupo };
     huboEjercicio = true;
+    pegadoAlUltimo = true;
   };
   /** ¿Se pueden sumar estos datos al ejercicio sin pisar nada? */
   const encaja = (ej: EjercicioLeido, c: Campos) =>
@@ -1348,26 +1554,46 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
         break;
       case 'vacio':
         bloque = null;
+        pegadoAlUltimo = false;
+        // Un renglón vacío cierra el bloque de indicaciones (si ya tenía
+        // algo): lo que viene después de un espacio es otra cosa.
+        if (enBloque && bloqueConTexto) enBloque = false;
         break;
       case 'otro':
-        noEntendidas.push(r.original);
+        if (enBloque) alBloque(notaDeRenglon(r.original));
+        else noEntendidas.push(r.original);
         break;
       case 'superserie':
         bloque = { quedan: r.cuantos, primero: true };
         break;
+      case 'bloqueNotas':
+        enBloque = true;
+        bloqueConTexto = false;
+        // Lo que sigue no es de ningún ejercicio: ni una «Nota:» ni un descanso suelto.
+        ultimo = null;
+        bloque = null;
+        break;
       case 'titulo': {
+        // «PRIORIDAD: TÉCNICA > PESO» en mayúsculas dentro del bloque es una
+        // regla más, no un día. Un título solo («PIERNAS») sí cierra el bloque.
+        if (enBloque && !r.dia && /:\s*\S/.test(r.texto)) {
+          alBloque(notaDeRenglon(r.original));
+          break;
+        }
+        enBloque = false;
         if (nombre === null && dias.length === 0 && !huboEjercicio) {
-          // El primer título: si lo sigue otro título, es el nombre de la
-          // rutina («*Fuerza base*» y abajo «*Día A*»). Si lo siguen
-          // ejercicios, es un día cuando dice serlo o cuando hay más
-          // títulos después; si es el único, es el nombre de la rutina.
+          // El primer título: si lo sigue otro título o un bloque de
+          // indicaciones («RUTINA DE GYM» y abajo «REGLAS GENERALES»), es el
+          // nombre de la rutina. Si lo siguen ejercicios, es un día cuando
+          // dice serlo o cuando hay más títulos después; si es el único, o
+          // dice ser la rutina («Rutina de gym»), es el nombre de la rutina.
           const sig = siguiente(i);
-          if (sig && sig.tipo === 'titulo') {
+          if (sig && (sig.tipo === 'titulo' || sig.tipo === 'bloqueNotas')) {
             nombrarRutina(r.texto);
             break;
           }
           const otroTitulo = R.slice(i + 1).some((x) => x.tipo === 'titulo');
-          if (r.dia || otroTitulo) nuevoDia(r.texto);
+          if (r.dia || (otroTitulo && !RE_NOMBRE_RUTINA.test(plegar(r.texto)))) nuevoDia(r.texto);
           else nombrarRutina(r.texto);
           break;
         }
@@ -1376,10 +1602,41 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
       }
       case 'seccion':
         bloque = null;
-        if (r.conTexto) notaDeContexto(r.texto);
+        if (enBloque) alBloque(notaDeRenglon(r.original));
+        else if (r.conTexto) notaDeContexto(r.texto);
         else noEntendidas.push(r.original);
         break;
+      case 'oracion': {
+        if (enBloque) {
+          alBloque(r.texto);
+          break;
+        }
+        // Larga y nada más: si abajo vienen los datos, es un ejercicio con
+        // el nombre largo en dos renglones.
+        if (r.soloLarga && r.campos.nombre && r.campos.nombre.length <= LARGOS.ejercicio && r.campos.datos === 0) {
+          const j = siguienteNoVacio(i);
+          const sig = j >= 0 ? R[j] : undefined;
+          if (sig && sig.tipo === 'datos' && !sig.campos.general) {
+            const c = sig.campos;
+            agregar({ ...r.campos, series: c.series, reps: c.reps, carga: c.carga, descanso_seg: c.descanso_seg,
+              sobras: [...r.campos.sobras, ...(c.nombre ? [c.nombre] : []), ...c.sobras], junto: r.campos.junto || c.junto }, null);
+            R[j] = { tipo: 'nada' };
+            break;
+          }
+        }
+        // Pegada debajo de un ejercicio es su técnica («Bajar la barra al
+        // pecho sin rebotar.»). Separada por un renglón vacío, o antes del
+        // primer día, es una indicación del día o de la rutina.
+        const u = ultimo as { ej: EjercicioLeido } | null;
+        if (u && dia && pegadoAlUltimo) u.ej.nota = u.ej.nota ? `${u.ej.nota}\n${r.texto}` : r.texto;
+        else notaDeContexto(r.texto);
+        break;
+      }
       case 'nota': {
+        if (enBloque) {
+          alBloque(r.texto);
+          break;
+        }
         const u = ultimo as { ej: EjercicioLeido } | null;
         if (u && dia) {
           const t = r.sinEtiqueta;
@@ -1390,6 +1647,10 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
         break;
       }
       case 'datos': {
+        if (enBloque) {
+          alBloque(notaDeRenglon(r.original));
+          break;
+        }
         const c = r.campos;
         const u = ultimo as { ej: EjercicioLeido } | null;
         if (c.general) notaDeContexto(r.texto);
@@ -1399,6 +1660,17 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
         break;
       }
       case 'ejercicios': {
+        if (enBloque) {
+          // Dentro del bloque, «- Tomar agua» o «- Dormir 8 horas» son
+          // indicaciones. Solo un ejercicio con sus series lo cierra.
+          const e0 = r.lista[0];
+          const conSeries = r.lista.length > 1 || e0.series !== null || e0.seriesEnRango || !!r.bloque || r.dia !== undefined;
+          if (!conSeries) {
+            alBloque(notaDeRenglon(r.original));
+            break;
+          }
+          enBloque = false;
+        }
         if (r.dia !== undefined && r.dia && (!dia || (dia as DiaArmado).nombre !== partirTitulo(r.dia, LARGOS.nombreDia)[0])) {
           nuevoDia(r.dia);
         }

@@ -99,7 +99,7 @@ console.log('\n── 1 · El renglón rápido del editor ──');
   ok('«×» y comillas tipográficas', R.leerRenglon('Plancha lateral 3 × 30″ c/lado'), ej('Plancha lateral', 3, '30 s c/lado'));
   ok('«descanso 2» no se adivina: ¿segundos o minutos? queda en la nota',
     R.leerRenglon('Remo al mentón 3x12 descanso 2'), ej('Remo al mentón', 3, '12', '', null, 'descanso 2'));
-  ok('un rango de descanso no es UN descanso', R.leerRenglon('Press 4x10 descanso 60-90 s'), ej('Press', 4, '10', '', null, 'descanso 60-90 s'));
+  ok('un rango de descanso es el mayor: «60-90 s» → 90 (la base guarda uno solo)', R.leerRenglon('Press 4x10 descanso 60-90 s'), ej('Press', 4, '10', '', 90));
   ok('el rango de tiempo sin series previas es la duración', R.leerRenglon('Plancha 3 series 30-45 s'), ej('Plancha', 3, '30-45 s'));
   ok('«de 12 – 10 kg»: la raya con espacios separa, no es un rango',
     R.leerRenglon('Curl martillo: 3 series de 12 – 10 kg – descanso 45"'), ej('Curl martillo', 3, '12', '10 kg', 45));
@@ -686,10 +686,10 @@ ok('27 · «pausa 2 seg arriba» y «2 seg abajo» van a la nota, no al descanso
 
 // 28. Series en rango: no se inventa ni el 3 ni el 4, y el nombre queda limpio.
 const RANGO_SERIES = R.leerRutina('Día 1\nSentadilla 3-4 x 10-12\nLeg press 3 a 4 séries de 12');
-ok('28 · «3-4 x 10-12», «3 a 4 séries de 12»: repeticiones sí, series no, el rango a la nota',
+ok('28 · «3-4 x 10-12», «3 a 4 séries de 12»: repeticiones sí, series no, y la nota dice «3-4 series» (no el texto crudo)',
   [RANGO_SERIES.dias[0].ejercicios.map(fila), conDatos(RANGO_SERIES)], [[
-    ['Sentadilla', null, '10-12', '', null, '3-4 x 10-12'],
-    ['Leg press', null, '12', '', null, '3 a 4 séries de 12']], []]);
+    ['Sentadilla', null, '10-12', '', null, '3-4 series'],
+    ['Leg press', null, '12', '', null, '3-4 séries']], []]);
 
 // 29. Días de semana en portugués con descanso, «D1 - Piernas», «Semana 1 - Día 1».
 ok('29 · «Terça-feira - folga» y «QUARTA-FEIRA: descanso» no son días',
@@ -774,6 +774,328 @@ ok('35 · pirámides con espacios: «12 - 10 - 8» y «6 - 8 - 10»; «10 - 60 -
   ['Curl', 3, '12-10-8', '10 kg', null, ''], ['Press banca', 4, '6-8-10', '', null, ''], ['Remo', 4, '10', '60', 90, '']]);
 ok('35 · «*MARTES: descanso*» y «*Hola!*» no son títulos',
   R.leerRutina('*Hola!*\n*LUNES*\nSentadilla 4x10\n*MARTES: descanso*\n*JUEVES*\nRemo 4x10').noEntendidas, ['*Hola!*', '*MARTES: descanso*']);
+
+// ═══════════════════════════════════════════════════════════
+console.log('\n── 4c · La rutina que arma ChatGPT: reglas generales, oraciones y el nombre ──');
+// Un trainer de verdad pegó la rutina que le armó ChatGPT y el lector la leyó
+// mal: «REGLAS GENERALES» fue un día con ocho «ejercicios» que eran frases
+// («Bajada de cada», «Ejercicios pesados»…), «RUTINA DE GYM» entró a la
+// biblioteca como un ejercicio, «Descanso: 2-3 min» quedó como la CARGA, un
+// «×» suelto arrancaba una nota, «2-3x12-15» quedó crudo con las series en
+// null y las líneas de técnica fueron a lo no entendido. Este es el texto
+// reconstruido (sin datos de nadie) y lo que tiene que salir.
+const CHATGPT = `RUTINA DE GYM
+
+REGLAS GENERALES
+- Calentamiento: 5-8 minutos antes de comenzar.
+- Antes del primer ejercicio pesado: hacer 1-2 series con poco peso para calentar.
+- Bajada de cada repetición: 2-3 segundos.
+- Subida: controlada pero con fuerza.
+- Ejercicios pesados: descansar 2-3 minutos entre series.
+- Ejercicios aislados: descansar 60-90 segundos.
+- No buscar el fallo en todas las series. Intentar terminar dejando 1-2 repeticiones posibles.
+- Si la técnica se pierde, bajar el peso.
+- Prioridad: TÉCNICA > PESO.
+
+LUNES — PECHO + TRÍCEPS
+1. PRESS BANCA — 4 × 6-8 · Descanso: 2-3 min
+Bajar la barra al pecho controlando, sin rebotar.
+2. PRESS INCLINADO CON MANCUERNAS — 4 series × 8-10 reps · Descanso: 2 min
+Codos a 45°, no abrir demasiado.
+3. APERTURAS EN POLEA — 3 × 12-15 · Descanso: 60-90 segundos
+Sentir el estiramiento en el pecho.
+4. FONDOS EN PARALELAS — 3 ×
+8-12 · Descanso: 2 min
+Si no salen, usar máquina asistida.
+5. EXTENSIÓN DE TRÍCEPS EN POLEA — 3 × 12-15 · Descanso: 60 seg
+Codos pegados al cuerpo.
+6. PRESS FRANCÉS — 3 × 10-12 · Descanso: 90 seg
+Bajar la barra a la frente, despacio.
+
+MARTES — ESPALDA + BÍCEPS
+1. DOMINADAS — 4 × 6-8 · Descanso: 2-3 min
+Si no salen, usar banda elástica o jalón al pecho.
+2. REMO CON BARRA — 4 × 6-8 · Descanso: 2-3 min
+Espalda recta, llevar la barra al abdomen.
+3. JALÓN AL PECHO — 3 × 10-12 · Descanso: 90 seg
+4. REMO EN POLEA BAJA — 3 × 10-12 · Descanso: 90 seg
+Apretar los omóplatos al final.
+5. CURL CON BARRA — 3 × 8-10 · Descanso: 90 seg
+Sin balancear el cuerpo.
+6. CURL MARTILLO — 2-3x12-15 · Descanso: 60 seg
+
+MIÉRCOLES — PIERNAS
+1. SENTADILLA — 4 × 6-8 · Descanso: 3 min
+Bajar hasta la paralela o más.
+2. PRENSA — 3 × 10-12 · Descanso: 2 min
+3. PESO MUERTO RUMANO — 3 × 8-10 · Descanso: 2 min
+Espalda recta, sentir los isquios.
+4. SILLÓN DE CUÁDRICEPS — 3 × 12-15 · Descanso: 60-90 segundos
+5. CURL FEMORAL — 3 × 12-15 · Descanso: 60-90 segundos
+6. GEMELOS DE PIE — 4 × 12-15 · Descanso: 60 seg
+Pausa arriba de 1 segundo.
+
+JUEVES — HOMBROS + PECHO
+1. PRESS MILITAR — 4 × 6-8 · Descanso: 2-3 min
+Core apretado, no arquear la espalda.
+2. ELEVACIONES LATERALES — 4 × 12-15 · Descanso: 60 seg
+Subir hasta la altura del hombro.
+3. PÁJAROS — 3 × 12-15 · Descanso: 60 seg
+4. PRESS BANCA — 3 × 8-10 · Descanso: 2 min
+5. APERTURAS CON MANCUERNAS — 2-3 x 15 · Descanso: 60 seg
+
+VIERNES — PIERNAS + BRAZOS
+1. SENTADILLA BÚLGARA — 3 × 8-10 c/pierna · Descanso: 2 min
+2. HIP THRUST — 4 × 8-10 · Descanso: 2 min
+Apretar los glúteos arriba.
+3. CURL CON MANCUERNAS — 3 × 10-12 · Descanso: 60 seg
+4. TRÍCEPS EN POLEA — 3 × 12-15 · Descanso: 60 seg
+5. PLANCHA — 3 × 30-45 seg · Descanso: 60 seg`;
+/** Un ejercicio sin carga ni superserie: [nombre, series, reps, '', descanso, nota, false]. */
+const e7 = (nombre, series, reps, descanso_seg, nota = '') => [nombre, series, reps, '', descanso_seg, nota, false];
+const CHATGPT_NOTAS = [
+  'Calentamiento: 5-8 minutos antes de comenzar.',
+  'Antes del primer ejercicio pesado: hacer 1-2 series con poco peso para calentar.',
+  'Bajada de cada repetición: 2-3 segundos.',
+  'Subida: controlada pero con fuerza.',
+  'Ejercicios pesados: descansar 2-3 minutos entre series.',
+  'Ejercicios aislados: descansar 60-90 segundos.',
+  'No buscar el fallo en todas las series. Intentar terminar dejando 1-2 repeticiones posibles.',
+  'Si la técnica se pierde, bajar el peso.',
+  'Prioridad: TÉCNICA > PESO.',
+].join('\n');
+const CHATGPT_LEIDA = R.leerRutina(CHATGPT);
+ok('36 · la rutina de ChatGPT entera: el nombre, las reglas como indicaciones, la técnica en cada ejercicio', corto(CHATGPT_LEIDA), {
+  nombre: 'RUTINA DE GYM', notas: CHATGPT_NOTAS,
+  dias: [
+    ['LUNES — PECHO + TRÍCEPS', '', [
+      e7('PRESS BANCA', 4, '6-8', 180, 'Bajar la barra al pecho controlando, sin rebotar.'),
+      e7('PRESS INCLINADO CON MANCUERNAS', 4, '8-10', 120, 'Codos a 45°, no abrir demasiado.'),
+      e7('APERTURAS EN POLEA', 3, '12-15', 90, 'Sentir el estiramiento en el pecho.'),
+      e7('FONDOS EN PARALELAS', 3, '8-12', 120, 'Si no salen, usar máquina asistida.'),
+      e7('EXTENSIÓN DE TRÍCEPS EN POLEA', 3, '12-15', 60, 'Codos pegados al cuerpo.'),
+      e7('PRESS FRANCÉS', 3, '10-12', 90, 'Bajar la barra a la frente, despacio.')]],
+    ['MARTES — ESPALDA + BÍCEPS', '', [
+      e7('DOMINADAS', 4, '6-8', 180, 'Si no salen, usar banda elástica o jalón al pecho.'),
+      e7('REMO CON BARRA', 4, '6-8', 180, 'Espalda recta, llevar la barra al abdomen.'),
+      e7('JALÓN AL PECHO', 3, '10-12', 90),
+      e7('REMO EN POLEA BAJA', 3, '10-12', 90, 'Apretar los omóplatos al final.'),
+      e7('CURL CON BARRA', 3, '8-10', 90, 'Sin balancear el cuerpo.'),
+      e7('CURL MARTILLO', null, '12-15', 60, '2-3 series')]],
+    ['MIÉRCOLES — PIERNAS', '', [
+      e7('SENTADILLA', 4, '6-8', 180, 'Bajar hasta la paralela o más.'),
+      e7('PRENSA', 3, '10-12', 120),
+      e7('PESO MUERTO RUMANO', 3, '8-10', 120, 'Espalda recta, sentir los isquios.'),
+      e7('SILLÓN DE CUÁDRICEPS', 3, '12-15', 90),
+      e7('CURL FEMORAL', 3, '12-15', 90),
+      e7('GEMELOS DE PIE', 4, '12-15', 60, 'Pausa arriba de 1 segundo.')]],
+    ['JUEVES — HOMBROS + PECHO', '', [
+      e7('PRESS MILITAR', 4, '6-8', 180, 'Core apretado, no arquear la espalda.'),
+      e7('ELEVACIONES LATERALES', 4, '12-15', 60, 'Subir hasta la altura del hombro.'),
+      e7('PÁJAROS', 3, '12-15', 60),
+      e7('PRESS BANCA', 3, '8-10', 120),
+      e7('APERTURAS CON MANCUERNAS', null, '15', 60, '2-3 series')]],
+    ['VIERNES — PIERNAS + BRAZOS', '', [
+      e7('SENTADILLA BÚLGARA', 3, '8-10 c/pierna', 120),
+      e7('HIP THRUST', 4, '8-10', 120, 'Apretar los glúteos arriba.'),
+      e7('CURL CON MANCUERNAS', 3, '10-12', 60),
+      e7('TRÍCEPS EN POLEA', 3, '12-15', 60),
+      e7('PLANCHA', 3, '30-45 s', 60)]]],
+  no: [],
+});
+ok('36 · ni el título ni una regla entran a la biblioteca',
+  nombresDe(CHATGPT_LEIDA).filter((n) => /regla|rutina|bajada|subida|prioridad|ejercicios|pausa|tecnica|fallo|calentamiento/i.test(n)), []);
+ok('36 · ni un nombre con datos adentro', conDatos(CHATGPT_LEIDA), []);
+ok('36 · ida y vuelta, con las indicaciones generales', R.leerRutina(R.rutinaComoTexto(CHATGPT_LEIDA, tEs)), { ...CHATGPT_LEIDA, noEntendidas: [] });
+ok('36 · y con las palabras en portugués', R.leerRutina(R.rutinaComoTexto(CHATGPT_LEIDA, tPt)), { ...CHATGPT_LEIDA, noEntendidas: [] });
+
+// La misma rutina con otros encabezados («NOTAS:», «INDICACIONES»,
+// «Recomendaciones:»), en minúsculas, y un bloque adentro de un día.
+const CHATGPT_NOTAS_ENCABEZADOS = `Rutina de hipertrofia – 3 días
+
+NOTAS:
+• Calentar 10 minutos en bici antes de empezar.
+• Tomar agua entre series.
+• Bajar el peso si la técnica se pierde.
+
+Día 1 – Pecho y tríceps
+1. Press banca — 4 series × 6-8 reps · Descanso: 2-3 min
+Bajar la barra al pecho sin rebotar.
+2. Press inclinado con mancuernas — 3 × 10-12 · Descanso: 90 seg
+3. Fondos — 3 × al fallo · Descanso: 2 min
+Si no salen, en máquina asistida.
+
+INDICACIONES
+- Hacer los ejercicios en el orden indicado.
+- Descansar 2-3 minutos entre ejercicios pesados.
+
+Día 2 – Espalda y bíceps
+1. Dominadas — 4 × 6-8 · Descanso: 2-3 min
+2. Remo con barra — 4 × 8-10 · Descanso: 2 min
+Espalda recta, sin tirones.
+3. Curl con barra — 2-3 x 12 · Descanso: 60 seg
+
+Recomendaciones:
+- Dormir 7-8 horas.
+- Comer proteína en cada comida.
+
+Cualquier duda me escribís`;
+ok('36 · «NOTAS:», «INDICACIONES» y «Recomendaciones:»: antes del primer día son de la rutina; adentro de un día, del día', corto(R.leerRutina(CHATGPT_NOTAS_ENCABEZADOS)), {
+  nombre: 'Rutina de hipertrofia – 3 días',
+  notas: 'Calentar 10 minutos en bici antes de empezar.\nTomar agua entre series.\nBajar el peso si la técnica se pierde.',
+  dias: [
+    ['Día 1 – Pecho y tríceps', 'Hacer los ejercicios en el orden indicado.\nDescansar 2-3 minutos entre ejercicios pesados.', [
+      e7('Press banca', 4, '6-8', 180, 'Bajar la barra al pecho sin rebotar.'),
+      e7('Press inclinado con mancuernas', 3, '10-12', 90),
+      e7('Fondos', 3, 'al fallo', 120, 'Si no salen, en máquina asistida.')]],
+    ['Día 2 – Espalda y bíceps', 'Dormir 7-8 horas.\nComer proteína en cada comida.', [
+      e7('Dominadas', 4, '6-8', 180),
+      e7('Remo con barra', 4, '8-10', 120, 'Espalda recta, sin tirones.'),
+      e7('Curl con barra', null, '12', 60, '2-3 series')]]],
+  no: ['Cualquier duda me escribís'],
+});
+
+// Y en portugués: «REGRAS GERAIS», «OBSERVAÇÕES», «DICAS», «Treino A — Peito».
+const CHATGPT_PT = `TREINO DE HIPERTROFIA
+
+REGRAS GERAIS
+- Aquecimento: 5-8 minutos antes de começar.
+- Descida de cada repetição: 2-3 segundos.
+- Exercícios pesados: descansar 2-3 minutos entre as séries.
+- Se a técnica se perder, diminuir o peso.
+- Prioridade: TÉCNICA > PESO.
+
+Treino A — Peito
+1. Supino reto — 4 × 6-8 · Intervalo: 2-3 min
+Descer a barra até o peito sem quicar.
+2. Supino inclinado com halteres — 3 séries × 8-10 reps · Intervalo: 2 min
+3. Crucifixo — 2-3x12-15 · Intervalo: 60 seg
+
+OBSERVAÇÕES
+- Beber água entre as séries.
+- Não treinar com dor.
+
+Treino B — Costas
+1. Barra fixa — 4 × 6-8 · Intervalo: 2-3 min
+Se não sair, usar elástico.
+2. Remada curvada — 4 × 8-10 · Intervalo: 2 min
+
+DICAS
+- Dormir 7-8 horas.
+- Aumentar a carga aos poucos.`;
+const CHATGPT_PT_LEIDA = R.leerRutina(CHATGPT_PT);
+ok('36 · en portugués: REGRAS GERAIS, OBSERVAÇÕES y DICAS', corto(CHATGPT_PT_LEIDA), {
+  nombre: 'TREINO DE HIPERTROFIA',
+  notas: 'Aquecimento: 5-8 minutos antes de começar.\nDescida de cada repetição: 2-3 segundos.\nExercícios pesados: descansar 2-3 minutos entre as séries.\nSe a técnica se perder, diminuir o peso.\nPrioridade: TÉCNICA > PESO.',
+  dias: [
+    ['Treino A — Peito', 'Beber água entre as séries.\nNão treinar com dor.', [
+      e7('Supino reto', 4, '6-8', 180, 'Descer a barra até o peito sem quicar.'),
+      e7('Supino inclinado com halteres', 3, '8-10', 120),
+      e7('Crucifixo', null, '12-15', 60, '2-3 series')]],
+    ['Treino B — Costas', 'Dormir 7-8 horas.\nAumentar a carga aos poucos.', [
+      e7('Barra fixa', 4, '6-8', 180, 'Se não sair, usar elástico.'),
+      e7('Remada curvada', 4, '8-10', 120)]]],
+  no: [],
+});
+ok('36 · ida y vuelta en portugués', R.leerRutina(R.rutinaComoTexto(CHATGPT_PT_LEIDA, tPt)), { ...CHATGPT_PT_LEIDA, noEntendidas: [] });
+
+// 37. El bloque de indicaciones: un encabezado solo (en mayúsculas, con dos
+// puntos, en negrita o con «#») abre el bloque, y nunca es un día.
+ok('37 · «NOTAS:» antes del primer día: las indicaciones de la rutina, sin las viñetas',
+  corto(R.leerRutina('NOTAS:\n- Tomar agua\n- Dormir 8 horas\n- Calentar 5 min\n\nLUNES\nSentadilla 4x10')), {
+    nombre: null, notas: 'Tomar agua\nDormir 8 horas\nCalentar 5 min',
+    dias: [['LUNES', '', [e7('Sentadilla', 4, '10', null)]]], no: [],
+  });
+ok('37 · adentro de un día van a las notas del día; un ejercicio con series cierra el bloque',
+  corto(R.leerRutina('LUNES\nSentadilla 4x10\n\nRECOMENDACIONES\n- No saltear el calentamiento.\n- Estirar al final\nPrensa 3x12')), {
+    nombre: null, notas: '',
+    dias: [['LUNES', 'No saltear el calentamiento.\nEstirar al final', [e7('Sentadilla', 4, '10', null), e7('Prensa', 3, '12', null)]]], no: [],
+  });
+ok('37 · «*Importante*», «# Consejos»; una regla en MAYÚSCULAS con dos puntos no es un día; «Nota: …» con texto sigue siendo la nota del ejercicio',
+  corto(R.leerRutina('*Importante*\nPrioridad: técnica.\nPRIORIDAD: TÉCNICA > PESO\n\n# Consejos\nDormir bien.\n\nDía 1\nSentadilla 4x10\nNota: bajar despacio\nObservaciones:\nTomar agua.\nDominadas 3x8')), {
+    nombre: null, notas: 'Prioridad: técnica.\nPRIORIDAD: TÉCNICA > PESO\nDormir bien.',
+    dias: [['Día 1', 'Tomar agua.', [e7('Sentadilla', 4, '10', null, 'bajar despacio'), e7('Dominadas', 3, '8', null)]]], no: [],
+  });
+ok('37 · nunca un día ni un ejercicio que se llame así (es y pt)', (() => {
+  const r = R.leerRutina('REGLAS GENERALES\n- Calentar antes.\nDICAS\n- Beber água.\nOBSERVAÇÕES\n- Dormir bem.\nIMPORTANTE\nTécnica primero.');
+  return [r.dias.map((d) => d.nombre), nombresDe(r), r.notas, r.noEntendidas];
+})(), [[], [], 'Calentar antes.\nBeber água.\nDormir bem.\nTécnica primero.', []]);
+
+// 38. Una oración no es un ejercicio, aunque venga con viñeta o con números.
+ok('38 · pegada debajo de un ejercicio es su técnica; tras un renglón vacío, del día; un nombre corto y «Face pull» + «3x15» siguen igual',
+  corto(R.leerRutina(['Día 1', '1. Press banca 4x10', 'Bajar la barra al pecho, sin rebotar.', '- Subida: controlada pero con fuerza',
+    '2. Dominadas', 'Face pull', '3x15', '', 'Ir subiendo el peso cada semana.', '- Ejercicios pesados: descansar 2-3 minutos entre series.',
+    'Elevaciones laterales con mancuernas sentado en banco inclinado', '3x12', 'Algo que no es un ejercicio'].join('\n'))), {
+    nombre: null, notas: '',
+    dias: [['Día 1', 'Ir subiendo el peso cada semana.\nEjercicios pesados: descansar 2-3 minutos entre series.', [
+      e7('Press banca', 4, '10', null, 'Bajar la barra al pecho, sin rebotar.\nSubida: controlada pero con fuerza'),
+      e7('Dominadas', null, '', null),
+      e7('Face pull', 3, '15', null),
+      e7('Elevaciones laterales con mancuernas sentado en banco inclinado', 3, '12', null)]]],
+    no: ['Algo que no es un ejercicio'],
+  });
+ok('38 · antes del primer día es una indicación de la rutina',
+  corto(R.leerRutina('Antes de arrancar, calentar bien las articulaciones.\n\nLUNES\nSentadilla 4x10')),
+  { nombre: null, notas: 'Antes de arrancar, calentar bien las articulaciones.', dias: [['LUNES', '', [e7('Sentadilla', 4, '10', null)]]], no: [] });
+ok('38 · con números, con viñeta o con punto en el medio sigue siendo una oración; «Cardio: 20 min en cinta» y «Bici 15 min suave» son ejercicios',
+  corto(R.leerRutina('Día 1\n- Bajada de cada repetición: 2-3 segundos.\n1. Antes del primer ejercicio pesado: hacer 1-2 series con poco peso para calentar\n'
+    + 'No buscar el fallo en todas las series. Intentar terminar dejando 1-2 repeticiones posibles\n- Cardio: 20 min en cinta\n- Bici 15 min suave')), {
+    nombre: null, notas: '',
+    dias: [['Día 1', 'Bajada de cada repetición: 2-3 segundos.\nAntes del primer ejercicio pesado: hacer 1-2 series con poco peso para calentar\n'
+      + 'No buscar el fallo en todas las series. Intentar terminar dejando 1-2 repeticiones posibles', [
+      e7('Cardio', null, '20 min', null, 'en cinta'), e7('Bici', null, '15 min', null, 'suave')]]],
+    no: [],
+  });
+ok('38 · con viñeta y punto: «- Peso muerto rumano.» y «- Face pull.» son ejercicios; «- Sin balancear el cuerpo.» y «- Dormir 7-8 horas.» son notas; «Sentadilla.» es el de la lista',
+  corto(R.leerRutina('Día 1\nSentadilla.\nBajar despacio.\n- Peso muerto rumano.\n- Sin balancear el cuerpo.\n- Face pull.\n- Si la técnica se pierde, bajar el peso.\n- Dormir 7-8 horas.')), {
+    nombre: null, notas: '',
+    dias: [['Día 1', '', [
+      e7('Sentadilla', null, '', null, 'Bajar despacio.'),
+      e7('Peso muerto rumano', null, '', null, 'Sin balancear el cuerpo.'),
+      e7('Face pull', null, '', null, 'Si la técnica se pierde, bajar el peso.\nDormir 7-8 horas.')]]],
+    no: [],
+  });
+ok('38 · en el formato de Orden, una oración después de la raya no es la carga',
+  fila(R.leerRenglon('Press banca — 4 × 6-8 · Descanso: 2 min · Codos pegados al cuerpo.')), ['Press banca', 4, '6-8', '', 120, 'Codos pegados al cuerpo.']);
+
+// 39. El nombre de la rutina: el primer renglón que dice «rutina», «plan»,
+// «treino» o «programa», o va en mayúsculas seguido de un título o un bloque.
+const nombreYDias = (t) => { const r = R.leerRutina(t); return [r.nombre, r.dias.map((d) => d.nombre), r.noEntendidas]; };
+ok('39 · «Rutina de gym» en minúsculas, seguida de ejercicios y de otro día, es el nombre y nunca un ejercicio',
+  nombreYDias('Rutina de gym\nSentadilla 4x10\n\nMARTES\nRemo 4x10'), ['Rutina de gym', ['', 'MARTES'], []]);
+ok('39 · «PIERNAS» y «BRAZOS» siguen siendo dos días', nombreYDias('PIERNAS\nSentadilla 4x10\n\nBRAZOS\nCurl 3x12'), [null, ['PIERNAS', 'BRAZOS'], []]);
+ok('39 · «RUTINA DE GYM» seguida de «REGLAS GENERALES»', nombreYDias('RUTINA DE GYM\n\nREGLAS GENERALES\n- Tomar agua.\n\nLUNES\nSentadilla 4x10'), ['RUTINA DE GYM', ['LUNES'], []]);
+ok('39 · «Plan de 8 semanas», «🏋️ RUTINA DE GYM 🏋️»', [nombreYDias('Plan de 8 semanas\nDía 1\nSentadilla 4x10'), nombreYDias('🏋️ RUTINA DE GYM 🏋️\nSentadilla 4x10')],
+  [['Plan de 8 semanas', ['Día 1'], []], ['RUTINA DE GYM', [''], []]]);
+ok('39 · un saludo que dice «rutina» no es el nombre', nombreYDias('Hola! Te paso tu rutina\nDía 1\nSentadilla 4x10'), [null, ['Día 1'], ['Hola! Te paso tu rutina']]);
+
+// 40. El «×» suelto y el partido por un salto de línea.
+ok('40 · «4 series × 6-8 reps»: el × es la x de siempre y no arranca la nota',
+  [fila(R.leerRenglon('Press banca 4 series × 6-8 reps')), fila(R.leerRenglon('Press banca — 4 series × 6-8 reps · Descanso: 2 min'))],
+  [['Press banca', 4, '6-8', '', null, ''], ['Press banca', 4, '6-8', '', 120, '']]);
+ok('40 · «4 ×» y abajo «6-8», «4» y abajo «× 10»: se unen; «10. Prensa» es una numeración',
+  R.leerRutina('Día 1\nPress banca — 4 ×\n6-8 · Descanso: 2-3 min\nRemo 4\n× 10\n10. Prensa 3x12').dias[0].ejercicios.map(fila),
+  [['Press banca', 4, '6-8', '', 180, ''], ['Remo', 4, '10', '', null, ''], ['Prensa', 3, '12', '', null, '']]);
+
+// 41. Series en rango: series null, las repeticiones sí, y la nota dice «2-3 series».
+ok('41 · «2-3x12-15», «2-3 x 15», «2 a 3 series de 12», con raya, con carga, y sin repeticiones',
+  ['Curl martillo 2-3x12-15', 'Aperturas 2-3 x 15', 'Prensa 2 a 3 series de 12', 'Curl martillo — 2-3x12-15 · Descanso: 60 seg',
+    'Sentadilla 3-4 x 10-12 40kg', 'Plancha 3-4 series'].map((s) => fila(R.leerRenglon(s))), [
+    ['Curl martillo', null, '12-15', '', null, '2-3 series'], ['Aperturas', null, '15', '', null, '2-3 series'],
+    ['Prensa', null, '12', '', null, '2-3 series'], ['Curl martillo', null, '12-15', '', 60, '2-3 series'],
+    ['Sentadilla', null, '10-12', '40 kg', null, '3-4 series'], ['Plancha', null, '', '', null, '3-4 series']]);
+ok('41 · y en dos renglones', R.leerRutina('Día 1\nSentadilla\n3-4 x 10-12\nPrensa\n2-3x15').dias[0].ejercicios.map(fila),
+  [['Sentadilla', null, '10-12', '', null, '3-4 series'], ['Prensa', null, '15', '', null, '2-3 series']]);
+
+// 42. Un descanso en rango: la base guarda uno solo, y es el mayor.
+ok('42 · leerDescanso: «2-3 min» → 180, «60-90 segundos» → 90, «2 min» → 120; «2-3» solo no se adivina',
+  ['2-3 min', '60-90 segundos', '2 min', '60-90', '2-3', '1-1,5 min', '2 a 3 min', '45-60s', '1:30-2:00'].map((x) => R.leerDescanso(x)),
+  [180, 90, 120, 90, null, 90, 180, 60, null]);
+ok('42 · en un renglón: «Descanso: 2-3 min», «2-3 min de descanso»; «descanso 2-3» a la nota; «pausa 2-3 seg arriba» es técnica',
+  ['Press banca — 4 × 6-8 · Descanso: 2-3 min', 'Press 4x10 2-3 min de descanso', 'Remo 3x12 descanso 2-3', 'Hip thrust 4x12 pausa 2-3 seg arriba']
+    .map((s) => fila(R.leerRenglon(s))), [
+    ['Press banca', 4, '6-8', '', 180, ''], ['Press', 4, '10', '', 180, ''],
+    ['Remo', 3, '12', '', null, 'descanso 2-3'], ['Hip thrust', 4, '12', '', null, 'pausa 2-3 seg arriba']]);
 
 // ═══════════════════════════════════════════════════════════
 console.log('\n── 5 · Ida y vuelta: lo que exporta Orden vuelve igual ──');
