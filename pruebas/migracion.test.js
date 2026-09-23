@@ -95,6 +95,28 @@ function ok(nombre, real, esperado) {
      values ($1,'venta',current_date,999,999,$2)`, [A.empresaId, A.uid]));
   ok('y las reglas nuevas ya rigen sobre la base vieja', intento.ok, false);
 
+  // 7. Las de las campañas (100 y 101) tienen que poder correr de nuevo
+  //    sobre una base que ya las tiene: columnas, constraints, índices,
+  //    policies, tablas y funciones, dos veces más, sin romper ni duplicar.
+  console.log('\n── Las migraciones 100 y 101, aplicadas de nuevo ───────────');
+  const completa = await H.crearBase();
+  const C = await H.montarEmpresa(completa, { email: 'sojero@campo.com', nombre: 'Agro Norte', rubro: 'agricultura', moneda: 'USD' });
+  const norte = await H.comoUsuario(completa, C.uid, async () =>
+    (await completa.query("select public.guardar_lote($1,'Norte','',0,'',null,null,'Soja','Zafra 2026/27',50,415) id", [C.empresaId])).rows[0].id);
+  for (const prefijo of ['100', '101', '100', '101']) await H.aplicarMigracion(completa, prefijo);
+  console.log('  · migraciones 100 y 101 aplicadas 2 veces más');
+  ok('la campaña sigue estando, con sus hectáreas',
+    Number((await completa.query('select hectareas::numeric h from public.lotes where id=$1', [norte])).rows[0].h), 50);
+  ok('la policy de insert quedó una sola vez',
+    (await completa.query("select count(*)::int n from pg_policies where tablename='movimientos' and policyname='movimientos_insert'")).rows[0].n, 1);
+  ok('y cada función de las campañas existe una sola vez',
+    (await completa.query(`select p.proname, count(*)::int n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+      where s.nspname = 'public' and p.proname in ('guardar_lote','crear_deuda','registrar_pago_deuda','registrar_liquidacion','numeros_de_lote')
+      group by p.proname having count(*) > 1`)).rows, []);
+  ok('la base migrada dos veces sigue contestando',
+    (await H.comoUsuario(completa, C.uid, async () =>
+      (await completa.query('select public.listar_lotes($1) j', [C.empresaId])).rows[0].j)).length, 1);
+
   console.log(`\n${'═'.repeat(62)}`);
   console.log(fallos === 0 ? `>>> ${corridas} COMPROBACIONES DE MIGRACIÓN PASARON` : `>>> ${fallos} DE ${corridas} FALLARON`);
   process.exit(fallos ? 1 : 0);

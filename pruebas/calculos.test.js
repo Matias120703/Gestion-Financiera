@@ -277,7 +277,9 @@ const MATRIZ = {
   '/vender':       [ true,     true,      true,      true,        false ],
   '/gastos':       [ true,     true,      true,      true,        true  ],
   '/deudas':       [ true,     true,      true,      true,        true  ],
-  '/productos':    [ true,     true,      true,      true,        false ],
+  // Sin catálogo en agricultura (100): el grano se vende por la liquidación,
+  // dentro de la campaña, y la feria vende con «producto suelto».
+  '/productos':    [ true,     true,      true,      false,       false ],
   '/movimientos':  [ true,     true,      true,      true,        true  ],
   '/reportes':     [ true,     true,      true,      true,        true  ],
   '/ajustes':      [ true,     true,      true,      true,        true  ],
@@ -369,7 +371,8 @@ ok('tieneSeccion contesta igual que la ficha',
     ['comercio dueño',     'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
     ['servicios dueño',    'servicios',   'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
     ['ganadería dueño',    'ganaderia',   'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
-    ['agricultura dueño',  'agricultura', 'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
+    // El agricultor tiene barra propia (100): se mide con la de su ficha.
+    ['agricultura dueño',  'agricultura', 'emprendedor', fichaDe('agricultura', 'emprendedor').barra],
     ['personal',           'comercio',    'personal',    listaDe('EN_BARRA_INFERIOR_PERSONAL:')],
     ['comercio vendedor',  'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR_VENDEDOR:')],
   ];
@@ -553,9 +556,13 @@ ok('la barra del trainer: panel, agenda, rutinas y clientes',
 ok('la del profe: panel, agenda, alumnos y gastos',
   fichaDe('clases', 'emprendedor').barra, ['/panel', '/agenda', '/clientes', '/gastos']);
 ok('los demás rubros siguen con la de siempre',
-  ['comercio', 'servicios', 'ganaderia', 'agricultura'].map((r) => fichaDe(r, 'emprendedor').barra), [null, null, null, null]);
+  ['comercio', 'servicios', 'ganaderia'].map((r) => fichaDe(r, 'emprendedor').barra), [null, null, null]);
+// Al agricultor (100): mirar cómo va, la campaña (la cosecha y la liquidación
+// viven ahí), cargar un gasto, y vender para el que va a la feria.
+ok('la del agricultor: panel, campañas, gastos y vender',
+  fichaDe('agricultura', 'emprendedor').barra, ['/panel', '/lotes', '/gastos', '/vender']);
 ok('y cada sección de una barra propia existe en su rubro',
-  ['clases', 'entrenamiento'].every((r) => fichaDe(r, 'emprendedor').barra.every((h) => fichaDe(r, 'emprendedor').secciones[h])), true);
+  ['clases', 'entrenamiento', 'agricultura'].every((r) => fichaDe(r, 'emprendedor').barra.every((h) => fichaDe(r, 'emprendedor').secciones[h])), true);
 {
   const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
   ok('la barra de abajo usa la del rubro', nav.includes('ficha.barra'), true);
@@ -568,10 +575,10 @@ ok('y a lo que entra, cobrado',
 ok('no cierra el día', fichaDe('entrenamiento', 'emprendedor').cierraElDia, false);
 ok('se llama igual en portugués',
   rubroVisible(fichaDe('entrenamiento', 'emprendedor'), 'pt').nombre, 'Personal trainer');
-ok('solo el trainer habla con su propia jerga',
+ok('el trainer y el agricultor hablan con su propia jerga (097, 100)',
   ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').jerga !== null),
-  ['entrenamiento']);
+  ['entrenamiento', 'agricultura']);
 ok('y solo el trainer tiene las notas pegadas a cada sesión',
   ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').notasALaVista),
@@ -589,6 +596,21 @@ ok('una cuenta personal no tiene jerga', fichaDe('entrenamiento', 'personal').je
   ok('el trainer da sesiones, no clases', jer.includes("claseDada: 'Sesión dada'") && jer.includes("claseDada: 'Sessão dada'"), true);
   ok('y sus notas son de salud', jer.includes("notas: 'Salud y lesiones'"), true);
   ok('agendar pide la salud de alguien nuevo', leer('src/components/PantallaAgenda.tsx').includes('pedirSalud={notasALaVista}'), true);
+
+  // El agricultor (100): usa los lotes del ganadero, pero dice «campaña» y
+  // «a cosecha». La jerga tiene que estar registrada, o el menú le sigue
+  // diciendo «Lotes».
+  const agri = leer('src/i18n/textos/agricultura.ts');
+  ok('la jerga del agricultor está registrada', /agricultura: \{ es: agriculturaEs, pt: agriculturaPt \}/.test(leer('src/i18n/jergas.ts')), true);
+  ok('el menú le dice Campañas / Safras', agri.includes("lotes: 'Campañas'") && agri.includes("lotes: 'Safras'"), true);
+  ok('abre una campaña, no un lote', agri.includes("nuevo: 'Abrir una campaña'") && agri.includes("nuevo: 'Abrir uma safra'"), true);
+  ok('y lo que debe es a cosecha / na colheita', agri.includes("aCosecha: 'A cosecha'") && agri.includes("aCosecha: 'Na colheita'"), true);
+  // El diccionario neutro no dice «campaña»: eso es de la jerga.
+  const neutro = leer('src/i18n/textos/campanas.ts');
+  ok('el diccionario neutro habla de lote y ciclo', neutro.includes("titulo: 'Abrir un lote'") && neutro.includes("campana: 'Ciclo'"), true);
+  ok('y está enchufado en es.ts y pt.ts',
+    leer('src/i18n/textos/es.ts').includes('campanas: campanasEs,') && leer('src/i18n/textos/pt.ts').includes('campanas: campanasPt,')
+    && leer('src/i18n/textos/es.ts').includes('gastosCampana: gastosCampanaEs,') && leer('src/i18n/textos/pt.ts').includes('panelCampo: panelCampoPt,'), true);
 }
 
 // --- Las rutinas del trainer, dentro de lo que ya usa (098) ---

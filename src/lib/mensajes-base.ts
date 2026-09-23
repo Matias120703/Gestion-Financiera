@@ -402,6 +402,29 @@ export const MENSAJES_PT: Record<string, string> = {
   'Ya se pagó la comisión por ese negocio, así que no se puede desanotar.': 'A comissão desse negócio já foi paga, então não dá pra desanotar.',
   'Ya tenés movimientos cargados en %, así que la moneda del negocio no se puede cambiar: se reetiquetaría todo tu historial sin convertirlo. Si querés ver tus números en otra moneda, usá «Ver en» y poné la cotización.': 'Você já tem lançamentos em %, então a moeda do negócio não pode mudar: todo o seu histórico seria renomeado sem converter. Se quiser ver seus números em outra moeda, use «Ver em» e coloque a cotação.',
   'Ya tenés varios turnos reservados. Cancelá alguno antes de tomar otro.': 'Você já tem vários horários agendados. Cancele algum antes de agendar outro.',
+
+  // ---- 100 · campañas, cosechas y liquidaciones ----
+  'Las hectáreas tienen que ser más que cero.': 'Os hectares precisam ser mais que zero.',
+  'El precio esperado no puede ser negativo.': 'O preço esperado não pode ser negativo.',
+  'Decinos cuántas hectáreas tiene.': 'Diga quantos hectares tem.',
+  'Ese lote tiene cosechas, liquidaciones o deudas cargadas. Sacáselas antes de borrarlo.': 'Esse lote tem colheitas, liquidações ou dívidas lançadas. Tire elas antes de apagar.',
+  'Ese movimiento es parte de una liquidación: se maneja desde la campaña.': 'Esse lançamento faz parte de uma liquidação: se mexe pela safra.',
+  'Los kilos tienen que ser más que cero.': 'Os quilos precisam ser mais que zero.',
+  'Los kilos acreditados no pueden ser más que el peso de balanza.': 'Os quilos creditados não podem ser mais que o peso da balança.',
+  'La humedad tiene que estar entre 5 y 40.': 'A umidade precisa estar entre 5 e 40.',
+  'Esa cosecha no existe.': 'Essa colheita não existe.',
+  'Solo quien la cargó o administración puede borrar una cosecha.': 'Só quem lançou ou a administração pode apagar uma colheita.',
+  'Solo administración carga liquidaciones.': 'Só a administração lança liquidações.',
+  'La liquidación necesita al menos una campaña con kilos.': 'A liquidação precisa de pelo menos uma safra com quilos.',
+  'Una liquidación no puede tener más de 10 campañas.': 'Uma liquidação não pode ter mais de 10 safras.',
+  'Cada campaña va una sola vez en la liquidación.': 'Cada safra entra uma só vez na liquidação.',
+  'Una liquidación no puede tener más de 12 descuentos por campaña.': 'Uma liquidação não pode ter mais de 12 descontos por safra.',
+  'Cada descuento necesita una categoría y un monto mayor que cero.': 'Cada desconto precisa de uma categoria e um valor maior que zero.',
+  'Le estás descontando a esa deuda más de lo que debe.': 'Você está descontando dessa dívida mais do que ela deve.',
+  'La liquidación no cuadra: lo que el silo descontó suma más que el bruto. Bajá lo que compensás de las deudas; lo que falte sigue como deuda.': 'A liquidação não fecha: o que o silo descontou soma mais que o bruto. Baixe o que você compensa das dívidas; o que faltar continua como dívida.',
+  'Para guardar el precio en otra moneda hacen falta la moneda, el precio y el cambio.': 'Pra guardar o preço em outra moeda precisa da moeda, do preço e do câmbio.',
+  'Esa liquidación no existe.': 'Essa liquidação não existe.',
+  'Esa liquidación ya estaba anulada.': 'Essa liquidação já estava cancelada.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */

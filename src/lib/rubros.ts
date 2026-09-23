@@ -6,8 +6,11 @@ import type { Rubro, TipoCuenta } from './tipos';
  * El trainer usa las pantallas del profe tal cual, pero no dice «alumno»
  * ni «clase»: dice «cliente» y «sesión». En vez de copiar las pantallas, el
  * diccionario se pisa con las palabras del oficio (ver i18n/jergas.ts).
+ *
+ * El agricultor usa los lotes del ganadero (100), pero no dice «lote» ni
+ * «ciclo»: dice «campaña», y lo que debe «a cosecha».
  */
-export type Jerga = 'entrenamiento';
+export type Jerga = 'entrenamiento' | 'agricultura';
 
 /**
  * QUÉ CAMBIA SEGÚN EL RUBRO.
@@ -260,10 +263,24 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     barra: null,
   },
 
+  /**
+   * EL PRODUCTOR AGRÍCOLA (100).
+   *
+   * Su unidad no es el día sino la campaña: el mismo lote físico tiene soja
+   * en la zafra y maíz en la zafriña, y el resultado se sabe recién al
+   * final. Por eso usa los lotes del ganadero —una fila por campaña, con
+   * cultivo, hectáreas y precio esperado— y les suma lo que el ganadero no
+   * tiene: la cosecha camión por camión, la liquidación del silo tal como
+   * viene en el papel, y los insumos que debe «a cosecha» atados a la
+   * campaña. Casi nadie paga los insumos al contado.
+   *
+   * Habla con su jerga: «campaña» donde el ganadero lee «lote», «a cosecha»
+   * donde el motor dice «a la venta» (ver i18n/textos/agricultura.ts).
+   */
   agricultura: {
     clave: 'agricultura',
     nombre: 'Agricultura',
-    ejemplo: 'Soja, maíz, huerta, frutales',
+    ejemplo: 'Soja, maíz, trigo, sésamo, mandioca, huerta',
     secciones: {
       ...NUCLEO,
       // Lo suyo, igual que al ganadero: el ciclo es la campaña, no el día.
@@ -272,20 +289,30 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       '/lotes': true,
       '/cierre': false,
       '/reto': false,
+      // SIN CATÁLOGO. El sojero no tiene productos: su grano se vende por
+      // la liquidación, dentro de la campaña, que es la que sabe los kilos
+      // y el precio. Y el que va a la feria vende con «producto suelto».
+      // Un catálogo con «Soja» y stock en toneladas restaría dos veces el
+      // costo (los insumos ya están como gastos de la campaña).
+      '/productos': false,
     },
     palabras: { vender: 'Vender', productos: 'Cultivos', ventas: 'Ventas' },
     pt: {
       nombre: 'Agricultura',
-      ejemplo: 'Soja, milho, horta, frutas',
+      ejemplo: 'Soja, milho, trigo, gergelim, mandioca, horta',
       palabras: { vender: 'Vender', productos: 'Culturas', ventas: 'Vendas' },
     },
     ciclosLargos: true,
     cierraElDia: false,
     paquetes: false,
     agendaDeAlumnos: false,
-    jerga: null,
+    jerga: 'agricultura',
     notasALaVista: false,
-    barra: null,
+    // Decidido en el contrato de la 100: lo de todos los días. Mirar cómo
+    // va, la campaña (la cosecha y la liquidación viven ahí), cargar un
+    // gasto, y vender para el que va a la feria o vende mandioca por
+    // camión. Deudas y billetera quedan a un toque desde «Más».
+    barra: ['/panel', '/lotes', '/gastos', '/vender'],
   },
 
   /**

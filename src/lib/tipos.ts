@@ -649,11 +649,72 @@ export interface Adjunto {
 
 /** Preferencias de la PERSONA, no del negocio. Ver migración 010. */
 /**
+ * LOS NÚMEROS DE UN LOTE, COMO LOS CALCULA LA BASE (100).
+ *
+ * Salen de `numeros_de_lote`, un solo lugar para las fórmulas: los leen
+ * iguales `listar_lotes`, `resumen_lote`, la tarjeta, el panel y el Excel.
+ * Nada se suma en el navegador.
+ *
+ * Los que van marcados «solo administración» llegan en null a un miembro
+ * que no es admin (015 y 047: los costos y las deudas son de
+ * administración). Lo cobrado, los kilos y el rendimiento sí los ve
+ * cualquiera: las ventas son de todos. Las pantallas tienen que estar
+ * preparadas para el null, no para el cero.
+ */
+export interface NumerosDeLote {
+  movimientos: number;
+  /** Plata que le pusiste (gastos activos). Lo ve todo miembro (regla de la 045). */
+  puesto: number;
+  /**
+   * Plata que te dio: ventas + ingresos activos, sin contar los ingresos
+   * «Préstamo» ni «Aporte» (plata prestada no es cobrada).
+   */
+  cobrado: number;
+  /** Cobrado menos puesto (caja, regla de la 045). Arranca en rojo, y es correcto. Lo ve todo miembro. */
+  resultado: number;
+  /** El resultado dividido la cantidad. Null si el lote no se cuenta (no por rol). */
+  por_unidad: number | null;
+  /** Lo que debés «a cosecha»: deudas activas atadas a este lote. Solo administración. */
+  a_cosecha: number | null;
+  /** Puesto + a cosecha: lo que la campaña cuesta de verdad. Solo administración. */
+  costo: number | null;
+  /** Costo por hectárea; null sin hectáreas. Solo administración. */
+  costo_ha: number | null;
+  /** Resultado por hectárea; null sin hectáreas (no por rol). */
+  resultado_ha: number | null;
+  /** Σ kg netos de los tickets de balanza. */
+  kg_cosechados: number;
+  /** Σ kg de las liquidaciones activas. */
+  kg_vendidos: number;
+  /** Cosechados − vendidos. Puede ser negativo: la pantalla lo dice. */
+  kg_sin_vender: number;
+  /** Σ bruto de las liquidaciones activas. */
+  vendido: number;
+  /** Vendido / kg vendidos × 1000 (por tonelada). Null sin kilos vendidos. */
+  precio_promedio: number | null;
+  /** El precio promedio si hay ventas; si no, el esperado; si no, null. */
+  precio_ref: number | null;
+  /** kg cosechados / hectáreas. Null sin hectáreas o sin cosecha. */
+  rendimiento: number | null;
+  /** Costo por tonelada cosechada. Null sin cosecha. Solo administración. */
+  costo_ton: number | null;
+  /** Cuántos kg/ha hay que cosechar para cubrir el costo al precio de referencia. Solo administración. */
+  kg_ha_para_cubrir: number | null;
+  /** max(costo − cobrado, 0). Solo administración. */
+  falta_cubrir: number | null;
+  /** Cuántos kilos hay que vender todavía para cubrir el costo. Solo administración. */
+  kg_para_cubrir: number | null;
+}
+
+/**
  * Un ciclo largo: cuarenta novillos, una hectárea de soja, la obra de una
  * casa. El lote no guarda plata — los totales de acá salen calculados de
  * los mismos movimientos que alimentan el panel.
+ *
+ * Desde la 100 una fila es una CAMPAÑA de un lote físico: «Norte · Soja ·
+ * Zafra 2026/27 · 50 ha». Comparar zafra contra zafra es agrupar por nombre.
  */
-export interface Lote {
+export interface Lote extends NumerosDeLote {
   id: string;
   nombre: string;
   /** Cabezas, hectáreas, bolsas… o vacío: una obra no se mide así. */
@@ -665,15 +726,14 @@ export interface Lote {
   notas: string;
   /** Cuántos lleva en curso, o cuántos duró si ya cerró. */
   dias: number;
-  movimientos: number;
-  /** Plata que le pusiste. */
-  puesto: number;
-  /** Plata que te dio. */
-  cobrado: number;
-  /** Cobrado menos puesto. Arranca en rojo, y es correcto que arranque así. */
-  resultado: number;
-  /** El resultado dividido la cantidad. Null si el lote no se cuenta. */
-  por_unidad: number | null;
+  /** Soja, Maíz, Sésamo… texto libre (los chips lo empujan). Vacío en ganadería. */
+  cultivo: string;
+  /** «Zafra 2026/27», «Safrinha 27», «Engorde 2026». Vacío si no se cargó. */
+  campana: string;
+  /** Null si no se cargaron (ganadería, o una obra). */
+  hectareas: number | null;
+  /** Por tonelada, en la moneda del negocio. Null si no se cargó. */
+  precio_esperado: number | null;
 }
 
 export interface MovimientoDeLote {
@@ -684,10 +744,95 @@ export interface MovimientoDeLote {
   descripcion: string;
   categoria: string;
   monto: number;
+  metodo_pago: string;
+  /** No null: nació dentro de una liquidación y se maneja desde ahí, no suelto. */
+  liquidacion_id: string | null;
+  /** No null: es una parte de un gasto repartido entre campañas; se anulan juntas. */
+  reparto_id: string | null;
+  /** Si se pagó o cobró en la otra moneda: cuánto fue, en cuál, y a qué cambio. */
+  monto_original: number | null;
+  moneda_original: string | null;
+  cambio: number | null;
 }
 
-/** Un lote con todo lo que tiene adentro. */
-export interface LoteDetalle {
+/** Un ticket de balanza: un camión, kilos sin plata (100). */
+export interface Cosecha {
+  id: string;
+  fecha: string;
+  /** Los kilos que te acreditaron (netos, después de la merma). */
+  kg_netos: number;
+  /** El peso de balanza (camión − tara). Null si no se cargó. */
+  kg_brutos: number | null;
+  humedad: number | null;
+  /** Cooperativa, silo, acopiador. */
+  destino: string;
+  /** N.º de ticket o romaneio. */
+  ticket: string;
+  notas: string;
+  creado_por: string | null;
+}
+
+/**
+ * Una venta de grano de UNA campaña (100). Un papel de la cooperativa es un
+ * `grupo_id` con una fila por campaña: se anula el grupo entero.
+ */
+export interface Liquidacion {
+  id: string;
+  grupo_id: string;
+  fecha: string;
+  comprador: string;
+  kg: number;
+  /** Por tonelada, en la moneda del negocio. */
+  precio_tonelada: number;
+  /** Como venía en el papel, si pagaron en la otra moneda. */
+  precio_original: number | null;
+  moneda_original: string | null;
+  cambio: number | null;
+  /** kg × precio / 1000: la venta. */
+  bruto: number;
+  /** Secado, flete, retención… Null para quien no es admin. */
+  descuentos: number | null;
+  /** Lo que el silo se cobró de las deudas. Null para quien no es admin. */
+  compensado: number | null;
+  /** Alquiler en kilos u otra cosa que pagó el grano. Null para quien no es admin. */
+  pagado_con_grano: number | null;
+  /** Lo que acreditó el banco (0 en un canje puro). */
+  neto: number;
+  cuenta_id: string | null;
+  estado: 'activa' | 'anulada';
+  /** La venta, por el bruto. */
+  movimiento_id: string;
+  notas: string;
+}
+
+/** Una deuda «a cosecha» de la campaña, con lo que falta pagar. */
+export interface DeudaDeLote {
+  id: string;
+  nombre: string;
+  acreedor: string;
+  /** La categoría del gasto que nace al pagarla; vacía = «Deudas». */
+  categoria: string;
+  saldo: number;
+  vence_el: string | null;
+}
+
+/** Lo que devuelve `registrar_liquidacion`: el papel entero y una fila por campaña. */
+export interface RespuestaLiquidacion {
+  grupo_id: string;
+  bruto: number;
+  neto: number;
+  liquidaciones: {
+    id: string;
+    lote_id: string;
+    movimiento_id: string;
+    kg: number;
+    bruto: number;
+    neto: number;
+  }[];
+}
+
+/** Un lote con todo lo que tiene adentro (`movimientos` acá es la lista, no el conteo). */
+export interface LoteDetalle extends Omit<NumerosDeLote, 'movimientos'> {
   id: string;
   nombre: string;
   unidad: string;
@@ -697,7 +842,20 @@ export interface LoteDetalle {
   cerrado_el: string | null;
   notas: string;
   dias: number;
+  cultivo: string;
+  campana: string;
+  hectareas: number | null;
+  precio_esperado: number | null;
+  /** Filtrados con la regla de la 047 si no es admin: las ventas y lo que cargó uno mismo. */
   movimientos: MovimientoDeLote[];
+  /** Los tickets, por fecha desc. */
+  cosechas: Cosecha[];
+  /** Por fecha desc; descuentos, compensado y pagado_con_grano en null si no es admin. */
+  liquidaciones: Liquidacion[];
+  /** Activas con saldo, atadas a este lote. Null para quien no es admin. */
+  deudas: DeudaDeLote[] | null;
+  /** Σ gastos activos por categoría, de mayor a menor. Null para quien no es admin. */
+  estructura: { categoria: string; monto: number }[] | null;
 }
 
 /** Un gasto o ingreso que todavía no es de ningún lote. */

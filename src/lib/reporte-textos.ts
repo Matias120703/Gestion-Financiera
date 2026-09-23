@@ -31,6 +31,11 @@ const es = {
   hojaEnQueSeFue: 'En qué se fue',
   hojaDeDondeVino: 'De dónde vino',
   hojaAhorro: 'Ahorro',
+  // Las campañas y las liquidaciones del campo (100). Solo en un negocio de
+  // ciclos largos (`fichaDe(...).ciclosLargos`); las hojas hablan de
+  // «campaña» porque el Excel lo baja el contador, no el ganadero.
+  hojaCampanas: 'Campañas',
+  hojaLiquidaciones: 'Liquidaciones',
 
   // ---- el libro de un negocio ----
   resumenEjecutivo: 'RESUMEN EJECUTIVO',
@@ -87,6 +92,29 @@ const es = {
 
   resultadoDeCadaDia: 'RESULTADO DE CADA DÍA',
   columnasDias: ['', 'Fecha', 'Vendido', 'Gastado', 'Ganancia del día'],
+
+  // ---- las campañas (100) ----
+  /** La columna nueva de Movimientos: de qué campaña es cada uno (vacía si de ninguna). */
+  columnaCampana: 'Campaña',
+  campanasTitulo: 'CAMPAÑAS · UNA FILA POR CAMPAÑA',
+  columnasCampanas: [
+    'Lote', 'Cultivo', 'Campaña', 'Estado', 'Desde', 'Hasta', 'Hectáreas',
+    'Puesto', 'A cosecha', 'Costo', 'Costo/ha', 'Cobrado', 'Resultado', 'Resultado/ha',
+    'kg cosechados', 'kg/ha', 'kg vendidos', 'kg sin vender', 'Precio promedio/t', 'Costo/t', 'kg/ha para cubrir',
+  ],
+  abierta: 'Abierta',
+  cerrada: 'Cerrada',
+  sinCampanas: 'Todavía no hay campañas cargadas.',
+  campanasSonDeCaja: 'Puesto, cobrado y resultado son de caja: plata que entró menos plata que salió. '
+    + '«A cosecha» es lo que se debe todavía y cuenta en el costo, no en el resultado.',
+  liquidacionesTitulo: 'LIQUIDACIONES · UNA FILA POR CAMPAÑA Y PAPEL',
+  columnasLiquidaciones: [
+    'Fecha', 'Lote', 'Campaña', 'Comprador', 'kg', 'Precio/t', 'Bruto',
+    'Descuentos', 'Compensado de deudas', 'Pagado con grano', 'Neto', 'Cuenta', 'Estado',
+  ],
+  activa: 'Activa',
+  sinLiquidaciones: 'Todavía no hay liquidaciones cargadas.',
+  totalLiquidaciones: 'TOTAL (sin anuladas)',
 
   // ---- el libro de una persona ----
   tusNumeros: 'TUS NÚMEROS DEL PERIODO',
@@ -160,6 +188,8 @@ const pt: TextosExcel = {
   hojaEnQueSeFue: 'Pra onde foi',
   hojaDeDondeVino: 'De onde veio',
   hojaAhorro: 'Reserva',
+  hojaCampanas: 'Safras',
+  hojaLiquidaciones: 'Liquidações',
 
   resumenEjecutivo: 'RESUMO EXECUTIVO',
   entroPlata: 'Entrou dinheiro',
@@ -215,6 +245,27 @@ const pt: TextosExcel = {
 
   resultadoDeCadaDia: 'RESULTADO DE CADA DIA',
   columnasDias: ['', 'Data', 'Vendido', 'Despesas', 'Lucro do dia'],
+
+  columnaCampana: 'Safra',
+  campanasTitulo: 'SAFRAS · UMA LINHA POR SAFRA',
+  columnasCampanas: [
+    'Talhão', 'Cultura', 'Safra', 'Situação', 'De', 'Até', 'Hectares',
+    'Investido', 'Na colheita', 'Custo', 'Custo/ha', 'Recebido', 'Resultado', 'Resultado/ha',
+    'kg colhidos', 'kg/ha', 'kg vendidos', 'kg a vender', 'Preço médio/t', 'Custo/t', 'kg/ha pra cobrir',
+  ],
+  abierta: 'Aberta',
+  cerrada: 'Fechada',
+  sinCampanas: 'Ainda não há safras lançadas.',
+  campanasSonDeCaja: 'Investido, recebido e resultado são de caixa: dinheiro que entrou menos dinheiro que saiu. '
+    + '«Na colheita» é o que ainda se deve e conta no custo, não no resultado.',
+  liquidacionesTitulo: 'LIQUIDAÇÕES · UMA LINHA POR SAFRA E PAPEL',
+  columnasLiquidaciones: [
+    'Data', 'Talhão', 'Safra', 'Comprador', 'kg', 'Preço/t', 'Bruto',
+    'Descontos', 'Compensado de dívidas', 'Pago com grão', 'Líquido', 'Conta', 'Situação',
+  ],
+  activa: 'Ativa',
+  sinLiquidaciones: 'Ainda não há liquidações lançadas.',
+  totalLiquidaciones: 'TOTAL (sem anuladas)',
 
   tusNumeros: 'SEUS NÚMEROS DO PERÍODO',
   loQueEntro: 'O que entrou',

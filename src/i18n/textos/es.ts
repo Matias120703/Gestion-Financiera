@@ -12,6 +12,9 @@ import { rutinasEditorEs } from './rutinas-editor';
 import { rutinasPanelEs } from './rutinas-panel';
 import { rutinaPublicaEs } from './rutina-publica';
 import { rutinasComunEs } from './rutinas-comun';
+import { campanasEs } from './campanas';
+import { gastosCampanaEs } from './gastos-campana';
+import { panelCampoEs } from './panel-campo';
 
 export const es = {
   comun: {
@@ -2674,6 +2677,13 @@ export const es = {
   rutinasPanel: rutinasPanelEs,
   rutinaPublica: rutinaPublicaEs,
   rutinasComun: rutinasComunEs,
+
+  // Campañas, cosechas y liquidaciones (100): la pantalla de campañas, lo
+  // que ganan Gastos, Vender y el historial, y el panel del campo. Neutros
+  // («lote»); la jerga agricultura pone «campaña» encima.
+  campanas: campanasEs,
+  gastosCampana: gastosCampanaEs,
+  panelCampo: panelCampoEs,
 };
 
 /**

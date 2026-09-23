@@ -18,9 +18,13 @@ import { fusionar, type Parcial } from './fusionar';
 import type { Idioma } from './idiomas';
 import type { Jerga } from '../lib/rubros';
 import { entrenamientoEs, entrenamientoPt } from './textos/entrenamiento';
+import { agriculturaEs, agriculturaPt } from './textos/agricultura';
 
 const JERGAS: Record<Jerga, Record<Idioma, Parcial<Textos>>> = {
   entrenamiento: { es: entrenamientoEs, pt: entrenamientoPt },
+  // El agricultor usa los lotes del ganadero, pero dice «campaña» y
+  // «a cosecha» (100).
+  agricultura: { es: agriculturaEs, pt: agriculturaPt },
 };
 
 /** El diccionario con las palabras del oficio encima. Sin jerga, el mismo. */

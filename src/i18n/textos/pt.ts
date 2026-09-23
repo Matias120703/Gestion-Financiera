@@ -3,6 +3,9 @@ import { rutinasEditorPt } from './rutinas-editor';
 import { rutinasPanelPt } from './rutinas-panel';
 import { rutinaPublicaPt } from './rutina-publica';
 import { rutinasComunPt } from './rutinas-comun';
+import { campanasPt } from './campanas';
+import { gastosCampanaPt } from './gastos-campana';
+import { panelCampoPt } from './panel-campo';
 
 /**
  * Português do Brasil. El idioma de los brasileños que viven y trabajan en
@@ -2527,4 +2530,8 @@ export const pt: Textos = {
   rutinasPanel: rutinasPanelPt,
   rutinaPublica: rutinaPublicaPt,
   rutinasComun: rutinasComunPt,
+
+  campanas: campanasPt,
+  gastosCampana: gastosCampanaPt,
+  panelCampo: panelCampoPt,
 };
