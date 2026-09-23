@@ -59,6 +59,18 @@ export const REGLAS: { patron: RegExp; mensaje: string }[] = [
     mensaje: 'Esa fecha no es válida.',
   },
   {
+    // Las medidas del cuerpo (098): cada rango —el peso entre 20 y 300, la
+    // cintura entre 40 y 200…— lo controla un check de `mediciones`, y todos
+    // se llaman `mediciones_…`. Frenan dedazos («8,5» en vez de «85»), así
+    // que el mensaje no diagnostica nada: pide mirar el número de nuevo.
+    //
+    // Solo los check, no cualquier cosa que nombre la tabla: el choque de
+    // dos controles el mismo día (`mediciones_un_control_por_dia`) es un
+    // índice único y tiene su propio mensaje en la función.
+    patron: /violates check constraint "?mediciones_/i,
+    mensaje: 'Ese valor está fuera de rango. Revisalo.',
+  },
+  {
     patron: /duplicate key|unique constraint|productos_empresa_id_nombre_key/i,
     mensaje: 'Ya existe algo con ese nombre.',
   },

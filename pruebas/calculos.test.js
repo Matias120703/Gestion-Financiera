@@ -295,6 +295,9 @@ const MATRIZ = {
   '/clientes':     [ true,     true,      true,      true,        false ],
   // Cuánto hay en cada banco: una persona y un negocio tienen bancos (074).
   '/billetera':    [ true,     true,      true,      true,        true  ],
+  // Las rutinas son solo del personal trainer (098), que no es columna de
+  // esta tabla: ninguno de estos cinco las tiene. El trainer se prueba aparte.
+  '/rutinas':     [ false,    false,     false,     false,       false ],
 };
 
 for (const [ruta, esperado] of Object.entries(MATRIZ)) {
@@ -533,8 +536,31 @@ ok('la agenda de a uno es solo del profe y del trainer',
 // Matías lo pidió en la lista del alta para probarlo como cualquiera (22/09).
 ok('el trainer se ofrece al crear una cuenta',
   LISTA_RUBROS.some((r) => r.clave === 'entrenamiento'), true);
-ok('tiene las mismas pantallas que el profe',
-  JSON.stringify(fichaDe('entrenamiento', 'emprendedor').secciones), JSON.stringify(fichaDe('clases', 'emprendedor').secciones));
+// Las mismas pantallas que el profe, más las rutinas (098).
+ok('tiene las pantallas del profe, más las rutinas',
+  JSON.stringify({ ...fichaDe('entrenamiento', 'emprendedor').secciones, '/rutinas': false }),
+  JSON.stringify(fichaDe('clases', 'emprendedor').secciones));
+ok('las rutinas son solo del trainer',
+  ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
+    .filter((r) => fichaDe(r, 'emprendedor').secciones['/rutinas']),
+  ['entrenamiento']);
+ok('y nunca en una cuenta personal', fichaDe('entrenamiento', 'personal').secciones['/rutinas'], false);
+
+// La barra de abajo (22/09). Matías: «en la barra de abajo tendría que
+// aparecer agendas y alumnos». Al trainer, además, sus rutinas.
+ok('la barra del trainer: panel, agenda, rutinas y clientes',
+  fichaDe('entrenamiento', 'emprendedor').barra, ['/panel', '/agenda', '/rutinas', '/clientes']);
+ok('la del profe: panel, agenda, alumnos y gastos',
+  fichaDe('clases', 'emprendedor').barra, ['/panel', '/agenda', '/clientes', '/gastos']);
+ok('los demás rubros siguen con la de siempre',
+  ['comercio', 'servicios', 'ganaderia', 'agricultura'].map((r) => fichaDe(r, 'emprendedor').barra), [null, null, null, null]);
+ok('y cada sección de una barra propia existe en su rubro',
+  ['clases', 'entrenamiento'].every((r) => fichaDe(r, 'emprendedor').barra.every((h) => fichaDe(r, 'emprendedor').secciones[h])), true);
+{
+  const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
+  ok('la barra de abajo usa la del rubro', nav.includes('ficha.barra'), true);
+  ok('y el menú tiene las rutinas', nav.includes("href: '/rutinas'"), true);
+}
 ok('a los suyos les dice clientes, no alumnos',
   palabra('entrenamiento', 'emprendedor', 'clientes', 'Clientes', 'es'), 'Clientes');
 ok('y a lo que entra, cobrado',
@@ -563,6 +589,172 @@ ok('una cuenta personal no tiene jerga', fichaDe('entrenamiento', 'personal').je
   ok('el trainer da sesiones, no clases', jer.includes("claseDada: 'Sesión dada'") && jer.includes("claseDada: 'Sessão dada'"), true);
   ok('y sus notas son de salud', jer.includes("notas: 'Salud y lesiones'"), true);
   ok('agendar pide la salud de alguien nuevo', leer('src/components/PantallaAgenda.tsx').includes('pedirSalud={notasALaVista}'), true);
+}
+
+// --- Las rutinas del trainer, dentro de lo que ya usa (098) ---
+//
+// La agenda y el panel muestran la rutina de cada sesión y «Ver» la abre
+// para cambiar la carga ahí mismo; la ficha de Clientes lleva a su carpeta;
+// agendar a alguien nuevo ofrece medirlo y armarle la rutina; y el candado
+// de la cuenta vencida deja apagar los links. Se leen las fuentes: si alguien
+// saca una pieza, esto lo dice antes que un trainer.
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8');
+  const hoja = leer('src/components/rutinas/HojaRutinaSesion.tsx');
+  const age = leer('src/components/PantallaAgenda.tsx');
+  const agePag = leer('src/app/(app)/agenda/page.tsx');
+  const agLib = leer('src/lib/agenda.ts');
+  const pan = leer('src/app/(app)/panel/page.tsx');
+  const panProfe = leer('src/components/PanelProfe.tsx');
+  const cli = leer('src/components/PantallaClientes.tsx');
+  const cliPag = leer('src/app/(app)/clientes/page.tsx');
+  const ins = leer('src/components/InscribirAlumno.tsx');
+  const can = leer('src/components/CandadoCuenta.tsx');
+  const lay = leer('src/app/(app)/layout.tsx');
+
+  // La agenda y el panel.
+  ok('la agenda del día pide la rutina de cada sesión',
+    agLib.includes("rpc('rutinas_de_la_agenda'") && agePag.includes('traerRutinasDeLaAgenda('), true);
+  ok('solo en la cuenta del trainer', /conRutinas = ficha\.secciones\['\/rutinas'\]/.test(agePag), true);
+  ok('y si falla, la agenda sale igual', /traerRutinasDeLaAgenda\([^)]*\)\.catch\(/.test(agePag), true);
+  ok('la sesión muestra su rutina, cruzada por id de reserva',
+    age.includes('<RutinaDeLaSesion') && age.includes('rutinas[r.id].rutina_id'), true);
+  ok('«Tus sesiones de hoy» del panel también',
+    pan.includes("fichaProfe.secciones['/rutinas']") && /traerRutinasDeLaAgenda\([^)]*\)\.catch\(/.test(pan)
+      && panProfe.includes('<RutinaDeLaSesion') && panProfe.includes('rutinas[c.id].rutina_id'), true);
+
+  // La hoja «Ver».
+  ok('«Ver» abre la rutina entera', hoja.includes("rpc('rutina', { p_empresa: empresaId, p_rutina: rutinaId })"), true);
+  ok('y la carga se cambia ahí mismo, con cambiar_carga', hoja.includes("rpc('cambiar_carga'"), true);
+  ok('con los botones de unidad del editor', hoja.includes('UNIDADES_CARGA.map') && hoja.includes('conUnidad(carga, u)'), true);
+  ok('solo en la vigente', hoja.includes("rutina?.estado === 'vigente'") && hoja.includes('editando?.id === e.id && vigente'), true);
+  ok('las repeticiones que no se tocaron no se mandan',
+    hoja.includes('p_reps: nuevasReps === ejercicio.reps ? null : nuevasReps'), true);
+  ok('con las lesiones arriba y el camino a su carpeta',
+    hoja.includes('rutina?.cliente_notas') && hoja.includes('href={`/rutinas/cliente/${rutina.cliente_id}`}'), true);
+  {
+    // «+2,5 / −2,5» se prueba de verdad: la función se saca del componente,
+    // se transpila y se corre con la librería compilada. Nunca pone unidad.
+    const ts = require('typescript');
+    const { normalizarCarga, unidadDe, LARGOS } = require('../.compilado/rutina-texto.js');
+    const fuente = /export function sumarACarga[\s\S]*?\r?\n\}\r?\n/.exec(hoja);
+    ok('la hoja tiene su «+2,5»', Boolean(fuente), true);
+    const js = fuente ? ts.transpileModule(fuente[0].replace(/^export /, ''), {
+      compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    }).outputText : 'function sumarACarga() { return undefined; }';
+    const sumarACarga = new Function('normalizarCarga', 'unidadDe', 'LARGOS', `${js}\nreturn sumarACarga;`)(
+      normalizarCarga, unidadDe, LARGOS);
+    ok('40 kg + 2,5', sumarACarga('40 kg', 2.5), '42,5 kg');
+    ok('42,5 kg − 2,5', sumarACarga('42,5 kg', -2.5), '40 kg');
+    ok('«40kg» pegado queda prolijo', sumarACarga('40kg', 2.5), '42,5 kg');
+    ok('las libras se suman en libras', sumarACarga('25 lb', 2.5), '27,5 lb');
+    ok('con el punto que ya usaba', sumarACarga('12.5 lb', 2.5), '15 lb');
+    ok('lo que va después de la unidad se queda', sumarACarga('20 kg c/lado', 2.5), '22,5 kg c/lado');
+    ok('un número solo no gana unidad: sin «+2,5»', sumarACarga('40', 2.5), null);
+    ok('la placa tampoco', sumarACarga('placa 7', 2.5), null);
+    ok('ni una banda', sumarACarga('banda roja', 2.5), null);
+    ok('con dos números no se sabe a cuál', [sumarACarga('2x20 kg', 2.5), sumarACarga('20-25 kg', 2.5)], [null, null]);
+    ok('y no baja de cero', sumarACarga('2,5 kg', -2.5), null);
+  }
+
+  // Clientes.
+  ok('la ficha del trainer trae su rutina de rutinas_de',
+    cliPag.includes("rpc('rutinas_de', { p_empresa: empresaId, p_todos: true })") && cliPag.includes("'/rutinas')"), true);
+  ok('y lleva a su carpeta', cli.includes('href={`/rutinas/cliente/${c.id}`}'), true);
+  ok('con «Mandar por WhatsApp» si tiene una vigente', /\{vigente && \(\s*<MandarRutina/.test(cli), true);
+  ok('si no se pudo leer, no dice «Sin rutina»', cli.includes('rutina={rutinas ? (rutinas[c.id]'), true);
+
+  // Agendar a alguien nuevo.
+  ok('agendar a alguien nuevo devuelve su id', ins.includes('esNuevo ? { id: cliente'), true);
+  ok('y la agenda ofrece medirlo y armarle la rutina',
+    age.includes('/rutinas/cliente/${siguiente.id}?ver=progreso&anotar=1') && age.includes('/rutinas/nueva?cliente=${siguiente.id}'), true);
+  ok('las medidas, solo a quien las puede ver',
+    /\{esAdmin && \(\s*<Link\s+href=\{`\/rutinas\/cliente\/\$\{siguiente\.id\}\?ver=progreso/.test(age), true);
+  ok('solo en la cuenta del trainer', age.includes('if (conRutinas && nuevo)'), true);
+
+  // El candado.
+  ok('el candado ofrece apagar los links de rutina', can.includes("rpc('apagar_enlaces_rutina', { p_empresa: empresaId })"), true);
+  ok('pregunta antes y dice cuántos apagó', can.includes('p.apagarLinksPregunta') && can.includes('p.linksApagados(apagados)'), true);
+  ok('solo al trainer, y a quien administra',
+    lay.includes("const apagarLinks = bloqueada && ctx.esAdmin && ficha.secciones['/rutinas']")
+      && lay.includes('apagarLinks={apagarLinks}'), true);
+
+  // --- Lo que encontró la revisión de las pantallas (099) ---
+  // Cada uno de estos era un hallazgo real: se lee la fuente para que no
+  // vuelva sin que alguien lo note.
+  const copiar = leer('src/components/rutinas/panel/Copiar.tsx');
+  const carpeta = leer('src/components/rutinas/CarpetaCliente.tsx');
+  const mandar = leer('src/components/rutinas/MandarRutina.tsx');
+  const anotar = leer('src/components/rutinas/AnotarControl.tsx');
+  const progreso = leer('src/components/rutinas/ProgresoCliente.tsx');
+  const rutinas = leer('src/components/rutinas/PantallaRutinas.tsx');
+  const priv = leer('src/app/privacidad/page.tsx');
+  const es = leer('src/i18n/textos/es.ts');
+  const pt = leer('src/i18n/textos/pt.ts');
+  const panelTextos = leer('src/i18n/textos/rutinas-panel.ts');
+  const publica = leer('src/i18n/textos/rutina-publica.ts');
+
+  // Copiar de otra persona o de una plantilla: siempre como su próxima, que
+  // el cliente no ve hasta «Activar». Antes, sin vigente, quedaba vigente en
+  // el acto, con las notas (y las lesiones) de la otra persona en su link.
+  ok('toda copia hacia un cliente nace como borrador (p_borrador)',
+    copiar.includes('p_borrador: true') && /p_con_notas: true, p_borrador: true/.test(carpeta), true);
+  ok('y la carpeta ya no arma copias en el editor sin guardar', /editorConCopia|\?desde=/.test(carpeta), false);
+  ok('con una próxima ya armada no se elige a esa persona', copiar.includes('deshabilitado: !!x.borrador_id,'), true);
+  ok('ni se ofrecen copias en su carpeta', carpeta.includes('tieneProxima={!!borrador}'), true);
+  ok('los textos dicen la verdad nueva: nada llega al link hasta activarla',
+    /revisalas: '[^']*hasta que la actives/.test(panelTextos) && /usarPlantillaAyuda: '[^']*cuando la actives/.test(panelTextos)
+      && !/al guardarla'/.test(panelTextos), true);
+
+  // El link, el «Copiado», el control repetido y «Para atender».
+  ok('prender o crear el link refresca lo de alrededor', (mandar.match(/router\.refresh\(\)/g) || []).length >= 2, true);
+  ok('el «Copiado» de la vigente sale al pie de su tarjeta, no arriba de todo',
+    carpeta.includes("setAviso({ texto: c.textoCopiado, donde: 'vigente' })") && carpeta.includes("{avisoAca('vigente')}"), true);
+  ok('un control del mismo día se avisa ANTES de mandar, con qué cambia',
+    /if \(mismoDia\) \{\s*const cambia = loQueCambia\(mismoDia, datos\);\s*if \(cambia\.length\) \{ setCompletar/.test(anotar), true);
+  ok('y se puede corregir ese control en vez de completarlo',
+    anotar.includes('onCorregir(mismoDia)') && progreso.includes('onCorregir={(m)'), true);
+  // Sin `key`, React conservaba la hoja: «Corregir ese control» mostraba lo
+  // recién tipeado y al guardar borraba lo que ese control tenía.
+  ok('«Corregir ese control» monta la hoja de nuevo con ese control (key)',
+    /<AnotarControl\s+(?:\/\/[^\n]*\n\s*)*key=\{hoja\.control\?\.id \?\? 'nuevo'\}/.test(progreso), true);
+  // El nombre de respaldo de una copia, en el idioma de la pantalla.
+  ok('la copia manda el nombre de respaldo en el idioma de la pantalla',
+    copiar.includes('p_nombre_vacio: t.rutinasEditor.datos.nombrePorDefecto'), true);
+  ok('«sin rutina» con la próxima armada lleva a activarla, no a armar otra',
+    /if \(c\?\.borrador_id\) \{\s*return <Link href=\{`\/rutinas\/cliente\/\$\{cliente\}`\} className=\{clase\}>\{l\.verLaProxima\}/.test(rutinas), true);
+
+  // Un teléfono que ya es de otra persona: se pregunta antes de crear a nadie.
+  ok('antes de crear a alguien nuevo se busca su teléfono', ins.includes("rpc('buscar_clientes'") && ins.includes('p_texto: digitos'), true);
+  // La búsqueda es por «contiene» y ordena por nombre: con seis, la ficha
+  // con el número entero podía quedar afuera y no había pregunta.
+  ok('y se pide el tope de la función (50), no un puñado', ins.includes('p_limite: 50') && !ins.includes('p_limite: 6'), true);
+  ok('con otro nombre se pregunta, con dos salidas',
+    ins.includes('i.siEs(mismaPersona.nombre)') && ins.includes('i.noSacarTelefono') && ins.includes("telefono: ''"), true);
+  ok('y quien ya existía no es «nuevo»', ins.includes('!el.id && !existia'), true);
+  ok('los textos de la pregunta, en los dos idiomas',
+    ['mismoTelefono:', 'siEs:', 'noSacarTelefono:'].every((k) => es.includes(k) && pt.includes(k)), true);
+
+  // Eliminar y la privacidad dicen lo que la 099 hace al archivar.
+  ok('la confirmación de eliminar del trainer avisa qué se borra',
+    cli.includes('conSalud={conRutinas}') && cli.includes('t.clientes.eliminarConSalud(c.nombre)'), true);
+  ok('en los dos idiomas', es.includes('eliminarConSalud:') && pt.includes('eliminarConSalud:'), true);
+  // Al archivar, las notas se borran en todo rubro (099): el texto general lo dice.
+  ok('y eliminar dice, en todo rubro, que las notas se borran',
+    /eliminarDetalle: \(nombre: string\) => `[^`]*sus notas se borran\.`/.test(es)
+      && /eliminarDetalle: \(nombre: string\) => `[^`]*as anotações são apagadas\.`/.test(pt), true);
+  ok('la privacidad: al archivar se borran medidas, consentimiento y lesiones',
+    /borra sus medidas, su consentimiento y «Salud y lesiones»/.test(priv), true);
+  ok('ya no promete «llevarte todo» en el Excel', priv.includes('llevarte todo'), false);
+  ok('y dice que rutinas y medidas no van en el Excel', /no van en el Excel/.test(priv) && /no\s+van en ese Excel/.test(priv), true);
+  ok('los menores: con el acuerdo de madre, padre o tutor', /entrenás a menores/.test(priv), true);
+
+  // El portugués no asume que el cliente es varón, y «Siguiente» no promete
+  // medidas a quien no las ve.
+  ok('el portugués no dice «dele» en la hoja de la sesión', /evolução dele/.test(pt), false);
+  ok('ni «Bom treino» al terminar', /listoPorHoy: '[^']*Bom treino/.test(publica), false);
+  ok('«Siguiente» no promete medidas a quien no las ve', /siguienteDetalle: \(nombre: string\) => `[^`]*medidas/.test(es), false);
 }
 ok('pero una cuenta que ya la tenga sigue teniendo sus lotes',
   fichaDe('agricultura', 'emprendedor').secciones['/lotes'], true);

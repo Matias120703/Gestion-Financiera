@@ -28,6 +28,8 @@ export const MENSAJES_PT: Record<string, string> = {
   'Un gasto o un ingreso no puede llevar descuento ni costo de mercadería.': 'Uma despesa ou entrada não pode ter desconto nem custo de mercadoria.',
   'Una anulación tiene que registrar quién y cuándo. Usá el botón de anular.': 'Um cancelamento precisa registrar quem e quando. Use o botão de cancelar.',
   'Esa fecha no es válida.': 'Essa data não é válida.',
+  // La de las medidas del cuerpo (098).
+  'Ese valor está fuera de rango. Revisalo.': 'Esse valor está fora da faixa. Confira.',
   'Ya existe algo con ese nombre.': 'Já existe algo com esse nome.',
   'Eso hace referencia a algo que ya no existe. Recargá la página.': 'Isso faz referência a algo que não existe mais. Recarregue a página.',
   'Tu sesión venció. Volvé a entrar.': 'Sua sessão expirou. Entre de novo.',
@@ -158,6 +160,53 @@ export const MENSAJES_PT: Record<string, string> = {
     'Só o dono da conta pode tirar dinheiro da carteira.',
   'Solo el propietario o un administrador puede deshacer un pago.':
     'Só o dono ou um administrador pode desfazer um pagamento.',
+  // Rutinas, medidas y progreso del personal trainer (098). En portugués,
+  // las palabras que ya usa un trainer brasileño: «treino», «modelo» para
+  // la plantilla, «avaliação» para el control de medidas, «adipômetro».
+  'A un ejercicio le falta el nombre.': 'Falta o nome de um exercício.',
+  'Ese grupo de ejercicios no existe.': 'Esse grupo de exercícios não existe.',
+  'El video tiene que ser un link que empiece con https://.': 'O vídeo precisa ser um link que comece com https://.',
+  'El link del video es demasiado largo.': 'O link do vídeo é longo demais.',
+  'Ya tenés un ejercicio que se llama así.': 'Você já tem um exercício com esse nome.',
+  'Ese ejercicio no existe.': 'Esse exercício não existe.',
+  'Unir dos ejercicios es del dueño o de un administrador.': 'Juntar dois exercícios é do dono ou de um administrador.',
+  'Borrar un ejercicio es del dueño o de un administrador.': 'Apagar um exercício é do dono ou de um administrador.',
+  'Ese ejercicio está en rutinas: apagalo en vez de borrarlo.': 'Esse exercício está em treinos: desative em vez de apagar.',
+  'Este cliente ya tiene una próxima rutina en preparación: seguí con esa.':
+    'Este cliente já tem um próximo treino em preparação: continue com ele.',
+  'Una rutina tiene entre 1 y 10 días.': 'Um treino tem entre 1 e 10 dias.',
+  'Ponele un nombre a la rutina.': 'Dê um nome ao treino.',
+  'Las semanas van de 1 a 52.': 'As semanas vão de 1 a 52.',
+  'Cada día de la rutina necesita un nombre.': 'Cada dia do treino precisa de um nome.',
+  'Un día tiene como máximo 30 ejercicios.': 'Um dia tem no máximo 30 exercícios.',
+  'Las series van de 1 a 20.': 'As séries vão de 1 a 20.',
+  'El descanso va de 0 a 15 minutos.': 'O descanso vai de 0 a 15 minutos.',
+  'La carga se escribe corta: hasta 24 letras.': 'A carga se escreve curta: até 24 letras.',
+  'Las repeticiones se escriben cortas: hasta 20 letras.': 'As repetições se escrevem curtas: até 20 letras.',
+  'Esa rutina no existe.': 'Esse treino não existe.',
+  'Esa rutina ya terminó: armá la próxima a partir de ella.': 'Esse treino já terminou: monte o próximo a partir dele.',
+  'Alguien cambió esta rutina mientras la editabas. Recargá para ver la última.':
+    'Alguém mudou este treino enquanto você editava. Recarregue para ver a última versão.',
+  'Solo se puede activar una rutina en preparación.': 'Só dá pra ativar um treino em preparação.',
+  'Esa rutina no está vigente.': 'Esse treino não está vigente.',
+  'Las rutinas de un cliente no se borran: quedan como historia.': 'Os treinos de um cliente não se apagam: ficam como histórico.',
+  'Borrar una plantilla es del dueño o de un administrador.': 'Apagar um modelo é do dono ou de um administrador.',
+  'Solo se cambia la carga de la rutina vigente.': 'Só dá pra mudar a carga do treino vigente.',
+  'Apagar todos los links es del dueño o de un administrador.': 'Desativar todos os links é do dono ou de um administrador.',
+  'Las medidas y el progreso son del dueño o de un administrador.': 'As medidas e o progresso são do dono ou de um administrador.',
+  'Ese control no existe.': 'Essa avaliação não existe.',
+  'La fecha del control no puede ser futura.': 'A data da avaliação não pode ser futura.',
+  'Cada medida tiene que ser un número.': 'Cada medida precisa ser um número.',
+  'Antes de anotar medidas, confirmá que el cliente está de acuerdo.': 'Antes de anotar medidas, confirme que o cliente está de acordo.',
+  'Ya hay un control ese día: editá ese.': 'Já há uma avaliação nesse dia: edite essa.',
+  'Anotá al menos una medida.': 'Anote pelo menos uma medida.',
+  'La grasa corporal va con su método: balanza, plicómetro, cinta u otro.':
+    'A gordura corporal vai com o método: balança, adipômetro, fita ou outro.',
+  // Una persona por teléfono (099): el hermano del de la 058, para quien
+  // está cargando a alguien nuevo con el número de otra persona que ya
+  // tiene datos de entrenamiento en la ficha.
+  'Ese teléfono ya es de «%». Si es otra persona, dejá el teléfono vacío o elegila de la lista.':
+    'Esse telefone já é de «%». Se for outra pessoa, deixe o telefone vazio ou escolha ela na lista.',
   'Esa deuda viene de una venta. Para borrarla, anulá la venta desde el historial: así también vuelve el stock.': 'Essa dívida vem de uma venda. Pra apagar, cancele a venda no histórico: assim o estoque também volta.',
   'Esa deuda ya está saldada.': 'Essa dívida já está quitada.',
   'Esa empresa no existe.': 'Essa empresa não existe.',

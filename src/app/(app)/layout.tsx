@@ -18,6 +18,11 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   // Vencida: no se puede cargar nada. Es la misma señal que ya usa
   // `AvisoCuenta` para la franja roja; acá además tapa el contenido.
   const bloqueada = !(ctx.limites?.escritura ?? true);
+  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  // El trainer vencido puede apagar los links de rutina de sus clientes desde
+  // el candado (098): siguen andando un tiempo, y todo lo demás está tapado.
+  // Es del dueño o de un administrador, como lo exige la base.
+  const apagarLinks = bloqueada && ctx.esAdmin && ficha.secciones['/rutinas'];
 
   return (
     // La zona envuelve TODO el layout y no solo `children`: el botón de
@@ -25,7 +30,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     <ProveedorZona zona={ctx.zonaHoraria}>
     {/* Las palabras del oficio (097): el trainer lee «sesión» donde el
         profe lee «clase». Envuelve todo por lo mismo que la zona. */}
-    <ProveedorJerga jerga={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).jerga}>
+    <ProveedorJerga jerga={ficha.jerga}>
     {/* La entrada con el logo, una vez por sesión. Ver Intro.tsx. */}
     <Intro lema={(await textos()).comun.lemaOrden} />
     {/* La señal de que se está cambiando de pantalla. Ocupaba ese lugar el
@@ -61,7 +66,9 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
                 que no es el de su caja. Va acá por lo mismo que el aviso de
                 cuenta vencida: no es asunto de una pantalla, es del sistema. */}
             <AvisoMonedaVista vista={ctx.vista} />
-            <CandadoCuenta bloqueada={bloqueada}>{children}</CandadoCuenta>
+            <CandadoCuenta bloqueada={bloqueada} empresaId={ctx.empresa.id} apagarLinks={apagarLinks}>
+              {children}
+            </CandadoCuenta>
           </div>
         </main>
 

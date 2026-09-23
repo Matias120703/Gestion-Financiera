@@ -342,6 +342,16 @@ function aceptado(nombre, resultado) {
     ok('la página de reservas se abre sin sesión', esPublica('/r/barberia-juan'), true);
     ok('y el enlace del turno también', esPublica('/turno/abc-123'), true);
 
+    // La rutina que el trainer manda por WhatsApp (098) la abre su cliente,
+    // que no tiene cuenta. Y la misma trampa que con '/r': sin la barra
+    // final, '/rutina' abriría '/rutinas', donde el trainer ve a todos sus
+    // clientes.
+    ok('la rutina del cliente se abre sin sesión', esPublica('/rutina/x'), true);
+    ok('y su manifest para guardarla en el inicio también',
+      esPublica('/rutina/00000000-0000-0000-0000-000000000000/manifest.webmanifest'), true);
+    ok('pero la sección de rutinas del trainer sigue privada',
+      ['/rutinas', '/rutinas/x', '/rutinas/cliente/x'].filter((r) => esPublica(r)), []);
+
     const privadas = ['/panel', '/reportes', '/reparto', '/reto', '/productos',
       '/organizacion', '/ajustes', '/vender', '/movimientos', '/deudas', '/cierre', '/lotes'];
     ok('ninguna pantalla del negocio quedó abierta de paso',

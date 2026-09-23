@@ -23,6 +23,18 @@ interface Previa {
   choques: { fecha: string; hora: string; alumno: string }[];
 }
 
+/** Quién tiene ya un teléfono: lo que devuelve `buscar_clientes`. */
+interface Ficha { id: string; nombre: string; telefono: string }
+
+/**
+ * «Ana Ruiz» y «ana  ruíz» son el mismo nombre: sin mayúsculas, tildes ni
+ * espacios de más, como lo compara la base (`clave_ejercicio`, 098/099).
+ */
+function mismoNombre(a: string, b: string): boolean {
+  const clave = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return clave(a) === clave(b);
+}
+
 /** «2026-10-01» + n meses − 1 día: un mes de clases termina el día antes. */
 function finDePeriodo(desde: string, meses: number): string {
   const [a, m, d] = desde.split('-').map(Number);
@@ -63,7 +75,12 @@ export function InscribirAlumno({
    */
   pedirSalud?: boolean;
   alCancelar: () => void;
-  alListo: (mensaje: string) => void;
+  /**
+   * `nuevo` llega solo con alguien que se cargó recién acá, y solo cuando se
+   * pregunta por su salud (el trainer): con eso la agenda le ofrece
+   * «Siguiente: medidas de inicio · armar su rutina» (098).
+   */
+  alListo: (mensaje: string, nuevo?: { id: string; nombre: string }) => void;
 }) {
   const t = useTextos();
   const i = t.inscribir;
@@ -101,6 +118,8 @@ export function InscribirAlumno({
   const [previa, setPrevia] = useState<Previa | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
+  // Alguien que ya tiene ese teléfono con otro nombre: «¿es la misma persona?».
+  const [mismaPersona, setMismaPersona] = useState<Ficha | null>(null);
 
   const nombreDia = useMemo(() => {
     // 4 de octubre de 2026 es domingo: de ahí se sacan los nombres cortos.
@@ -140,7 +159,7 @@ export function InscribirAlumno({
   const hayPrecio = modo === 'hora' ? precioHora > 0 : total > 0;
   const tieneAlumno = Boolean(clienteId) || alumno.nombre.trim().length > 0;
   const puede = tieneAlumno && dias.length > 0 && (previa?.clases ?? 0) > 0
-    && choques.length === 0 && hayPrecio && pagado !== null && !ocupado;
+    && choques.length === 0 && hayPrecio && pagado !== null && !ocupado && !mismaPersona;
 
   // «Octubre · lun, mar y jue 18:00»: cómo se lee la inscripción en la ficha.
   function nombreDeInscripcion(): string {
@@ -151,11 +170,52 @@ export function InscribirAlumno({
     return `${mes.charAt(0).toUpperCase()}${mes.slice(1)} · ${lista} ${horaDesde}`;
   }
 
-  async function inscribir() {
+  /**
+   * Antes de crear a alguien nuevo con teléfono (el trainer): ¿ese teléfono
+   * ya es de otra ficha? `guardar_cliente` toma un teléfono repetido como la
+   * misma persona y le cambia el nombre a la ficha que ya estaba: «Tomás»
+   * heredaría la hernia, las medidas, la rutina y el consentimiento de Ana,
+   * y Ana desaparecería de la lista. Se busca por los dígitos del número
+   * (`buscar_clientes` mira `telefono_norm`) y se toma solo la ficha con el
+   * mismo número entero. Se pide el tope de la función (50) y no un puñado:
+   * la búsqueda es por «contiene» y ordena por nombre, así que con seis, en
+   * un negocio con muchos números parecidos, la ficha con el número entero
+   * podía quedar afuera de la respuesta y no había pregunta. Con otro
+   * nombre se pregunta; con el mismo nombre es la misma persona y no es
+   * «nueva». Una ficha archivada no aparece acá ni frena: si tiene datos de
+   * entrenamiento y otro nombre, la base (099) le saca el número y la
+   * persona nueva nace con su propia ficha; si el error de la base llega
+   * igual (una ficha activa que la búsqueda no trajo), se muestra.
+   */
+  async function quienTieneElTelefono(el: ClienteElegido): Promise<Ficha | null> {
+    const digitos = el.telefono.replace(/\D/g, '');
+    if (digitos.length < 6) return null;
+    const { data, error: e } = await clienteNavegador().rpc('buscar_clientes', {
+      p_empresa: empresaId, p_texto: digitos, p_limite: 50,
+    });
+    if (e) throw e;
+    const fichas = Array.isArray(data) ? (data as Ficha[]) : [];
+    return fichas.find((x) => (x.telefono ?? '').replace(/\D/g, '') === digitos) ?? null;
+  }
+
+  const inscribir = () => inscribirCon(alumno);
+
+  async function inscribirCon(el: ClienteElegido) {
     setOcupado(true);
     setError('');
+    setMismaPersona(null);
     try {
-      const cliente = clienteId ?? await asegurarCliente(empresaId, alumno, pedirSalud ? salud : '');
+      let existia = false;
+      if (pedirSalud && !clienteId && !el.id) {
+        const otro = await quienTieneElTelefono(el);
+        if (otro && !mismoNombre(otro.nombre, el.nombre)) {
+          setMismaPersona(otro);
+          setOcupado(false);
+          return;
+        }
+        existia = !!otro;
+      }
+      const cliente = clienteId ?? await asegurarCliente(empresaId, el, pedirSalud ? salud : '');
       if (!cliente) throw new Error(i.faltaAlumno);
       const { error: e } = await clienteNavegador().rpc('inscribir_alumno', {
         p_empresa: empresaId, p_cliente: cliente, p_dias: dias,
@@ -168,7 +228,11 @@ export function InscribirAlumno({
       });
       if (e) throw e;
       try { if (modo === 'hora' && precioHora > 0) localStorage.setItem(CLAVE_PRECIO, String(precioHora)); } catch { /* sin almacenamiento, se vuelve a escribir */ }
-      alListo(i.listo(previa?.clases ?? 0));
+      // Alguien nuevo (no elegido de la lista ni desde su ficha, y sin una
+      // ficha con su teléfono): se devuelve su id, que recién existe, para
+      // seguir con él sin buscarlo.
+      const esNuevo = pedirSalud && !clienteId && !el.id && !existia;
+      alListo(i.listo(previa?.clases ?? 0), esNuevo ? { id: cliente, nombre: el.nombre.trim() } : undefined);
     } catch (e) {
       setError(mensajeDeError(e, t.errores.generico));
       setOcupado(false);
@@ -189,7 +253,7 @@ export function InscribirAlumno({
 
       {!clienteId && (
         <SelectorCliente
-          empresaId={empresaId} valor={alumno} alElegir={setAlumno}
+          empresaId={empresaId} valor={alumno} alElegir={(c) => { setAlumno(c); setMismaPersona(null); }}
           etiqueta={i.alumno} placeholder={i.alumnoEjemplo} pedirTelefono obligatorio
           ayudaTelefono={i.telefonoAyuda}
         />
@@ -321,6 +385,38 @@ export function InscribirAlumno({
         )}
         {pagado === false && <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{i.quedaPorCobrar}</p>}
       </div>
+
+      {/* Ese teléfono ya es de otra ficha: se decide acá, antes de crear a nadie. */}
+      {mismaPersona && (
+        <div role="alert" className="space-y-2.5 rounded-xl bg-ambar-claro px-3.5 py-3 aparecer">
+          <p className="text-[13.5px] font-bold text-tinta">{i.mismoTelefono(mismaPersona.nombre)}</p>
+          <p className="text-[12.5px] leading-snug text-tinta/65">{i.mismoTelefonoDetalle}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button" className="boton-principal min-h-[44px]" disabled={ocupado}
+              onClick={() => {
+                // Es esa persona: se usa su ficha, y no es «nueva».
+                const el = { id: mismaPersona.id, nombre: mismaPersona.nombre, telefono: mismaPersona.telefono };
+                setAlumno(el);
+                void inscribirCon(el);
+              }}
+            >
+              {i.siEs(mismaPersona.nombre)}
+            </button>
+            <button
+              type="button" className="boton-suave min-h-[44px]" disabled={ocupado}
+              onClick={() => {
+                // Es otra persona: sin teléfono, para que la base no las junte.
+                const el = { ...alumno, telefono: '' };
+                setAlumno(el);
+                void inscribirCon(el);
+              }}
+            >
+              {i.noSacarTelefono}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 

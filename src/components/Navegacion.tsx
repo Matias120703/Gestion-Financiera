@@ -124,6 +124,12 @@ const Ico = {
       <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
     </svg>
   ),
+  // Una mancuerna: las rutinas del trainer (098).
+  rutinas: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="M6.5 7.5v9" /><path d="M17.5 7.5v9" /><path d="M3.5 10v4" /><path d="M20.5 10v4" /><path d="M6.5 12h11" />
+    </svg>
+  ),
   clientes: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <circle cx="9" cy="8.5" r="3.2" />
@@ -205,6 +211,7 @@ export function itemsDe(
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
     { href: '/organizacion', texto: t.nav.organizacion, icono: Ico.organizacion },
     { href: '/agenda',      texto: t.nav.agenda,      icono: Ico.cierre },
+    { href: '/rutinas',     texto: t.nav.rutinas,     icono: Ico.rutinas },
     { href: '/reparto',     texto: t.nav.reparto,     icono: Ico.equipo },
     { href: '/reportes',    texto: t.nav.reportes,    icono: Ico.reportes },
     { href: '/ajustes',     texto: t.nav.ajustes,     icono: Ico.ajustes },
@@ -247,13 +254,18 @@ const EN_BARRA_INFERIOR_VENDEDOR: Seccion[] = ['/panel', '/vender', '/gastos', '
  */
 const EN_BARRA_INFERIOR_PERSONAL: Seccion[] = ['/panel', '/deudas', '/gastos', '/organizacion'];
 
-function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: boolean = true) {
+export function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: boolean = true) {
+  const ficha = fichaDe(rubro, tipo);
+  // El rubro puede traer su propia barra: la del profe y la del trainer
+  // ponen la agenda y sus clientes a un toque (ver `barra` en rubros.ts).
+  // Un vendedor ve la misma, sin lo que es solo del dueño.
   const base = tipo === 'personal'
     ? EN_BARRA_INFERIOR_PERSONAL
-    : esAdmin ? EN_BARRA_INFERIOR : EN_BARRA_INFERIOR_VENDEDOR;
+    : ficha.barra
+      ? (esAdmin ? ficha.barra : ficha.barra.filter((href) => !SOLO_ADMIN.includes(href)))
+      : esAdmin ? EN_BARRA_INFERIOR : EN_BARRA_INFERIOR_VENDEDOR;
   // Si la cuenta no tiene alguna de las cuatro, se cae sola: la barra queda
   // de tres y el resto sigue a un toque desde «Más».
-  const ficha = fichaDe(rubro, tipo);
   return base.filter((href) => ficha.secciones[href]);
 }
 

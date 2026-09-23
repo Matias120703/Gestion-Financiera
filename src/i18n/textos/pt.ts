@@ -1,4 +1,8 @@
 import type { Textos } from './es';
+import { rutinasEditorPt } from './rutinas-editor';
+import { rutinasPanelPt } from './rutinas-panel';
+import { rutinaPublicaPt } from './rutina-publica';
+import { rutinasComunPt } from './rutinas-comun';
 
 /**
  * Português do Brasil. El idioma de los brasileños que viven y trabajan en
@@ -143,6 +147,7 @@ export const pt: Textos = {
     organizacion: 'Orçamento',
     reparto: 'Equipe e divisão',
     agenda: 'Agenda',
+    rutinas: 'Treinos',
     lotes: 'Lotes',
     repartoCorto: 'Equipe',
     fiado: 'Fiado',
@@ -1083,6 +1088,10 @@ export const pt: Textos = {
     alumnoEjemplo: 'Nome do aluno',
     telefonoAyuda: 'O WhatsApp dele, para escrever quando precisar.',
     faltaAlumno: 'Escolha ou escreva o nome do aluno.',
+    mismoTelefono: (nombre: string) => `Esse telefone já é de ${nombre}: é a mesma pessoa?`,
+    mismoTelefonoDetalle: 'Se for outra pessoa, o telefone fica vazio para não misturar as duas fichas.',
+    siEs: (nombre: string) => `Sim, é ${nombre}`,
+    noSacarTelefono: 'Não, tirar o telefone',
     materia: 'O que você ensina',
     materiaEjemplo: 'Inglês, matemática, violão…',
     salud: 'Algo a considerar',
@@ -1187,7 +1196,9 @@ export const pt: Textos = {
     notasEjemplo: 'Prefere às terças, tem alergia a…',
     noSeDuplica: 'Se esse telefone já é de outro cliente, não duplica: atualiza o que já existia.',
     eliminarPregunta: (nombre: string) => `Excluir ${nombre}?`,
-    eliminarDetalle: (nombre: string) => `Deixa de aparecer na sua lista e na hora de escolher cliente. O que já aconteceu com ${nombre} fica no seu histórico.`,
+    eliminarDetalle: (nombre: string) => `Deixa de aparecer na sua lista e na hora de escolher cliente. O que já aconteceu com ${nombre} fica no seu histórico; as anotações são apagadas.`,
+    eliminarConSalud: (nombre: string) =>
+      `Se ${nombre} tem treinos ou medidas, fica arquivado: as medidas, o consentimento e «Saúde e lesões» são apagados. Os treinos ficam como seu histórico e não aparecem em nenhum link.`,
     turnoNoSeCancela: (cuando: string) => `O horário de ${cuando} não é cancelado.`,
     no: 'Não',
     eliminando: 'Excluindo…',
@@ -1207,6 +1218,10 @@ export const pt: Textos = {
     editarBoton: 'Editar',
     turnos: 'Horários',
     sinTurnos: 'Ainda não tem horários.',
+
+    rutina: 'Treino',
+    rutinaYProgreso: 'Treino e evolução',
+    suRutina: 'Ver o treino',
   },
 
   recomendar: {
@@ -1586,6 +1601,16 @@ export const pt: Textos = {
     cuentaBloqueadaTitulo: 'Seu teste terminou',
     cuentaBloqueadaDetalle: 'Pra continuar usando o Orden e ver seus dados é preciso ativar um plano. É um sistema completo e, como toda ferramenta séria, tem um preço.',
     cuentaBloqueadaBoton: 'Ativar meu plano',
+    linksRutinaTitulo: 'Os links de treino dos seus clientes',
+    linksRutinaDetalle: 'Com a conta vencida, seus clientes ainda podem abrir o treino por até 30 dias. Se você não vai renovar, ou um link chegou a quem não devia, desative agora.',
+    apagarLinksRutina: 'Desativar meus links de treino',
+    apagarLinksPregunta: 'Desativar todos os links de treino?',
+    apagarLinksDetalle: 'Seus clientes deixam de ver o treino: o link avisa que não está mais ativo. Se você renovar, reative um por um na pasta de cada cliente, e o link continua o mesmo.',
+    siApagarLinks: 'Sim, desativar',
+    apagandoLinks: 'Desativando…',
+    linksApagados: (n: number) => (n === 0
+      ? 'Não havia nenhum link ativo.'
+      : n === 1 ? 'Você desativou 1 link.' : `Você desativou ${n} links.`),
 
     desde: 'De',
     hasta: 'Até',
@@ -2205,6 +2230,31 @@ export const pt: Textos = {
     diasSemana: ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'],
     nombreQuienViene: 'Nome de quem vem',
     telefonoRecordatorio: 'Pra mandar o lembrete e o link pra cancelar. Se não tiver, deixe vazio.',
+
+    rutinaSesion: {
+      rutina: 'Treino',
+      ver: 'Ver',
+      verLaRutina: (rutina: string) => `Ver o treino «${rutina}»`,
+      noSeCargo: 'Não foi possível abrir o treino.',
+      reintentar: 'Tentar de novo',
+      yaNoVigente: 'Este treino não é mais o atual: abra a pasta do cliente para ver o de agora.',
+      // «Do cliente» y no «dele»: muchas clientas son mujeres.
+      ayuda: 'Toque na carga ou nas repetições para mudar: fica registrado na evolução do cliente.',
+      cambiarDe: (ejercicio: string) => `Mudar a carga ou as repetições de ${ejercicio}`,
+      ponerCarga: '+ Carga',
+      ponerReps: '+ Repetições',
+      sumar: '+2,5',
+      restar: '−2,5',
+      sumarDe: (unidad: string) => `Somar 2,5 ${unidad}`,
+      restarDe: (unidad: string) => `Tirar 2,5 ${unidad}`,
+      guardado: (ejercicio: string) => `Salvo: ${ejercicio}. Fica registrado na evolução do cliente.`,
+    },
+
+    siguientePaso: 'Próximo passo',
+    siguienteDetalle: (nombre: string) => `O que vem agora com ${nombre}:`,
+    medidasDeInicio: 'Registrar as medidas iniciais',
+    armarSuRutina: 'Montar o treino',
+    despues: 'Depois',
   },
 
   reservaPublica: {
@@ -2472,4 +2522,9 @@ export const pt: Textos = {
     abrir: 'Abrir o Orden',
     bajarse: 'Se não quiser receber isto, desligue em Configurações.',
   },
+
+  rutinasEditor: rutinasEditorPt,
+  rutinasPanel: rutinasPanelPt,
+  rutinaPublica: rutinaPublicaPt,
+  rutinasComun: rutinasComunPt,
 };

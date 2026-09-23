@@ -4,6 +4,8 @@ import { Indicador, Seccion, Barra } from '@/components/Piezas';
 import { categoriaVisible } from '@/i18n/nombres';
 import type { Textos } from '@/i18n/textos/es';
 import type { PanelProfe as Datos } from '@/lib/tipos';
+import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
+import { RutinaDeLaSesion } from '@/components/rutinas/HojaRutinaSesion';
 import type { FilaCategoria } from '@/lib/calculos';
 
 /**
@@ -18,7 +20,7 @@ import type { FilaCategoria } from '@/lib/calculos';
  * alumnos tengo activos?, ¿en qué se me fue la plata? Eso, y nada más.
  */
 export function PanelProfe({
-  datos, categorias, moneda, locale, t, rangoTexto, notasALaVista = false,
+  datos, categorias, moneda, locale, t, rangoTexto, notasALaVista = false, empresaId, rutinas = {},
 }: {
   datos: Datos;
   categorias: FilaCategoria[];
@@ -28,6 +30,10 @@ export function PanelProfe({
   rangoTexto: string;
   /** Las lesiones de cada cliente en sus sesiones de hoy: el trainer (097). */
   notasALaVista?: boolean;
+  /** Para abrir la rutina de cada sesión (098). */
+  empresaId?: string;
+  /** La rutina vigente del cliente de cada sesión de hoy, por id de reserva: el trainer (098). */
+  rutinas?: RutinasDeLaAgenda;
 }) {
   const p = t.panel;
   const plata = (n: number) => dinero(n, moneda, true, locale);
@@ -46,27 +52,38 @@ export function PanelProfe({
         ) : (
           <ul className="divide-y divide-borde">
             {datos.hoy.map((c) => (
-              <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                {/* La materia debajo del nombre y no al lado: en un celular, al
-                    lado, el nombre se partía en tres renglones angostos. */}
-                <span className="flex min-w-0 items-baseline gap-3">
-                  <span className="shrink-0 text-[15px] font-bold tabular-nums">{c.hora}</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[14.5px] font-semibold">{c.alumno}</span>
-                    {c.materia && <span className="block truncate text-[12.5px] text-tinta/50">{c.materia}</span>}
-                    {/* Hasta dos renglones: el resumen del día. Entera, en la agenda. */}
-                    {notasALaVista && c.notas && (
-                      <span className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-snug text-tinta/75">
-                        <span aria-hidden className="text-ambar">⚠ </span><span className="sr-only">{t.inscribir.salud}: </span>{c.notas}
-                      </span>
-                    )}
+              <li key={c.id} className="px-4 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  {/* La materia debajo del nombre y no al lado: en un celular, al
+                      lado, el nombre se partía en tres renglones angostos. */}
+                  <span className="flex min-w-0 items-baseline gap-3">
+                    <span className="shrink-0 text-[15px] font-bold tabular-nums">{c.hora}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[14.5px] font-semibold">{c.alumno}</span>
+                      {c.materia && <span className="block truncate text-[12.5px] text-tinta/50">{c.materia}</span>}
+                      {/* Hasta dos renglones: el resumen del día. Entera, en la agenda. */}
+                      {notasALaVista && c.notas && (
+                        <span className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-snug text-tinta/75">
+                          <span aria-hidden className="text-ambar">⚠ </span><span className="sr-only">{t.inscribir.salud}: </span>{c.notas}
+                        </span>
+                      )}
+                    </span>
                   </span>
-                </span>
-                {c.estado === 'atendida' && (
-                  <span className="pastilla shrink-0 whitespace-nowrap bg-verde text-sobre-verde">{t.agenda.claseDada}</span>
-                )}
-                {c.estado === 'no_vino' && (
-                  <span className="pastilla shrink-0 whitespace-nowrap bg-rojo-claro text-rojo">{t.agenda.claseNoTenida}</span>
+                  {c.estado === 'atendida' && (
+                    <span className="pastilla shrink-0 whitespace-nowrap bg-verde text-sobre-verde">{t.agenda.claseDada}</span>
+                  )}
+                  {c.estado === 'no_vino' && (
+                    <span className="pastilla shrink-0 whitespace-nowrap bg-rojo-claro text-rojo">{t.agenda.claseNoTenida}</span>
+                  )}
+                </div>
+                {/* La rutina de la sesión, para darla con el celular en la mano (098). */}
+                {empresaId && rutinas[c.id] && (
+                  <RutinaDeLaSesion
+                    className="mt-1.5"
+                    empresaId={empresaId}
+                    rutinaId={rutinas[c.id].rutina_id}
+                    nombre={rutinas[c.id].nombre}
+                  />
                 )}
               </li>
             ))}

@@ -624,6 +624,14 @@ async function principal() {
       'reservar_publico',
       'reserva_por_token',
       'cancelar_reserva',
+
+      // EL LINK DE RUTINA DEL PERSONAL TRAINER (migración 098). El cliente
+      // lo abre desde WhatsApp, sin cuenta: el token ES la credencial. Solo
+      // lee, y devuelve lo justo —su nombre de pila, el negocio y la rutina
+      // vigente—; nunca teléfono, apellido, lesiones, medidas ni plata. Un
+      // token malo, apagado o cambiado da exactamente `{"existe": false}`.
+      // Lo que ve y lo que no se comprueba en pruebas/rutinas.test.js.
+      'rutina_por_token',
     ];
 
     const expuestas = (await db.query(`

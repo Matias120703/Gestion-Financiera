@@ -5,11 +5,13 @@ import { traerProductos } from '@/lib/datos';
 import { traerProfesionales, soloServicios } from '@/lib/reparto';
 import {
   traerLinkPublico, traerAgendaDelDia, traerHorarios, traerServiciosAgenda, traerExcepciones,
+  traerRutinasDeLaAgenda,
 } from '@/lib/agenda';
 import { fichaDe } from '@/lib/rubros';
 import { hoyISO } from '@/lib/fechas';
 import { PantallaAgenda } from '@/components/PantallaAgenda';
 import type { Producto } from '@/lib/tipos';
+import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +45,10 @@ export default async function PaginaAgenda({
     ? searchParams.dia
     : hoy;
 
-  const [link, turnos, profesionales, horarios, servicios, productos, excepciones] = await Promise.all([
+  // El trainer ve la rutina de cada sesión (098). Solo él la pide.
+  const conRutinas = ficha.secciones['/rutinas'];
+
+  const [link, turnos, profesionales, horarios, servicios, productos, excepciones, rutinas] = await Promise.all([
     // Un profe no tiene link público (089): ni se pide.
     ctx.esAdmin && !ficha.agendaDeAlumnos ? traerLinkPublico(ctx.empresa.id) : Promise.resolve(null),
     traerAgendaDelDia(ctx.empresa.id, dia),
@@ -52,6 +57,11 @@ export default async function PaginaAgenda({
     traerServiciosAgenda(ctx.empresa.id),
     traerProductos(ctx.empresa.id),
     traerExcepciones(ctx.empresa.id, hoy),
+    // Contexto, no un número: si falla, la agenda se muestra igual, sin la
+    // línea de la rutina (que no dice «sin rutina»: no afirma nada que no sepa).
+    conRutinas
+      ? traerRutinasDeLaAgenda(ctx.empresa.id, dia).catch((): RutinasDeLaAgenda => ({}))
+      : Promise.resolve<RutinasDeLaAgenda>({}),
   ]);
 
   return (
@@ -73,6 +83,8 @@ export default async function PaginaAgenda({
       origen={origen}
       deAlumnos={ficha.agendaDeAlumnos}
       notasALaVista={ficha.notasALaVista}
+      conRutinas={conRutinas}
+      rutinas={rutinas}
     />
   );
 }

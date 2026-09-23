@@ -47,7 +47,9 @@ export type Jerga = 'entrenamiento';
 export type Seccion =
   | '/panel' | '/vender' | '/gastos' | '/deudas' | '/cierre' | '/productos'
   | '/movimientos' | '/reto' | '/organizacion' | '/agenda' | '/reparto'
-  | '/lotes' | '/reportes' | '/ajustes' | '/fiado' | '/clientes' | '/billetera';
+  | '/lotes' | '/reportes' | '/ajustes' | '/fiado' | '/clientes' | '/billetera'
+  // Las rutinas y el progreso de cada cliente del personal trainer (098).
+  | '/rutinas';
 
 export interface FichaRubro {
   clave: Rubro;
@@ -123,6 +125,16 @@ export interface FichaRubro {
    */
   jerga: Jerga | null;
   /**
+   * QUÉ VA FIJO EN LA BARRA DE ABAJO DEL CELULAR, SI NO ES LA DE SIEMPRE.
+   *
+   * Null es la de siempre: Panel, Vender, Gastos y Cierre (o la del vendedor).
+   * Al profe y al trainer esa barra les dejaba Panel y Gastos y nada más,
+   * porque no venden ni cierran caja: la agenda y sus alumnos, que es lo que
+   * miran todo el día, quedaban a dos toques. Matías: «en la barra de abajo
+   * tendría que aparecer agendas y alumnos, para que tenga un mejor atajo».
+   */
+  barra: Seccion[] | null;
+  /**
    * SI LAS NOTAS DE CADA CLIENTE VAN PEGADAS A CADA SESIÓN (097).
    *
    * Para un trainer, las notas de un cliente son sus lesiones: «rodilla
@@ -163,6 +175,7 @@ const NUCLEO = {
   '/agenda': false,
   '/reparto': false,
   '/lotes': false,
+  '/rutinas': false,
 } as const satisfies Record<Seccion, boolean>;
 
 export const RUBROS: Record<Rubro, FichaRubro> = {
@@ -181,6 +194,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     agendaDeAlumnos: false,
     jerga: null,
     notasALaVista: false,
+    barra: null,
   },
 
   servicios: {
@@ -213,6 +227,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     agendaDeAlumnos: false,
     jerga: null,
     notasALaVista: false,
+    barra: null,
   },
 
   ganaderia: {
@@ -242,6 +257,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     agendaDeAlumnos: false,
     jerga: null,
     notasALaVista: false,
+    barra: null,
   },
 
   agricultura: {
@@ -269,6 +285,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     agendaDeAlumnos: false,
     jerga: null,
     notasALaVista: false,
+    barra: null,
   },
 
   /**
@@ -329,6 +346,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     agendaDeAlumnos: true,
     jerga: null,
     notasALaVista: false,
+    // La agenda y los alumnos a un toque: es lo que un profe mira todo el día.
+    barra: ['/panel', '/agenda', '/clientes', '/gastos'],
   },
 
   /**
@@ -358,6 +377,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       '/vender': false,
       '/cierre': false,
       '/fiado': false,
+      // Las rutinas de cada cliente, sus medidas y su avance (098).
+      '/rutinas': true,
     },
     // «Clientes», que es como dice un trainer; lo cobrado, como el profe.
     palabras: { ventas: 'Cobrado' },
@@ -372,6 +393,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     agendaDeAlumnos: true,
     jerga: 'entrenamiento',
     notasALaVista: true,
+    // Decidido con Matías (22/09): las cuatro que un trainer usa todos los
+    // días. Gastos queda a un toque desde «Más».
+    barra: ['/panel', '/agenda', '/rutinas', '/clientes'],
   },
 };
 
@@ -451,6 +475,7 @@ export const PERSONAL: FichaRubro = {
   agendaDeAlumnos: false,
   jerga: null,
   notasALaVista: false,
+  barra: null,
 };
 
 /**

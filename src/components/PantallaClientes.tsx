@@ -9,9 +9,25 @@ import type { Textos } from '@/i18n/diccionarios';
 import { dinero, dineroQueEntra } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
+import { hoyISO } from '@/lib/fechas';
 import { Indicador, Vacio } from '@/components/Piezas';
 import { PaquetesAlumno, PorCobrarAlumnos } from '@/components/PaquetesAlumno';
+import { MandarRutina } from '@/components/rutinas/MandarRutina';
+import { fechaCorta } from '@/components/rutinas/panel/utiles';
 import type { ClienteLista, TurnoCliente } from '@/lib/tipos';
+import type { EnlaceRutina } from '@/lib/tipos-rutinas';
+
+/**
+ * La rutina de un cliente del trainer, para su ficha (098). Sale de
+ * `rutinas_de` y trae solo lo que se muestra acá: la rutina se mira y se
+ * arma en su carpeta, no en un acordeón.
+ */
+export interface RutinaEnClientes {
+  vigente: { nombre: string; desde: string; cambia_el: string | null } | null;
+  /** Tiene una próxima rutina en preparación. */
+  proxima: boolean;
+  enlace: EnlaceRutina | null;
+}
 
 function diasDesde(iso: string | null): number | null {
   if (!iso) return null;
@@ -47,7 +63,7 @@ function haceTanto(t: Textos, iso: string | null): string {
  */
 export function PantallaClientes({
   empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, tienePaquetes, puedeEliminar,
-  deAlumnos = false, titulo, notasALaVista = false,
+  deAlumnos = false, titulo, notasALaVista = false, conRutinas = false, rutinas = null,
 }: {
   empresaId: string;
   moneda: string;
@@ -67,6 +83,13 @@ export function PantallaClientes({
   titulo?: string;
   /** Las notas son de salud y van a la vista: el trainer (097). */
   notasALaVista?: boolean;
+  /** El trainer (098): en la ficha, su rutina y la puerta a su carpeta. */
+  conRutinas?: boolean;
+  /**
+   * La rutina de cada cliente, por id. Null si no se pudo leer: entonces la
+   * ficha no dice «Sin rutina», porque no lo sabe; queda el botón a la carpeta.
+   */
+  rutinas?: Record<string, RutinaEnClientes> | null;
   /** Dueño y administradores. Un vendedor carga clientes pero no los saca. */
   puedeEliminar: boolean;
 }) {
@@ -173,6 +196,8 @@ export function PantallaClientes({
                 tienePaquetes={tienePaquetes}
                 deAlumnos={deAlumnos}
                 notasALaVista={notasALaVista}
+                conRutinas={conRutinas}
+                rutina={rutinas ? (rutinas[c.id] ?? { vigente: null, proxima: false, enlace: null }) : null}
                 moneda={moneda}
                 puedeEliminar={puedeEliminar}
                 abierto={abierto === c.id}
@@ -190,7 +215,7 @@ export function PantallaClientes({
 /** Crear o editar un cliente. Con `c`, edita. */
 function FormularioCliente({
   empresaId, c, titulo, onCerrar, onListo,
-  puedeEliminar = false, debe = 0, plata, proximo = '',
+  puedeEliminar = false, conSalud = false, debe = 0, plata, proximo = '',
 }: {
   empresaId: string;
   c?: ClienteLista;
@@ -199,6 +224,11 @@ function FormularioCliente({
   onListo: (mensaje: string) => void;
   /** Solo dueño y administradores. La base lo vuelve a verificar (058). */
   puedeEliminar?: boolean;
+  /**
+   * El trainer (099): eliminar a alguien con rutinas o medidas lo archiva y
+   * borra sus datos de salud. Se dice antes, no después.
+   */
+  conSalud?: boolean;
   /** Lo que debe. A quien debe no se lo elimina: se lo manda a Fiado. */
   debe?: number;
   plata?: (n: number) => string;
@@ -305,6 +335,9 @@ function FormularioCliente({
             <p className="text-[12.5px] leading-snug text-tinta/65">
               {t.clientes.eliminarDetalle(c.nombre)}{proximo && ` ${t.clientes.turnoNoSeCancela(proximo)}`}
             </p>
+            {conSalud && (
+              <p className="text-[12.5px] leading-snug text-tinta/65">{t.clientes.eliminarConSalud(c.nombre)}</p>
+            )}
             <div className="flex gap-2">
               <button type="button" className="boton-texto px-4" onClick={() => setConfirmar(false)}>{t.clientes.no}</button>
               <button
@@ -337,8 +370,75 @@ function FormularioCliente({
   );
 }
 
+/**
+ * La línea de la rutina en la ficha de un cliente del trainer (098):
+ * «Fuerza base · desde el 15/09 · cambiarla el 13/10», o «Sin rutina».
+ * El progreso (medidas) es del dueño o de un administrador: a los demás, el
+ * botón no lo promete.
+ */
+function FichaRutina({
+  c, rutina, empresaId, zona, locale, conProgreso,
+}: {
+  c: ClienteLista;
+  rutina: RutinaEnClientes | null;
+  empresaId: string;
+  zona: string;
+  locale: string;
+  conProgreso: boolean;
+}) {
+  const t = useTextos();
+  const l = t.rutinasPanel.lista;
+  const hoy = hoyISO(zona);
+  const vigente = rutina?.vigente ?? null;
+
+  const detalle = vigente ? [
+    l.desde(fechaCorta(vigente.desde, locale, hoy)),
+    vigente.cambia_el
+      ? (vigente.cambia_el <= hoy ? l.tocabaCambiarla : l.cambiarlaEl)(fechaCorta(vigente.cambia_el, locale, hoy))
+      : '',
+    rutina?.proxima ? l.proximaEnPreparacion : '',
+  ].filter(Boolean).join(' · ') : '';
+
+  return (
+    <div className="rounded-xl bg-superficie px-3 py-2.5">
+      {rutina && (
+        <>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-tinta/45">{t.clientes.rutina}</p>
+          {vigente ? (
+            <>
+              <p className="mt-0.5 truncate text-[14px] font-bold">{vigente.nombre}</p>
+              <p className="text-[12px] text-tinta/50">{detalle}</p>
+            </>
+          ) : (
+            <p className="mt-0.5 text-[14px] font-semibold text-tinta/60">
+              {l.sinRutina}{rutina.proxima ? ` · ${l.proximaEnPreparacion}` : ''}
+            </p>
+          )}
+        </>
+      )}
+      <div className={`flex flex-wrap items-start gap-2 ${rutina ? 'mt-2' : ''}`}>
+        <Link
+          href={`/rutinas/cliente/${c.id}`}
+          className="inline-flex min-h-[44px] items-center rounded-xl border border-borde bg-superficie px-3.5 text-[13.5px] font-semibold text-tinta/75 hover:bg-arena"
+        >
+          {conProgreso ? t.clientes.rutinaYProgreso : t.clientes.suRutina}
+        </Link>
+        {vigente && (
+          <MandarRutina
+            variante="chica"
+            empresaId={empresaId} clienteId={c.id} nombre={c.nombre} telefono={c.telefono} zona={zona}
+            token={rutina?.enlace?.token ?? null}
+            activo={rutina?.enlace ? rutina.enlace.activo : undefined}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FilaCliente({
-  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista, moneda, puedeEliminar, abierto, onAbrir, onListo,
+  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista,
+  conRutinas, rutina, moneda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
@@ -351,6 +451,9 @@ function FilaCliente({
   tienePaquetes: boolean;
   deAlumnos: boolean;
   notasALaVista: boolean;
+  conRutinas: boolean;
+  /** Null: no se pudo leer (no se afirma «Sin rutina»). */
+  rutina: RutinaEnClientes | null;
   moneda: string;
   puedeEliminar: boolean;
   abierto: boolean;
@@ -425,6 +528,7 @@ function FilaCliente({
               onCerrar={() => setEditando(false)}
               onListo={(m) => { setEditando(false); onListo(m); }}
               puedeEliminar={puedeEliminar}
+              conSalud={conRutinas}
               debe={debe}
               plata={plata}
               proximo={proximo}
@@ -479,6 +583,16 @@ function FilaCliente({
                   {t.clientes.editarBoton}
                 </button>
               </div>
+
+              {/* SU RUTINA, PARA EL TRAINER (098). Una línea y dos botones: la
+                  rutina se arma y se mira en su carpeta, y el acordeón no crece
+                  más. El link, por WhatsApp, solo si hay una vigente que mandar. */}
+              {conRutinas && (
+                <FichaRutina
+                  c={c} rutina={rutina} empresaId={empresaId} zona={zona} locale={locale}
+                  conProgreso={puedeEliminar}
+                />
+              )}
 
               {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 

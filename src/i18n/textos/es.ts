@@ -8,6 +8,11 @@
  *   · Un texto que necesita un número lleva una función, no concatenación
  *     en la pantalla: el orden de las palabras cambia con el idioma.
  */
+import { rutinasEditorEs } from './rutinas-editor';
+import { rutinasPanelEs } from './rutinas-panel';
+import { rutinaPublicaEs } from './rutina-publica';
+import { rutinasComunEs } from './rutinas-comun';
+
 export const es = {
   comun: {
     guardar: 'Guardar',
@@ -99,6 +104,8 @@ export const es = {
     organizacion: 'Presupuesto',
     reparto: 'Equipo y reparto',
     agenda: 'Agenda',
+    // Las rutinas del personal trainer (098).
+    rutinas: 'Rutinas',
     lotes: 'Lotes',
     repartoCorto: 'Equipo',
     fiado: 'Fiado',
@@ -1127,6 +1134,12 @@ export const es = {
     alumnoEjemplo: 'Nombre del alumno',
     telefonoAyuda: 'Su WhatsApp, para escribirle cuando haga falta.',
     faltaAlumno: 'Elegí o escribí el nombre del alumno.',
+    // El teléfono ya es de otra ficha (099): antes de crear a nadie se
+    // pregunta, porque un teléfono repetido juntaría a dos personas en una.
+    mismoTelefono: (nombre: string) => `Ese teléfono ya es de ${nombre}: ¿es la misma persona?`,
+    mismoTelefonoDetalle: 'Si es otra persona, el teléfono queda vacío para no mezclar las dos fichas.',
+    siEs: (nombre: string) => `Sí, es ${nombre}`,
+    noSacarTelefono: 'No, sacar el teléfono',
     materia: 'Qué le enseñás',
     materiaEjemplo: 'Inglés, matemática, guitarra…',
     // Las notas de alguien nuevo, cuando el rubro las quiere a la vista
@@ -1237,7 +1250,11 @@ export const es = {
     notasEjemplo: 'Prefiere los martes, es alérgica a…',
     noSeDuplica: 'Si ese teléfono ya es de otro cliente, no se duplica: se actualiza el que ya estaba.',
     eliminarPregunta: (nombre: string) => `¿Eliminar a ${nombre}?`,
-    eliminarDetalle: (nombre: string) => `Deja de aparecer en tu lista y al elegir cliente. Lo que ya pasó con ${nombre} queda en tu historial.`,
+    // Las notas se borran en todo rubro (099): en «Notas» también puede ir «es alérgica a…».
+    eliminarDetalle: (nombre: string) => `Deja de aparecer en tu lista y al elegir cliente. Lo que ya pasó con ${nombre} queda en tu historial; sus notas se borran.`,
+    // El trainer (099): al archivar se borran los datos de salud; la rutina queda como historia.
+    eliminarConSalud: (nombre: string) =>
+      `Si ${nombre} tiene rutinas o medidas, queda archivado: se borran sus medidas, su consentimiento y «Salud y lesiones». Sus rutinas quedan como tu historia y no se ven en ningún link.`,
     turnoNoSeCancela: (cuando: string) => `Su turno del ${cuando} no se cancela.`,
     no: 'No',
     eliminando: 'Eliminando…',
@@ -1257,6 +1274,14 @@ export const es = {
     editarBoton: 'Editar',
     turnos: 'Turnos',
     sinTurnos: 'Todavía no tiene turnos.',
+
+    // ---- la rutina de cada cliente del trainer (098) ----
+    // Una línea en su ficha y la puerta a su carpeta: la rutina se arma y se
+    // mira allá, no en un acordeón.
+    rutina: 'Rutina',
+    rutinaYProgreso: 'Rutina y progreso',
+    // Quien no es dueño ni administrador no ve el progreso: su botón dice solo esto.
+    suRutina: 'Su rutina',
   },
 
   /**
@@ -1664,6 +1689,18 @@ export const es = {
     cuentaBloqueadaTitulo: 'Tu prueba terminó',
     cuentaBloqueadaDetalle: 'Para seguir usando Orden y ver tus datos hace falta activar un plan. Es un sistema completo, y como cualquier herramienta seria, tiene un precio.',
     cuentaBloqueadaBoton: 'Activar mi plan',
+    // El trainer con la cuenta vencida (098): el link de rutina de sus clientes
+    // sigue andando un tiempo, y cortarlo no puede depender de pagar.
+    linksRutinaTitulo: 'Los links de rutina de tus clientes',
+    linksRutinaDetalle: 'Con la cuenta vencida, tus clientes pueden seguir abriendo su rutina hasta 30 días. Si no vas a renovar, o un link llegó a quien no debía, apagalos ahora.',
+    apagarLinksRutina: 'Apagar mis links de rutina',
+    apagarLinksPregunta: '¿Apagar todos los links de rutina?',
+    apagarLinksDetalle: 'Tus clientes dejan de ver su rutina: el link les dice que ya no está activo. Si renovás, los prendés de a uno desde la carpeta de cada cliente, y el link sigue siendo el mismo.',
+    siApagarLinks: 'Sí, apagarlos',
+    apagandoLinks: 'Apagando…',
+    linksApagados: (n: number) => (n === 0
+      ? 'No había ningún link prendido.'
+      : n === 1 ? 'Apagaste 1 link.' : `Apagaste ${n} links.`),
 
     // ---- varios ----
     desde: 'Desde',
@@ -2315,6 +2352,38 @@ export const es = {
     diasSemana: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
     nombreQuienViene: 'Nombre de quien viene',
     telefonoRecordatorio: 'Para mandarle el recordatorio y el enlace para cancelar. Si no lo tenés, dejalo vacío.',
+
+    // ---- la rutina de cada sesión del trainer (098) ----
+    // Debajo de cada sesión, su rutina vigente y «Ver»: una hoja para dar la
+    // sesión con el celular en la mano y subir la carga ahí mismo.
+    rutinaSesion: {
+      rutina: 'Rutina',
+      ver: 'Ver',
+      verLaRutina: (rutina: string) => `Ver la rutina «${rutina}»`,
+      noSeCargo: 'No se pudo abrir la rutina.',
+      reintentar: 'Probar de nuevo',
+      yaNoVigente: 'Esta rutina ya no es la vigente: abrí su carpeta para ver la de ahora.',
+      ayuda: 'Tocá la carga o las repeticiones para cambiarlas: queda anotado en su progreso.',
+      cambiarDe: (ejercicio: string) => `Cambiar la carga o las repeticiones de ${ejercicio}`,
+      ponerCarga: '+ Carga',
+      ponerReps: '+ Repeticiones',
+      // Suben o bajan el número que ya está, con su unidad: solo aparecen
+      // cuando la carga ya dice kg o lb.
+      sumar: '+2,5',
+      restar: '−2,5',
+      sumarDe: (unidad: string) => `Sumar 2,5 ${unidad}`,
+      restarDe: (unidad: string) => `Restar 2,5 ${unidad}`,
+      guardado: (ejercicio: string) => `Guardado: ${ejercicio}. Queda en su progreso.`,
+    },
+
+    // ---- después de agendar a un cliente nuevo del trainer (098) ----
+    // El primer día se hace todo junto: agendar, medirlo y armarle la rutina.
+    siguientePaso: 'Siguiente',
+    // Sin nombrar las medidas: a quien no es admin solo se le ofrece la rutina.
+    siguienteDetalle: (nombre: string) => `Lo que sigue con ${nombre}:`,
+    medidasDeInicio: 'Anotar sus medidas de inicio',
+    armarSuRutina: 'Armar su rutina',
+    despues: 'Después',
   },
 
   /**
@@ -2598,6 +2667,13 @@ export const es = {
     abrir: 'Abrir Orden',
     bajarse: 'Si no querés recibir esto, apagalo en Ajustes.',
   },
+
+  // Rutinas, medidas y progreso del personal trainer (098): cada área en su
+  // archivo, para que cada pantalla tenga el suyo.
+  rutinasEditor: rutinasEditorEs,
+  rutinasPanel: rutinasPanelEs,
+  rutinaPublica: rutinaPublicaEs,
+  rutinasComun: rutinasComunEs,
 };
 
 /**

@@ -26,7 +26,9 @@ import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
 import { Bienvenida } from '@/components/Bienvenida';
 import { PanelProfe } from '@/components/PanelProfe';
+import { traerRutinasDeLaAgenda } from '@/lib/agenda';
 import type { PanelProfe as PanelProfeDatos } from '@/lib/tipos';
+import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,7 +150,7 @@ export default async function PaginaPanel({
     const fichaProfe = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
     const t = conJerga(await textos(), fichaProfe.jerga, await idiomaActual());
     const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
-    const [datosProfe, categoriasProfe, rachaProfe, billeteraProfe, descuentoProfe] = await Promise.all([
+    const [datosProfe, categoriasProfe, rachaProfe, billeteraProfe, descuentoProfe, rutinasHoy] = await Promise.all([
       Promise.resolve(clienteServidor().rpc('panel_profe', {
         p_empresa: ctx.empresa.id, p_desde: rango.desde, p_hasta: rango.hasta,
       })).then((r) => { if (r.error) throw r.error; return r.data as PanelProfeDatos; }),
@@ -156,6 +158,11 @@ export default async function PaginaPanel({
       traerRacha(ctx.empresa.id),
       ctx.esAdmin ? traerBilletera(ctx.empresa.id).catch(() => null) : Promise.resolve(null),
       ctx.esAdmin ? traerDescuentoRacha(ctx.empresa.id) : Promise.resolve(null),
+      // La rutina de cada sesión de hoy, solo para el trainer (098). Es
+      // contexto: si falla, el panel sale igual, sin ese renglón.
+      fichaProfe.secciones['/rutinas']
+        ? traerRutinasDeLaAgenda(ctx.empresa.id).catch((): RutinasDeLaAgenda => ({}))
+        : Promise.resolve<RutinasDeLaAgenda>({}),
     ]);
     const locale = FICHA[(await idiomaActual())].locale;
     return (
@@ -179,6 +186,8 @@ export default async function PaginaPanel({
         <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
         <PanelProfe
           notasALaVista={fichaProfe.notasALaVista}
+          empresaId={ctx.empresa.id}
+          rutinas={rutinasHoy}
           datos={datosProfe}
           categorias={categoriasProfe}
           moneda={ctx.vista}

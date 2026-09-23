@@ -32,6 +32,15 @@ const PUBLICAS = [
   // '/reportes' y de '/reparto', y abriría dos pantallas del negocio a
   // cualquiera que no haya iniciado sesión.
   '/r/', '/turno/',
+  // La rutina que el personal trainer le manda a su cliente por WhatsApp
+  // (098), y su manifest para guardarla en la pantalla de inicio. Quien la
+  // abre es el cliente, en el gimnasio: mandarlo a un login sería esconderle
+  // la rutina. El token es la credencial, y la base devuelve lo justo.
+  //
+  // Con la barra final por lo mismo que '/r/': '/rutina' a secas también
+  // sería prefijo de '/rutinas', la sección del trainer, que la abriría a
+  // cualquiera sin sesión.
+  '/rutina/',
   // Las tareas programadas. Vercel Cron las llama con un Bearer y SIN cookie
   // de sesión, así que para este middleware eran un desconocido más: las
   // redirigía a /ingresar y la tarea no corría nunca. La tabla `envios`

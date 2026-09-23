@@ -1,6 +1,7 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir, exigirLista } from './lectura';
 import type { LinkPublico, TurnoDelDia, HorarioSemanal, ServicioAgenda, Excepcion } from './tipos';
+import type { RutinasDeLaAgenda } from './tipos-rutinas';
 
 /** Lecturas de la agenda de turnos. */
 
@@ -25,6 +26,21 @@ export async function traerAgendaDelDia(empresaId: string, fecha?: string): Prom
   });
   const lista = exigir(respuesta, 'la agenda del día');
   return Array.isArray(lista) ? (lista as TurnoDelDia[]) : [];
+}
+
+/**
+ * La rutina vigente del cliente de cada sesión de un día, por id de reserva
+ * (098): solo el trainer. Va aparte de `agenda_del_dia`, que no se redefine
+ * por esto, y la pantalla junta las dos por id.
+ */
+export async function traerRutinasDeLaAgenda(empresaId: string, fecha?: string): Promise<RutinasDeLaAgenda> {
+  const supabase = clienteServidor();
+  const respuesta = await supabase.rpc('rutinas_de_la_agenda', {
+    p_empresa: empresaId,
+    p_fecha: fecha ?? null,
+  });
+  const mapa = exigir(respuesta, 'las rutinas de la agenda');
+  return mapa && typeof mapa === 'object' && !Array.isArray(mapa) ? (mapa as RutinasDeLaAgenda) : {};
 }
 
 /** El horario semanal de todo el equipo. */

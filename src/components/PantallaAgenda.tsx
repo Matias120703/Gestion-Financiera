@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
@@ -13,10 +14,13 @@ import { CalendarioAgenda, SelectorVista, type VistaAgenda } from '@/components/
 import { SelectorCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { InscribirAlumno } from '@/components/InscribirAlumno';
 import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO, type TurnoRespuesta } from '@/lib/turno-voz';
+import { RutinaDeLaSesion } from '@/components/rutinas/HojaRutinaSesion';
+import { primerNombre } from '@/components/rutinas/panel/utiles';
 import type {
   Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
   Excepcion,
 } from '@/lib/tipos';
+import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
 
 /**
  * AGENDA · el link, los turnos del día y el horario de cada uno.
@@ -30,6 +34,7 @@ import type {
 export function PantallaAgenda({
   empresaId, moneda, link, turnos, profesionales, horarios, servicios, catalogo, esAdmin, dia, hoy,
   excepciones, negocio, zona, origen, deAlumnos = false, notasALaVista = false,
+  conRutinas = false, rutinas = {},
 }: {
   empresaId: string;
   moneda: string;
@@ -57,6 +62,10 @@ export function PantallaAgenda({
   deAlumnos?: boolean;
   /** Las notas de cada cliente pegadas a su sesión: las lesiones de un trainer (097). */
   notasALaVista?: boolean;
+  /** El trainer (098): la rutina de cada sesión y, al agendar a alguien nuevo, «Siguiente». */
+  conRutinas?: boolean;
+  /** La rutina vigente del cliente de cada sesión, por id de reserva. */
+  rutinas?: RutinasDeLaAgenda;
   origen: string;
 }) {
   const t = useTextos();
@@ -72,6 +81,8 @@ export function PantallaAgenda({
   // El formulario de inscribir a un alumno, en la agenda de un profe (091).
   const [inscribiendo, setInscribiendo] = useState(false);
   const [inscripto, setInscripto] = useState('');
+  // El cliente nuevo que se acaba de agendar, para el «Siguiente» del trainer (098).
+  const [siguiente, setSiguiente] = useState<{ id: string; nombre: string; mensaje: string } | null>(null);
   // Lo que se dictó en el micrófono, para un profe: llega a inscribir (092).
   const [dictadoProfe, setDictadoProfe] = useState<TurnoRespuesta | null>(null);
   useEffect(() => {
@@ -176,15 +187,66 @@ export function PantallaAgenda({
           dictado={dictadoProfe}
           pedirSalud={notasALaVista}
           alCancelar={() => { setInscribiendo(false); setDictadoProfe(null); }}
-          alListo={(m) => { setInscribiendo(false); setInscripto(m); router.refresh(); setTimeout(() => setInscripto(''), 5000); }}
+          alListo={(m, nuevo) => {
+            setInscribiendo(false);
+            router.refresh();
+            // Alguien nuevo del trainer: el aviso se queda con «Siguiente»
+            // hasta que elija qué hacer. Si no, se va solo como siempre.
+            if (conRutinas && nuevo) {
+              setSiguiente({ ...nuevo, mensaje: m });
+              return;
+            }
+            setInscripto(m);
+            setTimeout(() => setInscripto(''), 5000);
+          }}
         />
       ) : (
-        <button type="button" className="boton-principal w-full py-3 text-[15px]" onClick={() => setInscribiendo(true)}>
+        <button
+          type="button" className="boton-principal w-full py-3 text-[15px]"
+          onClick={() => { setSiguiente(null); setInscribiendo(true); }}
+        >
           + {t.inscribir.boton}
         </button>
       ))}
       {inscripto && (
         <p className="rounded-xl bg-verde-claro px-4 py-3 text-[13.5px] font-semibold text-verde-fuerte aparecer">✓ {inscripto}</p>
+      )}
+
+      {/* «SIGUIENTE» DESPUÉS DE AGENDAR A ALGUIEN NUEVO (098).
+          El primer día un trainer hace todo junto: lo agenda, lo mide y le
+          arma la rutina. Sin esto eran seis pantallas para llegar a cada cosa.
+          Las medidas son del dueño o de un administrador: a los demás se les
+          ofrece solo la rutina. */}
+      {siguiente && (
+        <div role="status" className="rounded-2xl border border-verde/30 bg-superficie px-4 py-3.5 aparecer">
+          <p className="text-[13.5px] font-semibold text-verde-fuerte">✓ {siguiente.mensaje}</p>
+          <p className="mt-3 text-[12px] font-bold uppercase tracking-wide text-tinta/50">{t.agenda.siguientePaso}</p>
+          <p className="mt-0.5 text-[13.5px] leading-snug text-tinta/75">
+            {t.agenda.siguienteDetalle(primerNombre(siguiente.nombre) || siguiente.nombre)}
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {esAdmin && (
+              <Link
+                href={`/rutinas/cliente/${siguiente.id}?ver=progreso&anotar=1`}
+                className="boton-principal min-h-[44px] text-center"
+              >
+                {t.agenda.medidasDeInicio}
+              </Link>
+            )}
+            <Link
+              href={`/rutinas/nueva?cliente=${siguiente.id}`}
+              className={`${esAdmin ? 'boton-suave' : 'boton-principal'} min-h-[44px] text-center`}
+            >
+              {t.agenda.armarSuRutina}
+            </Link>
+          </div>
+          <button
+            type="button" onClick={() => setSiguiente(null)}
+            className="boton-texto mt-1 inline-flex min-h-[44px] items-center text-tinta/55"
+          >
+            {t.agenda.despues}
+          </button>
+        </div>
       )}
 
       {/* Un profe no tiene link público: los horarios los arma él (089). */}
@@ -308,6 +370,18 @@ export function PantallaAgenda({
                     <span aria-hidden className="text-ambar">⚠</span>
                     <span><span className="sr-only">{t.inscribir.salud}: </span>{r.notas}</span>
                   </p>
+                )}
+
+                {/* La rutina de la sesión, debajo de las lesiones (098): «Ver»
+                    la abre para darla con el celular en la mano y subir la
+                    carga ahí mismo. Sin rutina vigente, no hay renglón. */}
+                {conRutinas && rutinas[r.id] && (
+                  <RutinaDeLaSesion
+                    className="mt-1.5"
+                    empresaId={empresaId}
+                    rutinaId={rutinas[r.id].rutina_id}
+                    nombre={rutinas[r.id].nombre}
+                  />
                 )}
 
                 {(r.estado === 'pendiente' || r.estado === 'confirmada') && deAlumnos && r.paquete_id && (
