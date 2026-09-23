@@ -114,6 +114,8 @@
 --   · 101_categorias_agricultura.sql
 --   · 102_planes_por_rubro_y_comision.sql
 --   · 103_la_comision_guarda_lo_que_entro.sql
+--   · 104_la_tarjeta_conoce_el_basico.sql
+--   · 105_la_comision_en_guaranies.sql
 -- ============================================================
 
 -- ############################################################
@@ -33337,3 +33339,403 @@ grant execute on function public.asignar_referido(uuid, text, text) to authentic
 
 revoke all on function public.listar_comisiones(text, uuid, integer) from public, anon;
 grant execute on function public.listar_comisiones(text, uuid, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  104_la_tarjeta_conoce_el_basico.sql
+-- ############################################################
+
+-- ============================================================
+-- 104 · LA TARJETA CONOCE EL BÁSICO
+-- ============================================================
+--
+-- `aplicar_suscripcion` es la única puerta por la que un pago con tarjeta
+-- cambia el plan de una cuenta: la llama el webhook de la pasarela
+-- (src/app/api/pagos/webhook/route.ts) con el rol service_role, nunca el
+-- navegador. Hoy la pasarela está apagada y se cobra por transferencia
+-- (`cambiar_plan_cuenta`, desde el panel de la administración). Esta
+-- migración deja la puerta de la tarjeta a la par de la de la
+-- transferencia en dos cosas que se le habían quedado atrás.
+--
+-- 1. EL BÁSICO ERA UN «PLAN DESCONOCIDO»
+--
+-- La versión viva (la de la 009, verificada en producción el 23/09 con
+-- pg_get_functiondef) dice:
+--
+--     if p_plan not in ('gratis', 'pro', 'negocio') then
+--       raise exception 'Plan desconocido: %' ...
+--
+-- El Básico nació en la 077, que se lo enseñó a las tablas; a
+-- `cambiar_plan_cuenta` se lo enseñó la 102, y esta función quedó con la
+-- lista vieja (la 009 es la última que la redefinió). Desde la 102 hay
+-- rubros que SOLO pueden tener Básico (docentes y trainers), así que el día
+-- que se prenda la pasarela un profe que paga con tarjeta rebotaría con un
+-- error, después de que Stripe le cobró. Stripe reintentaría el evento
+-- durante días y todos rebotarían igual: el error no es de red, es de la
+-- lista.
+--
+-- Se agrega 'basico' a la lista y nada más. Las tres constraints que tienen
+-- la palabra —empresas_plan_check, suscripciones_plan_check y
+-- precios_plan_check— se verificaron en producción el 23/09 y ya aceptan
+-- 'basico' (lo hizo la 077): no se tocan.
+--
+-- Un detalle que queda como estaba, a propósito: esta función escribe en
+-- `empresas.plan` el plan tal cual (Básico queda 'basico'), mientras que
+-- `cambiar_plan_cuenta` escribe 'pro' para cualquier plan pago. Lo que
+-- manda de verdad es `suscripciones.plan` (plan_efectivo_calculado,
+-- tope_de_miembros, limites_plan), y ahí las dos escriben el plan real. No
+-- es trabajo de esta migración emparejar esa columna vieja.
+--
+-- 2. LA COMISIÓN DEL SOCIO SOLO NACÍA POR TRANSFERENCIA
+--
+-- Desde la 060 la comisión de quien trajo al cliente nace en dos lugares:
+-- `cambiar_plan_cuenta` (cuando se cobra) y `asignar_referido` (cuando el
+-- código se había perdido y se anota después del primer pago). Por tarjeta
+-- no nacía nunca: un negocio que un socio trajo y que pagó con tarjeta le
+-- dejaba cero al socio, sin error y sin aviso. Lo mismo que la 063 corrigió
+-- para la transferencia, con otra causa.
+--
+-- Acá nace con las MISMAS reglas que `cambiar_plan_cuenta` en la 103
+-- (versión viva, verificada en producción con pg_get_functiondef):
+--
+--   · Solo si entró plata: plan distinto de 'gratis' e importe > 0. Y, como
+--     esta puerta también recibe estados que no son un cobro, solo con
+--     estado 'activa'. Una 'prueba' (trialing de Stripe), una 'morosa' (la
+--     tarjeta rebotó), una 'cancelada' o una 'vencida' no son plata que
+--     entró. Cuando termina la prueba y Stripe cobra de verdad, el evento
+--     llega con 'activa' y ahí nace.
+--
+--   · Solo si la empresa tiene un referido con un socio activo.
+--
+--   · base   = base_de_comision(empresa, plan, importe): el precio de lista
+--              de UN mes del plan (102).
+--     monto  = monto_de_comision(empresa, base, %, importe): el porcentaje
+--              de la base, nunca más de lo que entró (102).
+--     importe = lo que entró en este cobro (103).
+--
+--     Las dos funciones miran la moneda de la suscripción antes que la de
+--     la empresa. Por eso el bloque va DESPUÉS del upsert: para cuando se
+--     calcula, `suscripciones.moneda` ya es la moneda del pago (`p_moneda`).
+--     Un negocio en guaraníes que paga en dólares con tarjeta recibe una
+--     base de 19 (la lista en USD) y un monto de 9,50, y no una base de
+--     110.000 comparada contra un importe de 19.
+--
+--   · Una sola vez por negocio, y eso lo garantiza el índice único de
+--     `comisiones` sobre `empresa_id`, no el acordarse. Esto importa más
+--     acá que en la transferencia: Stripe manda un
+--     `customer.subscription.updated` en cada renovación, cada cambio de
+--     plan y cada cambio de tarjeta, todos con estado 'activa' y el importe
+--     del precio. El primero que llega con plata crea la comisión; los
+--     demás chocan con el índice y no pasa nada. Si el negocio ya había
+--     pagado por transferencia y generado la suya, la tarjeta tampoco crea
+--     otra.
+--
+-- Una diferencia con `cambiar_plan_cuenta`, y es a propósito: allá solo se
+-- ataja el choque con el índice (`unique_violation`); cualquier otro error
+-- tira abajo todo el cambio de plan, y eso está bien porque del otro lado
+-- hay una persona mirando el panel que ve el error y lo arregla. Acá del
+-- otro lado hay un webhook: si la comisión fallara por cualquier otra cosa,
+-- el cliente que YA pagó se quedaría sin su plan, y Stripe reintentaría el
+-- mismo evento durante días con el mismo resultado. El que pagó no puede
+-- quedar afuera por un problema entre Orden y el socio. Entonces otro
+-- error en la comisión no frena la activación: deja un WARNING en el log
+-- de Postgres con la empresa y el motivo, para que se pague a mano.
+--
+-- 3. EL COBRO NO SE ANOTA COMO INGRESO DE ORDEN, TODAVÍA
+--
+-- `cambiar_plan_cuenta` además anota el cobro como un ingreso en la
+-- empresa de Orden (`ajustes_orden.empresa_id`), y la comisión guarda ese
+-- movimiento. `aplicar_suscripcion` no lo hizo nunca, y esta migración NO
+-- lo agrega: es otra decisión (con qué método de pago, si el importe es
+-- bruto o neto de lo que se queda Stripe, qué pasa con los reembolsos y
+-- con cada renovación, que sí es un ingreso cada mes) y merece su propia
+-- migración con sus propias pruebas. Por eso la comisión que nace acá
+-- lleva `movimiento_id` en null, como las que nacen por transferencia
+-- cuando no hay empresa de Orden elegida (063): listar_comisiones y el
+-- panel ya saben mostrarla.
+--
+-- La consecuencia, para que nadie se sorprenda: una comisión nacida por
+-- tarjeta no se cae sola si el cobro se anula (eso cuelga del movimiento,
+-- 060) y hay que anularla a mano si hay un reembolso.
+--
+-- LO QUE NO CAMBIA
+--
+-- Todo lo demás es copia EXACTA de la versión viva: la firma de 11
+-- argumentos, los estados, el upsert, `orden.suscripcion_confiable`, que
+-- no devuelve nada, y que es exclusiva de service_role. Los permisos se
+-- reescriben igual (misma firma: `create or replace` los conserva), para
+-- que este archivo diga por sí solo quién puede llamarla.
+--
+-- No hay mensajes nuevos: 'Plan desconocido: %' y 'Estado desconocido: %'
+-- ya tienen su portugués en src/lib/mensajes-base.ts.
+--
+-- Idempotente: son un `create or replace` y un revoke/grant.
+-- ============================================================
+
+create or replace function public.aplicar_suscripcion(
+  p_empresa uuid,
+  p_plan text,
+  p_estado text default 'activa',
+  p_periodo_inicio timestamptz default null,
+  p_periodo_fin timestamptz default null,
+  p_proveedor text default null,
+  p_customer_id text default null,
+  p_subscription_id text default null,
+  p_periodo text default 'mensual',
+  p_moneda text default null,
+  p_importe numeric default null
+)
+returns void language plpgsql security definer set search_path = public as $fn$
+declare
+  v_socio uuid;
+  v_pct   numeric;
+  v_base  numeric;
+begin
+  -- 'basico' faltaba desde la 077 (ver la cabecera de la 104).
+  if p_plan not in ('gratis', 'basico', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', p_plan using errcode = '22023';
+  end if;
+  if p_estado not in ('activa', 'prueba', 'vencida', 'cancelada', 'morosa') then
+    raise exception 'Estado desconocido: %', p_estado using errcode = '22023';
+  end if;
+
+  insert into public.suscripciones (
+    empresa_id, plan, estado, periodo_inicio, periodo_fin,
+    proveedor_pago, customer_id_externo, subscription_id_externo,
+    periodo, moneda, importe, updated_at
+  )
+  values (p_empresa, p_plan, p_estado, p_periodo_inicio, p_periodo_fin,
+          p_proveedor, p_customer_id, p_subscription_id,
+          coalesce(p_periodo, 'mensual'), p_moneda, p_importe, now())
+  on conflict (empresa_id) do update set
+    plan = excluded.plan,
+    estado = excluded.estado,
+    periodo_inicio = excluded.periodo_inicio,
+    periodo_fin = excluded.periodo_fin,
+    proveedor_pago = coalesce(excluded.proveedor_pago, public.suscripciones.proveedor_pago),
+    customer_id_externo = coalesce(excluded.customer_id_externo, public.suscripciones.customer_id_externo),
+    subscription_id_externo = coalesce(excluded.subscription_id_externo, public.suscripciones.subscription_id_externo),
+    periodo = coalesce(excluded.periodo, public.suscripciones.periodo),
+    moneda = coalesce(excluded.moneda, public.suscripciones.moneda),
+    importe = coalesce(excluded.importe, public.suscripciones.importe),
+    cancela_al_vencer = (excluded.estado = 'cancelada'),
+    updated_at = now();
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas set plan = p_plan where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  -- ---- la comisión de quien trajo al cliente (104) ----
+  -- Las mismas reglas que cambiar_plan_cuenta (103): solo si entró plata,
+  -- la mitad del precio de lista de un mes, nunca más de lo que entró, y
+  -- una sola vez por negocio por el índice único. Va después del upsert
+  -- para que base y monto usen la moneda del pago.
+  if p_estado = 'activa' and p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select r.socio_id into v_socio
+    from public.referidos r
+    join public.socios s on s.id = r.socio_id
+    where r.empresa_id = p_empresa and s.activo;
+
+    if v_socio is not null then
+      select coalesce(a.comision_porcentaje, 50) into v_pct
+      from public.ajustes_orden a where a.unica;
+
+      begin
+        v_base := public.base_de_comision(p_empresa, p_plan, p_importe);
+
+        -- Sin movimiento: la tarjeta todavía no anota el ingreso de Orden.
+        insert into public.comisiones (
+          socio_id, empresa_id, movimiento_id, base, porcentaje, monto, importe
+        ) values (
+          v_socio, p_empresa, null, v_base, coalesce(v_pct, 50),
+          public.monto_de_comision(p_empresa, v_base, coalesce(v_pct, 50), p_importe),
+          p_importe
+        );
+      exception
+        when unique_violation then
+          -- Ya cobró por este negocio (una renovación, o pagó antes por
+          -- transferencia). Se paga una sola vez: el primer pago.
+          null;
+        when others then
+          -- El que pagó no se queda sin su plan por la comisión: se avisa
+          -- en el log y se paga a mano.
+          raise warning 'aplicar_suscripcion: la comisión de la empresa % no se pudo generar: %',
+            p_empresa, sqlerrm;
+      end;
+    end if;
+  end if;
+end $fn$;
+
+revoke all on function public.aplicar_suscripcion(
+  uuid, text, text, timestamptz, timestamptz, text, text, text, text, text, numeric)
+  from public, anon, authenticated;
+grant execute on function public.aplicar_suscripcion(
+  uuid, text, text, timestamptz, timestamptz, text, text, text, text, text, numeric)
+  to service_role;
+
+
+-- ############################################################
+-- ##  105_la_comision_en_guaranies.sql
+-- ############################################################
+
+-- ============================================================
+-- 105 · LA COMISIÓN EN GUARANÍES
+-- ============================================================
+--
+-- Decisión de Matías del 23/09/2026 (no se re-discute): la suscripción de
+-- Orden se cobra SIEMPRE en guaraníes. Bancard le permite una sola moneda
+-- y eligió guaraníes. En pantalla el precio grande va en guaraníes, con un
+-- «≈ US$ 19» chico de referencia que no se cobra, y el que tiene una
+-- tarjeta de otro país deja que su banco convierta. Los precios no
+-- cambian: las filas en USD de `precios` siguen ahí, como referencia.
+--
+-- Esta migración lleva esa decisión a la comisión del socio. La regla de
+-- la 102 no cambia —la mitad del precio de lista de UN mes del plan, nunca
+-- más de lo que entró (103)—; cambia de qué moneda se toma esa lista.
+--
+-- LO QUE HACÍA LA 102, Y POR QUÉ ESTABA BIEN EN SU MOMENTO
+--
+-- `base_de_comision` y `monto_de_comision` elegían la moneda así:
+--
+--     coalesce(suscripciones.moneda, empresas.moneda, 'PYG')
+--
+-- En producción `suscripciones.moneda` es null en TODAS las suscripciones
+-- (verificado el 23/09: 7 de 7). Solo la escribe `aplicar_suscripcion`, la
+-- puerta de la pasarela, que hoy está apagada; `cambiar_plan_cuenta`, el
+-- cobro por transferencia —el único camino real—, nunca la toca. Con
+-- «null = guaraníes» a secas, la 102 temía esto: una cuenta argentina que
+-- paga Premium con 60.000 ARS tomaba de base la lista en guaraníes
+-- (250.000); la mitad, 125.000, quedaba topada en los 60.000 que entraron y
+-- el socio se llevaba EL 100 % del cobro. Para evitarlo, la 102 supuso que
+-- el que lleva su negocio en pesos paga en pesos, y cayó en
+-- `empresas.moneda`.
+--
+-- POR QUÉ YA NO APLICA
+--
+-- Desde el 23/09 esa suposición es falsa: nadie paga en su moneda, todos
+-- pagan en guaraníes. `empresas.moneda` dice en qué moneda LLEVA SUS
+-- CUENTAS el negocio, no en qué moneda le paga a Orden. Y caer en ella
+-- ahora da el error al revés, que es peor:
+--
+--     un sojero que lleva el campo en dólares paga Básico por transferencia
+--       entró              90.200 Gs (con el descuento de la prueba, 078)
+--       moneda elegida     USD (la de la empresa: suscripciones.moneda null)
+--       base               19        (la lista de Básico en USD)
+--       monto              9,50      (la mitad, con centavos)
+--       y el monto se guarda sin moneda, al lado de un importe en guaraníes:
+--       el socio cobraría 9,50 GUARANÍES por un cliente que pagó 90.200.
+--
+-- Lo correcto es base 110.000 y monto 55.000: la lista de Básico en la
+-- moneda en que entró la plata.
+--
+-- LA REGLA NUEVA: `coalesce(suscripciones.moneda, 'PYG')`
+--
+--   · null —todo cobro por transferencia, que es hoy el 100 %— es
+--     guaraníes, porque así se cobra.
+--   · Si algún día un cobro llega en otra moneda, lo dice
+--     `suscripciones.moneda`, y la escribe la pasarela: `aplicar_suscripcion`
+--     (104, verificada en producción el 23/09 con pg_get_functiondef) hace
+--     el upsert con `moneda = coalesce(p_moneda, la de antes)` ANTES de
+--     calcular base y monto, así que la comisión usa la moneda del pago que
+--     la generó. Una suscripción con moneda USD explícita sigue tomando la
+--     lista en USD (19, 32, 42) y redondeando con centavos.
+--   · `empresas.moneda` ya no se mira. El caso que la 102 cuidaba (un
+--     argentino que paga 60.000 PESOS) no puede pasar por transferencia:
+--     paga en guaraníes. Y si pagara 60.000 guaraníes por un Premium de
+--     250.000 —un cobro parcial o de prueba—, la base es 250.000, la mitad
+--     125.000 y el monto queda topado en los 60.000 que entraron: es la
+--     salvaguarda de siempre (102), la misma que con 1.000 de prueba en una
+--     cuenta en guaraníes, y no depende de la moneda de la empresa.
+--
+-- Si no hay precio de lista para esa moneda (BRL, ARS hoy), la base sigue
+-- siendo el importe, como desde la 102. El redondeo sigue la moneda
+-- elegida: guaraníes sin decimales, el resto con dos.
+--
+-- LOS QUE LLAMAN A ESTAS FUNCIONES NO CAMBIAN
+--
+-- Se verificó en producción (pg_proc, prosrc) que solo las llaman tres
+-- funciones, y ninguna necesita tocarse:
+--
+--   · `cambiar_plan_cuenta` (103): no escribe `suscripciones.moneda`; con
+--     la regla nueva, null = guaraníes, que es como se cobró.
+--   · `asignar_referido` (103): mismo caso; el primer pago salió de
+--     `registro_admin`, es decir, de una transferencia.
+--   · `aplicar_suscripcion` (104): escribe la moneda del pago antes de
+--     calcular (ver arriba).
+--
+-- NADA QUE CORREGIR HACIA ATRÁS
+--
+-- En producción la tabla `comisiones` está vacía (verificado el 23/09): no
+-- hay ninguna comisión calculada con la moneda de la empresa que haya que
+-- rehacer.
+--
+-- LO QUE NO CAMBIA
+--
+-- Todo lo demás es copia EXACTA de lo vivo (la 102, verificada en
+-- producción el 23/09 con pg_get_functiondef): las firmas, `language sql
+-- stable security definer`, el `search_path`, el left join a
+-- `suscripciones` (una empresa sin fila de suscripción cae en guaraníes),
+-- el tipo de cuenta, el período mensual, `precios.activo` sin mirar, el
+-- `least(..., p_importe)`, y que son internas: revocadas a public, anon y
+-- authenticated. Los permisos se reescriben igual (mismas firmas:
+-- `create or replace` los conserva) para que este archivo diga por sí solo
+-- quién puede llamarlas.
+--
+-- No hay mensajes nuevos: estas funciones no lanzan errores.
+--
+-- Idempotente: son dos `create or replace` y dos revoke.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA BASE: EL PRECIO DE LISTA DE UN MES, EN LA MONEDA DEL COBRO
+--
+--    La moneda del cobro es la de la suscripción; si es null, guaraníes
+--    (105: antes caía en la de la empresa). Si no hay precio de lista para
+--    esa combinación, el importe: la regla de antes.
+-- ------------------------------------------------------------
+create or replace function public.base_de_comision(
+  p_empresa uuid,
+  p_plan    text,
+  p_importe numeric
+)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select coalesce((
+    select pr.importe
+    from public.empresas e
+    left join public.suscripciones s on s.empresa_id = e.id
+    join public.precios pr
+      on pr.tipo_cuenta = e.tipo_cuenta
+     and pr.plan = p_plan
+     and pr.moneda = coalesce(s.moneda, 'PYG')
+     and pr.periodo = 'mensual'
+    where e.id = p_empresa
+    limit 1
+  ), p_importe);
+$fn$;
+
+-- ------------------------------------------------------------
+-- 2. EL MONTO: EL PORCENTAJE DE LA BASE, NUNCA MÁS DE LO QUE ENTRÓ
+--
+--    Guaraníes sin decimales; el resto con dos. La moneda sale igual que
+--    en `base_de_comision`: la de la suscripción, y si no, guaraníes.
+-- ------------------------------------------------------------
+create or replace function public.monto_de_comision(
+  p_empresa uuid,
+  p_base    numeric,
+  p_pct     numeric,
+  p_importe numeric
+)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select least(
+    round(p_base * p_pct / 100,
+      case when coalesce((select s.moneda
+                          from public.empresas e
+                          left join public.suscripciones s on s.empresa_id = e.id
+                          where e.id = p_empresa), 'PYG') = 'PYG'
+           then 0 else 2 end),
+    p_importe
+  );
+$fn$;
+
+revoke all on function public.base_de_comision(uuid, text, numeric) from public, anon, authenticated;
+revoke all on function public.monto_de_comision(uuid, numeric, numeric, numeric) from public, anon, authenticated;

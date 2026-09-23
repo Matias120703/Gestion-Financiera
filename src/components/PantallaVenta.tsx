@@ -453,8 +453,15 @@ export function PantallaVenta({
           </div>
         )}
 
-        {/* Aire para que la barra de cobro no tape el último producto. */}
-        {carrito.length > 0 && <div className="h-36 lg:hidden" aria-hidden />}
+        {/* Aire para que la barra de cobro no tape el último producto. La
+            barra crece 52 px (44 del chip + 8 de aire) por cada fila de
+            chips que se suma —el banco, la campaña—, y el aire con ella. */}
+        {carrito.length > 0 && (
+          <div
+            className="lg:hidden" aria-hidden
+            style={{ height: `${9 + 3.25 * ((cuentasPosibles.length > 1 ? 1 : 0) + (campanas.length > 0 ? 1 : 0))}rem` }}
+          />
+        )}
       </div>
 
       {/* --------------------------- carrito de escritorio --------------------------- */}
@@ -477,12 +484,16 @@ export function PantallaVenta({
       {carrito.length > 0 && (
         <div className="zona-segura-abajo fixed inset-x-0 bottom-[68px] z-40 lg:hidden">
           <div className="subir mx-3 overflow-hidden rounded-2xl bg-noche shadow-[0_14px_38px_-10px_rgba(13,27,22,.75)]">
-            {/* Método de cobro: visible siempre, un toque para cambiarlo. */}
-            <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pb-1 pt-3">
+            {/* Método de cobro: visible siempre, un toque para cambiarlo.
+                Todos los chips de esta barra miden 44 px, lo mínimo para un
+                dedo; si no entran a lo ancho, su fila se desliza (nunca la
+                pantalla). La fila de arriba perdió su `pb-1` para que la
+                barra base quede de la misma altura que con los chips de 40. */}
+            <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pt-3">
               {METODOS.map((m) => (
                 <button
                   key={m.valor} type="button" onClick={() => elegirMetodo(m.valor)}
-                  className={`inline-flex min-h-[40px] shrink-0 items-center rounded-xl px-3.5 text-[13.5px] font-bold transition active:scale-[.97] ${
+                  className={`inline-flex min-h-[44px] shrink-0 items-center rounded-xl px-3.5 text-[13.5px] font-bold transition active:scale-[.97] ${
                     metodo === m.valor ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
                   }`}
                 >
@@ -499,7 +510,7 @@ export function PantallaVenta({
                 {cuentasPosibles.map((c) => (
                   <button
                     key={c.id} type="button" onClick={() => setCuentaElegida(c.id)} aria-pressed={cuentaMarcada === c.id}
-                    className={`inline-flex min-h-[36px] max-w-[60vw] shrink-0 items-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold transition active:scale-[.97] ${
+                    className={`inline-flex min-h-[44px] max-w-[60vw] shrink-0 items-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold transition active:scale-[.97] ${
                       cuentaMarcada === c.id ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
                     }`}
                   >
@@ -624,7 +635,7 @@ function Carrito(props: {
       <div className="flex items-center justify-between px-4 pb-2 pt-4">
         <h2 className="text-[15px] font-bold tracking-tight">{t.venta.estaVenta}</h2>
         {carrito.length > 0 && (
-          <button type="button" onClick={onLimpiar} className="min-h-[40px] px-2 text-[13px] font-semibold text-tinta/40 hover:text-rojo">
+          <button type="button" onClick={onLimpiar} className="-my-1 min-h-[44px] px-2 text-[13px] font-semibold text-tinta/40 hover:text-rojo">
             {t.venta.vaciar}
           </button>
         )}

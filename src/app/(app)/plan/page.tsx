@@ -6,8 +6,8 @@ import { conJerga } from '@/i18n/jergas';
 import { fichaDe } from '@/lib/rubros';
 import { precio as precioTexto } from '@/lib/formato';
 import {
-  LIMITES_VISIBLES, MONEDAS_DE_COBRO, PLANES_PAGOS, mesesDeRegalo, monedaDeCobro, precioDe, traerPrecios,
-  type PlanPago,
+  LIMITES_VISIBLES, MONEDA_DE_REFERENCIA, PLANES_PAGOS, mesesDeRegalo, monedaDeCobro, precioDe, traerPrecios,
+  traerReferencia, type PlanPago,
 } from '@/lib/precios';
 import type { PeriodoCobro } from '@/lib/tipos';
 import { SelectorCobro } from '@/components/SelectorCobro';
@@ -29,10 +29,14 @@ export const dynamic = 'force-dynamic';
  * Los datos no se borran ni se pierden: quedan intactos esperando a que se
  * active el plan.
  *
- * EL PRECIO SE ELIGE EN SU MONEDA. Guaraníes para quien lee en español,
- * dólares para el resto, y se puede cambiar a mano. Ver un precio en una
- * moneda ajena obliga a hacer una cuenta mental antes de decidir, y esa
- * cuenta es donde se pierde la venta.
+ * EL PRECIO VA SIEMPRE EN GUARANÍES, CON LOS DÓLARES AL LADO (23/09).
+ * La suscripción se cobra solo en guaraníes (Bancard deja una sola moneda y
+ * Matías eligió guaraníes), así que ya no hay selector Gs / US$: mostrar un
+ * precio en dólares que después se cobra en guaraníes sería prometer una
+ * cifra que no es la que se paga. Pero a quien piensa en dólares —un sojero,
+ * un brasileño— un importe de seis cifras no le dice nada de entrada, así
+ * que al lado va «≈ US$ 19» chico, de la fila en dólares del mismo plan y
+ * período. Es referencia: no se cobra. Si esa fila no existe, no se muestra.
  */
 export default async function PaginaPlan({
   searchParams: busqueda,
@@ -47,10 +51,16 @@ export default async function PaginaPlan({
   const t = conJerga(await textos(), ficha.jerga, ctx.idioma);
   const locale = FICHA[ctx.idioma].locale;
 
-  const moneda = monedaDeCobro(ctx.idioma, typeof searchParams.moneda === 'string' ? searchParams.moneda : null);
+  // Siempre guaraníes. Un `?moneda=USD` de un enlace viejo ya no cambia nada.
+  const moneda = monedaDeCobro();
   const periodo: PeriodoCobro = searchParams.periodo === 'anual' ? 'anual' : 'mensual';
 
-  const precios = await traerPrecios(moneda, ctx.empresa.tipo_cuenta);
+  // La referencia en dólares no puede tumbar la pantalla donde se cobra: si
+  // falla, vuelve vacía y los precios en guaraníes se ven igual.
+  const [precios, referencia] = await Promise.all([
+    traerPrecios(moneda, ctx.empresa.tipo_cuenta),
+    traerReferencia(ctx.empresa.tipo_cuenta),
+  ]);
   const sus = ctx.suscripcion;
   /**
    * QUÉ PLANES SE OFRECEN: LOS DE SU RUBRO (102).
@@ -198,9 +208,7 @@ export default async function PaginaPlan({
       )}
 
       <SelectorCobro
-        moneda={moneda}
         periodo={periodo}
-        monedas={[...MONEDAS_DE_COBRO]}
         etiquetaMensual={t.plan.mensual}
         etiquetaAnual={t.plan.anual}
         etiquetaAhorro={regalo > 0 ? t.plan.ahorroAnual(regalo) : ''}
@@ -213,6 +221,7 @@ export default async function PaginaPlan({
       <div className={`grid gap-4 ${planesVisibles.length === 1 ? 'sm:max-w-md' : planesVisibles.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
         {planesVisibles.map((plan) => {
           const precio = precioDe(precios, plan, periodo);
+          const enDolares = precioDe(referencia, plan, periodo);
           const limites = LIMITES_VISIBLES[plan];
           /**
            * «Tu plan actual» solo si LO ESTÁ PAGANDO.
@@ -238,6 +247,10 @@ export default async function PaginaPlan({
                     : t.plan.descuentoEnPrecio(Math.round(descuento.porcentaje)))
                 : null}
               precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : t.comun.sinDato}
+              referencia={precio && enDolares
+                ? t.plan.referenciaEnDolares(precioTexto(Number(enDolares.importe), MONEDA_DE_REFERENCIA, locale))
+                : null}
+              ayudaReferencia={t.plan.referenciaEnDolaresAyuda}
               porPeriodo={periodo === 'anual' ? `/ ${t.plan.porAnio}` : `/ ${t.plan.porMes}`}
               actual={esActual}
               etiquetaActual={t.plan.actual}
@@ -285,7 +298,6 @@ export default async function PaginaPlan({
                   <BotonPagar
                     plan={plan}
                     periodo={periodo}
-                    moneda={moneda}
                     etiqueta={t.plan.elegir}
                     sinPasarela={t.plan.pagoNoDisponible}
                   />
@@ -295,6 +307,10 @@ export default async function PaginaPlan({
           );
         })}
       </div>
+
+      {/* Pegada a los precios: quien tiene una tarjeta de otro país tiene
+          que saber ANTES de elegir que se le cobra en guaraníes. */}
+      <p className="text-[12.5px] leading-relaxed text-tinta/55">{t.plan.cobroEnGuaranies}</p>
 
       {/* Va con los precios porque es parte de la cuenta: el que está
           mirando cuánto le sale tiene que saber que puede recuperar parte
@@ -330,9 +346,13 @@ export default async function PaginaPlan({
 
 function Tarjeta({
   nombre, precio, porPeriodo, puntos, incluye, actual, etiquetaActual, destacado = false, pie = null, nota = null,
+  referencia = null, ayudaReferencia = '',
 }: {
   nombre: string;
   precio: string;
+  /** «≈ US$ 19»: la referencia en dólares. No se cobra; sin fila, null. */
+  referencia?: string | null;
+  ayudaReferencia?: string;
   porPeriodo: string;
   puntos: string[];
   incluye: string;
@@ -352,9 +372,14 @@ function Tarjeta({
         )}
       </div>
 
-      <p className="mt-3 flex items-baseline gap-1.5">
+      <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5">
         <span className="text-[24px] font-titulo font-extrabold tracking-tight tabular-nums">{precio}</span>
         {porPeriodo && <span className="text-[13px] font-semibold text-tinta/45">{porPeriodo}</span>}
+        {referencia && (
+          <span className="text-[12.5px] font-semibold tabular-nums text-tinta/40" title={ayudaReferencia}>
+            {referencia}
+          </span>
+        )}
       </p>
 
       {nota && (

@@ -407,6 +407,7 @@ export const pt: Textos = {
     telefono: 'Telefone',
     telefonoEjemplo: '0981 234 567',
     telefonoDetalle: 'É por onde vamos te falar se acontecer algo com sua conta. Não passamos pra ninguém.',
+    monedaAgricultura: 'Se você compra os insumos e vende o grão em dólares, escolha dólares. Se vende em guaranis para o cerealista ou na feira, escolha guaranis.',
     aQueTeDedicas: 'Com o que você trabalha',
     aQueTeDedicasEjemplo: 'Perfumaria, oficina mecânica, fazenda…',
     opcional: 'Opcional',
@@ -856,7 +857,6 @@ export const pt: Textos = {
 
     cuantoCuesta: 'Quanto custa',
     preciosBajada: 'Você testa primeiro e decide depois: não pedimos cartão pra começar. E se um dia não quiser continuar, **seus dados não são apagados**: ficam guardados, intactos, e voltam a estar lá no dia em que você reativar seu plano.',
-    preciosDolares: 'Os preços em dólares são de referência. A cobrança é por transferência e combinamos pelo WhatsApp: fale com a gente e dizemos como pagar do seu país.',
     empezarLos: (dias: string) => `Começar os ${dias}`,
     basicoPara: 'Para quem toca o negócio sozinho',
     basicoPuntos: [
@@ -1777,6 +1777,9 @@ export const pt: Textos = {
     elegir: 'Escolher este plano',
     actual: 'Seu plano atual',
     ahorroAnual: (n: number) => (n === 1 ? 'Um mês grátis' : `${n} meses grátis`),
+    cobroEnGuaranies: 'Cobrado em guaranis. Se o seu cartão for de outro país, o seu banco faz a conversão.',
+    referenciaEnDolares: (monto: string) => `≈ ${monto}`,
+    referenciaEnDolaresAyuda: 'Referência em dólares. Não é cobrado em dólares.',
     enPrueba: 'Você está testando o Orden',
     diasDePrueba: (n: number) => (n === 1 ? 'Falta 1 dia de teste' : `Faltam ${n} dias de teste`),
     pruebaVence: 'Quando terminar, é preciso ativar um plano pra continuar usando o Orden.',

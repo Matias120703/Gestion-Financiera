@@ -461,14 +461,27 @@ ok('una cuenta personal también tiene su nombre en portugués',
 
 // --- Qué rubros se ofrecen al crear la cuenta ---
 //
-// Agricultura funciona pero no se ofrece: no se probó con un agricultor de
-// verdad. Sacarla de la lista NO la rompe — la ficha sigue entera y una
-// cuenta que ya la tenga guardada sigue andando. Por eso se comprueban las
-// dos cosas: que no se ofrezca, y que igual siga funcionando.
+// Agricultura se ofrece desde el 23/09 (decisión de Matías), entre el
+// trainer y la ganadería. La prueba con un productor real sigue pendiente;
+// eso no se comprueba acá, pero que el rubro esté en la lista sí.
 ok('la lista que se ofrece al registrarse',
-  LISTA_RUBROS.map((r) => r.clave), ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia']);
-ok('agricultura no se ofrece',
-  LISTA_RUBROS.some((r) => r.clave === 'agricultura'), false);
+  LISTA_RUBROS.map((r) => r.clave),
+  ['comercio', 'servicios', 'clases', 'entrenamiento', 'agricultura', 'ganaderia']);
+ok('agricultura se ofrece al crear una cuenta',
+  LISTA_RUBROS.some((r) => r.clave === 'agricultura'), true);
+ok('con su nombre en los dos idiomas',
+  [rubroVisible(LISTA_RUBROS.find((r) => r.clave === 'agricultura'), 'es').nombre,
+    rubroVisible(LISTA_RUBROS.find((r) => r.clave === 'agricultura'), 'pt').nombre.length > 0],
+  ['Agricultura', true]);
+// La ayuda de la moneda del negocio, solo para el agricultor. Es la moneda
+// de SUS DATOS (empresas.moneda), no la de la suscripción, que se cobra
+// siempre en guaraníes.
+{
+  const form = require('fs').readFileSync('src/components/DatosDelNegocio.tsx', 'utf8');
+  ok('el alta le explica al agricultor qué moneda elegir',
+    /datos\.rubro === 'agricultura'[\s\S]{0,200}t\.registro\.monedaAgricultura/.test(form), true);
+  ok('y solo si no es una cuenta personal', /!esPersonal && datos\.rubro === 'agricultura'/.test(form), true);
+}
 
 // Clases y cursos (087) estuvo fuera del alta mientras se rehacía (090).
 // Vuelve a la lista a pedido de Matías (22/09): un profe tiene que poder
@@ -2005,6 +2018,152 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('activar cierra la ficha y recarga con el resultado arriba',
     /onHecho\(\[contar\?\.\(data\), comision\]/.test(panelAdmin), true);
   ok('y el resultado dice de quién es la cuenta', panelAdmin.includes('la cuenta de ${quienEs(cuenta)} quedó activa'), true);
+}
+
+// --- La tarjeta conoce el Básico ---
+// El webhook convertía todo lo que no fuera 'negocio' en 'pro': un Básico
+// pagado con tarjeta quedaba Pro. Y el checkout pedía los precios solo por
+// moneda: una cuenta personal pagaba el Pro de un negocio.
+{
+  const fs = require('fs');
+  const { esPlanPago, estadoDeStripe, planDeMetadatos, planParaAplicar, NOMBRE_DE_PRODUCTO } = require('../.compilado/pagos.js');
+
+  ok('los tres planes pagos, y nada más',
+    ['basico', 'pro', 'negocio', 'gratis', 'Pro', 'premium', '', null, undefined, 3].map(esPlanPago),
+    [true, true, true, false, false, false, false, false, false, false]);
+
+  ok('la sesión y la suscripción: metadata.plan',
+    ['basico', 'pro', 'negocio'].map((plan) => planDeMetadatos({ metadata: { plan } })), ['basico', 'pro', 'negocio']);
+  ok('un Básico ya no sale Pro', planDeMetadatos({ metadata: { plan: 'basico' } }), 'basico');
+  ok('la factura: subscription_details.metadata',
+    planDeMetadatos({ metadata: {}, subscription_details: { metadata: { plan: 'basico' } } }), 'basico');
+  ok('la factura con la API nueva: parent.subscription_details.metadata',
+    planDeMetadatos({ metadata: {}, parent: { subscription_details: { metadata: { plan: 'negocio' } } } }), 'negocio');
+  ok('sin plan, o con uno raro: null, no Pro',
+    [{}, { metadata: {} }, { metadata: { plan: 'gratis' } }, { metadata: { plan: 'enterprise' } },
+      { metadata: { plan: 'PRO' } }, null, undefined].map(planDeMetadatos),
+    [null, null, null, null, null, null, null]);
+  ok('uno raro arriba no se tapa con uno válido abajo',
+    planDeMetadatos({ metadata: { plan: 'enterprise' }, subscription_details: { metadata: { plan: 'negocio' } } }), null);
+
+  ok('con plan en los metadatos, ese, sea cual sea el estado',
+    ['activa', 'prueba', 'morosa', 'cancelada'].map((e) => planParaAplicar('basico', e, 'negocio')),
+    ['basico', 'basico', 'basico', 'basico']);
+  ok('sin plan, activar no adivina',
+    [planParaAplicar(null, 'activa', 'pro'), planParaAplicar(null, 'prueba', 'basico')], [null, null]);
+  ok('sin plan, morosa o cancelada siguen con el que tenía',
+    [planParaAplicar(null, 'morosa', 'basico'), planParaAplicar(null, 'cancelada', 'negocio')], ['basico', 'negocio']);
+  ok('y si no tenía uno pago, tampoco se inventa',
+    [planParaAplicar(null, 'morosa', 'gratis'), planParaAplicar(null, 'cancelada', null)], [null, null]);
+
+  // Un status de Stripe que no se conoce ya no cae en 'activa': con el importe
+  // al lado, la 104 lo tomaba como cobro y le generaba la comisión al socio.
+  const sub = (status, extra = {}) => estadoDeStripe('customer.subscription.updated', { status, ...extra });
+  ok('los status que se conocen',
+    ['active', 'trialing', 'past_due', 'unpaid', 'canceled'].map((s) => sub(s)),
+    ['activa', 'prueba', 'morosa', 'morosa', 'cancelada']);
+  ok('incomplete, incomplete_expired, paused, raro o ausente: no se aplica',
+    ['incomplete', 'incomplete_expired', 'paused', 'ACTIVE', 'algo', '', null, undefined].map((s) => sub(s)),
+    [null, null, null, null, null, null, null, null]);
+  ok('sin objeto, tampoco', [estadoDeStripe('customer.subscription.created', undefined),
+    estadoDeStripe('customer.subscription.created', {})], [null, null]);
+  ok('cancela al vencer: lo que estaba al día pasa a cancelada',
+    [sub('active', { cancel_at_period_end: true }), sub('trialing', { cancel_at_period_end: true })],
+    ['cancelada', 'cancelada']);
+  ok('cancela al vencer no convierte un incomplete ni una morosa en cancelada (conservaría el plan)',
+    [sub('incomplete', { cancel_at_period_end: true }), sub('incomplete_expired', { cancel_at_period_end: true }),
+      sub('past_due', { cancel_at_period_end: true })],
+    [null, null, 'morosa']);
+  ok('la sesión de checkout activa solo con el pago confirmado',
+    ['paid', 'unpaid', 'no_payment_required', undefined].map((payment_status) =>
+      estadoDeStripe('checkout.session.completed', { status: 'complete', payment_status })),
+    ['activa', null, null, null]);
+
+  ok('el resumen de la tarjeta dice el nombre de la pantalla',
+    NOMBRE_DE_PRODUCTO, { basico: 'Orden Básico', pro: 'Orden Pro', negocio: 'Orden Premium' });
+
+  const checkout = fs.readFileSync('src/app/api/pagos/checkout/route.ts', 'utf8');
+  ok('el checkout deja pasar los tres planes', checkout.includes('if (!esPlanPago(plan))'), true);
+  ok('y ya no solo pro y negocio', checkout.includes("plan !== 'pro' && plan !== 'negocio'"), false);
+  ok('el precio sale de la lista de su tipo de cuenta',
+    /lista_precios', \{\s*p_moneda: moneda, p_tipo: empresa\.tipo_cuenta/.test(checkout)
+    && checkout.includes('p.tipo_cuenta === empresa.tipo_cuenta'), true);
+
+  // Sin comentarios: el que cuenta cómo era antes no es código.
+  const webhook = fs.readFileSync('src/app/api/pagos/webhook/route.ts', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ok('el webhook ya no convierte todo en pro',
+    webhook.includes("=== 'negocio' ? 'negocio' : 'pro'") || webhook.includes("?? 'pro'"), false);
+  ok('lee el plan con planDeMetadatos', (webhook.match(/planDeMetadatos\(objeto\)/g) || []).length, 2);
+  ok('el webhook toma el estado de estadoDeStripe y corta si no hay uno',
+    /const estado = estadoDeStripe\(tipo, objeto\);\s*if \(!estado\) \{/.test(webhook), true);
+  ok('y ya no tiene el «si no, activa»', /:\s*'activa';/.test(webhook) || webhook.includes("?? 'active'"), false);
+
+  // Vender en el celular: todo lo que se toca en la barra oscura, 44 px.
+  const venta = fs.readFileSync('src/components/PantallaVenta.tsx', 'utf8');
+  const barra = venta.slice(venta.indexOf('barra de cobro (celular)'), venta.indexOf('{detalleAbierto && ('));
+  ok('la barra de cobro no tiene controles de menos de 44 px',
+    (barra.match(/min-h-\[(\d+)px\]/g) || []).map((m) => Number(m.match(/\d+/)[0])).filter((n) => n < 44), []);
+  ok('vaciar el carrito, 44 px', /onClick=\{onLimpiar\} className="[^"]*min-h-\[44px\]/.test(venta), true);
+  ok('«Cambiar» de la moneda vista, 44 px',
+    fs.readFileSync('src/components/AvisoMonedaVista.tsx', 'utf8').includes('min-h-[44px]'), true);
+}
+
+// --- La suscripción se cobra siempre en guaraníes (23/09) ---
+// Bancard deja una sola moneda y Matías eligió guaraníes. El precio grande
+// va en guaraníes, «≈ US$ 19» chico al lado (de las filas en dólares, que no
+// se cobran), y se fue el selector Gs / US$. Sin comentarios en el código
+// que se mira: el que cuenta cómo era antes no es código.
+{
+  const fs = require('fs');
+  const sinComentarios = (ruta) => fs.readFileSync(ruta, 'utf8')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const precios = sinComentarios('src/lib/precios.ts');
+  const plan = sinComentarios('src/app/(app)/plan/page.tsx');
+  const portada = sinComentarios('src/app/page.tsx');
+  const boton = sinComentarios('src/components/BotonPagar.tsx');
+  const selector = sinComentarios('src/components/SelectorCobro.tsx');
+
+  ok('monedaDeCobro() ya no depende del idioma ni de lo elegido: guaraníes',
+    /export function monedaDeCobro\(\)[^{]*\{\s*return MONEDA_DE_LA_SUSCRIPCION;\s*\}/.test(precios)
+    && /MONEDA_DE_LA_SUSCRIPCION = 'PYG'/.test(precios), true);
+  ok('el botón de pagar manda PYG siempre y no recibe moneda',
+    [boton.includes("MONEDA_DEL_COBRO = 'PYG'"), boton.includes('moneda: MONEDA_DEL_COBRO'),
+      /moneda: string;/.test(boton)], [true, true, false]);
+  ok('la pantalla de planes no pasa moneda al botón', /<BotonPagar[^>]*moneda=/.test(plan), false);
+  ok('ni lee ?moneda= ni ofrece monedas',
+    [plan.includes('searchParams.moneda'), plan.includes('MONEDAS_DE_COBRO'), portada.includes('searchParams'),
+      portada.includes('MONEDAS_DE_COBRO'), portada.includes('?moneda=')], [false, false, false, false, false]);
+  ok('el selector solo elige el período', [selector.includes("ir('moneda'"), selector.includes('monedas')], [false, false]);
+  ok('la referencia en dólares sale de la fila del mismo plan y período',
+    [plan.includes('precioDe(referencia, plan, periodo)'),
+      /buscar\(referencia, x\.tipo_cuenta, x\.plan, x\.periodo\)/.test(portada)], [true, true]);
+  ok('y solo si hay precio en guaraníes al lado', /referencia=\{precio && enDolares/.test(plan), true);
+  ok('la línea de cómo se cobra, en las dos pantallas',
+    [plan.includes('t.plan.cobroEnGuaranies'), portada.includes('t.plan.cobroEnGuaranies')], [true, true]);
+  ok('el aviso de «los dólares son de referencia, se arregla por WhatsApp» se fue',
+    portada.includes('preciosDolares'), false);
+
+  // El servidor tampoco acepta otra moneda: un pedido armado a mano con
+  // `moneda: 'USD'` (o sin moneda, que antes caía en dólares) cobraba en
+  // dólares y dejaba `suscripciones.moneda = 'USD'`, y la comisión del socio
+  // se calculaba sobre la lista en dólares.
+  const checkoutSinComentarios = sinComentarios('src/app/api/pagos/checkout/route.ts');
+  ok('el checkout cobra siempre en guaraníes e ignora la moneda del pedido',
+    [checkoutSinComentarios.includes('const moneda = MONEDA_DE_LA_SUSCRIPCION;'),
+      checkoutSinComentarios.includes('cuerpo?.moneda'), checkoutSinComentarios.includes("'USD'")],
+    [true, false, false]);
+
+  const es = require('fs').readFileSync('src/i18n/textos/es.ts', 'utf8');
+  const pt = require('fs').readFileSync('src/i18n/textos/pt.ts', 'utf8');
+  ok('la línea en español, como la dijo Matías',
+    es.includes("cobroEnGuaranies: 'Se cobra en guaraníes. Si tu tarjeta es de otro país, tu banco lo convierte.'"), true);
+  ok('y en portugués',
+    pt.includes("cobroEnGuaranies: 'Cobrado em guaranis. Se o seu cartão for de outro país, o seu banco faz a conversão.'"), true);
+  ok('la ayuda del agricultor, en los dos idiomas',
+    [es.includes("monedaAgricultura: 'Si comprás los insumos y vendés el grano en dólares, elegí dólares. Si vendés en guaraníes al acopiador o en la feria, elegí guaraníes.'"),
+      pt.includes("monedaAgricultura: 'Se você compra os insumos e vende o grão em dólares, escolha dólares. Se vende em guaranis para o cerealista ou na feira, escolha guaranis.'")],
+    [true, true]);
 }
 
 // Las comprobaciones que esperan algo (una función async) se anotan en

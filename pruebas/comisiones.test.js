@@ -1003,24 +1003,65 @@ async function principal() {
 
     // Lo que pasa DE VERDAD en producción: `suscripciones.moneda` es null en
     // todas (solo la escribe el webhook de la pasarela, que no se usa; el cobro
-    // por transferencia nunca la toca). La moneda sale entonces de la empresa.
-    // Antes de este arreglo, con null se tomaba el precio en guaraníes: una
-    // cuenta en pesos que paga 60.001 ARS tenía base 250.000 PYG, la mitad
-    // quedaba topada en lo que entró y el socio se llevaba el 100 %.
+    // por transferencia nunca la toca).
+    //
+    // Hasta la 105 la moneda caía en la de la EMPRESA: la 102 suponía que el
+    // que lleva su negocio en pesos paga en pesos, y estas pruebas esperaban
+    // eso (ARS sin lista → base = lo que entró; USD → la lista en USD). Desde
+    // la decisión del 23/09 toda suscripción se cobra en guaraníes, y
+    // `empresas.moneda` dice en qué lleva sus cuentas el negocio, no en qué le
+    // paga a Orden. Con null, la lista es la de guaraníes (105).
+
+    // Un sojero que lleva el campo en dólares paga Básico por transferencia,
+    // con el descuento de la prueba: 90.200 Gs. Con la regla de la 102 la
+    // base era 19 (US$) y el monto 9,50 → el socio cobraba 9,50 guaraníes.
+    const b8 = await traido('dueno@dolares.com', 'Campo en dólares', { moneda: 'USD', rubro: 'agricultura' });
+    await monedaDeSuscripcion(b8.empresaId, null);
+    await cobrar(b8.empresaId, 'basico', 90200);
+    const c8 = await comisionDe(b8.empresaId);
+    ok('empresa en dólares que paga 90.200 por transferencia: la lista de Básico en guaraníes',
+      Number(c8.base), 110000);
+    ok('y el socio se lleva 55.000, no 9,50', Number(c8.monto), 55000);
+    ok('y queda anotado lo que entró', Number(c8.importe), 90200);
+
+    // Una cuenta en pesos que paga 60.000 GUARANÍES por Premium (un cobro
+    // parcial: la lista es 250.000). La base es la lista en guaraníes, la
+    // mitad 125.000, y el monto queda topado en lo que entró: la salvaguarda
+    // de siempre, la misma que con los 1.000 de prueba de b4. Con la 102 la
+    // base era lo que entró (ARS no tiene lista) y el monto la mitad, porque
+    // suponía que esa plata eran pesos.
     const b7 = await traido('dueno@pesos.com', 'Negocio en pesos', { moneda: 'ARS' });
     await monedaDeSuscripcion(b7.empresaId, null);
-    await cobrar(b7.empresaId, 'negocio', 60001);
+    await cobrar(b7.empresaId, 'negocio', 60000);
     const c7 = await comisionDe(b7.empresaId);
-    ok('suscripción sin moneda y empresa en pesos: sin lista en ARS, la base es lo que entró',
-      Number(c7.base), 60001);
-    ok('y el socio se lleva la mitad, con centavos, no el 100 %', Number(c7.monto), 30000.5);
+    ok('empresa en pesos que paga 60.000 Gs por Premium: la base es la lista en guaraníes',
+      Number(c7.base), 250000);
+    ok('y el monto no pasa de lo que entró', Number(c7.monto), 60000);
 
-    const b8 = await traido('dueno@dolares.com', 'Negocio en dólares', { moneda: 'USD' });
-    await monedaDeSuscripcion(b8.empresaId, null);
-    await cobrar(b8.empresaId, 'pro', 32);
-    const c8 = await comisionDe(b8.empresaId);
-    ok('suscripción sin moneda y empresa en dólares: la lista de Pro en USD', Number(c8.base), 32);
-    ok('y la comisión 16, no 32', Number(c8.monto), 16);
+    // Si algún día un cobro llega en otra moneda, lo dice la suscripción (la
+    // pasarela la escribe) y se respeta, sea cual sea la de la empresa.
+    const b9 = await traido('dueno@dolares-explicito.com', 'Tienda que pagó en dólares', { moneda: 'USD' });
+    await monedaDeSuscripcion(b9.empresaId, 'USD');
+    await cobrar(b9.empresaId, 'pro', 32);
+    const c9 = await comisionDe(b9.empresaId);
+    ok('suscripción en USD explícita: la lista de Pro en USD, con centavos',
+      [Number(c9.base), Number(c9.monto)], [32, 16]);
+    const b10 = await traido('dueno@basico-usd.com', 'Básico en dólares', { moneda: 'ARS' });
+    await monedaDeSuscripcion(b10.empresaId, 'USD');
+    await cobrar(b10.empresaId, 'basico', 19);
+    const c10 = await comisionDe(b10.empresaId);
+    ok('y la mitad de 19 son 9,50, no 10', [Number(c10.base), Number(c10.monto)], [19, 9.5]);
+
+    // Una empresa sin fila de suscripción no puede cobrar (cambiar_plan_cuenta
+    // la exige), pero los ayudantes igual tienen que caer en guaraníes, no en
+    // la moneda de la empresa.
+    const b11 = await H.montarEmpresa(db, { email: 'dueno@sinsus.com', nombre: 'Sin suscripción', moneda: 'USD' });
+    await db.query('delete from public.suscripciones where empresa_id = $1', [b11.empresaId]);
+    ok('sin suscripción: base y monto en guaraníes',
+      await db.query('select public.base_de_comision($1,$2,$3) b, public.monto_de_comision($1,$4,$5,$6) m',
+        [b11.empresaId, 'basico', 90200, 110000, 50, 90200])
+        .then((r) => [Number(r.rows[0].b), Number(r.rows[0].m)]),
+      [110000, 55000]);
 
     // La cuenta personal tiene su propio precio de lista.
     const b6 = await traido('persona@hogar.com', 'Mis gastos', { tipoCuenta: 'personal' });
@@ -1187,6 +1228,125 @@ async function principal() {
     ok('y la comisión sigue siendo una por negocio',
       (await db.query('select count(*)::int n from public.comisiones where empresa_id = any($1::uuid[])',
         [[d1.empresaId, d2.empresaId, d3.empresaId, d4.empresaId, d5.empresaId]])).rows[0].n, 5);
+  }
+
+  // =====================================================================
+  grupo('19 · La tarjeta conoce el Básico y paga la comisión (104)');
+  // =====================================================================
+  {
+    // `aplicar_suscripcion` es la puerta del webhook de la pasarela: la
+    // llama service_role, nunca el navegador. Hasta la 104 rechazaba el
+    // Básico con «Plan desconocido» y un pago con tarjeta no le dejaba nada
+    // al socio que trajo al negocio.
+    const Q = (await guardarSocio({ nombre: 'Socio de la tarjeta' })).valor;
+    const tarjeta = (empresa, plan, estado, moneda, importe, sub = 'sub_104') =>
+      H.intentarComo(db, 'service_role', null, () => db.query(
+        `select public.aplicar_suscripcion($1,$2,$3,now(),now()+interval '1 month','stripe',
+                'cus_104',$4,'mensual',$5,$6::numeric)`,
+        [empresa, plan, estado, sub, moneda, importe]));
+    const traido = async (email, nombre) => {
+      const e = await H.montarEmpresa(db, { email, nombre });
+      await anotar(e.empresaId, Q.codigo);
+      return e;
+    };
+    const planes = (empresa) => db.query(
+      `select s.plan sus, e.plan emp, public.plan_efectivo_calculado(e.id) efectivo,
+              public.tope_de_miembros(e.id) tope
+         from public.empresas e join public.suscripciones s on s.empresa_id = e.id
+        where e.id = $1`, [empresa]).then((r) => r.rows[0]);
+    const comisionesDe = (empresa) => db.query(
+      'select count(*)::int n from public.comisiones where empresa_id = $1', [empresa])
+      .then((r) => r.rows[0].n);
+
+    // --- El Básico por tarjeta queda Básico ---
+    const t1 = await H.montarEmpresa(db, { email: 'dueno@tarjeta104.com', nombre: 'Kiosco con tarjeta' });
+    aceptado('aplicar_suscripcion acepta el Básico', await tarjeta(t1.empresaId, 'basico', 'activa', 'PYG', 110000));
+    const p1 = await planes(t1.empresaId);
+    ok('queda Básico en la suscripción y en la empresa, no Pro', [p1.sus, p1.emp], ['basico', 'basico']);
+    ok('el plan que rige es Básico', p1.efectivo, 'basico');
+    ok('con una sola persona, como manda Básico', p1.tope, 1);
+    ok('sin socio anotado no nace ninguna comisión', await comisionesDe(t1.empresaId), 0);
+    rechazado('un plan que no existe sigue rechazado',
+      await tarjeta(t1.empresaId, 'premium', 'activa', 'PYG', 250000), 'Plan desconocido');
+    rechazado('y un cliente sigue sin poder llamarla',
+      await H.intentar(db, t1.uid, () => db.query(
+        "select public.aplicar_suscripcion($1,'basico','activa')", [t1.empresaId])));
+
+    // --- Un referido que paga con tarjeta genera la comisión ---
+    const t2 = await traido('dueno@referido104.com', 'Peluquería con tarjeta');
+    aceptado('el referido paga Básico con tarjeta', await tarjeta(t2.empresaId, 'basico', 'activa', 'PYG', 110000));
+    const c2 = await comisionDe(t2.empresaId);
+    ok('nace la comisión', c2 !== null, true);
+    ok('base de lista, monto la mitad, importe lo que entró',
+      [Number(c2.base), Number(c2.monto), Number(c2.importe)], [110000, 55000, 110000]);
+    ok('con el porcentaje de Orden y por pagar', [Number(c2.porcentaje), c2.estado], [50, 'por_pagar']);
+    ok('sin ingreso de Orden: la tarjeta todavía no lo anota', c2.movimiento_id, null);
+
+    // --- La renovación de Stripe no genera otra ---
+    aceptado('llega la renovación del mes siguiente',
+      await tarjeta(t2.empresaId, 'basico', 'activa', 'PYG', 110000));
+    aceptado('y un cambio a Pro por tarjeta',
+      await tarjeta(t2.empresaId, 'pro', 'activa', 'PYG', 190000));
+    ok('sigue habiendo una sola comisión', await comisionesDe(t2.empresaId), 1);
+    const c2b = await comisionDe(t2.empresaId);
+    ok('la misma, sin tocar', [c2b.id, Number(c2b.base), Number(c2b.monto), Number(c2b.importe)],
+      [c2.id, 110000, 55000, 110000]);
+    ok('pero el plan sí cambió a Pro', (await planes(t2.empresaId)).sus, 'pro');
+
+    // --- Con la moneda del pago, no la de la empresa ---
+    // La empresa está en guaraníes y paga en dólares: la base es la lista en
+    // USD (19), y no 110.000 comparados contra 19.
+    const t3 = await traido('dueno@dolares104.com', 'Tienda que paga en dólares');
+    await tarjeta(t3.empresaId, 'basico', 'activa', 'USD', 19);
+    const c3 = await comisionDe(t3.empresaId);
+    ok('en dólares: base 19, monto 9,50, importe 19',
+      [Number(c3.base), Number(c3.monto), Number(c3.importe)], [19, 9.5, 19]);
+
+    // Y al revés (105): la empresa lleva sus cuentas en dólares pero la
+    // tarjeta pagó en guaraníes, como se cobra desde el 23/09. Manda la
+    // moneda del pago: la lista en guaraníes.
+    const t7 = await H.montarEmpresa(db, { email: 'dueno@campo105.com', nombre: 'Campo en dólares con tarjeta', moneda: 'USD' });
+    await anotar(t7.empresaId, Q.codigo);
+    await tarjeta(t7.empresaId, 'basico', 'activa', 'PYG', 110000, 'sub_105');
+    const c7 = await comisionDe(t7.empresaId);
+    ok('empresa en dólares que paga en guaraníes: base 110.000, monto 55.000',
+      [Number(c7.base), Number(c7.monto), Number(c7.importe)], [110000, 55000, 110000]);
+
+    // --- Lo que no es plata que entró no genera nada ---
+    const t4 = await traido('dueno@sinplata104.com', 'Negocio que todavía no pagó');
+    await tarjeta(t4.empresaId, 'basico', 'activa', 'PYG', 0);
+    ok('importe en cero: no genera', await comisionesDe(t4.empresaId), 0);
+    await tarjeta(t4.empresaId, 'basico', 'activa', 'PYG', null);
+    ok('sin importe (checkout.session.completed): no genera', await comisionesDe(t4.empresaId), 0);
+    await tarjeta(t4.empresaId, 'pro', 'prueba', 'PYG', 190000);
+    ok('en prueba (trialing), aunque traiga el precio: no genera', await comisionesDe(t4.empresaId), 0);
+    await tarjeta(t4.empresaId, 'pro', 'morosa', 'PYG', 190000);
+    ok('morosa (la tarjeta rebotó): no genera', await comisionesDe(t4.empresaId), 0);
+    await tarjeta(t4.empresaId, 'pro', 'cancelada', 'PYG', 190000);
+    ok('cancelada: no genera', await comisionesDe(t4.empresaId), 0);
+    await tarjeta(t4.empresaId, 'gratis', 'activa', 'PYG', 190000);
+    ok('gratis: no genera', await comisionesDe(t4.empresaId), 0);
+    // Y nada de eso gastó el «una sola vez»: cuando por fin paga, nace.
+    await tarjeta(t4.empresaId, 'pro', 'activa', 'PYG', 190000);
+    const c4 = await comisionDe(t4.empresaId);
+    ok('cuando por fin paga, nace con la lista de Pro',
+      [Number(c4.base), Number(c4.monto), Number(c4.importe)], [190000, 95000, 190000]);
+
+    // --- Si ya cobró por transferencia, la tarjeta no crea otra ---
+    const t5 = await traido('dueno@ambas104.com', 'Pagó de las dos formas');
+    await cobrar(t5.empresaId, 'basico', 90200);
+    await tarjeta(t5.empresaId, 'basico', 'activa', 'PYG', 110000);
+    ok('una sola comisión, la de la transferencia',
+      [await comisionesDe(t5.empresaId), Number((await comisionDe(t5.empresaId)).importe)], [1, 90200]);
+
+    // --- Un socio desactivado no cobra ---
+    const Q2 = (await guardarSocio({ nombre: 'Socio que se fue' })).valor;
+    const t6 = await H.montarEmpresa(db, { email: 'dueno@socioinactivo104.com', nombre: 'Traído por uno que se fue' });
+    await anotar(t6.empresaId, Q2.codigo);
+    await guardarSocio({ id: Q2.id, nombre: 'Socio que se fue', activo: false });
+    await tarjeta(t6.empresaId, 'basico', 'activa', 'PYG', 110000);
+    ok('socio desactivado: la tarjeta activa el plan pero no genera',
+      [(await planes(t6.empresaId)).sus, await comisionesDe(t6.empresaId)], ['basico', 0]);
   }
 
   console.log('\n' + '═'.repeat(62));

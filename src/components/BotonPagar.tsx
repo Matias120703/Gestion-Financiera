@@ -13,13 +13,21 @@ import { useTextos } from '@/i18n/cliente';
  * El importe tampoco viaja desde acá: se manda qué plan y qué periodo, y el
  * servidor busca el precio en la tabla. Si el precio viajara en el pedido,
  * cualquiera podría pagar un guaraní.
+ *
+ * LA MONEDA TAMPOCO SE ELIGE (23/09): la suscripción se cobra siempre en
+ * guaraníes, porque Bancard deja una sola moneda y Matías eligió guaraníes.
+ * Antes la pantalla pasaba la moneda del selector Gs / US$; ahora el botón
+ * manda PYG siempre. Va escrita acá y no importada de `lib/precios.ts`
+ * porque ese módulo trae el cliente de Supabase del servidor, y este es un
+ * componente de navegador (ver el comentario al final de `precios.ts`).
  */
+const MONEDA_DEL_COBRO = 'PYG';
+
 export function BotonPagar({
-  plan, periodo, moneda, etiqueta, sinPasarela,
+  plan, periodo, etiqueta, sinPasarela,
 }: {
   plan: 'basico' | 'pro' | 'negocio';
   periodo: 'mensual' | 'anual';
-  moneda: string;
   etiqueta: string;
   sinPasarela: string;
 }) {
@@ -34,7 +42,7 @@ export function BotonPagar({
       const r = await fetch('/api/pagos/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan, periodo, moneda }),
+        body: JSON.stringify({ plan, periodo, moneda: MONEDA_DEL_COBRO }),
       });
       const datos = await r.json();
 

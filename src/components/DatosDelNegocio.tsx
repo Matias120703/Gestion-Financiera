@@ -133,6 +133,17 @@ export default function DatosDelNegocio({
           <option value="BRL">{t.pantallas.monedaBRL}</option>
           <option value="EUR">{t.pantallas.monedaEUR}</option>
         </select>
+        {/* EL AGRICULTOR DUDA ENTRE DOS MONEDAS, Y LAS DOS ESTÁN BIEN (23/09).
+            El que compra los insumos y vende el grano en dólares lleva sus
+            números en dólares; el que le vende al acopiador o en la feria en
+            guaraníes, en guaraníes. Es la moneda de SUS DATOS
+            (`empresas.moneda`), no la de la suscripción: esa se cobra
+            siempre en guaraníes y no se elige acá. */}
+        {!esPersonal && datos.rubro === 'agricultura' && (
+          <p className="mt-1.5 text-[12.5px] leading-snug text-tinta/50">
+            {t.registro.monedaAgricultura}
+          </p>
+        )}
       </div>
 
       <Separador />

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { clienteDeServicio } from '@/lib/supabase/servicio';
-import { desdeMenorUnidad, pasarelaActiva, verificarFirmaStripe } from '@/lib/pagos';
+import {
+  desdeMenorUnidad, estadoDeStripe, pasarelaActiva, planDeMetadatos, planParaAplicar, verificarFirmaStripe,
+  type PlanPago,
+} from '@/lib/pagos';
 
 export const runtime = 'nodejs';
 // El cuerpo se lee crudo: la firma se calcula sobre los bytes exactos que
@@ -112,24 +115,44 @@ async function aplicarEventoStripe(evento: any) {
     // `morosa` y no `vencida`: Stripe va a reintentar el cobro. Marcarla
     // vencida ahora le sacaría el plan a alguien cuya tarjeta rebotó una vez
     // y va a pagar en dos días.
+    //
+    // La factura casi nunca trae `metadata.plan` propio; antes eso caía en
+    // 'pro' y un Básico impago pasaba a Pro. Ahora se busca en los metadatos
+    // de la suscripción que viajan en la factura y, si no están, se deja el
+    // plan que ya tenía (ver `planParaAplicar`).
+    const plan = await elegirPlan(supabase, empresaId, tipo, planDeMetadatos(objeto), 'morosa');
+    if (!plan) return;
     await llamar(supabase, {
-      empresa: empresaId, plan: objeto?.metadata?.plan ?? 'pro', estado: 'morosa',
+      empresa: empresaId, plan, estado: 'morosa',
       inicio: null, fin: fechaDe(objeto?.lines?.data?.[0]?.period?.end),
       customer: objeto?.customer, suscripcion: objeto?.subscription,
     });
     return;
   }
 
-  const plan = objeto?.metadata?.plan === 'negocio' ? 'negocio' : 'pro';
-  const cancelaAlVencer = Boolean(objeto?.cancel_at_period_end);
-  const estadoStripe: string = objeto?.status ?? 'active';
+  // Solo los status que se conocen. 'incomplete', 'incomplete_expired',
+  // 'paused' o una sesión sin cobro confirmado no se aplican: con el importe
+  // al lado, la base los tomaría como plata que entró y activaría el plan y
+  // la comisión del socio sin cobro (ver `estadoDeStripe`). Se responde 200:
+  // reintentar el mismo evento no cambia lo que dice.
+  const estado = estadoDeStripe(tipo, objeto);
+  if (!estado) {
+    console.error('[webhook:stripe] estado de Stripe que no activa nada; no se aplicó',
+      { tipo, empresaId, status: objeto?.status, payment_status: objeto?.payment_status });
+    return;
+  }
 
-  const estado =
-    cancelaAlVencer ? 'cancelada'
-    : estadoStripe === 'trialing' ? 'prueba'
-    : estadoStripe === 'past_due' || estadoStripe === 'unpaid' ? 'morosa'
-    : estadoStripe === 'canceled' ? 'cancelada'
-    : 'activa';
+  /**
+   * EL PLAN, DE LOS METADATOS Y SIN ADIVINAR.
+   *
+   * Antes: `metadata.plan === 'negocio' ? 'negocio' : 'pro'`. Un Básico
+   * pagado con tarjeta quedaba Pro, y cualquier metadato raro también.
+   * Ahora solo vale 'basico', 'pro' o 'negocio'. Si no viene ninguno:
+   * activar se frena (se registra y se responde 200, porque reintentar no
+   * cambia los metadatos) y dar de baja sigue con el plan que ya tenía.
+   */
+  const plan = await elegirPlan(supabase, empresaId, tipo, planDeMetadatos(objeto), estado);
+  if (!plan) return;
 
   const item = objeto?.items?.data?.[0];
   const moneda = (item?.price?.currency ?? objeto?.currency ?? '').toUpperCase() || null;
@@ -142,11 +165,43 @@ async function aplicarEventoStripe(evento: any) {
     inicio: fechaDe(objeto?.current_period_start),
     fin: fechaDe(objeto?.current_period_end),
     customer: objeto?.customer,
-    suscripcion: objeto?.id ?? objeto?.subscription,
+    // En la sesión de checkout `id` es la sesión (cs_…), no la suscripción:
+    // la suscripción viene en `subscription`.
+    suscripcion: tipo === 'checkout.session.completed'
+      ? objeto?.subscription ?? undefined
+      : objeto?.id ?? objeto?.subscription,
     periodo: item?.price?.recurring?.interval === 'year' ? 'anual' : 'mensual',
     moneda,
     importe: typeof bruto === 'number' && moneda ? desdeMenorUnidad(bruto, moneda) : null,
   });
+}
+
+/**
+ * El plan con el que se aplica el evento, o `null` si no hay uno seguro.
+ *
+ * Solo consulta la suscripción guardada cuando hace falta: metadatos sin
+ * plan válido en un evento que quita (morosa, cancelada). Un `null` deja el
+ * error en el registro con la empresa y lo que llegó, para cargarlo a mano.
+ */
+async function elegirPlan(
+  supabase: ReturnType<typeof clienteDeServicio>,
+  empresaId: string, tipo: string, deMetadatos: PlanPago | null, estado: string,
+): Promise<PlanPago | null> {
+  let planActual: unknown = null;
+  if (!deMetadatos && (estado === 'morosa' || estado === 'cancelada')) {
+    const { data, error } = await supabase
+      .from('suscripciones').select('plan').eq('empresa_id', empresaId).maybeSingle();
+    // Si la base no contesta, que Stripe reintente: no es lo mismo que
+    // «no tiene plan».
+    if (error) throw new Error(error.message);
+    planActual = data?.plan ?? null;
+  }
+  const plan = planParaAplicar(deMetadatos, estado, planActual);
+  if (!plan) {
+    console.error('[webhook:stripe] evento sin plan válido en los metadatos; no se aplicó',
+      { tipo, empresaId, estado, planActual });
+  }
+  return plan;
 }
 
 function fechaDe(segundos: unknown): string | null {

@@ -476,21 +476,32 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
  * No es lo mismo que `RUBROS`. Acá está lo que se muestra en la lista; arriba
  * está todo lo que el sistema sabe atender.
  *
- * AGRICULTURA NO SE OFRECE, Y NO ES QUE ESTÉ ROTA.
+ * AGRICULTURA SE OFRECE DESDE EL 23/09. LA PRUEBA CON UN PRODUCTOR SIGUE
+ * PENDIENTE, Y ES LO PRIMERO QUE SE HACE.
  *
- * Funciona: tiene sus categorías de gasto, su vocabulario y sus lotes. Lo que
- * pasa es que no se probó con un agricultor de verdad, y salir a ofrecer un
- * rubro que nadie uso todavía es prometer algo que no se sabe si cumple.
- * Decisión de Matías para el lanzamiento: comercio, servicios y ganadería,
- * más la cuenta personal.
+ * Estuvo afuera desde el lanzamiento, y no porque estuviera rota: tenía sus
+ * categorías de gasto, su vocabulario y sus lotes, y desde la 100-103 sus
+ * campañas, sus cosechas y sus liquidaciones. Estaba afuera porque nadie la
+ * había probado con un agricultor de verdad, y ofrecer un rubro que nadie
+ * usó todavía es prometer algo que no se sabe si cumple.
  *
- * Se ofrece de nuevo agregándola a esta lista. Nada más: la ficha sigue
- * entera, la base sigue aceptando el rubro, y una cuenta que ya lo tenga
- * guardado sigue funcionando igual —por eso se saca de la lista y no de
- * `RUBROS`—.
+ * Matías decidió el 23/09 ofrecerla igual. Eso NO saca la prueba del medio:
+ * sentarse con un productor real a cargar una campaña de punta a punta
+ * (abrirla, cargarle los insumos, la cosecha y la liquidación del acopio)
+ * sigue pendiente y es lo primero que se hace. Si ahí aparece algo que no
+ * cierra, se arregla en la ficha; no se la saca de esta lista.
+ *
+ * Va entre el trainer y la ganadería porque la ganadería es su vecino más
+ * parecido: los dos trabajan por ciclo (la campaña, el novillo) y no por día.
+ *
+ * Si algún día hay que sacar un rubro de la lista, sacarlo no lo rompe: la
+ * ficha sigue entera en `RUBROS`, la base sigue aceptando el rubro y una
+ * cuenta que ya lo tenga guardado sigue funcionando igual. Por eso se saca
+ * de acá y no de `RUBROS`.
  */
 export const LISTA_RUBROS: FichaRubro[] = [
-  RUBROS.comercio, RUBROS.servicios, RUBROS.clases, RUBROS.entrenamiento, RUBROS.ganaderia,
+  RUBROS.comercio, RUBROS.servicios, RUBROS.clases, RUBROS.entrenamiento,
+  RUBROS.agricultura, RUBROS.ganaderia,
 ];
 // CLASES Y CURSOS VUELVE A OFRECERSE (22/09). Estuvo afuera desde la 090
 // mientras se rehacía para como trabaja un profe de verdad (inscribir con

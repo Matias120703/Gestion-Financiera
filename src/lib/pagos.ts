@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { PeriodoCobro } from './tipos';
+import type { PlanDeRubro } from './rubros';
 
 /**
  * ============================================================
@@ -22,7 +23,7 @@ import type { PeriodoCobro } from './tipos';
  *
  *   1. EL IMPORTE NUNCA VIAJA DESDE EL NAVEGADOR. El cliente manda plan y
  *      periodo; el precio sale de la tabla `precios`. Si el monto llegara en
- *      el pedido, alguien pagaría un guaraní por el plan Negocio.
+ *      el pedido, alguien pagaría un guaraní por el plan Premium.
  *
  *   2. EL PLAN LO ACTIVA EL WEBHOOK, NO LA PANTALLA DE "GRACIAS". Volver de
  *      la pasarela no prueba que se haya pagado: se puede llegar a esa URL
@@ -45,10 +46,132 @@ export function sitio(): string {
   return (process.env.NEXT_PUBLIC_SITIO ?? 'http://localhost:3000').replace(/\/+$/, '');
 }
 
+/**
+ * Los tres planes que se cobran. Es el mismo trío de `PlanDeRubro` (102):
+ * si un día se suma un cuarto, el compilador avisa acá y en el webhook.
+ */
+export type PlanPago = PlanDeRubro;
+
+const PLANES_PAGOS: readonly PlanPago[] = ['basico', 'pro', 'negocio'];
+
+/**
+ * Lo que dice cada plan en el resumen de la tarjeta cuando el precio se arma
+ * al vuelo. «negocio» se vende como Premium: la persona tiene que reconocer
+ * en el resumen el nombre que eligió en la pantalla.
+ */
+export const NOMBRE_DE_PRODUCTO: Record<PlanPago, string> = {
+  basico: 'Orden Básico',
+  pro: 'Orden Pro',
+  negocio: 'Orden Premium',
+};
+
+/** `true` solo para 'basico', 'pro' o 'negocio', escritos exactamente así. */
+export function esPlanPago(valor: unknown): valor is PlanPago {
+  return typeof valor === 'string' && (PLANES_PAGOS as readonly string[]).includes(valor);
+}
+
+/**
+ * QUÉ PLAN SE PAGÓ, SEGÚN LOS METADATOS DEL EVENTO.
+ *
+ * El checkout escribe `plan` en los metadatos de la sesión y de la
+ * suscripción. Cada evento lo trae en un lugar distinto: la sesión y la
+ * suscripción, en `metadata`; la factura (el impago), en
+ * `subscription_details.metadata` o, con la API nueva de Stripe, en
+ * `parent.subscription_details.metadata`. Se mira en ese orden.
+ *
+ * Antes el webhook hacía `plan === 'negocio' ? 'negocio' : 'pro'`: todo lo
+ * que no fuera Premium salía Pro, y un Básico pagado con tarjeta quedaba
+ * con el plan de 190.000 cobrando el de 110.000. Ahora, lo que no sea uno de
+ * los tres planes escrito tal cual devuelve `null`, y no se adivina.
+ */
+export function planDeMetadatos(objeto: any): PlanPago | null {
+  const candidatos = [
+    objeto?.metadata?.plan,
+    objeto?.subscription_details?.metadata?.plan,
+    objeto?.parent?.subscription_details?.metadata?.plan,
+  ];
+  for (const c of candidatos) {
+    if (c === undefined || c === null || c === '') continue;
+    // El primero que aparece manda: si dice otra cosa, no se sigue buscando
+    // más abajo uno que convenga.
+    return esPlanPago(c) ? c : null;
+  }
+  return null;
+}
+
+/**
+ * CON QUÉ PLAN SE LLAMA A `aplicar_suscripcion()`, O SI NO SE LLAMA (`null`).
+ *
+ *   · Si los metadatos traen un plan válido, ese.
+ *   · Si no, y el evento DA algo (queda 'activa' o 'prueba'), no se aplica
+ *     nada: activar un plan adivinado es regalar uno más caro del que se
+ *     pagó. El webhook lo deja en el registro y el plan se carga a mano con
+ *     «Activar mes», que es como se cobra hoy.
+ *   · Si no, y el evento QUITA algo ('morosa', 'cancelada'), se aplica con el
+ *     plan que la suscripción ya tiene: marcarla morosa o cancelada no regala
+ *     nada, y saltearla dejaría como al día a quien dejó de pagar. Si la
+ *     suscripción no tiene un plan pago, tampoco se inventa: `null`.
+ */
+export function planParaAplicar(
+  deMetadatos: PlanPago | null, estado: string, planActual: unknown,
+): PlanPago | null {
+  if (deMetadatos) return deMetadatos;
+  if (estado === 'morosa' || estado === 'cancelada') {
+    return esPlanPago(planActual) ? planActual : null;
+  }
+  return null;
+}
+
+/** Los estados que el webhook le manda a `aplicar_suscripcion()`. */
+export type EstadoDeStripe = 'activa' | 'prueba' | 'morosa' | 'cancelada';
+
+/**
+ * EL ESTADO DE LA SUSCRIPCIÓN, SOLO SI STRIPE DICE ALGO QUE SE CONOCE.
+ *
+ * Antes, todo `status` que no fuera 'trialing', 'past_due', 'unpaid' o
+ * 'canceled' caía en 'activa', y un evento sin `status` también. Eso incluía
+ * 'incomplete' (el primer cobro todavía no se confirmó), 'incomplete_expired'
+ * (el cobro falló del todo) y 'paused'. Con el importe del precio al lado,
+ * la base lo toma como plata que entró: activaba el plan sin cobro y, desde
+ * la 104, además le generaba la comisión al socio, que ocupaba el único
+ * lugar por negocio y el cobro de verdad ya no generaba la suya.
+ *
+ * Ahora:
+ *   · la sesión de checkout ('checkout.session.completed') cuenta como
+ *     'activa' solo con `payment_status` 'paid'. Una prueba sin cobro
+ *     ('no_payment_required') o un pago que se acredita después ('unpaid')
+ *     no activan nada desde acá: el estado real lo trae el evento de la
+ *     suscripción que llega al lado.
+ *   · la suscripción: 'active' → 'activa', 'trialing' → 'prueba',
+ *     'past_due' y 'unpaid' → 'morosa', 'canceled' → 'cancelada'.
+ *   · cualquier otro, o ninguno: `null`, y el webhook no aplica nada.
+ *
+ * «Cancela al vencer» convierte en 'cancelada' solo lo que estaba al día
+ * ('activa' o 'prueba'): una 'cancelada' con fin de período por delante
+ * conserva el plan hasta esa fecha, así que aplicarla a un status que no se
+ * conoce, o a uno moroso, regalaría el mes que no se pagó.
+ */
+export function estadoDeStripe(tipo: string, objeto: any): EstadoDeStripe | null {
+  if (tipo === 'checkout.session.completed') {
+    return objeto?.payment_status === 'paid' ? 'activa' : null;
+  }
+  const status = objeto?.status;
+  const estado: EstadoDeStripe | null =
+    status === 'active' ? 'activa'
+    : status === 'trialing' ? 'prueba'
+    : status === 'past_due' || status === 'unpaid' ? 'morosa'
+    : status === 'canceled' ? 'cancelada'
+    : null;
+  if ((estado === 'activa' || estado === 'prueba') && objeto?.cancel_at_period_end === true) {
+    return 'cancelada';
+  }
+  return estado;
+}
+
 export interface PedidoDeCobro {
   empresaId: string;
   email: string;
-  plan: 'pro' | 'negocio';
+  plan: PlanPago;
   periodo: PeriodoCobro;
   moneda: string;
   /** En la unidad de la moneda (guaraníes enteros, dólares con decimales). */
@@ -121,7 +244,7 @@ export async function checkoutStripe(pedido: PedidoDeCobro): Promise<string> {
     cuerpo.set('line_items[0][price_data][recurring][interval]',
       pedido.periodo === 'anual' ? 'year' : 'month');
     cuerpo.set('line_items[0][price_data][product_data][name]',
-      `Orden ${pedido.plan === 'pro' ? 'Pro' : 'Negocio'}`);
+      NOMBRE_DE_PRODUCTO[pedido.plan]);
   }
 
   const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {

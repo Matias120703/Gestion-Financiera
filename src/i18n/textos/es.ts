@@ -385,6 +385,9 @@ export const es = {
     telefono: 'Teléfono',
     telefonoEjemplo: '0981 234 567',
     telefonoDetalle: 'Es por dónde te vamos a escribir si pasa algo con tu cuenta. No se lo damos a nadie.',
+    // Debajo de la moneda, solo si eligió agricultura (23/09). Es la moneda
+    // de sus datos, no la de la suscripción.
+    monedaAgricultura: 'Si comprás los insumos y vendés el grano en dólares, elegí dólares. Si vendés en guaraníes al acopiador o en la feria, elegí guaraníes.',
     aQueTeDedicas: 'A qué te dedicás',
     aQueTeDedicasEjemplo: 'Perfumería, taller mecánico, estancia…',
     opcional: 'Opcional',
@@ -874,7 +877,6 @@ export const es = {
     // Dejó de ser cierto el 2026-09-15 con el candado de la cuenta vencida.
     // Lo que sí sigue siendo cierto es que los datos no se borran.
     preciosBajada: 'Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día no querés seguir, **tus datos no se borran**: quedan guardados, intactos, y vuelven a estar ahí el día que reactivás tu plan.',
-    preciosDolares: 'Los precios en dólares son de referencia. Se cobra por transferencia y lo arreglamos por WhatsApp: escribinos y te decimos cómo pagar desde tu país.',
     empezarLos: (dias: string) => `Empezar los ${dias}`,
     // El negocio entero, para el que trabaja solo (077).
     basicoPara: 'Para el que atiende solo su negocio',
@@ -1870,6 +1872,12 @@ export const es = {
     elegir: 'Elegir este plan',
     actual: 'Tu plan actual',
     ahorroAnual: (n: number) => (n === 1 ? 'Un mes gratis' : `${n} meses gratis`),
+    // LA SUSCRIPCIÓN SE COBRA SIEMPRE EN GUARANÍES (23/09): Bancard deja una
+    // sola moneda y Matías eligió guaraníes. El precio grande va en
+    // guaraníes; el de dólares es una referencia chica y no se cobra.
+    cobroEnGuaranies: 'Se cobra en guaraníes. Si tu tarjeta es de otro país, tu banco lo convierte.',
+    referenciaEnDolares: (monto: string) => `≈ ${monto}`,
+    referenciaEnDolaresAyuda: 'Referencia en dólares. No se cobra en dólares.',
     enPrueba: 'Estás probando Orden',
     diasDePrueba: (n: number) => (n === 1 ? 'Te queda 1 día de prueba' : `Te quedan ${n} días de prueba`),
     pruebaVence: 'Cuando termine, hace falta activar un plan para seguir usando Orden.',

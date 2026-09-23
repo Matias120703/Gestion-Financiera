@@ -12,7 +12,7 @@ import { Rico } from '@/components/Rico';
 import { HAY_DEMOS } from '@/lib/demos';
 import { FICHA } from '@/i18n/idiomas';
 import type { Precio } from '@/lib/tipos';
-import { DIAS_DE_PRUEBA, MONEDAS_DE_COBRO, monedaDeCobro } from '@/lib/precios';
+import { DIAS_DE_PRUEBA, MONEDA_DE_REFERENCIA, monedaDeCobro } from '@/lib/precios';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,12 +59,7 @@ export async function generateMetadata(): Promise<Metadata> {
  * Los textos viven en el diccionario (`portada`), en español y en portugués.
  * Acá solo queda la estructura.
  */
-export default async function Portada({
-  searchParams: busqueda,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const searchParams = await busqueda;
+export default async function Portada() {
   // Con sesión, esta página no aporta nada: al panel.
   const supabase = clienteServidor();
   const { data: { user } } = await supabase.auth.getUser();
@@ -80,32 +75,49 @@ export default async function Portada({
   const diasPersonal = p.dias(DIAS_DE_PRUEBA.personal);
 
   /**
-   * En qué moneda se muestran los precios.
+   * En qué moneda se muestran los precios: SIEMPRE EN GUARANÍES (23/09).
    *
-   * Antes salía solo del idioma, y cuando sacamos el inglés la portada quedó
-   * clavada en guaraníes: los precios en dólares existían en la tabla desde
-   * siempre y no había forma de verlos. Orden no es solo para Paraguay, y a
-   * alguien de afuera un importe de siete cifras no le dice nada.
+   * La suscripción se cobra solo en guaraníes (Bancard deja una sola moneda
+   * y Matías eligió guaraníes). Hasta acá había un selector Gs / US$ con
+   * `?moneda=`; se sacó, porque mostrar en grande un precio en dólares que
+   * después se cobra en guaraníes es prometer una cifra que no es la que se
+   * paga. Para quien piensa en dólares queda la referencia chica «≈ US$ 19»
+   * al lado de cada precio: se muestra, no se cobra.
    *
-   * Va por la URL y no por estado del navegador, igual que en la pantalla de
-   * Plan: así el enlace se puede compartir ya en la moneda que corresponde, y
-   * los importes los sigue calculando el servidor desde la tabla. Ninguna
-   * cifra pasa por el navegador donde se pueda tocar.
+   * El selector había nacido por algo que sigue siendo cierto: Orden no es
+   * solo para Paraguay, y a alguien de afuera un importe de seis cifras no
+   * le dice nada. Eso lo resuelve ahora la referencia en dólares, sin
+   * ofrecer una moneda en la que no se cobra. Un enlace viejo con
+   * `?moneda=USD` sigue abriendo la portada, en guaraníes.
    */
-  const moneda = monedaDeCobro(
-    idioma, typeof searchParams.moneda === 'string' ? searchParams.moneda : null);
+  const moneda = monedaDeCobro();
 
   // Si la lectura de precios falla, la portada igual se muestra: mejor una
   // página sin la tabla de precios que un error para alguien que todavía no
-  // sabe qué es esto.
-  const { data } = await supabase.rpc('lista_precios', { p_moneda: moneda });
-  const precios = (Array.isArray(data) ? data : []) as Precio[];
+  // sabe qué es esto. Se piden todas las monedas en una sola lectura
+  // (`p_moneda` en null): los guaraníes, que es lo que se cobra, y los
+  // dólares, que van al lado como referencia.
+  const { data } = await supabase.rpc('lista_precios', { p_moneda: null });
+  const todos = (Array.isArray(data) ? data : []) as Precio[];
+  const precios = todos.filter((x) => x.moneda === moneda);
+  const referencia = todos.filter((x) => x.moneda === MONEDA_DE_REFERENCIA);
 
-  const precioDe = (tipo: string, plan: string, periodo = 'mensual') =>
-    precios.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === periodo) ?? null;
+  const buscar = (lista: Precio[], tipo: string, plan: string, periodo: string) =>
+    lista.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === periodo) ?? null;
+  const precioDe = (tipo: string, plan: string, periodo = 'mensual') => buscar(precios, tipo, plan, periodo);
 
   const importe = (x: Precio | null) =>
     x ? precio(Number(x.importe), moneda, locale) : '—';
+
+  /**
+   * «≈ US$ 19», de la fila en dólares del MISMO público, plan y período.
+   * Solo si hay precio en guaraníes al lado (una referencia sin el precio
+   * de verdad sería mostrar lo que no se cobra) y si la fila existe.
+   */
+  const enDolares = (x: Precio | null) => {
+    const r = x ? buscar(referencia, x.tipo_cuenta, x.plan, x.periodo) : null;
+    return r ? t.plan.referenciaEnDolares(precio(Number(r.importe), MONEDA_DE_REFERENCIA, locale)) : undefined;
+  };
 
   const personalMes = precioDe('personal', 'pro');
   const personalAnio = precioDe('personal', 'pro', 'anual');
@@ -478,40 +490,19 @@ export default async function Portada({
       <section id="precios" className="mx-auto max-w-6xl px-5 py-14 scroll-mt-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">{p.cuantoCuesta}</h2>
-
-          {/* Enlaces y no botones: la portada la lee gente que todavía no
-              decidió nada, y un enlace anda antes de que cargue un solo
-              script. El ancla devuelve a esta misma sección, así que cambiar
-              de moneda no te manda de vuelta arriba de todo. */}
-          <div className="flex items-center gap-1 rounded-xl bg-arena p-1">
-            {MONEDAS_DE_COBRO.map((m) => (
-              <Link
-                key={m}
-                href={m === 'PYG' ? '/#precios' : `/?moneda=${m}#precios`}
-                aria-current={m === moneda ? 'true' : undefined}
-                className={`rounded-lg px-3 py-1.5 text-[12.5px] font-bold transition ${
-                  m === moneda ? 'bg-noche text-white' : 'text-tinta/50 hover:text-tinta'
-                }`}
-              >
-                {m === 'PYG' ? 'Gs.' : 'US$'}
-              </Link>
-            ))}
-          </div>
         </div>
 
         <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
           <Rico texto={p.preciosBajada} negrita="text-tinta" />
         </p>
 
-        {moneda !== 'PYG' && (
-          /* Quien mira en dólares está afuera, y el cobro es por
-             transferencia hablando con una persona. Decirlo acá y no cuando
-             ya eligió el plan: enterarse tarde de cómo se paga es de las
-             cosas que hacen abandonar. */
-          <p className="mt-3 max-w-2xl rounded-xl bg-arena px-4 py-3 text-[13.5px] leading-relaxed text-tinta/65">
-            {p.preciosDolares}
-          </p>
-        )}
+        {/* Arriba de los precios y no en la letra chica: quien tiene una
+            tarjeta de otro país tiene que saber antes de elegir que se le
+            cobra en guaraníes. Enterarse tarde de cómo se paga es de las
+            cosas que hacen abandonar. */}
+        <p className="mt-3 max-w-2xl rounded-xl bg-arena px-4 py-3 text-[13.5px] leading-relaxed text-tinta/65">
+          {t.plan.cobroEnGuaranies}
+        </p>
 
         {/* ---- negocio ---- */}
         <div className="mt-10">
@@ -526,6 +517,7 @@ export default async function Portada({
               llamado={p.empezarLos(diasNegocio)}
               enlace="/crear?para=negocio"
               precio={importe(basicoMes)}
+              referencia={enDolares(basicoMes)}
               porMes={p.porMes}
               para={p.basicoPara}
               puntos={p.basicoPuntos}
@@ -537,6 +529,7 @@ export default async function Portada({
               llamado={p.empezarLos(diasNegocio)}
               enlace="/crear?para=negocio"
               precio={importe(proMes)}
+              referencia={enDolares(proMes)}
               porMes={p.porMes}
               para={p.proPara}
               puntos={p.proPuntos}
@@ -547,6 +540,7 @@ export default async function Portada({
               llamado={p.empezarLos(diasNegocio)}
               enlace="/crear?para=negocio"
               precio={importe(premiumMes)}
+              referencia={enDolares(premiumMes)}
               porMes={p.porMes}
               desde={p.desde}
               para={p.premiumPara}
@@ -597,6 +591,7 @@ export default async function Portada({
               llamado={p.empezarLos(diasPersonal)}
               enlace="/crear?para=personal"
               precio={importe(personalMes)}
+              referencia={enDolares(personalMes)}
               porMes={p.porMes}
               para={p.personalPara}
               puntos={p.personalPuntos}
@@ -827,11 +822,13 @@ function Forma({
 }
 
 function Plan({
-  nombre, precio, para, puntos, nota, llamado, enlace,
+  nombre, precio, referencia, para, puntos, nota, llamado, enlace,
   porMes, desde, destacado = false,
 }: {
   nombre: string;
   precio: string;
+  /** «≈ US$ 19», chico al lado del precio. Referencia: no se cobra en dólares. */
+  referencia?: string;
   para: string;
   puntos: string[];
   nota?: string;
@@ -852,6 +849,9 @@ function Plan({
         {desde && <span className="text-[13px] font-semibold text-tinta/45">{desde}</span>}
         <span className="text-[26px] font-titulo font-extrabold tracking-tight tabular-nums">{precio}</span>
         {porMes && <span className="text-[13px] font-semibold text-tinta/45">{porMes}</span>}
+        {referencia && (
+          <span className="text-[12.5px] font-semibold tabular-nums text-tinta/40">{referencia}</span>
+        )}
       </p>
       <p className="mt-1.5 text-[13px] font-semibold text-tinta/50">{para}</p>
 

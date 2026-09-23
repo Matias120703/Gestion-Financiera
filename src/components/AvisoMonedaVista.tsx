@@ -48,7 +48,12 @@ export async function AvisoMonedaVista({ vista }: { vista: Vista }) {
           <span className="text-tinta/45"> · {a.cargadoEl(fechaLegible(vista.desde.slice(0, 10), true, locale))}</span>
         )}
       </p>
-      <Link href="/ajustes?ver=moneda" className="text-[12.5px] font-semibold text-verde-fuerte hover:underline">
+      {/* 44 px de zona táctil sin agrandar el cartel: los márgenes negativos
+          la hacen crecer hacia el relleno de la caja, no hacia afuera. */}
+      <Link
+        href="/ajustes?ver=moneda"
+        className="-mx-2 -my-2.5 inline-flex min-h-[44px] items-center px-2 text-[12.5px] font-semibold text-verde-fuerte hover:underline"
+      >
         {a.cambiar}
       </Link>
     </div>

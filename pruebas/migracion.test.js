@@ -159,6 +159,53 @@ function ok(nombre, real, esperado) {
       group by p.proname order by 1`)).rows.map((r) => [r.proname, r.n]),
     [['asignar_referido', 1], ['cambiar_plan_cuenta', 1], ['listar_comisiones', 1]]);
 
+  // 10. La 104 (la tarjeta conoce el Básico y paga la comisión), dos veces
+  //     más sobre la base completa: una función con su revoke/grant. Una
+  //     segunda firma haría ambigua la llamada del webhook.
+  console.log('\n── La migración 104, aplicada de nuevo ─────────────────────');
+  for (const prefijo of ['104', '104']) await H.aplicarMigracion(completa, prefijo);
+  console.log('  · migración 104 aplicada 2 veces más');
+  ok('aplicar_suscripcion existe una sola vez, con la firma de 11 argumentos',
+    (await completa.query(`select p.oid::regprocedure::text f from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+      where s.nspname = 'public' and p.proname = 'aplicar_suscripcion'`)).rows.map((r) => r.f),
+    ['aplicar_suscripcion(uuid,text,text,timestamp with time zone,timestamp with time zone,text,text,text,text,text,numeric)']);
+  ok('sigue siendo solo de service_role',
+    (await completa.query(`select has_function_privilege('authenticated',
+      'public.aplicar_suscripcion(uuid,text,text,timestamptz,timestamptz,text,text,text,text,text,numeric)', 'EXECUTE') a,
+      has_function_privilege('service_role',
+      'public.aplicar_suscripcion(uuid,text,text,timestamptz,timestamptz,text,text,text,text,text,numeric)', 'EXECUTE') s`))
+      .rows.map((r) => [r.a, r.s])[0], [false, true]);
+  const B4 = await H.montarEmpresa(completa, { email: 'basico@tarjeta104.com', nombre: 'Básico por tarjeta' });
+  await H.comoServicio(completa, () => completa.query(
+    "select public.aplicar_suscripcion($1,'basico','activa',now(),now()+interval '1 month','stripe',null,null,'mensual','PYG',110000)",
+    [B4.empresaId]));
+  ok('y la base migrada dos veces deja un Básico por tarjeta como Básico',
+    (await completa.query('select s.plan sp, e.plan ep from public.suscripciones s join public.empresas e on e.id = s.empresa_id where e.id = $1',
+      [B4.empresaId])).rows.map((r) => [r.sp, r.ep])[0], ['basico', 'basico']);
+
+  // 11. La 105 (la comisión en guaraníes), dos veces más sobre la base
+  //     completa. Va DESPUÉS de volver a pasar la 102, que redefine los mismos
+  //     dos ayudantes con la regla vieja: acá se comprueba que la 105 los deja
+  //     otra vez en guaraníes, sin firmas duplicadas y sin abrirlos a nadie.
+  console.log('\n── La migración 105, aplicada de nuevo ─────────────────────');
+  for (const prefijo of ['105', '105']) await H.aplicarMigracion(completa, prefijo);
+  console.log('  · migración 105 aplicada 2 veces más');
+  ok('base_de_comision y monto_de_comision existen una sola vez, con sus firmas',
+    (await completa.query(`select p.oid::regprocedure::text f from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+      where s.nspname = 'public' and p.proname in ('base_de_comision','monto_de_comision') order by 1`)).rows.map((r) => r.f),
+    ['base_de_comision(uuid,text,numeric)', 'monto_de_comision(uuid,numeric,numeric,numeric)']);
+  ok('siguen cerradas para authenticated y anon',
+    (await completa.query(`select
+      has_function_privilege('authenticated', 'public.base_de_comision(uuid,text,numeric)', 'EXECUTE') a,
+      has_function_privilege('anon', 'public.monto_de_comision(uuid,numeric,numeric,numeric)', 'EXECUTE') b`))
+      .rows.map((r) => [r.a, r.b])[0], [false, false]);
+  // El agricultor de antes lleva su campo en dólares y su suscripción no
+  // tiene moneda, como todas las de producción: la lista es la de guaraníes.
+  ok('y la base migrada dos veces toma la lista en guaraníes para una empresa en dólares',
+    (await completa.query('select public.base_de_comision($1,$2,$3) b, public.monto_de_comision($1,$4,$5,$6) m',
+      [C.empresaId, 'basico', 90200, 110000, 50, 90200])).rows.map((r) => [Number(r.b), Number(r.m)])[0],
+    [110000, 55000]);
+
   console.log(`\n${'═'.repeat(62)}`);
   console.log(fallos === 0 ? `>>> ${corridas} COMPROBACIONES DE MIGRACIÓN PASARON` : `>>> ${fallos} DE ${corridas} FALLARON`);
   process.exit(fallos ? 1 : 0);

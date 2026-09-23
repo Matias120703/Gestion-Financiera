@@ -1,15 +1,14 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
 import type { PeriodoCobro, Precio } from './tipos';
-import { MONEDA_DE_COBRO, type Idioma } from '@/i18n/idiomas';
 
 /**
  * Precios de la suscripción.
  *
  * LA MONEDA DEL PRECIO NO ES LA MONEDA DEL NEGOCIO. Son dos cosas distintas
- * que antes se confundían: alguien puede llevar su negocio en guaraníes y
- * pagarnos en dólares, o al revés. `empresas.moneda` es en qué carga sus
- * ventas; esto es en qué nos paga.
+ * que antes se confundían: alguien puede llevar su negocio en dólares y
+ * pagarnos en guaraníes. `empresas.moneda` es en qué carga sus ventas; esto
+ * es en qué nos paga.
  *
  * Los importes viven en la tabla `precios`, no acá: cambiar un precio no
  * puede requerir un despliegue.
@@ -18,13 +17,48 @@ import { MONEDA_DE_COBRO, type Idioma } from '@/i18n/idiomas';
 export const PLANES_PAGOS = ['basico', 'pro', 'negocio'] as const;
 export type PlanPago = (typeof PLANES_PAGOS)[number];
 
-/** Monedas en las que sabemos cobrar hoy. */
-export const MONEDAS_DE_COBRO = ['PYG', 'USD'] as const;
+/**
+ * LA SUSCRIPCIÓN SE COBRA SIEMPRE EN GUARANÍES (decisión de Matías, 23/09).
+ *
+ * Bancard le permite una sola moneda por comercio, y eligió guaraníes. Hasta
+ * acá se podía elegir guaraníes o dólares en la pantalla de planes y en la
+ * portada (`?moneda=USD`); ese selector se sacó. Quien tiene una tarjeta de
+ * otro país paga en guaraníes y su banco hace la conversión.
+ *
+ * Las filas en dólares de la tabla `precios` NO se borran: son la
+ * referencia chica («≈ US$ 19») que va al lado del precio en guaraníes para
+ * quien piensa en dólares —un sojero, un brasileño—. Se muestran, no se
+ * cobran. Los precios no cambiaron.
+ *
+ * La comisión del socio (102-104) se calcula sobre la lista en la moneda del
+ * cobro, que por esto es guaraníes salvo que la suscripción diga otra.
+ */
+export const MONEDA_DE_LA_SUSCRIPCION = 'PYG' as const;
 
-export function monedaDeCobro(idioma: Idioma, elegida?: string | null): string {
-  if (elegida && (MONEDAS_DE_COBRO as readonly string[]).includes(elegida)) return elegida;
-  return MONEDA_DE_COBRO[idioma] ?? 'USD';
+/** La moneda de la referencia chica al lado del precio. No se cobra en ella. */
+export const MONEDA_DE_REFERENCIA = 'USD' as const;
+
+/**
+ * En qué moneda se cobra: siempre guaraníes.
+ *
+ * Antes dependía del idioma y de un `?moneda=` elegido a mano. Se deja la
+ * función —y no una constante suelta en cada pantalla— para que el día que
+ * haya una segunda pasarela con otra moneda el cambio sea en un solo lugar.
+ */
+export function monedaDeCobro(): typeof MONEDA_DE_LA_SUSCRIPCION {
+  return MONEDA_DE_LA_SUSCRIPCION;
 }
+
+/**
+ * Las monedas que tienen fila en la tabla `precios`.
+ *
+ * YA NO SON «las monedas en las que se puede cobrar»: se cobra solo en
+ * guaraníes (ver arriba), y ninguna pantalla ofrece elegir. Se deja porque
+ * nombra las dos monedas que la tabla conoce —PYG la que se cobra, USD la
+ * de referencia—, por si algo más lo necesita. No lo uses para armar un
+ * selector de moneda de cobro.
+ */
+export const MONEDAS_DE_COBRO = [MONEDA_DE_LA_SUSCRIPCION, MONEDA_DE_REFERENCIA] as const;
 
 /**
  * Los precios de UN público.
@@ -41,6 +75,27 @@ export async function traerPrecios(moneda: string, tipo?: string): Promise<Preci
   });
   const lista = exigir(respuesta, 'precios') as Precio[];
   return Array.isArray(lista) ? lista : [];
+}
+
+/**
+ * Los precios en dólares, SOLO PARA LA REFERENCIA CHICA.
+ *
+ * A diferencia de `traerPrecios`, si la lectura falla devuelve una lista
+ * vacía y no rompe la pantalla: sin la referencia, el precio en guaraníes se
+ * sigue viendo y se sigue pudiendo pagar. Perder una ayuda no puede costar
+ * la pantalla donde se cobra.
+ */
+export async function traerReferencia(tipo?: string): Promise<Precio[]> {
+  try {
+    const { data, error } = await clienteServidor().rpc('lista_precios', {
+      p_moneda: MONEDA_DE_REFERENCIA,
+      p_tipo: tipo ?? null,
+    });
+    if (error || !Array.isArray(data)) return [];
+    return data as Precio[];
+  } catch {
+    return [];
+  }
 }
 
 export function precioDe(

@@ -102,14 +102,3 @@ export const MONEDA_SUGERIDA: Record<Idioma, string> = {
   // un brasileño que trabaja en Paraguay y factura acá.
   es: 'PYG', pt: 'PYG',
 };
-
-/**
- * Moneda en la que se le cobra la suscripción. Guaraníes solo para quien
- * lee en español; el resto del mundo, dólares. Cuando abramos un país
- * nuevo se agrega su fila en `precios` y se toca este mapa.
- */
-export const MONEDA_DE_COBRO: Record<Idioma, string> = {
-  // Mismo razonamiento: el portugués se agregó para los brasileños de
-  // Paraguay, que pagan la suscripción en guaraníes como cualquier cliente.
-  es: 'PYG', pt: 'PYG',
-};

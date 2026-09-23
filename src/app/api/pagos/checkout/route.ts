@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
-import { checkoutPagopar, checkoutStripe, pasarelaActiva, type PedidoDeCobro } from '@/lib/pagos';
+import { checkoutPagopar, checkoutStripe, esPlanPago, pasarelaActiva, type PedidoDeCobro } from '@/lib/pagos';
 import type { DatosEmpresa, Precio } from '@/lib/tipos';
 import { fichaDe } from '@/lib/rubros';
 import { textos } from '@/i18n';
+import { MONEDA_DE_LA_SUSCRIPCION } from '@/lib/precios';
 
 export const runtime = 'nodejs';
 
 /**
  * Arranca el pago y devuelve a dónde mandar a la persona.
  *
- * EL PRECIO NO LLEGA DEL NAVEGADOR. Del cliente vienen plan, periodo y
- * moneda —tres opciones cerradas— y el importe se busca en la tabla
+ * EL PRECIO NO LLEGA DEL NAVEGADOR. Del cliente vienen plan y periodo
+ * —dos opciones cerradas; la moneda es siempre guaraníes— y el importe se busca en la tabla
  * `precios`. Si el monto viajara en el pedido, cualquiera con la consola
  * abierta pagaría un guaraní por el plan Negocio.
  *
@@ -33,9 +34,23 @@ export async function POST(request: Request) {
 
   const plan = cuerpo?.plan;
   const periodo = cuerpo?.periodo === 'anual' ? 'anual' : 'mensual';
-  const moneda = String(cuerpo?.moneda ?? 'USD').toUpperCase();
+  /**
+   * LA MONEDA NO SE LEE DEL PEDIDO (23/09): siempre guaraníes.
+   *
+   * Bancard deja cobrar en una sola moneda y Matías eligió guaraníes. Antes
+   * esta línea tomaba `cuerpo.moneda` y, si faltaba, dólares: un pedido
+   * armado a mano con `moneda: 'USD'` (o sin moneda) cobraba en dólares, y
+   * el webhook dejaba `suscripciones.moneda = 'USD'` para siempre
+   * —`cambiar_plan_cuenta` no la vuelve a tocar—. Un cobro posterior de
+   * 90.200 Gs por transferencia calculaba entonces la comisión del socio
+   * sobre la lista en dólares: base 19 y 9,50 «guaraníes» (105). Lo que
+   * mande el navegador en `moneda` se ignora; el botón ya manda PYG.
+   */
+  const moneda = MONEDA_DE_LA_SUSCRIPCION;
 
-  if (plan !== 'pro' && plan !== 'negocio') {
+  // Los tres planes pagos. El Básico también se paga con tarjeta; si el
+  // rubro no lo ofrece, lo frena la regla de abajo, no esta.
+  if (!esPlanPago(plan)) {
     return NextResponse.json({ error: s.planDesconocido }, { status: 400 });
   }
 
@@ -76,14 +91,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: s.planNoEsDeTuRubro }, { status: 400 });
   }
 
-  // El precio, de la base.
-  const { data: precios, error: errorPrecios } = await supabase.rpc('lista_precios', { p_moneda: moneda });
+  /**
+   * El precio, de la base, Y DE SU TIPO DE CUENTA.
+   *
+   * `precios` tiene dos listas: la personal (un solo plan, el Pro de 60.000)
+   * y la de emprendedor (Básico 110.000, Pro 190.000, Premium 250.000).
+   * Antes se pedía solo por moneda y se tomaba la primera fila con ese plan;
+   * como la lista viene ordenada por tipo, «emprendedor» salía antes que
+   * «personal» y una cuenta personal que pagaba su Pro con tarjeta pagaba
+   * el de 190.000. La pantalla de planes ya filtraba por tipo; el checkout
+   * ahora cobra lo mismo que la pantalla muestra.
+   */
+  const { data: precios, error: errorPrecios } = await supabase.rpc('lista_precios', {
+    p_moneda: moneda, p_tipo: empresa.tipo_cuenta,
+  });
   if (errorPrecios) {
     return NextResponse.json({ error: s.noSeLeyeronPrecios }, { status: 503 });
   }
 
+  // El filtro por tipo se repite acá: si la base devolviera de más, se
+  // prefiere no encontrar precio (400) a cobrar el de la otra lista.
   const precio = (Array.isArray(precios) ? precios : [] as Precio[])
-    .find((p: Precio) => p.plan === plan && p.periodo === periodo);
+    .find((p: Precio) => p.plan === plan && p.periodo === periodo
+      && p.tipo_cuenta === empresa.tipo_cuenta);
 
   if (!precio) {
     return NextResponse.json(

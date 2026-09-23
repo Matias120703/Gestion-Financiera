@@ -313,7 +313,10 @@ export function PanelAdmin({
         comisiones={comisiones}
         referidos={referidos}
         retiros={retiros}
-        moneda={finanzas.configurada ? finanzas.moneda : 'PYG'}
+        // Las comisiones se calculan y se pagan en guaraníes (102-105): la
+        // suscripción se cobra siempre en guaraníes, sea cual sea la moneda
+        // en que Orden lleva sus propias finanzas.
+        moneda="PYG"
       />
 
       {abierta && (
@@ -966,7 +969,8 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
                       <span className="text-tinta/50"> · {fechaCorta(h.cuando)} · {h.quien}</span>
                       {h.detalle?.importe ? (
                         <span className="ml-1 font-semibold text-verde-fuerte">
-                          {dinero(Number(h.detalle.importe), cuenta.moneda)}
+                          {/* Lo que se cobró de la suscripción: siempre en guaraníes (23/09), aunque el negocio lleve sus datos en otra moneda. */}
+                          {dinero(Number(h.detalle.importe), 'PYG')}
                         </span>
                       ) : null}
                       {h.detalle?.nota ? (
