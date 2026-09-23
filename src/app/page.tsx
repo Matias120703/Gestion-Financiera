@@ -628,7 +628,9 @@ export default async function Portada({
 
       {/* ---------------- Ganar recomendando ----------------
           Va DESPUÉS de los precios y no antes: el que todavía no sabe cuánto
-          cuesta no puede entender qué significa «la mitad del primer pago».
+          cuesta no puede entender qué significa «la mitad del precio de su
+          plan» (102: la comisión es sobre el precio de lista, no sobre lo que
+          pagó con descuento).
           Y va en la portada, y no escondido adentro, porque para muchos es
           la razón por la que van a hablar de Orden con otro. */}
       <section id="recomendar" className="scroll-mt-4 border-t border-borde bg-arena">

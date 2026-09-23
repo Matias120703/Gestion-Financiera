@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useTextos } from '@/i18n/cliente';
-import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
+import { useEffect, useMemo, useState } from 'react';
+import { useTextos, useIdioma } from '@/i18n/cliente';
+import { metodoVisible } from '@/i18n/nombres';
+import { categoriaDelRubro } from '@/i18n/textos/gastos-campana';
 import type { Textos } from '@/i18n/diccionarios';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -18,6 +19,10 @@ import { mensajeDeError } from '@/lib/errores';
 import { ElegirCuenta, cuentaDelCobro, cuentasDelMetodo, useCuentasParaElegir } from '@/components/FormaDeCobro';
 import { tonoDeCuenta } from '@/lib/colores-cuenta';
 import type { CuentaParaElegir } from '@/lib/tipos';
+import { etiquetaCampana, type CampanaParaElegir } from '@/components/ListaMovimientos';
+
+/** La última campaña elegida, por negocio: la misma que recuerda Gastos. */
+const claveCampana = (empresa: string) => `orden:campana:${empresa}`;
 
 /**
  * PANTALLA DE VENTA
@@ -70,14 +75,26 @@ function metodosDe(t: Textos): { valor: string; corto: string; largo: string }[]
 
 export function PantallaVenta({
   empresaId, moneda, productos, frecuentes = [],
+  campanas = [], esAgricultura = false, conCatalogo = true,
 }: {
   empresaId: string;
   moneda: string;
   productos: Producto[];
   /** Ids ordenados por lo más vendido en los últimos 30 días. */
   frecuentes?: string[];
+  /**
+   * Las campañas abiertas, si el negocio tiene lotes (100). La venta se
+   * registra como siempre y después se cuelga de la campaña elegida con
+   * `asignar_a_lote`: `registrar_venta` no cambia de firma (decisión 19).
+   */
+  campanas?: CampanaParaElegir[];
+  /** El agricultor: se le recuerda que el grano del silo va por la liquidación. */
+  esAgricultura?: boolean;
+  /** Si el rubro tiene catálogo (`ficha.secciones['/productos']`). Sin él, se vende con «suelto». */
+  conCatalogo?: boolean;
 }) {
   const t = useTextos();
+  const idioma = useIdioma();
   const METODOS = metodosDe(t);
   const zona = useZona();
   const router = useRouter();
@@ -119,6 +136,25 @@ export function PantallaVenta({
   const [avisoStock, setAvisoStock] = useState('');
   const [libreAbierto, setLibreAbierto] = useState(false);
   const [detalleAbierto, setDetalleAbierto] = useState(false);
+  /**
+   * De qué campaña es esta venta (100). Vacío = ninguna. Queda elegida para
+   * la venta siguiente, como la cuenta: la feria de un sábado es toda de la
+   * misma huerta.
+   */
+  const [loteId, setLoteId] = useState('');
+  const loteElegido = campanas.find((c) => c.id === loteId) ?? null;
+  // Del navegador, después de montar: en el servidor no hay localStorage.
+  useEffect(() => {
+    try {
+      const ultima = localStorage.getItem(claveCampana(empresaId));
+      if (ultima && campanas.some((c) => c.id === ultima)) setLoteId(ultima);
+    } catch { /* sin almacenamiento: se elige a mano */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function elegirLote(id: string) {
+    setLoteId(id);
+    try { localStorage.setItem(claveCampana(empresaId), id); } catch { /* se elige de nuevo */ }
+  }
 
   const categorias = useMemo(() => {
     const set = new Set(productos.map((p) => p.categoria || 'General'));
@@ -237,7 +273,7 @@ export function PantallaVenta({
       // nombre a medio escribir llenaría la lista de «J», «Ju», «Jua».
       const clienteId = await asegurarCliente(empresaId, elegido);
 
-      const { error } = await supabase.rpc('registrar_venta', {
+      const { data: ventaId, error } = await supabase.rpc('registrar_venta', {
         p_empresa: empresaId,
         p_items: carrito.map((l) => ({
           producto_id: l.producto_id,
@@ -260,11 +296,23 @@ export function PantallaVenta({
       });
       if (error) throw error;
 
-      setExito(t.venta.ventaRegistrada(dinero(montoCobrado, moneda)));
+      // La venta ya quedó. Colgarla de la campaña es un segundo paso: si
+      // falla, NO se deshace la venta ni se muestra como error (el cliente
+      // ya pagó); se avisa y se arregla desde el historial.
+      let noSeSumo = false;
+      if (loteElegido && ventaId) {
+        const r = await supabase.rpc('asignar_a_lote', { p_movimiento: ventaId, p_lote: loteElegido.id });
+        noSeSumo = Boolean(r.error);
+      }
+
+      setExito(loteElegido && !noSeSumo
+        ? t.gastosCampana.chip.ventaEn(dinero(montoCobrado, moneda), loteElegido.nombre)
+        : t.venta.ventaRegistrada(dinero(montoCobrado, moneda)));
       setAvisoStock(
-        negativos.length > 0
-          ? t.venta.stockNegativo(negativos.map((l) => l.nombre).join(', '))
-          : '',
+        [
+          negativos.length > 0 ? t.venta.stockNegativo(negativos.map((l) => l.nombre).join(', ')) : '',
+          noSeSumo ? t.gastosCampana.vender.noSeSumo : '',
+        ].filter(Boolean).join(' '),
       );
       limpiar();
       setDetalleAbierto(false);
@@ -315,6 +363,22 @@ export function PantallaVenta({
           </button>
         </div>
 
+        {/* El grano del silo no se vende acá: va por la liquidación de la
+            campaña, que sabe de kilos, descuentos y lo que el silo se cobró.
+            Vender sigue sirviendo para la feria, la huerta, la mandioca. */}
+        {esAgricultura && (
+          <div className="rounded-xl bg-arena px-3.5 pt-2.5 text-[12.5px] leading-snug text-tinta/60">
+            <p>
+              <span className="font-bold text-tinta/75">{t.gastosCampana.vender.silo}</span>{' '}
+              {t.gastosCampana.vender.siloDetalle}
+            </p>
+            {/* En su propio renglón, con zona táctil entera: dentro del párrafo era un enlace de 18 px. */}
+            <Link href="/lotes" className="boton-texto inline-flex min-h-[44px] items-center">
+              {t.gastosCampana.vender.irAlLote}
+            </Link>
+          </div>
+        )}
+
         {categorias.length > 1 && (
           <div className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
             {['todas', ...categorias].map((c) => (
@@ -322,13 +386,22 @@ export function PantallaVenta({
                 key={c} type="button" onClick={() => setCategoria(c)}
                 className={categoria === c ? 'chip-encendido' : 'chip-apagado'}
               >
-                {c === 'todas' ? t.venta.todas : categoriaVisible(t, c)}
+                {c === 'todas' ? t.venta.todas : categoriaDelRubro(t, c)}
               </button>
             ))}
           </div>
         )}
 
-        {sinCatalogo ? (
+        {sinCatalogo && !conCatalogo ? (
+          <div className="tarjeta">
+            <Vacio titulo={t.gastosCampana.vender.sinCatalogo} detalle={t.gastosCampana.vender.sinCatalogoDetalle} />
+            <div className="px-6 pb-6 text-center">
+              <button type="button" className="boton-principal min-h-[48px]" onClick={() => setLibreAbierto(true)}>
+                {t.venta.suelto}
+              </button>
+            </div>
+          </div>
+        ) : sinCatalogo ? (
           <div className="tarjeta">
             <Vacio
               titulo={t.venta.sinProductos}
@@ -395,6 +468,7 @@ export function PantallaVenta({
             onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
             setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
             cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
+            campanas={campanas} loteId={loteId} setLoteId={elegirLote}
           />
         </div>
       </aside>
@@ -431,6 +505,24 @@ export function PantallaVenta({
                   >
                     <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/60" style={{ backgroundColor: tonoDeCuenta(c) }} />
                     <span className="truncate">{c.nombre}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* De qué campaña (100): a la vista, como la cuenta. Queda elegida
+                de la venta anterior, y una campaña escondida se colgaría
+                sin que nadie la vea. */}
+            {campanas.length > 0 && (
+              <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pt-2" role="group" aria-label={t.gastosCampana.vender.deQueLote}>
+                {[{ id: '', texto: t.gastosCampana.chip.ninguno }, ...campanas.map((c) => ({ id: c.id, texto: etiquetaCampana(c, idioma) }))].map((c) => (
+                  <button
+                    key={c.id || 'ninguna'} type="button" onClick={() => elegirLote(c.id)} aria-pressed={loteId === c.id}
+                    className={`inline-flex min-h-[44px] max-w-[60vw] shrink-0 items-center rounded-xl px-3 text-[13px] font-semibold transition active:scale-[.97] ${
+                      loteId === c.id ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
+                    }`}
+                  >
+                    <span className="truncate">{c.texto}</span>
                   </button>
                 ))}
               </div>
@@ -478,6 +570,7 @@ export function PantallaVenta({
               onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
               setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
               cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
+              campanas={campanas} loteId={loteId} setLoteId={elegirLote}
             />
           </div>
         </div>
@@ -509,14 +602,19 @@ function Carrito(props: {
   cuentas: CuentaParaElegir[];
   cuentaElegida: string | null;
   setCuentaElegida: (c: string) => void;
+  campanas: CampanaParaElegir[];
+  loteId: string;
+  setLoteId: (id: string) => void;
 }) {
   const t = useTextos();
+  const idioma = useIdioma();
   const METODOS = metodosDe(t);
   const {
     carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha,
     empresaId, elegido, setElegido,
     guardando, error, sinMarco, onCambiar, onQuitar, onLimpiar, onCobrar,
     setDescuento, setMetodo, setFecha, cuentas, cuentaElegida, setCuentaElegida,
+    campanas, loteId, setLoteId,
   } = props;
 
   const [masOpciones, setMasOpciones] = useState(false);
@@ -610,6 +708,28 @@ function Carrito(props: {
             </div>
 
             <ElegirCuenta cuentas={cuentas} metodo={metodo} elegida={cuentaElegida} alElegir={setCuentaElegida} />
+
+            {campanas.length > 0 && (
+              <div>
+                <span className="etiqueta">{t.gastosCampana.vender.deQueLote}</span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button" onClick={() => setLoteId('')} aria-pressed={loteId === ''}
+                    className={loteId === '' ? 'chip-encendido' : 'chip-apagado'}
+                  >
+                    {t.gastosCampana.chip.ninguno}
+                  </button>
+                  {campanas.map((c) => (
+                    <button
+                      key={c.id} type="button" onClick={() => setLoteId(c.id)} aria-pressed={loteId === c.id}
+                      className={loteId === c.id ? 'chip-encendido' : 'chip-apagado'}
+                    >
+                      {etiquetaCampana(c, idioma)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <label className="block">
               <span className="etiqueta">{t.venta.descuento}</span>

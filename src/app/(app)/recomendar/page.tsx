@@ -9,8 +9,10 @@ export const dynamic = 'force-dynamic';
  * RECOMENDAR ORDEN.
  *
  * La idea es del dueño, y es simple: quien trae un cliente nuevo se lleva la
- * mitad del primer pago de ese cliente. Una sola vez. Lo que ese negocio
- * pague después queda entero para Orden.
+ * mitad del precio de lista de un mes de su plan, con su primer pago (102:
+ * antes era la mitad de lo que entraba, y un descuento o un pago anual lo
+ * movían). Una sola vez. Lo que ese negocio pague después queda entero para
+ * Orden.
  *
  * Está adentro de la app y no en la web pública porque el que recomienda con
  * ganas es el que ya lo usa. Alguien que nunca vio el sistema no convence a

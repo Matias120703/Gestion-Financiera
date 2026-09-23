@@ -44,6 +44,9 @@ function rechazado(nombre, res, frag) {
 
   const P = await H.montarEmpresa(db, { email: 'profe@ingles.com', nombre: 'Clases de inglés', rubro: 'clases' });
   const Otro = await H.montarEmpresa(db, { email: 'otro@academia.com', nombre: 'Otra academia', rubro: 'clases' });
+  // Desde la 102 un profe o un trainer prueban Básico, que es de una sola
+  // persona: el ayudante es una silla paga (048), como la compraría él.
+  await db.query('update public.suscripciones set tope_vendedores = 1 where empresa_id = $1', [P.empresaId]);
   const ayudante = await H.sumarMiembro(db, P.empresaId, 'ayuda@ingles.com', 'vendedor');
 
   const como = (uid, sql, args = []) => H.intentar(db, uid, () => db.query(sql, args));

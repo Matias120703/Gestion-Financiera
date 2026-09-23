@@ -386,8 +386,14 @@ export interface ComisionAdmin {
   documento: string;
   empresa_id: string;
   negocio: string;
-  /** Lo que pagó el cliente. La comisión sale de acá, no del precio de lista. */
+  /** El precio de lista de un mes del plan (102): de acá sale la comisión. */
   base: number;
+  /**
+   * Lo que entró en el cobro que la generó (103). Null en una comisión vieja
+   * que no se pudo reconstruir: ahí se muestra `base`, que antes de la 102
+   * era justamente lo que entró.
+   */
+  importe: number | null;
   porcentaje: number;
   monto: number;
   estado: EstadoComision;

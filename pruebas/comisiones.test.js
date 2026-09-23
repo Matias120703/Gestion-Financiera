@@ -3,8 +3,9 @@
  *
  * LA REGLA QUE SE PRUEBA ACÁ ES «UNA SOLA VEZ»
  *
- * La comisión es el 50% del PRIMER pago del cliente que alguien trajo, y nada
- * más. Si eso se afloja en algún borde —dos cobros, un cambio de plan, un
+ * La comisión nace con el PRIMER pago del cliente que alguien trajo, y nada
+ * más. Desde la 102 es la mitad del precio de lista de un mes de su plan
+ * (no de lo que entró), y nunca más de lo que entró: grupo 17. Si eso se afloja en algún borde —dos cobros, un cambio de plan, un
  * negocio anotado dos veces— Orden termina pagando dos, tres veces por el
  * mismo cliente y nadie se da cuenta hasta que no cierran las cuentas.
  *
@@ -85,7 +86,7 @@ async function principal() {
 
   // Lectura directa, como superusuario: para comprobar el dato, no el permiso.
   const comisionDe = (empresa) => db.query(
-    `select id, monto, base, porcentaje, estado, nota, gasto_id, movimiento_id
+    `select id, monto, base, importe, porcentaje, estado, nota, gasto_id, movimiento_id
        from public.comisiones where empresa_id = $1`,
     [empresa],
   ).then((r) => r.rows[0] ?? null);
@@ -188,11 +189,15 @@ async function principal() {
     ok('un importe en cero tampoco', cero.valor.comision_generada, false);
     ok('todavía no hay ninguna comisión', await cuantasComisiones(), 0);
 
-    const pago = await cobrar(A.empresaId, 'negocio', 190000);
+    // Desde la 102 la base es el precio de lista de un mes del plan que se
+    // activó, no lo que entró. Este cobro era de 'negocio' por 190.000; pasa
+    // a ser Pro a su precio de lista, que da exactamente los números que el
+    // resto del archivo arrastra (95.000, y los 115.000 de Sofía).
+    const pago = await cobrar(A.empresaId, 'pro', 190000);
     ok('cobrarle de verdad sí la genera', pago.valor.comision_generada, true);
 
     const c = await comisionDe(A.empresaId);
-    ok('la base es lo que pagó', Number(c.base), 190000);
+    ok('la base es el precio de lista de Pro', Number(c.base), 190000);
     ok('el porcentaje es 50', Number(c.porcentaje), 50);
     ok('y el monto la mitad', Number(c.monto), 95000);
     ok('queda por pagar', c.estado, 'por_pagar');
@@ -233,7 +238,9 @@ async function principal() {
 
     const c = await comisionDe(C.empresaId);
     ok('la comisión nueva usa el porcentaje nuevo', Number(c.porcentaje), 30);
-    ok('y el monto sale de ahí', Number(c.monto), 30000);
+    // Desde la 102 el 30% es del precio de lista de Premium (250.000), no de
+    // los 100.000 que entraron: 75.000, que igual no pasa de lo que entró.
+    ok('y el monto sale de ahí', Number(c.monto), 75000);
     ok('la vieja no se toca', Number((await comisionDe(A.empresaId)).porcentaje), 50);
 
     await db.query('update public.ajustes_orden set comision_porcentaje = 50 where unica');
@@ -480,9 +487,12 @@ async function principal() {
     rechazado('y no puede cambiarlo por otro después',
       await usar(F.uid, F.empresaId, S2.codigo), 'ya entró con otro código');
 
-    const cobro = await cobrar(F.empresaId, 'negocio', 60000);
+    // Desde la 102 la comisión es la mitad del precio de lista (Premium,
+    // 250.000) y nunca más de lo que entró: con 60.000 serían 60.000. Se
+    // cobra el precio entero para que el número siga diciendo «la mitad».
+    const cobro = await cobrar(F.empresaId, 'negocio', 250000);
     ok('cuando paga, la comisión sale sola', cobro.valor.comision_generada, true);
-    ok('y es del que lo trajo', Number((await comisionDe(F.empresaId)).monto), 30000);
+    ok('y es del que lo trajo', Number((await comisionDe(F.empresaId)).monto), 125000);
 
     // Un vendedor del negocio no decide a nombre de quién queda la cuenta.
     const G = await H.montarEmpresa(db, { email: 'dueno@ferreteria.com', nombre: 'Ferretería Paraná' });
@@ -623,7 +633,9 @@ async function principal() {
 
     const L = await H.montarEmpresa(db, { email: 'dueno@rotiseria.com', nombre: 'Rotisería del Centro' });
     await anotar(L.empresaId, S1.codigo);
-    const cobro = await cobrar(L.empresaId, 'negocio', 190000);
+    // Pro y no 'negocio' desde la 102: la base es el precio de lista, y el de
+    // Pro (190.000) es el que da los 95.000 que esta prueba siempre miró.
+    const cobro = await cobrar(L.empresaId, 'pro', 190000);
 
     ok('sin empresa de Orden, el ingreso no se anota', cobro.valor.ingreso_anotado, false);
     ok('y se avisa por qué', /empresa de Orden/.test(cobro.valor.aviso ?? ''), true);
@@ -885,7 +897,10 @@ async function principal() {
     ok('y que ese socio está pausado', suyo?.socio_activo, false);
 
     // Se le cobra sin que nadie lo haya anotado: no nace comisión.
-    await cobrar(Q.empresaId, 'pro', 60000);
+    // Desde la 102 el primer pago es Básico y el segundo Pro, por el mismo
+    // importe: la base sale del plan de ESE primer pago, así que si la
+    // función mirara el segundo, el número se notaría.
+    await cobrar(Q.empresaId, 'basico', 60000);
     await cobrar(Q.empresaId, 'pro', 60000);
     ok('sin referido, el cobro no generó comisión', await comisionDe(Q.empresaId), null);
 
@@ -899,8 +914,8 @@ async function principal() {
       'select origen from public.referidos where empresa_id = $1', [Q.empresaId]).then((x) => x.rows[0].origen), 'link');
     ok('y avisa que se generó la comisión', r.valor.comision_generada, true);
     const c = await comisionDe(Q.empresaId);
-    ok('por el PRIMER pago, no por los dos', Number(c.base), 60000);
-    ok('la mitad', Number(c.monto), 30000);
+    ok('por el PRIMER pago, no por los dos: el precio de lista de Básico', Number(c.base), 110000);
+    ok('la mitad, que no pasa de lo que entró', Number(c.monto), 55000);
     ok('queda escrito por qué nació tarde', /código fue rechazado/.test(c.nota), true);
     ok('y el rechazo ya no figura', (await rechazados()).valor.some((x) => x.empresa_id === Q.empresaId), false);
 
@@ -923,6 +938,255 @@ async function principal() {
     // Si ya hay referido, un rechazo posterior no se guarda.
     ok('con referido anotado, el rechazo se ignora',
       (await guardarRechazo(Q.uid, Q.empresaId, 'ZZZZ9999', 'x')).valor.guardado, false);
+  }
+
+  // =====================================================================
+  grupo('17 · La mitad del precio de lista de un mes (102)');
+  // =====================================================================
+  {
+    // Decisión de Matías del 23/09: el socio se lleva la mitad del precio de
+    // lista MENSUAL del plan que se activó, aunque el cliente haya pagado con
+    // descuento o el año entero. Nunca más de lo que entró.
+    const Y = (await guardarSocio({ nombre: 'Socia de lista' })).valor;
+    const cobrarMeses = (empresa, plan, meses, importe) => comoJefe(() => db.query(
+      'select public.cambiar_plan_cuenta($1,$2,$3,$4,$5::numeric,$6::integer) j',
+      [empresa, plan, meses, 'cobrado por transferencia', importe, null],
+    ).then((r) => r.rows[0].j));
+    const traido = async (email, nombre, extra = {}) => {
+      const e = await H.montarEmpresa(db, { email, nombre, ...extra });
+      await anotar(e.empresaId, Y.codigo);
+      return e;
+    };
+    const monedaDeSuscripcion = (empresa, moneda) => db.query(
+      'update public.suscripciones set moneda = $2 where empresa_id = $1', [empresa, moneda]);
+
+    // Pagó Básico con el descuento de la prueba (078): 90.200 en vez de 110.000.
+    const b1 = await traido('dueno@almacen1.com', 'Almacén con descuento');
+    const r1 = await cobrar(b1.empresaId, 'basico', 90200);
+    ok('Básico con descuento genera la comisión', r1.valor.comision_generada, true);
+    const c1 = await comisionDe(b1.empresaId);
+    ok('la base es el precio de lista de Básico, no lo que pagó', Number(c1.base), 110000);
+    ok('y el socio se lleva la mitad de la lista', Number(c1.monto), 55000);
+
+    // Pagó el año entero de una: la base sigue siendo UN mes.
+    const b2 = await traido('dueno@almacen2.com', 'Almacén anual');
+    await cobrarMeses(b2.empresaId, 'basico', 12, 1210000);
+    const c2 = await comisionDe(b2.empresaId);
+    ok('pagando el año, la base es un mes', Number(c2.base), 110000);
+    ok('y la comisión, la mitad de un mes', Number(c2.monto), 55000);
+
+    // En dólares: el precio de lista en la moneda de la suscripción.
+    const b3 = await traido('dueno@usd.com', 'Tienda en dólares');
+    await monedaDeSuscripcion(b3.empresaId, 'USD');
+    await cobrar(b3.empresaId, 'pro', 32);
+    const c3 = await comisionDe(b3.empresaId);
+    ok('Pro en dólares: la base es 32', Number(c3.base), 32);
+    ok('y la comisión 16', Number(c3.monto), 16);
+
+    // Un cobro de prueba por menos de la mitad: nunca más de lo que entró.
+    const b4 = await traido('dueno@prueba.com', 'Cobro de prueba');
+    await cobrar(b4.empresaId, 'pro', 1000);
+    const c4 = await comisionDe(b4.empresaId);
+    ok('con 1.000 cobrados la base sigue siendo la lista', Number(c4.base), 190000);
+    ok('pero la comisión no pasa de lo que entró', Number(c4.monto), 1000);
+
+    // Sin precio de lista para esa moneda: la regla de antes, sobre el importe.
+    const b5 = await traido('dueno@reales.com', 'Loja em reais');
+    await monedaDeSuscripcion(b5.empresaId, 'BRL');
+    await cobrar(b5.empresaId, 'pro', 80);
+    const c5 = await comisionDe(b5.empresaId);
+    ok('sin precio de lista, la base es lo que entró', Number(c5.base), 80);
+    ok('y la comisión la mitad de eso', Number(c5.monto), 40);
+    // (b5 también prueba el orden: la empresa está en guaraníes, que SÍ tienen
+    // precio de Pro; si la de la empresa le ganara a la de la suscripción, la
+    // base sería 190.000 y no 80.)
+
+    // Lo que pasa DE VERDAD en producción: `suscripciones.moneda` es null en
+    // todas (solo la escribe el webhook de la pasarela, que no se usa; el cobro
+    // por transferencia nunca la toca). La moneda sale entonces de la empresa.
+    // Antes de este arreglo, con null se tomaba el precio en guaraníes: una
+    // cuenta en pesos que paga 60.001 ARS tenía base 250.000 PYG, la mitad
+    // quedaba topada en lo que entró y el socio se llevaba el 100 %.
+    const b7 = await traido('dueno@pesos.com', 'Negocio en pesos', { moneda: 'ARS' });
+    await monedaDeSuscripcion(b7.empresaId, null);
+    await cobrar(b7.empresaId, 'negocio', 60001);
+    const c7 = await comisionDe(b7.empresaId);
+    ok('suscripción sin moneda y empresa en pesos: sin lista en ARS, la base es lo que entró',
+      Number(c7.base), 60001);
+    ok('y el socio se lleva la mitad, con centavos, no el 100 %', Number(c7.monto), 30000.5);
+
+    const b8 = await traido('dueno@dolares.com', 'Negocio en dólares', { moneda: 'USD' });
+    await monedaDeSuscripcion(b8.empresaId, null);
+    await cobrar(b8.empresaId, 'pro', 32);
+    const c8 = await comisionDe(b8.empresaId);
+    ok('suscripción sin moneda y empresa en dólares: la lista de Pro en USD', Number(c8.base), 32);
+    ok('y la comisión 16, no 32', Number(c8.monto), 16);
+
+    // La cuenta personal tiene su propio precio de lista.
+    const b6 = await traido('persona@hogar.com', 'Mis gastos', { tipoCuenta: 'personal' });
+    await cobrar(b6.empresaId, 'pro', 60000);
+    ok('una cuenta personal usa el precio personal',
+      [Number((await comisionDe(b6.empresaId)).base), Number((await comisionDe(b6.empresaId)).monto)],
+      [60000, 30000]);
+
+    // Lo que no cambia: una sola por negocio, y se cae si el cobro se anula.
+    const otra = await cobrar(b1.empresaId, 'pro', 190000);
+    ok('sigue siendo una sola por negocio', otra.valor.comision_generada, false);
+    ok('y sigue valiendo lo del primer pago', Number((await comisionDe(b1.empresaId)).monto), 55000);
+
+    const mov = await ingresoDe(b2.empresaId);
+    aceptado('se anula el cobro anual',
+      await comoJefe(() => db.query('select public.anular_movimiento($1,$2)', [mov, 'no era']))
+    );
+    ok('y la comisión por pagar se cae', (await comisionDe(b2.empresaId)).estado, 'anulada');
+
+    // Los ayudantes de la cuenta son internos: nadie de afuera los llama.
+    rechazado('un cliente no puede calcular bases de comisión',
+      await H.intentar(db, b1.uid, () => db.query(
+        'select public.base_de_comision($1,$2,$3)', [b1.empresaId, 'pro', 1])),
+      'permission denied|denegado');
+    rechazado('ni montos',
+      await H.intentar(db, b1.uid, () => db.query(
+        'select public.monto_de_comision($1,$2,$3,$4)', [b1.empresaId, 100, 50, 100])),
+      'permission denied|denegado');
+  }
+
+  // =====================================================================
+  grupo('18 · La comisión guarda lo que entró (103)');
+  // =====================================================================
+  {
+    // Desde la 102 `base` es el precio de lista de un mes. El panel de la
+    // administración decía «pagó {base}» y «te queda {base − monto}», y con
+    // descuento o con el año pagado de una mentía: entraban 90.200 y decía
+    // que le quedaban 55.000, cuando eran 35.200. La 103 guarda el importe.
+    const uidSocia = await H.crearUsuario(db, 'socia@importe103.com');
+    const Z = (await guardarSocio({ nombre: 'Socia del importe', email: 'socia@importe103.com' })).valor;
+    const cobrarMeses = (empresa, plan, meses, importe) => comoJefe(() => db.query(
+      'select public.cambiar_plan_cuenta($1,$2,$3,$4,$5::numeric,$6::integer) j',
+      [empresa, plan, meses, 'cobrado por transferencia', importe, null],
+    ).then((r) => r.rows[0].j));
+    const traido = async (email, nombre) => {
+      const e = await H.montarEmpresa(db, { email, nombre });
+      await anotar(e.empresaId, Z.codigo);
+      return e;
+    };
+    const guardarRechazo = (uid, empresa, codigo, motivo) => H.intentar(db, uid, () =>
+      db.query('select public.guardar_codigo_rechazado($1,$2,$3) j', [empresa, codigo, motivo])
+        .then((r) => r.rows[0].j));
+    const listar = async () => (await comoJefe(() => db.query(
+      'select public.listar_comisiones($1::text,$2::uuid,$3::integer) j', [null, Z.id, 200])
+      .then((r) => r.rows[0].j))).valor;
+
+    // Básico con el descuento de la prueba (078): el ejemplo que mentía.
+    const d1 = await traido('dueno@descuento103.com', 'Almacén con descuento 103');
+    await cobrar(d1.empresaId, 'basico', 90200);
+    const c1 = await comisionDe(d1.empresaId);
+    ok('con descuento, la comisión guarda lo que entró', Number(c1.importe), 90200);
+    ok('la base sigue siendo el precio de lista', Number(c1.base), 110000);
+    ok('y el monto, la mitad de la lista', Number(c1.monto), 55000);
+    ok('a Orden le quedan 35.200, no 55.000', Number(c1.importe) - Number(c1.monto), 35200);
+
+    // El año pagado de una: el importe es el año, la base un mes.
+    const d2 = await traido('dueno@anual103.com', 'Almacén anual 103');
+    await cobrarMeses(d2.empresaId, 'basico', 12, 1210000);
+    const c2 = await comisionDe(d2.empresaId);
+    ok('pagando el año, guarda el año entero', Number(c2.importe), 1210000);
+    ok('aunque la base y el monto sean de un mes', [Number(c2.base), Number(c2.monto)], [110000, 55000]);
+
+    // Un segundo cobro no genera otra comisión, ni le cambia el importe.
+    await cobrar(d1.empresaId, 'pro', 190000);
+    ok('un segundo cobro no le cambia el importe', Number((await comisionDe(d1.empresaId)).importe), 90200);
+
+    // El código que se había perdido (068): la comisión nace al anotarlo,
+    // por el PRIMER pago. Primero Básico por 60.000 y después Pro por
+    // 190.000: si guardara el segundo, se notaría.
+    const d3 = await H.montarEmpresa(db, { email: 'dueno@enlace103.com', nombre: 'Enlace perdido 103' });
+    await guardarRechazo(d3.uid, d3.empresaId, Z.codigo, 'se perdió en el camino');
+    await cobrar(d3.empresaId, 'basico', 60000);
+    await cobrar(d3.empresaId, 'pro', 190000);
+    const r3 = await anotar(d3.empresaId, Z.codigo);
+    ok('anotar el código perdido genera la comisión', r3.valor.comision_generada, true);
+    const c3 = await comisionDe(d3.empresaId);
+    ok('asignar_referido también guarda lo que entró: el del primer pago', Number(c3.importe), 60000);
+    ok('con la base y el monto de la 102', [Number(c3.base), Number(c3.monto)], [110000, 55000]);
+
+    // La lista del panel de la administración.
+    const lista = await listar();
+    const de = (l, e) => l.find((x) => x.empresa_id === e) ?? {};
+    ok('listar_comisiones devuelve el importe', Number(de(lista, d1.empresaId).importe), 90200);
+    ok('al lado de la base, que es otro número', Number(de(lista, d1.empresaId).base), 110000);
+    ok('la anual, con el año entero', Number(de(lista, d2.empresaId).importe), 1210000);
+    ok('y la del código perdido, con el primer pago', Number(de(lista, d3.empresaId).importe), 60000);
+
+    // El socio no ve lo que pagó el negocio que trajo: antes no lo veía y
+    // la 103 no se lo abre.
+    const panel = await H.intentar(db, uidSocia, () =>
+      db.query('select public.mi_panel_socio() j').then((r) => r.rows[0].j));
+    ok('el socio ve sus tres negocios', panel.valor?.referidos?.length, 3);
+    ok('pero ni el importe ni la base de ninguno',
+      panel.valor.referidos.some((x) => 'importe' in x || 'base' in x), false);
+    ok('solo lo suyo: su comisión',
+      panel.valor.referidos.map((x) => Number(x.monto)), [55000, 55000, 55000]);
+
+    // --- El relleno de las que ya existían ---
+    //
+    // Se borra el importe (y a veces lo que lo ata a su cobro) y se vuelve
+    // a correr la migración, como si hubieran nacido antes de ella.
+
+    // Nació en el SEGUNDO pago: pagó una vez sin nadie anotado, lo anotaron
+    // tarde (sin comisión retroactiva) y la comisión salió con el cobro
+    // siguiente. Si pierde el ingreso y la hora, el primer pago NO es su
+    // importe: mejor null.
+    const d4 = await H.montarEmpresa(db, { email: 'dueno@tarde103.com', nombre: 'Anotado tarde 103' });
+    await cobrar(d4.empresaId, 'basico', 60000);
+    await anotar(d4.empresaId, Z.codigo);
+    await cobrar(d4.empresaId, 'pro', 190000);
+    ok('anotado tarde, la comisión nace con el cobro siguiente',
+      Number((await comisionDe(d4.empresaId)).importe), 190000);
+
+    // Sin renglón en el registro: queda el ingreso de Orden.
+    const d5 = await traido('dueno@sinregistro103.com', 'Sin registro 103');
+    await cobrar(d5.empresaId, 'pro', 150000);
+
+    const vaciar = (empresa, extra = '') => db.query(
+      `update public.comisiones set importe = null${extra} where empresa_id = $1`, [empresa]);
+    await vaciar(d1.empresaId);                                    // 1, por su ingreso
+    await vaciar(d2.empresaId, ', movimiento_id = null');           // 1, por la misma transacción
+    await vaciar(d3.empresaId, ', movimiento_id = null');           // 2, el primer pago
+    await vaciar(d4.empresaId,
+      ", movimiento_id = null, created_at = created_at + interval '1 minute'"); // nada
+    await vaciar(d5.empresaId);                                    // 3, el ingreso
+    await db.query("delete from public.registro_admin where empresa_id = $1 and accion = 'cambiar_plan'",
+      [d5.empresaId]);
+
+    await H.aplicarMigracion(db, '103');
+    const importeDe = async (e) => {
+      const c = await comisionDe(e);
+      return c.importe == null ? null : Number(c.importe);
+    };
+    ok('relleno: por el renglón del registro de su ingreso', await importeDe(d1.empresaId), 90200);
+    ok('relleno: sin ingreso, por el registro de la misma transacción', await importeDe(d2.empresaId), 1210000);
+    ok('relleno: la del código perdido, por el primer pago y no el segundo', await importeDe(d3.empresaId), 60000);
+    ok('relleno: la que nació en el segundo pago y perdió el rastro queda null, no el primero',
+      await importeDe(d4.empresaId), null);
+    ok('relleno: sin registro, por el monto del ingreso de Orden', await importeDe(d5.empresaId), 150000);
+    ok('el relleno no toca la base ni el monto',
+      [Number(c1.base), Number(c1.monto)],
+      [Number((await comisionDe(d1.empresaId)).base), Number((await comisionDe(d1.empresaId)).monto)]);
+
+    const lista2 = await listar();
+    ok('la que no se pudo reconstruir llega null al panel (que cae en la base)',
+      de(lista2, d4.empresaId).importe, null);
+
+    // Correrla otra vez solo mira las que siguen en null: una que ya tiene
+    // importe no se pisa, aunque el registro diga otra cosa.
+    await db.query('update public.comisiones set importe = 90201 where empresa_id = $1', [d1.empresaId]);
+    await H.aplicarMigracion(db, '103');
+    ok('correrla de nuevo no pisa un importe que ya está', await importeDe(d1.empresaId), 90201);
+    ok('ni inventa el que no se pudo reconstruir', await importeDe(d4.empresaId), null);
+    ok('y la comisión sigue siendo una por negocio',
+      (await db.query('select count(*)::int n from public.comisiones where empresa_id = any($1::uuid[])',
+        [[d1.empresaId, d2.empresaId, d3.empresaId, d4.empresaId, d5.empresaId]])).rows[0].n, 5);
   }
 
   console.log('\n' + '═'.repeat(62));

@@ -51,11 +51,10 @@ export function permisosDe(rol: Rol): Permisos {
   };
 }
 
-export const NOMBRE_ROL: Record<Rol, string> = {
-  propietario: 'Propietario',
-  admin: 'Administrador',
-  vendedor: 'Vendedor',
-};
+// El nombre de cada rol vivía acá, en español fijo: en portugués se leía
+// «Vendedor» y en el campo también, donde esa persona es el encargado. Ahora
+// está en el diccionario (`t.roles`), que es donde el idioma y la jerga del
+// rubro lo pueden cambiar (102). Nada que no sea pantalla lo usaba.
 
 /** ¿Este movimiento lo puede anular esta persona? Misma regla que la RPC. */
 export function puedeAnular(

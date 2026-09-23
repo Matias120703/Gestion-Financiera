@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { contextoObligatorio } from '@/lib/sesion';
 import { textos } from '@/i18n';
 import { FICHA } from '@/i18n/idiomas';
+import { conJerga } from '@/i18n/jergas';
+import { fichaDe } from '@/lib/rubros';
 import { precio as precioTexto } from '@/lib/formato';
 import {
-  LIMITES_VISIBLES, MONEDAS_DE_COBRO, mesesDeRegalo, monedaDeCobro, precioDe, traerPrecios,
+  LIMITES_VISIBLES, MONEDAS_DE_COBRO, PLANES_PAGOS, mesesDeRegalo, monedaDeCobro, precioDe, traerPrecios,
   type PlanPago,
 } from '@/lib/precios';
 import type { PeriodoCobro } from '@/lib/tipos';
@@ -39,20 +41,35 @@ export default async function PaginaPlan({
 }) {
   const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
-  const t = await textos();
+  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  // Con las palabras del oficio (102): al agricultor, «Vos solo, sin
+  // encargados» y no «sin vendedores». Igual que las páginas del trainer.
+  const t = conJerga(await textos(), ficha.jerga, ctx.idioma);
   const locale = FICHA[ctx.idioma].locale;
 
   const moneda = monedaDeCobro(ctx.idioma, typeof searchParams.moneda === 'string' ? searchParams.moneda : null);
   const periodo: PeriodoCobro = searchParams.periodo === 'anual' ? 'anual' : 'mensual';
 
   const precios = await traerPrecios(moneda, ctx.empresa.tipo_cuenta);
-  // Una cuenta personal tiene un solo plan pago. Ofrecerle el de un local
-  // con vendedores sería venderle algo que no puede usar.
-  const planesVisibles: PlanPago[] = ctx.empresa.tipo_cuenta === 'personal'
-    ? ['pro']
-    // Un negocio elige entre tres: Básico (uno solo), Pro y Premium (077).
-    : ['basico', 'pro', 'negocio'];
   const sus = ctx.suscripcion;
+  /**
+   * QUÉ PLANES SE OFRECEN: LOS DE SU RUBRO (102).
+   *
+   * Un profe ve solo el Básico, el campo Básico y Pro, un comercio los tres
+   * (077), y una cuenta personal su único plan pago. La lista vive en la
+   * ficha del rubro (`planes`), espejo de `planes_de_rubro()` en la base.
+   *
+   * NUNCA SE LE QUITA NADA A NADIE. Si la cuenta ya está pagando un plan que
+   * su rubro no ofrece —un profe que contrató Pro antes de esto—, esa
+   * tarjeta sigue ahí, marcada como su plan actual. Durante la prueba no
+   * cuenta: estar probando no es estar pagando (ver `esActual`, abajo).
+   */
+  const planPagado = !sus.en_prueba
+    ? PLANES_PAGOS.find((p) => p === ctx.planEfectivo) ?? null
+    : null;
+  const planesVisibles: PlanPago[] = PLANES_PAGOS.filter(
+    (p) => ficha.planes.includes(p) || p === planPagado,
+  );
 
   // Si es momento de ofrecerle recomendar Orden. Las reglas están en la
   // base (062); acá solo se pregunta, y si falla no se ofrece nada.

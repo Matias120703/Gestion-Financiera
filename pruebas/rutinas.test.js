@@ -84,6 +84,9 @@ const claves = (o) => Object.keys(o ?? {}).sort();
   const T = await H.montarEmpresa(db, { email: 'lucas@fuerza.com', nombre: 'Entrená con Lucas', rubro: 'entrenamiento' });
   const Otro = await H.montarEmpresa(db, { email: 'otro@gym.com', nombre: 'Otro trainer', rubro: 'entrenamiento' });
   // La que cobra en el mostrador: es del equipo, pero no es admin.
+  // Desde la 102 un profe o un trainer prueban Básico, que es de una sola
+  // persona: el ayudante es una silla paga (048), como la compraría él.
+  await db.query('update public.suscripciones set tope_vendedores = 1 where empresa_id = $1', [T.empresaId]);
   const recepcion = await H.sumarMiembro(db, T.empresaId, 'recepcion@fuerza.com', 'vendedor');
   const E = T.empresaId;
 

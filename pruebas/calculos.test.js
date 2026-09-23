@@ -1133,6 +1133,164 @@ ok('un rubro desconocido no rompe: cae en comercio',
   }
 }
 
+// --- Los planes de cada rubro: la ficha y la base tienen que decir lo mismo (102) ---
+//
+// Mismo problema que los días de prueba: la lista vive en dos lados. La
+// ficha del rubro (`planes`, en rubros.ts) decide qué tarjetas ve la
+// pantalla de planes y qué acepta el checkout; `planes_de_rubro()` (102)
+// decide con qué plan arranca la prueba. Si se separan, a un profe se le
+// regala una prueba de Pro que después la pantalla no le deja contratar.
+//
+// Acá no alcanza con leer un número del archivo: la función devuelve una
+// lista según rubro y tipo de cuenta, y leer un `case` con expresiones
+// regulares se rompe con el primer cambio de formato. Así que se levanta un
+// PostgreSQL en blanco (PGlite, el mismo de las pruebas de la base), se crea
+// SOLO esa función tal como está escrita en la migración —no lee tablas, no
+// necesita el resto— y se le pregunta rubro por rubro.
+{
+  const fs = require('fs');
+  const { RUBROS } = require('../.compilado/rubros.js');
+
+  // Lo que decidió Matías (23/09). Escrito acá para que cambiarlo sea una
+  // decisión y no un descuido en la ficha.
+  const planesDe = (rubro, tipo) => [...fichaDe(rubro, tipo).planes];
+  ok('comercio y servicios: los tres',
+    [planesDe('comercio', 'emprendedor'), planesDe('servicios', 'emprendedor')],
+    [['basico', 'pro', 'negocio'], ['basico', 'pro', 'negocio']]);
+  ok('clases y trainer: solo el Básico',
+    [planesDe('clases', 'emprendedor'), planesDe('entrenamiento', 'emprendedor')], [['basico'], ['basico']]);
+  ok('agricultura y ganadería: Básico y Pro',
+    [planesDe('agricultura', 'emprendedor'), planesDe('ganaderia', 'emprendedor')],
+    [['basico', 'pro'], ['basico', 'pro']]);
+  ok('una cuenta personal: su único plan pago, como antes',
+    ['comercio', 'clases', 'agricultura'].map((r) => planesDe(r, 'personal')), [['pro'], ['pro'], ['pro']]);
+  const orden = ['basico', 'pro', 'negocio'];
+  ok('cada lista va de menor a mayor y sin repetidos',
+    Object.keys(RUBROS).filter((r) => {
+      const l = planesDe(r, 'emprendedor');
+      return l.length === 0 || l.some((p, i) => i > 0 && orden.indexOf(p) <= orden.indexOf(l[i - 1]));
+    }), []);
+
+  // La pantalla y el checkout leen la ficha; ninguno escribe la lista a mano.
+  const pantallaPlan = fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8');
+  ok('la pantalla de planes muestra los del rubro', pantallaPlan.includes('ficha.planes.includes('), true);
+  ok('sin la lista de tres escrita a mano', pantallaPlan.includes("['basico', 'pro', 'negocio']"), false);
+  ok('y con la jerga del oficio', pantallaPlan.includes('conJerga(await textos(), ficha.jerga'), true);
+  const checkout = fs.readFileSync('src/app/api/pagos/checkout/route.ts', 'utf8');
+  ok('el checkout rechaza un plan que el rubro no ofrece',
+    checkout.includes('.planes.includes(plan)') && checkout.includes('s.planNoEsDeTuRubro'), true);
+
+  // Los nombres de los roles salen del diccionario (102), así el campo lee
+  // «Encargado» y el portugués no lee «Propietario».
+  ok('NOMBRE_ROL ya no existe',
+    fs.readFileSync('src/lib/permisos.ts', 'utf8').includes('export const NOMBRE_ROL'), false);
+  ok('el equipo lee el rol del diccionario',
+    fs.readFileSync('src/components/Equipo.tsx', 'utf8').includes('t.roles[m.rol]'), true);
+  // jergas.ts no compila suelto en este arnés (importa los diccionarios
+  // enteros); alcanza con mirar el texto de la jerga.
+  const agro = fs.readFileSync('src/i18n/textos/agricultura.ts', 'utf8');
+  ok('en el campo el vendedor es el encargado',
+    agro.includes("vendedor: 'Encargado'") && agro.includes("vendedor: 'Encarregado'"), true);
+
+  // Y la base. Sin la migración, falla: una comprobación que se saltea sola
+  // cuando falta lo que tiene que comprobar da confianza sin haber mirado.
+  const ruta = 'supabase/migrations/102_planes_por_rubro_y_comision.sql';
+  if (!fs.existsSync(ruta)) {
+    ok('existe la migración 102 con planes_de_rubro()', false, true);
+  } else {
+    const sql = fs.readFileSync(ruta, 'utf8');
+
+    /** El `create function` entero, del principio al `;` después del cuerpo. */
+    const definicion = (nombre) => {
+      const inicio = sql.search(new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${nombre}\\s*\\(`, 'i'));
+      if (inicio < 0) return null;
+      const apertura = /\$([A-Za-z_]*)\$/g;
+      apertura.lastIndex = inicio;
+      const tag = apertura.exec(sql);
+      if (!tag) return null;
+      const cierre = sql.indexOf(tag[0], tag.index + tag[0].length);
+      if (cierre < 0) return null;
+      const fin = sql.indexOf(';', cierre + tag[0].length);
+      return sql.slice(inicio, fin < 0 ? undefined : fin + 1);
+    };
+
+    const defPlanes = definicion('planes_de_rubro');
+    const defPrueba = definicion('plan_de_prueba');
+    ok('la 102 define planes_de_rubro()', defPlanes !== null, true);
+    ok('y plan_de_prueba()', defPrueba !== null, true);
+
+    if (defPlanes) {
+      pendientes.push((async () => {
+        const { PGlite } = require('@electric-sql/pglite');
+        const db = await new PGlite();
+        try {
+          await db.exec(defPlanes);
+          if (defPrueba) await db.exec(defPrueba);
+
+          const tipos = ['emprendedor', 'personal'];
+          const distintos = [];
+          const pruebaDistinta = [];
+          for (const rubro of Object.keys(RUBROS)) {
+            for (const tipo of tipos) {
+              const esperado = planesDe(rubro, tipo);
+              const { rows } = await db.query('select public.planes_de_rubro($1, $2) as p', [rubro, tipo]);
+              const real = rows[0].p;
+              if (JSON.stringify(real) !== JSON.stringify(esperado)) {
+                distintos.push(`${rubro}/${tipo}: base ${JSON.stringify(real)}, ficha ${JSON.stringify(esperado)}`);
+              }
+              // La prueba arranca en Pro si el rubro lo ofrece; si no, en
+              // el más alto que tenga (clases y trainer → Básico).
+              if (defPrueba) {
+                const deLaPrueba = esperado.includes('pro') ? 'pro' : esperado[esperado.length - 1];
+                const r2 = await db.query('select public.plan_de_prueba($1, $2) as p', [rubro, tipo]);
+                if (r2.rows[0].p !== deLaPrueba) {
+                  pruebaDistinta.push(`${rubro}/${tipo}: base ${r2.rows[0].p}, esperado ${deLaPrueba}`);
+                }
+              }
+            }
+          }
+          ok('planes_de_rubro() dice lo mismo que la ficha, rubro por rubro y tipo por tipo', distintos, []);
+          if (defPrueba) ok('plan_de_prueba(): Pro si lo ofrece, si no el más alto', pruebaDistinta, []);
+
+          // Sin tipo de cuenta es un negocio: el valor por defecto de la firma.
+          const { rows } = await db.query("select public.planes_de_rubro('clases') as p");
+          ok('sin tipo de cuenta, la de un negocio', rows[0].p, planesDe('clases', 'emprendedor'));
+        } catch (e) {
+          ok('se pudo crear y consultar planes_de_rubro() de la 102', String(e && e.message || e), 'sin error');
+        } finally {
+          await db.close();
+        }
+      })());
+    }
+  }
+}
+
+// --- La comisión del socio es la mitad del PRECIO DE LISTA (102) ---
+//
+// Antes era la mitad de lo que entraba, y los textos lo decían así: «la
+// mitad de su primer pago». Con un descuento o un pago anual ese número ya
+// no es el que se paga, y una promesa de plata que no coincide con lo que
+// llega es un reclamo. Ningún texto visible puede volver a decirlo.
+{
+  const fs = require('fs');
+  const viejas = [
+    /mitad de su primer pago/i, /mitad del primer pago/i, /mitad de ese pago/i, /la mitad es tuya/i,
+    /metade do primeiro pagamento/i, /metade desse pagamento/i, /metade é sua/i,
+  ];
+  const archivos = ['src/i18n/textos/es.ts', 'src/i18n/textos/pt.ts', 'src/components/PantallaRecomendar.tsx'];
+  const quedan = [];
+  for (const a of archivos) {
+    const texto = fs.readFileSync(a, 'utf8');
+    for (const v of viejas) if (v.test(texto)) quedan.push(`${a}: ${v}`);
+  }
+  ok('ningún texto promete la mitad de lo que se pagó', quedan, []);
+  const es = fs.readFileSync('src/i18n/textos/es.ts', 'utf8');
+  const pt = fs.readFileSync('src/i18n/textos/pt.ts', 'utf8');
+  ok('y la letra chica lo explica, en los dos idiomas',
+    es.includes('te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra.')
+    && pt.includes('você fica com metade do preço de tabela de um mês.'), true);
+}
+
 // --- El panel de socios no calcula comisiones ---
 //
 // La comisión la crea la base cuando entra la plata (migración 060), y una
@@ -1697,8 +1855,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('hay tres planes que se venden',
     precios.includes("PLANES_PAGOS = ['basico', 'pro', 'negocio']"), true);
   ok('y el Básico es de uno solo', /basico:.*miembros: 1/.test(precios), true);
-  ok('la pantalla de planes ofrece los tres',
-    fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8').includes("['basico', 'pro', 'negocio']"), true);
+  // Desde la 102 la pantalla no escribe la lista: ofrece los del rubro
+  // (ver «Los planes de cada rubro»). Un comercio sigue viendo los tres.
+  ok('la pantalla de planes le ofrece los tres a un comercio',
+    fs.readFileSync('src/app/(app)/plan/page.tsx', 'utf8').includes('ficha.planes.includes(')
+    && JSON.stringify(fichaDe('comercio', 'emprendedor').planes) === JSON.stringify(['basico', 'pro', 'negocio']), true);
 
   // El descuento que se gana usando Orden en la prueba (078).
   ok('el panel muestra cómo va el descuento',

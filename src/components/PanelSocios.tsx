@@ -35,8 +35,10 @@ const NOMBRE_PLAN: Record<string, string> = { pro: 'Pro', negocio: 'Premium', gr
 /**
  * SOCIOS Y COMISIONES.
  *
- * Quien trae un cliente nuevo a Orden se lleva la mitad del primer pago de ese
- * cliente, una sola vez. Lo que paga después es todo de Orden.
+ * Quien trae un cliente nuevo a Orden se lleva la mitad del precio de lista de
+ * un mes de su plan, con su primer pago y una sola vez (102): aunque ese
+ * cliente pague con descuento o pague el año, nunca más de lo que entró. Lo
+ * que paga después es todo de Orden.
  *
  * ACÁ NO SE CALCULA NADA
  *
@@ -54,10 +56,11 @@ const NOMBRE_PLAN: Record<string, string> = { pro: 'Pro', negocio: 'Premium', gr
  * realizado». Si no se puede pagar, se rechaza con el motivo y la plata
  * vuelve a su saldo.
  *
- * El monto de una comisión a veces hay que mirarlo: si un negocio pagó un año
- * por adelantado, la mitad de ese pago es mucha plata. Esa decisión es de una
- * persona, no de una fórmula, así que se puede ajustar mientras está en el
- * saldo, y queda registrado.
+ * El monto de una comisión a veces hay que mirarlo: un trato especial, un
+ * cobro cargado con un error. Desde la 102 el año pagado de una ya no infla la
+ * comisión (la base es un mes de lista), pero la última palabra sigue siendo
+ * de una persona: se puede ajustar mientras está en el saldo, y queda
+ * registrado.
  */
 export function PanelSocios({ socios, comisiones, referidos, retiros = [], moneda }: {
   socios: SocioAdmin[];
@@ -110,8 +113,9 @@ export function PanelSocios({ socios, comisiones, referidos, retiros = [], moned
         <div>
           <h2 className="text-[17px] font-bold tracking-tight">Socios que traen clientes</h2>
           <p className="mt-0.5 max-w-2xl text-[13px] leading-relaxed text-tinta/50">
-            Se lleva la mitad del primer pago del cliente que trajo, una sola vez. Lo que ese
-            cliente pague después queda entero para vos.
+            Se lleva la mitad del precio de lista de un mes del plan del cliente que trajo, con
+            su primer pago y una sola vez, aunque pague con descuento o pague el año (102). Nunca
+            más de lo que entró. Lo que ese cliente pague después queda entero para vos.
           </p>
         </div>
         <button type="button" onClick={() => setNuevo(true)} className="boton-suave shrink-0 px-3.5 py-2 text-[13.5px]">
@@ -508,15 +512,27 @@ function FilaComision({ comision, moneda, onHecho }: {
     : comision.estado === 'anulada' ? 'bg-arena text-tinta/55'
     : 'bg-ambar-claro text-ambar';
 
+  // Lo que entró de verdad (103). Desde la 102 `base` es el precio de lista
+  // de un mes: con descuento o con el año pagado de una, no es lo que pagó.
+  // Una comisión vieja sin importe cae en `base`, que antes de la 102 era
+  // justamente lo que entró.
+  const pago = comision.importe == null ? num(comision.base) : num(comision.importe);
+  const lista = num(comision.base);
+
   return (
     <li className="px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[14.5px] font-bold">{comision.socio}</p>
           <p className="mt-0.5 truncate text-[12.5px] text-tinta/50">
-            trajo a {comision.negocio} · pagó {dinero(num(comision.base), moneda)} el{' '}
+            trajo a {comision.negocio} · pagó {dinero(pago, moneda)} el{' '}
             {fechaCorta(comision.creado)}
           </p>
+          {pago !== lista && (
+            <p className="mt-0.5 truncate text-[12px] text-tinta/45">
+              precio de lista {dinero(lista, moneda)}
+            </p>
+          )}
           {comision.estado === 'pagada' && (
             <p className="mt-1 truncate text-[12px] text-tinta/45">
               Pagada el {fechaCorta(comision.pagada_at)}
@@ -547,13 +563,13 @@ function FilaComision({ comision, moneda, onHecho }: {
 
         <div className="shrink-0 text-right">
           <p className="text-[15px] font-bold tabular-nums">{dinero(num(comision.monto), moneda)}</p>
-          <p className="mt-0.5 text-[11.5px] text-tinta/40">{num(comision.porcentaje)}% del primer pago</p>
+          <p className="mt-0.5 text-[11.5px] text-tinta/40">{num(comision.porcentaje)}% del precio de lista</p>
           {/* Lo que queda de ese pago. Del cuaderno: «ver el total, el 50%
               que te tengo que dar, cuánto es para mí en ese momento». Es una
               resta de dos números que ya vinieron de la base, no otra cuenta
               de la comisión. */}
           <p className="mt-0.5 text-[11.5px] font-semibold text-verde-fuerte tabular-nums">
-            te queda {dinero(num(comision.base) - num(comision.monto), moneda)}
+            te queda {dinero(pago - num(comision.monto), moneda)}
           </p>
           <span className={`pastilla mt-1 ${pastilla}`}>
             {comision.estado === 'por_pagar' ? 'en su saldo' : comision.estado}
@@ -585,14 +601,14 @@ function FilaComision({ comision, moneda, onHecho }: {
             <label className="block">
               <span className="etiqueta">Por qué</span>
               <input
-                className="campo mt-1 py-2 text-[14px]" placeholder="Pagó un año de una…"
+                className="campo mt-1 py-2 text-[14px]" placeholder="Un trato especial, un cobro mal cargado…"
                 value={nota} onChange={(e) => setNota(e.target.value)}
               />
             </label>
           </div>
           <p className="mt-2 text-[12px] leading-snug text-tinta/50">
-            Si este cliente pagó varios meses de una, acordá lo justo y escribilo acá. El saldo del
-            socio cambia en el momento.
+            La comisión ya sale del precio de lista de un mes. Cambiala solo si hubo un trato
+            especial o un error en el cobro. El saldo del socio cambia en el momento.
           </p>
           <div className="mt-3 flex gap-2">
             <button

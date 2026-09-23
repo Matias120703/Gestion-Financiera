@@ -26,6 +26,8 @@ import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
 import { Bienvenida } from '@/components/Bienvenida';
 import { PanelProfe } from '@/components/PanelProfe';
+import { PanelCampo } from '@/components/PanelCampo';
+import { traerLotes } from '@/lib/lotes';
 import { traerRutinasDeLaAgenda } from '@/lib/agenda';
 import type { PanelProfe as PanelProfeDatos } from '@/lib/tipos';
 import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
@@ -201,6 +203,73 @@ export default async function PaginaPanel({
     );
   }
 
+  /**
+   * EL CAMPO TIENE SU PROPIO PANEL (100).
+   *
+   * El ganadero y el agricultor miden por campaña, no por día. Antes se
+   * les escondían la racha y el gráfico diario y les quedaba el panel del
+   * almacén con una tarjeta arriba: selector de período, «Productos que más
+   * dejaron» vacío para siempre, stock bajo. Se corta acá, como el del
+   * profe: las campañas en curso arriba de todo, una sola tarjeta «Debés»,
+   * la billetera, lo que te deben y lo que ya cerró este año.
+   */
+  const fichaCampo = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  if (fichaCampo.ciclosLargos) {
+    const idiomaCampo = await idiomaActual();
+    // «Campañas en curso», «a cosecha» para el agricultor; el ganadero lee
+    // las palabras neutras («Lotes en curso»).
+    const t = conJerga(await textos(), fichaCampo.jerga, idiomaCampo);
+    const hoyCampo = hoyISO(ctx.zonaHoraria);
+    const [lotesCampo, deudasCampo, billeteraCampo, fiadoCampo, descuentoCampo] = await Promise.all([
+      // Abiertos y cerrados: los cerrados dan «Cerrados este año» y lo que
+      // todavía se debe a cosecha de una campaña que ya terminó. Es el dato
+      // principal de la pantalla: si falla, lanza, como `panel_profe`.
+      traerLotes(ctx.empresa.id, true),
+      // Contexto, solo de administración (015): si falla, el panel sale
+      // igual sin esa tarjeta. El número exacto está en Deudas.
+      ctx.esAdmin ? traerResumenDeudas(ctx.empresa.id).catch(() => null) : Promise.resolve(null),
+      ctx.esAdmin ? traerBilletera(ctx.empresa.id).catch(() => null) : Promise.resolve(null),
+      traerResumenFiado(ctx.empresa.id).catch(() => null),
+      // El descuento del primer mes que se gana cargando durante la prueba
+      // (078). Antes de la 100 el campo lo veía en el panel general; con el
+      // panel propio no se pierde. No lanza: si falla, vuelve null.
+      ctx.esAdmin ? traerDescuentoRacha(ctx.empresa.id) : Promise.resolve(null),
+    ]);
+    return (
+      <div className="space-y-5">
+        <Bienvenida nombre={ctx.miembro.nombre} zona={ctx.zonaHoraria} t={t} />
+        <Atajos
+          etiqueta={t.billetera.atajos}
+          ficha={fichaCampo.secciones}
+          items={[
+            { href: '/lotes', texto: t.nav.lotes },
+            { href: '/gastos', texto: t.panel.cargarGasto },
+            { href: '/vender', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'vender', t.nav.vender, idiomaCampo) },
+            ...(ctx.esAdmin ? [{ href: '/billetera' as Ruta, texto: t.nav.billetera }] : []),
+          ]}
+        />
+        <AvisoComision novedad={await novedadComision} />
+        {descuentoCampo && <TarjetaDescuento descuento={descuentoCampo} t={t} />}
+        <PanelCampo
+          lotes={lotesCampo}
+          deudas={deudasCampo}
+          billetera={billeteraCampo}
+          fiado={fiadoCampo}
+          moneda={ctx.vista}
+          monedaPropia={ctx.empresa.moneda}
+          esAdmin={ctx.esAdmin}
+          hoy={hoyCampo}
+          locale={FICHA[idiomaCampo].locale}
+          idioma={idiomaCampo}
+          t={t}
+        />
+      </div>
+    );
+  }
+
+  // Desde la 100 un negocio de ciclo largo ya no llega hasta acá (ver el
+  // corte de arriba); lo de `cicloLargo` que sigue queda por si una ficha
+  // nueva lo prende sin panel propio.
   const cicloLargo = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).ciclosLargos;
 
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);

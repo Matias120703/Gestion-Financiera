@@ -117,6 +117,48 @@ function ok(nombre, real, esperado) {
     (await H.comoUsuario(completa, C.uid, async () =>
       (await completa.query('select public.listar_lotes($1) j', [C.empresaId])).rows[0].j)).length, 1);
 
+  // 8. La 102 (planes por rubro y comisión sobre el precio de lista), dos
+  //    veces más sobre la base completa: son todas funciones, pero una firma
+  //    duplicada o un grant que falle al repetirse rompería el deploy.
+  console.log('\n── La migración 102, aplicada de nuevo ─────────────────────');
+  for (const prefijo of ['102', '102']) await H.aplicarMigracion(completa, prefijo);
+  console.log('  · migración 102 aplicada 2 veces más');
+  ok('cada función de la 102 existe una sola vez',
+    (await completa.query(`select p.proname, count(*)::int n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+      where s.nspname = 'public' and p.proname in ('planes_de_rubro','plan_de_prueba','base_de_comision',
+        'monto_de_comision','crear_empresa','cambiar_rubro','cambiar_plan_cuenta','asignar_referido')
+      group by p.proname order by 1`)).rows.map((r) => [r.proname, r.n]),
+    [['asignar_referido', 1], ['base_de_comision', 1], ['cambiar_plan_cuenta', 1], ['cambiar_rubro', 1],
+      ['crear_empresa', 1], ['monto_de_comision', 1], ['plan_de_prueba', 1], ['planes_de_rubro', 1]]);
+  const T = await H.montarEmpresa(completa, { email: 'trainer@fuerza.com', nombre: 'Fuerza', rubro: 'entrenamiento' });
+  ok('y la base migrada dos veces hace nacer a un trainer en prueba de Básico',
+    (await completa.query('select plan from public.suscripciones where empresa_id = $1', [T.empresaId])).rows[0].plan,
+    'basico');
+  ok('el agricultor de antes sigue en prueba de Pro, sin que nadie lo tocara',
+    (await completa.query('select plan from public.suscripciones where empresa_id = $1', [C.empresaId])).rows[0].plan,
+    'pro');
+
+  // 9. La 103 (la comisión guarda lo que entró), dos veces más sobre la base
+  //    completa: agrega una columna con su check, rellena y redefine tres
+  //    funciones. Nada de eso se puede duplicar al repetirse.
+  console.log('\n── La migración 103, aplicada de nuevo ─────────────────────');
+  for (const prefijo of ['103', '103']) await H.aplicarMigracion(completa, prefijo);
+  console.log('  · migración 103 aplicada 2 veces más');
+  ok('la columna importe de comisiones existe una sola vez, como numeric(14,2)',
+    (await completa.query(`select data_type, numeric_precision, numeric_scale from information_schema.columns
+      where table_schema = 'public' and table_name = 'comisiones' and column_name = 'importe'`)).rows
+      .map((r) => [r.data_type, r.numeric_precision, r.numeric_scale]),
+    [['numeric', 14, 2]]);
+  ok('con un solo check de no negativo',
+    (await completa.query(`select count(*)::int n from pg_constraint
+      where conrelid = 'public.comisiones'::regclass and contype = 'c'
+        and pg_get_constraintdef(oid) ilike '%importe%'`)).rows[0].n, 1);
+  ok('y cada función de la 103 existe una sola vez',
+    (await completa.query(`select p.proname, count(*)::int n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+      where s.nspname = 'public' and p.proname in ('cambiar_plan_cuenta','asignar_referido','listar_comisiones')
+      group by p.proname order by 1`)).rows.map((r) => [r.proname, r.n]),
+    [['asignar_referido', 1], ['cambiar_plan_cuenta', 1], ['listar_comisiones', 1]]);
+
   console.log(`\n${'═'.repeat(62)}`);
   console.log(fallos === 0 ? `>>> ${corridas} COMPROBACIONES DE MIGRACIÓN PASARON` : `>>> ${fallos} DE ${corridas} FALLARON`);
   process.exit(fallos ? 1 : 0);

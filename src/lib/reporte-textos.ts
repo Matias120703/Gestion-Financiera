@@ -18,6 +18,13 @@ const es = {
   periodoRango: (desde: string, hasta: string) => `Periodo: ${desde} al ${hasta}`,
   conCambio: (periodo: string, simbolo: string, cuando: string | null, propia: string, cambio: string) =>
     `${periodo} · En ${simbolo}, al cambio${cuando ? ` del ${cuando}` : ''}: 1 ${simbolo} = ${propia} ${cambio}`,
+  /**
+   * Lo mismo dicho al revés, cuando la moneda que se mira vale menos de 1
+   * de la propia (un negocio en dólares mirando en guaraníes): «1 US$ =
+   * Gs. 6.000» se lee; «1 Gs. = US$ 0,000167» no.
+   */
+  conCambioInverso: (periodo: string, simbolo: string, cuando: string | null, propia: string, cambio: string) =>
+    `${periodo} · En ${simbolo}, al cambio${cuando ? ` del ${cuando}` : ''}: 1 ${propia} = ${simbolo} ${cambio}`,
   paraTenerEnCuenta: 'PARA TENER EN CUENTA',
   noSumanEnNingunTotal: 'no suman en ningún total',
   sinDescripcion: 'sin descripción',
@@ -94,23 +101,30 @@ const es = {
   columnasDias: ['', 'Fecha', 'Vendido', 'Gastado', 'Ganancia del día'],
 
   // ---- las campañas (100) ----
-  /** La columna nueva de Movimientos: de qué campaña es cada uno (vacía si de ninguna). */
+  /**
+   * La columna nueva de Movimientos: de qué campaña es cada uno (vacía si
+   * de ninguna). Solo en ciclo largo, al final, para no correr las columnas
+   * de siempre.
+   */
   columnaCampana: 'Campaña',
   campanasTitulo: 'CAMPAÑAS · UNA FILA POR CAMPAÑA',
   columnasCampanas: [
-    'Lote', 'Cultivo', 'Campaña', 'Estado', 'Desde', 'Hasta', 'Hectáreas',
+    'Lote', 'Cultivo', 'Campaña', 'Hectáreas', 'Estado', 'Desde', 'Hasta',
     'Puesto', 'A cosecha', 'Costo', 'Costo/ha', 'Cobrado', 'Resultado', 'Resultado/ha',
-    'kg cosechados', 'kg/ha', 'kg vendidos', 'kg sin vender', 'Precio promedio/t', 'Costo/t', 'kg/ha para cubrir',
+    'kg cosechados', 'kg/ha', 'kg vendidos', 'Precio promedio/t', 'kg sin vender',
   ],
   abierta: 'Abierta',
   cerrada: 'Cerrada',
   sinCampanas: 'Todavía no hay campañas cargadas.',
   campanasSonDeCaja: 'Puesto, cobrado y resultado son de caja: plata que entró menos plata que salió. '
     + '«A cosecha» es lo que se debe todavía y cuenta en el costo, no en el resultado.',
+  /** Una campaña cruza los meses: su fila no se recorta al período de la planilla. */
+  campanasEnteras: 'Las campañas que estuvieron abiertas en este periodo, con los números de toda la campaña '
+    + '(no solo de estas fechas).',
   liquidacionesTitulo: 'LIQUIDACIONES · UNA FILA POR CAMPAÑA Y PAPEL',
   columnasLiquidaciones: [
-    'Fecha', 'Lote', 'Campaña', 'Comprador', 'kg', 'Precio/t', 'Bruto',
-    'Descuentos', 'Compensado de deudas', 'Pagado con grano', 'Neto', 'Cuenta', 'Estado',
+    'Fecha', 'Campaña', 'Comprador', 'kg', 'Precio/t', 'Bruto',
+    'Descuentos', 'Compensado de deudas', 'Pagado con grano', 'Neto', 'Estado',
   ],
   activa: 'Activa',
   sinLiquidaciones: 'Todavía no hay liquidaciones cargadas.',
@@ -175,6 +189,8 @@ const pt: TextosExcel = {
   periodoRango: (desde: string, hasta: string) => `Período: ${desde} a ${hasta}`,
   conCambio: (periodo: string, simbolo: string, cuando: string | null, propia: string, cambio: string) =>
     `${periodo} · Em ${simbolo}, ao câmbio${cuando ? ` de ${cuando}` : ''}: 1 ${simbolo} = ${propia} ${cambio}`,
+  conCambioInverso: (periodo: string, simbolo: string, cuando: string | null, propia: string, cambio: string) =>
+    `${periodo} · Em ${simbolo}, ao câmbio${cuando ? ` de ${cuando}` : ''}: 1 ${propia} = ${simbolo} ${cambio}`,
   paraTenerEnCuenta: 'PRA LEVAR EM CONTA',
   noSumanEnNingunTotal: 'não entram em nenhum total',
   sinDescripcion: 'sem descrição',
@@ -248,20 +264,24 @@ const pt: TextosExcel = {
 
   columnaCampana: 'Safra',
   campanasTitulo: 'SAFRAS · UMA LINHA POR SAFRA',
+  // «Lote», como no espanhol: a planilha também serve pro pecuarista, e o
+  // contador lê «lote» sem estranhar.
   columnasCampanas: [
-    'Talhão', 'Cultura', 'Safra', 'Situação', 'De', 'Até', 'Hectares',
+    'Lote', 'Cultura', 'Safra', 'Hectares', 'Situação', 'De', 'Até',
     'Investido', 'Na colheita', 'Custo', 'Custo/ha', 'Recebido', 'Resultado', 'Resultado/ha',
-    'kg colhidos', 'kg/ha', 'kg vendidos', 'kg a vender', 'Preço médio/t', 'Custo/t', 'kg/ha pra cobrir',
+    'kg colhidos', 'kg/ha', 'kg vendidos', 'Preço médio/t', 'kg a vender',
   ],
   abierta: 'Aberta',
   cerrada: 'Fechada',
   sinCampanas: 'Ainda não há safras lançadas.',
   campanasSonDeCaja: 'Investido, recebido e resultado são de caixa: dinheiro que entrou menos dinheiro que saiu. '
     + '«Na colheita» é o que ainda se deve e conta no custo, não no resultado.',
+  campanasEnteras: 'As safras que estiveram abertas neste período, com os números da safra inteira '
+    + '(não só destas datas).',
   liquidacionesTitulo: 'LIQUIDAÇÕES · UMA LINHA POR SAFRA E PAPEL',
   columnasLiquidaciones: [
-    'Data', 'Talhão', 'Safra', 'Comprador', 'kg', 'Preço/t', 'Bruto',
-    'Descontos', 'Compensado de dívidas', 'Pago com grão', 'Líquido', 'Conta', 'Situação',
+    'Data', 'Safra', 'Comprador', 'kg', 'Preço/t', 'Bruto',
+    'Descontos', 'Compensado de dívidas', 'Pago com grão', 'Líquido', 'Situação',
   ],
   activa: 'Ativa',
   sinLiquidaciones: 'Ainda não há liquidações lançadas.',

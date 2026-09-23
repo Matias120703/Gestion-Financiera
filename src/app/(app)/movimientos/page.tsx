@@ -7,7 +7,9 @@ import { cargarPagina } from './acciones';
 import { SelectorRango } from '@/components/SelectorRango';
 import { Indicador } from '@/components/Piezas';
 import { permisosDe } from '@/lib/permisos';
-import { ListaMovimientos } from '@/components/ListaMovimientos';
+import { ListaMovimientos, type CampanaParaElegir } from '@/components/ListaMovimientos';
+import { traerLotes } from '@/lib/lotes';
+import { fichaDe } from '@/lib/rubros';
 import { dineroCorto, numero } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 
@@ -26,11 +28,16 @@ export default async function PaginaMovimientos({
   if (!ctx.esAdmin) redirect('/panel');
   const t = await textos();
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
+  // Un negocio con lotes (ganadería, agricultura) dice desde acá de qué
+  // campaña es cada movimiento (100). Todas, cerradas incluidas: un gasto
+  // viejo tiene que poder nombrar la suya aunque ya no sea un chip.
+  const conCampanas = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones['/lotes'];
   // Los totales salen agregados de la base; la lista es solo la primera página.
-  const [r, pagina, total] = await Promise.all([
+  const [r, pagina, total, lotes] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tamano: TAMANO_PAGINA }),
     contarMovimientos(ctx.empresa.id, rango.desde, rango.hasta),
+    conCampanas ? traerLotes(ctx.empresa.id, true) : Promise.resolve([]),
   ]);
   /**
    * Se mira en la moneda de la vista (051): acá solo se informa, no se carga
@@ -75,6 +82,12 @@ export default async function PaginaMovimientos({
         userId={ctx.userId}
         hoy={hoyISO(ctx.zonaHoraria)}
         cargarPagina={cargarPagina}
+        conCampanas={conCampanas}
+        // Solo lo que el chip necesita: los números de cada campaña no viajan.
+        campanas={lotes.map((l): CampanaParaElegir => ({
+          id: l.id, nombre: l.nombre, cultivo: l.cultivo ?? '', campana: l.campana ?? '',
+          hectareas: l.hectareas ?? null, abierto_el: l.abierto_el, estado: l.estado,
+        }))}
       />
     </div>
   );

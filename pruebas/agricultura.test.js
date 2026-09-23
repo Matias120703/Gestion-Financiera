@@ -360,5 +360,37 @@ console.log('\n── 11 · El año seco: topar lo compensado ──');
   ok('con descuentos: el papel cierra', r3.neto, 12450 - 300 - 4800);
 }
 
+// ═══════════════════════════════════════════════════════════
+console.log('\n── 12 · En guaraníes se reparte en guaraníes enteros ──');
+{
+  // Un secado de Gs 1.001 entre dos campañas de igual kilaje: 501 + 500,
+  // no 500,50 + 500,50. Sin `decimales` (o con 2) sigue siendo a centavos.
+  const partesKg = [{ lote_id: 'norte', kg: 10000 }, { lote_id: 'sur', kg: 10000 }];
+  const papel = { fecha: '2027-04-10', comprador: 'Coop', precioTonelada: 2500000,
+    descuentos: [{ categoria: 'Secado y acopio', monto: 1001 }], deudas: [], grano: [], partesKg, decimales: 0 };
+  const r = L.repartirLiquidacion(papel);
+  const cuotas = r.partes.map((p) => p.descuentos[0].monto);
+  ok('Gs 1.001 entre dos iguales → 501 + 500', cuotas, [501, 500]);
+  ok('ninguna cuota con centavos', cuotas.every((c) => Number.isInteger(c)), true);
+  ok('la suma es el descuento entero', suma(cuotas), 1001);
+  ok('el papel cierra', r.neto, 50000000 - 1001);
+  ok('con dos decimales, a centavos como siempre',
+    L.repartirLiquidacion({ ...papel, decimales: 2 }).partes.map((p) => p.descuentos[0].monto), [500.5, 500.5]);
+  ok('sin decimales dicho, a centavos',
+    L.repartirLiquidacion({ ...papel, decimales: undefined }).partes.map((p) => p.descuentos[0].monto), [500.5, 500.5]);
+
+  // Una deuda de Norte que no entra entera en su parte se corta en
+  // guaraníes enteros aunque el lugar de la parte traiga centavos.
+  const conDeuda = { fecha: '2027-04-10', comprador: 'Coop', precioTonelada: 2345678,
+    descuentos: [], grano: [], decimales: 0,
+    deudas: [{ deuda_id: 'agro', lote_id: 'norte', monto: 5000000 }],
+    partesKg: [{ lote_id: 'norte', kg: 1001 }, { lote_id: 'sur', kg: 20000 }] };
+  const r2 = L.repartirLiquidacion(conDeuda);
+  const tramos = r2.partes.flatMap((p) => p.deudas.map((d) => d.monto));
+  ok('la deuda partida va en guaraníes enteros', tramos.every((c) => Number.isInteger(c)), true);
+  ok('la deuda partida suma la deuda entera', suma(tramos), 5000000);
+  ok('ninguna parte con neto negativo', r2.porParte.every((x) => x.neto >= 0), true);
+}
+
 console.log(`\n${corridas} comprobaciones, ${fallos} fallos`);
 process.exit(fallos > 0 ? 1 : 0);

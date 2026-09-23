@@ -367,6 +367,9 @@ const LMJ = [1, 2, 4];
     'select movimiento_id from public.paquetes where id = $1', [pqJuan])).rows[0].movimiento_id, null);
 
   // Un ayudante cobra, pero no decide dónde queda la plata del dueño.
+  // Desde la 102 un profe o un trainer prueban Básico, que es de una sola
+  // persona: el ayudante es una silla paga (048), como la compraría él.
+  await db.query('update public.suscripciones set tope_vendedores = 1 where empresa_id = $1', [P.empresaId]);
   const ayudante = await H.sumarMiembro(db, P.empresaId, 'ayudante@ingles.com', 'vendedor');
   rechazado('un vendedor no elige la cuenta', await cobrar(ayudante, pqJuan, 'transferencia', continental), 'dueño');
   const delAyudante = await cobrar(ayudante, pqJuan, 'efectivo', null);

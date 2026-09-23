@@ -14,11 +14,15 @@ import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO } from '@/lib/turno-voz';
 import { dinero, decimalesDe } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
-import type { CapturaInterpretada, DeudaInterpretada, ItemInterpretado, Origen, TipoCaptura, TipoCuenta } from '@/lib/tipos';
+import type { ItemInterpretado, Origen, TipoCaptura, TipoCuenta } from '@/lib/tipos';
+// Solo tipos: importar el valor traería el prompt entero al navegador.
+import type { CampanaConocida, CapturaDeVoz, DeudaDeVoz } from '@/lib/captura';
 import { mensajeDeError } from '@/lib/errores';
 import { guardarTranscripcion, subirComprobante } from '@/lib/adjuntos';
 import { comprimirFoto } from '@/lib/imagen';
-import { useTextos } from '@/i18n/cliente';
+import { useIdioma, useTextos } from '@/i18n/cliente';
+import { ingresoDeCampana } from '@/lib/agricultura';
+import { cultivoVisible } from '@/components/campanas/utiles';
 import { useBloquearFondo } from '@/lib/fondo';
 import { CampoMonto } from '@/components/CampoMonto';
 
@@ -27,9 +31,32 @@ type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
 /** Lo mínimo de una deuda para poder elegirla al imputar un pago. */
 type DeudaBreve = { id: string; nombre: string; acreedor: string; saldo: number };
 
-const DEUDA_VACIA: DeudaInterpretada = {
-  clase: 'otro', acreedor: null, cuotas: null, monto_cuota: null, vence_el: null, deuda_id: null,
+const DEUDA_VACIA: DeudaDeVoz = {
+  clase: 'otro', acreedor: null, cuotas: null, monto_cuota: null, vence_el: null, deuda_id: null, categoria: null,
 };
+
+/** Los mismos que `TIPOS_CON_CAMPANA` de lib/captura.ts. */
+const CON_CAMPANA: string[] = ['gasto', 'ingreso', 'venta', 'deuda'];
+
+/**
+ * Si la plata de esta captura puede ir a una campaña (100): gasto, ingreso,
+ * venta o deuda, en una cuenta que tiene campañas abiertas. Un ingreso de
+ * «Préstamo» o «Aporte» no: no es lo que la campaña dio, y la base tampoco
+ * lo cuenta en `cobrado` (lo mismo que hace Gastos con `NO_SON_DE_CAMPANA`).
+ */
+function vaACampana(b: CapturaDeVoz): boolean {
+  if (b.tipo === 'ingreso' && !ingresoDeCampana(b.categoria)) return false;
+  return (b.lotes?.length ?? 0) > 0 && CON_CAMPANA.includes(b.tipo);
+}
+
+/**
+ * Nombró una campaña que no se encontró y todavía no eligió: no se guarda
+ * hasta que toque un chip (una campaña o «Sin campaña»). Guardarlo suelto
+ * sería perderle el gasto a la campaña sin que nadie se entere.
+ */
+function faltaCampana(b: CapturaDeVoz): boolean {
+  return vaACampana(b) && !!b.lote_dudoso && !b.lote_id;
+}
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
@@ -73,7 +100,7 @@ export function BotonCaptura({
   const [texto, setTexto] = useState('');
   const [error, setError] = useState('');
   const [segundos, setSegundos] = useState(0);
-  const [borrador, setBorrador] = useState<CapturaInterpretada | null>(null);
+  const [borrador, setBorrador] = useState<CapturaDeVoz | null>(null);
   /**
    * A quién se le fía, cuando la venta es fiada (055).
    *
@@ -167,7 +194,7 @@ export function BotonCaptura({
         return;
       }
 
-      const interpretado = normalizar(datos as CapturaInterpretada);
+      const interpretado = normalizar(datos as CapturaDeVoz);
 
       // Un turno se revisa en la agenda, en el formulario de siempre: con los
       // horarios libres a la vista, que es lo único que dice si se puede.
@@ -199,7 +226,7 @@ export function BotonCaptura({
     }
   }
 
-  function normalizar(c: CapturaInterpretada): CapturaInterpretada {
+  function normalizar(c: CapturaDeVoz): CapturaDeVoz {
     const items = (c.items ?? []).map((i) => ({
       ...i,
       cantidad: Number(i.cantidad) || 1,
@@ -370,6 +397,11 @@ export function BotonCaptura({
     try {
       const supabase = clienteNavegador();
 
+      if (faltaCampana(borrador)) throw new Error(t.gastosCampana.captura.deQueLoteEs);
+      // La campaña solo viaja donde corresponde: si cambió el tipo a mano a
+      // uno sin campaña, se queda en la pantalla y no llega a la base.
+      const loteId = vaACampana(borrador) ? borrador.lote_id ?? null : null;
+
       if (borrador.tipo === 'deuda') {
         /**
          * Contraer una deuda NO es un movimiento: no entró ni salió plata del
@@ -392,6 +424,10 @@ export function BotonCaptura({
           p_monto_cuota: d.monto_cuota,
           p_vence_el: d.vence_el,
           p_notas: borrador.transcripcion ?? '',
+          // La campaña que la va a pagar y en qué se va a convertir cuando
+          // se pague (100): así cuenta en el costo de la campaña desde hoy.
+          p_lote: loteId,
+          p_categoria: d.categoria ?? '',
         });
         if (error) throw error;
         // Sin movimiento no hay dónde colgar la foto. Lo dictado queda en las
@@ -462,6 +498,16 @@ export function BotonCaptura({
         });
         if (error) throw error;
         idGuardado = typeof data === 'string' ? data : null;
+
+        // `registrar_venta` no cambia de firma (decisión 19): la campaña se
+        // pone después. Si esto falla la venta YA está guardada, así que no
+        // se corta: reintentar la duplicaría. Se suma desde el historial.
+        if (idGuardado && loteId) {
+          const { error: errLote } = await supabase.rpc('asignar_a_lote', {
+            p_movimiento: idGuardado, p_lote: loteId,
+          });
+          if (errLote) console.error('[captura] asignar_a_lote', errLote.message);
+        }
       } else {
         // Gastos y otros ingresos no llevan items, stock ni descuento.
         const { data, error } = await supabase.from('movimientos').insert({
@@ -478,6 +524,9 @@ export function BotonCaptura({
           contraparte: borrador.contraparte ?? '',
           notas: borrador.transcripcion ?? '',
           origen,
+          // En el insert mismo, no después: la policy lo deja pasar y así no
+          // hay un segundo viaje que pueda fallar a medias.
+          ...(loteId ? { lote_id: loteId } : {}),
         }).select('id').single();
         if (error) throw error;
         idGuardado = data?.id ?? null;
@@ -734,7 +783,7 @@ function Revision({
   borrador, moneda, error, guardando, paso, tipoCuenta, deudas, crearGasto, onCrearGasto,
   onCambio, onCancelar, onGuardar, empresaId, elegido, setElegido,
 }: {
-  borrador: CapturaInterpretada;
+  borrador: CapturaDeVoz;
   moneda: string;
   empresaId: string;
   /** Solo se usa al fiar. Ver el comentario del estado en BotonCaptura. */
@@ -747,11 +796,12 @@ function Revision({
   deudas: DeudaBreve[];
   crearGasto: boolean;
   onCrearGasto: (v: boolean) => void;
-  onCambio: (c: CapturaInterpretada) => void;
+  onCambio: (c: CapturaDeVoz) => void;
   onCancelar: () => void;
   onGuardar: () => void;
 }) {
   const t = useTextos();
+  const idioma = useIdioma();
   const dec = decimalesDe(moneda);
   const bajaConfianza = (borrador.confianza ?? 1) < 0.65;
 
@@ -761,11 +811,11 @@ function Revision({
   const infoDeuda = borrador.deuda ?? DEUDA_VACIA;
   const deudaElegida = deudas.find((d) => d.id === infoDeuda.deuda_id) ?? null;
 
-  function set<K extends keyof CapturaInterpretada>(clave: K, valor: CapturaInterpretada[K]) {
+  function set<K extends keyof CapturaDeVoz>(clave: K, valor: CapturaDeVoz[K]) {
     onCambio({ ...borrador, [clave]: valor });
   }
 
-  function setDeuda(cambio: Partial<DeudaInterpretada>) {
+  function setDeuda(cambio: Partial<DeudaDeVoz>) {
     onCambio({ ...borrador, deuda: { ...infoDeuda, ...cambio } });
   }
 
@@ -817,6 +867,16 @@ function Revision({
   // Un pago sin saber a qué deuda no se puede guardar: quedaría plata saliendo
   // sin que baje ningún saldo.
   const faltaElegirDeuda = esPago && !infoDeuda.deuda_id;
+
+  // La campaña: los chips se ven siempre que la plata puede ir a una, así
+  // la que eligió la IA se ve antes de guardar y se corrige con un toque.
+  const conCampana = vaACampana(borrador);
+  const lotes: CampanaConocida[] = borrador.lotes ?? [];
+  const dudaCampana = faltaCampana(borrador);
+  const sinCampana = !borrador.lote_id && !dudaCampana;
+  function elegirCampana(id: string | null) {
+    onCambio({ ...borrador, lote_id: id, lote_dudoso: false });
+  }
 
   return (
     // Sin caja propia con scroll: el diálogo de afuera ya se desplaza. Con
@@ -909,6 +969,41 @@ function Revision({
         )}
       </div>
 
+      {/* ---------------- CAMPAÑA ---------------- */}
+      {conCampana && (
+        <div className={`mt-5 rounded-2xl border p-4 ${dudaCampana ? 'border-ambar/40 bg-ambar-claro/40' : 'border-borde bg-arena'}`}>
+          <p className="etiqueta">{t.gastosCampana.captura.deQueLoteEs}</p>
+          {dudaCampana && borrador.lote_nombrado && (
+            <p className="mb-3 text-[13px] font-medium leading-relaxed text-ambar">
+              {t.gastosCampana.captura.noReconocido(borrador.lote_nombrado)}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {lotes.map((l) => (
+              <button
+                key={l.id} type="button" onClick={() => elegirCampana(l.id)}
+                aria-pressed={borrador.lote_id === l.id}
+                className={`${borrador.lote_id === l.id ? 'chip-encendido' : 'chip-apagado'} px-3.5 text-[13.5px]`}
+              >
+                {l.nombre}
+                {l.cultivo && <span className="ml-1.5 font-normal opacity-70">{cultivoVisible(l.cultivo, idioma)}</span>}
+              </button>
+            ))}
+            <button
+              type="button" onClick={() => elegirCampana(null)}
+              aria-pressed={sinCampana}
+              className={`${sinCampana ? 'chip-encendido' : 'chip-apagado'} px-3.5 text-[13.5px]`}
+            >
+              {t.gastosCampana.captura.sinLote}
+            </button>
+          </div>
+          {/* «A cosecha» por voz es de la fase 2: esa forma de pago está en Gastos. */}
+          {borrador.tipo === 'gasto' && (
+            <p className="mt-2.5 text-[12.5px] leading-snug text-tinta/50">{t.gastosCampana.captura.aCosechaDespues}</p>
+          )}
+        </div>
+      )}
+
       {/* ---------------- DEUDA NUEVA ---------------- */}
       {esDeuda && (
         <div className="mt-5 rounded-2xl border border-ambar/25 bg-ambar-claro/40 p-4">
@@ -918,7 +1013,7 @@ function Revision({
               <label className="etiqueta">{t.captura.claseDeuda}</label>
               <select
                 className="campo" value={infoDeuda.clase}
-                onChange={(e) => setDeuda({ clase: e.target.value as DeudaInterpretada['clase'] })}
+                onChange={(e) => setDeuda({ clase: e.target.value as DeudaDeVoz['clase'] })}
               >
                 <option value="tarjeta">{t.captura.metodoTarjeta}</option>
                 <option value="prestamo">{t.captura.clasePrestamo}</option>
@@ -955,6 +1050,19 @@ function Revision({
                 alCambiar={(n) => setDeuda({ monto_cuota: n > 0 ? n : null })}
               />
             </div>
+
+            {/* Qué se compró debiendo: el gasto que nace al pagarla lleva esta
+                categoría (100). Solo donde hay campañas: en el resto, una
+                deuda sigue naciendo como «Deudas», como siempre. */}
+            {conCampana && (
+              <div className="col-span-2">
+                <label className="etiqueta">{t.captura.campoCategoria}</label>
+                <input
+                  className="campo" value={infoDeuda.categoria ?? ''}
+                  onChange={(e) => setDeuda({ categoria: e.target.value || null })}
+                />
+              </div>
+            )}
 
             <div className="col-span-2">
               <label className="etiqueta">{t.captura.proximoVencimiento}</label>
@@ -1071,7 +1179,7 @@ function Revision({
 
       <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
         <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>{t.captura.atras}</button>
-        <button className="boton-principal py-3" onClick={onGuardar} disabled={guardando || borrador.monto <= 0 || faltaElegirDeuda}>
+        <button className="boton-principal py-3" onClick={onGuardar} disabled={guardando || borrador.monto <= 0 || faltaElegirDeuda || dudaCampana}>
           {guardando ? paso || t.comun.guardando : t.comun.guardar}
         </button>
       </div>

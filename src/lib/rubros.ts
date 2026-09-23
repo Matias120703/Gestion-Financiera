@@ -13,6 +13,16 @@ import type { Rubro, TipoCuenta } from './tipos';
 export type Jerga = 'entrenamiento' | 'agricultura';
 
 /**
+ * Los planes pagos, repetidos acá a propósito (102).
+ *
+ * Son los mismos de `PLANES_PAGOS` en precios.ts, pero rubros.ts se compila
+ * suelto en el arnés de pruebas (`probar:calculos`) y precios.ts arrastra el
+ * cliente de Supabase del servidor. Si alguna vez se suma un plan allá, el
+ * compilador avisa en plan/page.tsx, que pasa de uno al otro.
+ */
+export type PlanDeRubro = 'basico' | 'pro' | 'negocio';
+
+/**
  * QUÉ CAMBIA SEGÚN EL RUBRO.
  *
  * Un motor, varias puertas. El 90% de Orden —entró, salió, me queda, debo
@@ -146,6 +156,25 @@ export interface FichaRubro {
    * panel, y se piden al agendar a alguien nuevo.
    */
   notasALaVista: boolean;
+  /**
+   * QUÉ PLANES SE LE OFRECEN (102), de menor a mayor.
+   *
+   * El sistema de planes es uno solo —los mismos precios, los mismos topes,
+   * las mismas sillas—: lo que cambia es cuáles tienen sentido para el
+   * oficio. Pro y Premium venden gente cargando a la vez; un profe o un
+   * trainer trabajan solos, y ofrecerles pagar por vendedores que no van a
+   * tener es venderles aire. Al campo le alcanza con Pro: el dueño y un par
+   * de encargados.
+   *
+   * Es obligatorio por lo mismo que `secciones`: un rubro nuevo no compila
+   * hasta que alguien diga qué se le vende. Espejo de `planes_de_rubro()`
+   * (migración 102), que es la que elige el plan de la prueba; una prueba de
+   * calculos.test.js compara las dos, rubro por rubro.
+   *
+   * Nunca le quita nada a nadie: si una cuenta ya paga un plan que su rubro
+   * no ofrece, lo sigue viendo como su plan actual.
+   */
+  planes: readonly PlanDeRubro[];
 }
 
 /**
@@ -198,6 +227,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     jerga: null,
     notasALaVista: false,
     barra: null,
+    // Un almacén puede ser uno solo o un local con cinco vendedores: los tres.
+    planes: ['basico', 'pro', 'negocio'],
   },
 
   servicios: {
@@ -231,6 +262,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     jerga: null,
     notasALaVista: false,
     barra: null,
+    // Una barbería puede tener diez sillas: los tres.
+    planes: ['basico', 'pro', 'negocio'],
   },
 
   ganaderia: {
@@ -261,6 +294,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     jerga: null,
     notasALaVista: false,
     barra: null,
+    // Como el agricultor: el dueño solo o con un par de peones que cargan.
+    planes: ['basico', 'pro'],
   },
 
   /**
@@ -313,6 +348,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // gasto, y vender para el que va a la feria o vende mandioca por
     // camión. Deudas y billetera quedan a un toque desde «Más».
     barra: ['/panel', '/lotes', '/gastos', '/vender'],
+    // El dueño solo, o el dueño con un par de encargados que cargan gastos y
+    // cosecha. Premium es para un local lleno de vendedores.
+    planes: ['basico', 'pro'],
   },
 
   /**
@@ -375,6 +413,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     notasALaVista: false,
     // La agenda y los alumnos a un toque: es lo que un profe mira todo el día.
     barra: ['/panel', '/agenda', '/clientes', '/gastos'],
+    // Un profe trabaja solo: el Básico es el negocio entero para una persona.
+    // Pro y Premium venden sillas para vendedores que no va a tener.
+    planes: ['basico'],
   },
 
   /**
@@ -423,6 +464,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // Decidido con Matías (22/09): las cuatro que un trainer usa todos los
     // días. Gastos queda a un toque desde «Más».
     barra: ['/panel', '/agenda', '/rutinas', '/clientes'],
+    // Como el profe: trabaja solo, así que el plan de uno solo. Pagar por
+    // gente cargando a la vez sería pagar por nadie.
+    planes: ['basico'],
   },
 };
 
@@ -503,6 +547,10 @@ export const PERSONAL: FichaRubro = {
   jerga: null,
   notasALaVista: false,
   barra: null,
+  // Lo que ya se le ofrecía (plan/page.tsx): un solo plan pago, el de una
+  // persona. Ofrecerle el de un local con vendedores sería venderle algo que
+  // no puede usar.
+  planes: ['pro'],
 };
 
 /**

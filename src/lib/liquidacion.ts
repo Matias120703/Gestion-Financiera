@@ -12,8 +12,9 @@
  *
  * Reglas del reparto:
  *   · el bruto de cada parte es sus kilos por el precio del papel;
- *   · descuentos y «grano que pagó otra cosa» se prorratean por kilos, a
- *     dos decimales, y el resto del redondeo va a la última parte;
+ *   · descuentos y «grano que pagó otra cosa» se prorratean por kilos, en
+ *     la unidad más chica de la moneda (centavos, o guaraníes enteros con
+ *     `decimales: 0`), por el método del mayor resto;
  *   · cada deuda va ENTERA a la parte de su campaña (una deuda «a cosecha»
  *     es de una campaña), o a la primera si la deuda no tiene campaña;
  *   · la suma de las partes es el papel, peso por peso. Nunca aparece un
@@ -62,6 +63,13 @@ export interface Papel {
   grano: GranoPapel[];
   /** Kilos de cada campaña que entraron en el papel, en el orden de la pantalla. */
   partesKg: ParteKg[];
+  /**
+   * Decimales de la moneda del negocio (2 si falta; 0 en guaraníes). El
+   * prorrateo reparte en esa unidad: un secado de Gs 1.001 entre dos
+   * campañas da 501 + 500, no 500,50 + 500,50, que serían dos gastos con
+   * centavos en un negocio que no los tiene.
+   */
+  decimales?: number;
 }
 
 /** La forma EXACTA de cada elemento de `p_partes` de `registrar_liquidacion`. */
@@ -102,6 +110,18 @@ function suma(valores: number[]): number {
   return redondear2(valores.reduce((a, b) => a + b, 0));
 }
 
+/**
+ * Cuántos centavos tiene la unidad más chica de la moneda: 1 con dos
+ * decimales, 100 en guaraníes (0 decimales). Todo el reparto cuenta en
+ * centavos; esto solo dice de a cuánto se puede cortar.
+ */
+function pasoDe(decimales: number | undefined): number {
+  const d = typeof decimales === 'number' && Number.isFinite(decimales)
+    ? Math.min(2, Math.max(0, Math.round(decimales)))
+    : 2;
+  return 10 ** (2 - d);
+}
+
 /** Lo mismo que hace la base: round(kg × precio / 1000, 2). */
 export function brutoDe(kg: number, precioTonelada: number): number {
   return redondear2((kg * precioTonelada) / 1000);
@@ -113,29 +133,43 @@ export function brutoDelPapel(papel: Papel): number {
 }
 
 /**
- * Prorratea un monto por kilos entre las partes, a dos decimales, por el
- * método del mayor resto: cada parte recibe los centavos enteros que le
- * tocan y los que sobran van de a uno a las de mayor fracción. Así la suma
+ * Prorratea un monto por kilos entre las partes, en la unidad más chica de
+ * la moneda (`paso` centavos: 1 con dos decimales, 100 en guaraníes), por
+ * el método del mayor resto: cada parte recibe las unidades enteras que le
+ * tocan y las que sobran van de a una a las de mayor fracción. Así la suma
  * es exactamente el monto y ninguna cuota sale negativa (con «el resto a la
  * última», 0,05 entre diez partes podía dar −0,04 en una parte chica). Una
  * cuota puede ser 0 en una parte muy chica: la que llama la descarta,
  * porque la base no acepta un descuento en cero.
+ *
+ * Si el monto ya trae centavos en una moneda sin decimales (el grano del
+ * canje es «lo que quedó del bruto», y el bruto lo redondea la base a dos
+ * decimales), esos centavos no se inventan ni se pierden: van enteros a
+ * la parte de cuota más grande.
  */
-function prorratear(monto: number, partes: ParteKg[]): number[] {
+function prorratear(monto: number, partes: ParteKg[], paso = 1): number[] {
   const totalKg = partes.reduce((a, p) => a + p.kg, 0);
   if (partes.length === 0) return [];
   const centavos = Math.round(monto * 100);
   if (totalKg <= 0) {
     return partes.map((_, i) => (i === partes.length - 1 ? centavos / 100 : 0));
   }
-  const exactas = partes.map((p) => (centavos * p.kg) / totalKg);
+  const unidades = Math.floor(centavos / paso);
+  const suelto = centavos - unidades * paso;
+  const exactas = partes.map((p) => (unidades * p.kg) / totalKg);
   const enteras = exactas.map((x) => Math.floor(x));
-  let sobran = centavos - enteras.reduce((a, b) => a + b, 0);
+  let sobran = unidades - enteras.reduce((a, b) => a + b, 0);
   const orden = exactas
     .map((x, i) => ({ i, resto: x - Math.floor(x) }))
     .sort((a, b) => b.resto - a.resto || a.i - b.i);
   for (let k = 0; sobran > 0; k = (k + 1) % orden.length, sobran--) enteras[orden[k].i] += 1;
-  return enteras.map((c) => c / 100);
+  const cuotas = enteras.map((u) => u * paso);
+  if (suelto > 0) {
+    let mayor = 0;
+    for (let i = 1; i < cuotas.length; i++) if (cuotas[i] > cuotas[mayor]) mayor = i;
+    cuotas[mayor] += suelto;
+  }
+  return cuotas.map((c) => c / 100);
 }
 
 /**
@@ -145,17 +179,18 @@ function prorratear(monto: number, partes: ParteKg[]): number[] {
 export function repartirLiquidacion(papel: Papel): Reparto {
   const partesKg = papel.partesKg;
   const n = partesKg.length;
+  const paso = pasoDe(papel.decimales);
   const partes: ParteLiquidacion[] = partesKg.map((p) => ({
     lote_id: p.lote_id, kg: p.kg, descuentos: [], deudas: [], grano: [],
   }));
 
   for (const d of papel.descuentos) {
-    prorratear(d.monto, partesKg).forEach((cuota, i) => {
+    prorratear(d.monto, partesKg, paso).forEach((cuota, i) => {
       if (cuota > 0) partes[i].descuentos.push({ categoria: d.categoria, monto: cuota });
     });
   }
   for (const g of papel.grano) {
-    prorratear(g.monto, partesKg).forEach((cuota, i) => {
+    prorratear(g.monto, partesKg, paso).forEach((cuota, i) => {
       if (cuota > 0) partes[i].grano.push({ categoria: g.categoria, monto: cuota, descripcion: g.descripcion });
     });
   }
@@ -166,7 +201,9 @@ export function repartirLiquidacion(papel: Papel): Reparto {
   // el papel entero cierre. Lo que no entra pasa a la parte con más lugar.
   // No cambia a qué campaña va el costo: el gasto que nace al pagar lleva
   // la campaña de la DEUDA (registrar_pago_deuda), sea cual sea la parte.
-  // Se cuenta en centavos para no perder ninguno.
+  // Se cuenta en centavos para no perder ninguno, y cuando una deuda se
+  // parte entre dos campañas se corta en unidades enteras de la moneda
+  // (`tramo`): en guaraníes, sin centavos, salvo que no quede otro lugar.
   const lugar = partes.map((p) => Math.round(brutoDe(p.kg, papel.precioTonelada) * 100)
     - Math.round(p.descuentos.reduce((a, x) => a + x.monto, 0) * 100)
     - Math.round(p.grano.reduce((a, x) => a + x.monto, 0) * 100));
@@ -176,11 +213,16 @@ export function repartirLiquidacion(papel: Papel): Reparto {
     else partes[i].deudas.push({ deuda_id: deudaId, monto: centavos / 100 });
     lugar[i] -= centavos;
   };
+  /** Cuánto de `falta` entra en `libre`: entero si cabe; si no, lo que cabe redondeado para abajo a la unidad. */
+  const tramo = (falta: number, libre: number) => {
+    const cabe = Math.min(falta, Math.max(0, libre));
+    return cabe === falta ? cabe : cabe - (cabe % paso);
+  };
   for (const d of papel.deudas) {
     if (d.monto <= 0 || n === 0) continue;
     let falta = Math.round(d.monto * 100);
     const suya = Math.max(0, partes.findIndex((p) => p.lote_id === d.lote_id));
-    const enLaSuya = Math.min(falta, Math.max(0, lugar[suya]));
+    const enLaSuya = tramo(falta, lugar[suya]);
     if (enLaSuya > 0) { poner(suya, d.deuda_id, enLaSuya); falta -= enLaSuya; }
     while (falta > 0) {
       let mejor = -1;
@@ -188,7 +230,8 @@ export function repartirLiquidacion(papel: Papel): Reparto {
       // No hay lugar en ninguna parte: el papel no cuadra. Va entero a la
       // suya y la base lo dice (la pantalla ya lo topó con toparCompensaciones).
       if (mejor < 0) { poner(suya, d.deuda_id, falta); break; }
-      const cuanto = Math.min(falta, lugar[mejor]);
+      // En unidades enteras si entra al menos una; si no, lo que quede.
+      const cuanto = tramo(falta, lugar[mejor]) || Math.min(falta, lugar[mejor]);
       poner(mejor, d.deuda_id, cuanto);
       falta -= cuanto;
     }

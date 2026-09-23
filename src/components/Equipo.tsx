@@ -6,7 +6,6 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { fechaLegible } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
-import { NOMBRE_ROL } from '@/lib/permisos';
 import type { Miembro } from '@/lib/tipos';
 
 /**
@@ -96,7 +95,8 @@ export function ListaEquipo({
             <span className={`pastilla shrink-0 ${
               m.rol === 'propietario' ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/55'
             }`}>
-              {NOMBRE_ROL[m.rol] ?? m.rol}
+              {/* Del diccionario: en el campo, el vendedor es el encargado (102). */}
+              {t.roles[m.rol] ?? m.rol}
             </span>
 
             {sePuedeQuitar(m) && (

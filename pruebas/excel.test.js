@@ -459,6 +459,160 @@ const productosBd = [
     nombreArchivo('Perfumería Aurora','2026-08-10','2026-08-12','USD','pt'),
     'Orden Perfumería Aurora 2026-08-10 a 2026-08-12 em USD.xlsx');
 
+  // ---- Las campañas y las liquidaciones del campo (100) ----
+  //
+  // El ejemplo canónico del contrato: «Norte · Soja · Zafra 2026/27 ·
+  // 50 ha» en un negocio en dólares, con la liquidación de 30.000 kg a
+  // 415 que deja 1.630 de neto. Los números llegan de la base
+  // (`numeros_de_lote`): el Excel no recalcula ninguno, solo los pone.
+  console.log('\n── Campañas (100) ──');
+  const campanaNorte = {
+    id:'l1', nombre:'Norte', unidad:'ha', cantidad:50, estado:'abierto', abierto_el:'2026-09-15', cerrado_el:null,
+    notas:'', dias:209, cultivo:'Soja', campana:'Zafra 2026/27', hectareas:50, precio_esperado:415,
+    movimientos:9, puesto:21420, cobrado:12450, resultado:-8970, por_unidad:-179.4, a_cosecha:0, costo:21420,
+    costo_ha:428.4, resultado_ha:-179.4, kg_cosechados:30000, kg_vendidos:30000, kg_sin_vender:0, vendido:12450,
+    precio_promedio:415, precio_ref:415, rendimiento:600, costo_ton:714, kg_ha_para_cubrir:1032.29,
+    falta_cubrir:8970, kg_para_cubrir:21614,
+  };
+  // Un lote de años anteriores que ya no tiene por qué aparecer lo filtra la ruta; acá, uno cerrado del período.
+  const campanaSur = {
+    ...campanaNorte, id:'l2', nombre:'Sur', cultivo:'Maíz', campana:'Zafriña 2027', hectareas:20, cantidad:20,
+    estado:'cerrado', abierto_el:'2027-01-10', cerrado_el:'2027-04-20', puesto:4000, cobrado:5000, resultado:1000,
+    a_cosecha:1500, costo:5500, costo_ha:275, resultado_ha:50, kg_cosechados:10000, kg_vendidos:8000,
+    kg_sin_vender:2000, vendido:1600, precio_promedio:200, rendimiento:500,
+  };
+  const liqNorte = {
+    id:'q1', grupo_id:'g1', fecha:'2027-04-12', comprador:'Cooperativa', kg:30000, precio_tonelada:415,
+    precio_original:null, moneda_original:null, cambio:null, bruto:12450, descuentos:1040, compensado:4800,
+    pagado_con_grano:4980, neto:1630, cuenta_id:null, estado:'activa', movimiento_id:'v1', notas:'',
+    campana:'Norte · Zafra 2026/27',
+  };
+  // La misma, cargada antes y anulada: figura tachada y no suma.
+  const liqAnulada = { ...liqNorte, id:'q0', grupo_id:'g0', fecha:'2027-04-10', estado:'anulada' };
+  const movsCampo = [
+    { ...base, id:'g1', tipo:'gasto', fecha:'2026-09-20', descripcion:'Semilla', categoria:'Semilla',
+      subtotal:3400, monto:3400, metodo_pago:'efectivo' },
+    { ...base, id:'g2', tipo:'gasto', fecha:'2026-09-21', descripcion:'Contador', categoria:'Otros',
+      subtotal:200, monto:200, metodo_pago:'efectivo' },
+  ];
+  const datosCampo = (extra = {}) => ({
+    empresa:{ nombre:'Chacra Norte', moneda:'USD', rubro:'agricultura' },
+    desde:'2026-09-01', hasta:'2027-04-30',
+    resumen: resumir(movsCampo), ranking: rankingProductos(movsCampo),
+    categorias: gastosPorCategoria(movsCampo), ingresos: ingresosPorCategoria(movsCampo),
+    ahorro: SIN_AHORRO, serie: serieDiaria(movsCampo, diasDelRango('2026-09-01', '2027-04-30', 400)),
+    movimientos: movsCampo, productosBd: [],
+    campanas: [campanaNorte, campanaSur],
+    liquidaciones: [liqNorte, liqAnulada],
+    campanaDeMovimiento: { g1: 'Norte · Zafra 2026/27' },
+    ...extra,
+  });
+  const leerLibro = async (libroX, nombre) => {
+    const ruta = path.join(__dirname, '..', '.compilado', nombre);
+    await libroX.xlsx.writeFile(ruta);
+    const l = new ExcelJS.Workbook();
+    await l.xlsx.readFile(ruta);
+    return l;
+  };
+
+  const campoLeido = await leerLibro(construirLibro(datosCampo()), 'campo.xlsx');
+  ok('las campañas van segundas, después del resumen',
+    campoLeido.worksheets.map((h) => h.name), ['Resumen','Campañas','Liquidaciones','Productos','Movimientos','Gastos']);
+
+  const hc = campoLeido.getWorksheet('Campañas');
+  ok('una fila por campaña: el lote', hc.getCell('A7').value, 'Norte');
+  ok('el cultivo y la campaña', [hc.getCell('B7').value, hc.getCell('C7').value], ['Soja','Zafra 2026/27']);
+  ok('las hectáreas', hc.getCell('D7').value, 50);
+  ok('el estado', [hc.getCell('E7').value, hc.getCell('E8').value], ['Abierta','Cerrada']);
+  ok('sin fecha de cierre la celda queda vacía', hc.getCell('G7').value, null);
+  ok('puesto, a cosecha y costo tal cual la base',
+    [hc.getCell('H7').value, hc.getCell('I7').value, hc.getCell('J7').value], [21420, 0, 21420]);
+  ok('costo por hectárea', hc.getCell('K7').value, 428.4);
+  ok('cobrado y resultado', [hc.getCell('L7').value, hc.getCell('M7').value], [12450, -8970]);
+  ok('resultado por hectárea', hc.getCell('N7').value, -179.4);
+  ok('kilos cosechados, kg/ha y vendidos',
+    [hc.getCell('O7').value, hc.getCell('P7').value, hc.getCell('Q7').value], [30000, 600, 30000]);
+  ok('precio promedio por tonelada', hc.getCell('R7').value, 415);
+  ok('kilos sin vender', [hc.getCell('S7').value, hc.getCell('S8').value], [0, 2000]);
+  ok('la plata con formato de dólares', String(hc.getCell('J7').numFmt).includes('US$'), true);
+  ok('el resultado negativo en rojo', hc.getCell('M7').font.color.argb, 'FFC0392B');
+  ok('fila TOTAL', hc.getCell('A9').value, 'TOTAL');
+  ok('total de hectáreas, costo y resultado',
+    [hc.getCell('D9').value, hc.getCell('J9').value, hc.getCell('M9').value], [70, 26920, -7970]);
+  ok('el por hectárea no se suma', [hc.getCell('K9').value, hc.getCell('N9').value, hc.getCell('P9').value], [null, null, null]);
+  ok('el precio promedio del total es vendido / kilos', hc.getCell('R9').value, Math.round((14050 / 38000) * 1000 * 100) / 100);
+  let notaCaja = false;
+  hc.eachRow((f) => { if (String(f.getCell(1).value ?? '').startsWith('Puesto, cobrado y resultado son de caja')) notaCaja = true; });
+  ok('y dice que es de caja', notaCaja, true);
+
+  const hl = campoLeido.getWorksheet('Liquidaciones');
+  ok('las liquidaciones por fecha: primero la anulada', [hl.getCell('A7').value, hl.getCell('A8').value].map((v) => String(v).slice(0, 2)), ['10', '12']);
+  ok('la campaña con su nombre', hl.getCell('B8').value, 'Norte · Zafra 2026/27');
+  ok('el papel tal cual: kg, precio, bruto',
+    [hl.getCell('D8').value, hl.getCell('E8').value, hl.getCell('F8').value], [30000, 415, 12450]);
+  ok('descuentos, compensado y grano',
+    [hl.getCell('G8').value, hl.getCell('H8').value, hl.getCell('I8').value], [1040, 4800, 4980]);
+  ok('el neto que acreditó el banco', hl.getCell('J8').value, 1630);
+  ok('la anulada tachada', hl.getCell('F7').font.strike, true);
+  ok('y dice ANULADA', hl.getCell('K7').value, 'ANULADA');
+  ok('el total no suma la anulada', [hl.getCell('D9').value, hl.getCell('F9').value, hl.getCell('J9').value], [30000, 12450, 1630]);
+  ok('bruto − descuentos − compensado − grano = neto, en el total',
+    hl.getCell('F9').value - hl.getCell('G9').value - hl.getCell('H9').value - hl.getCell('I9').value, hl.getCell('J9').value);
+
+  const hm = campoLeido.getWorksheet('Movimientos');
+  ok('Movimientos suma la columna Campaña al final', hm.getCell('L6').value, 'Campaña');
+  ok('con el nombre de la campaña', hm.getCell('L7').value, 'Norte · Zafra 2026/27');
+  ok('y vacía si no es de ninguna', hm.getCell('L8').value || '', '');
+  ok('las columnas de siempre no se corren', hm.getCell('K6').value, 'Estado');
+
+  // Un comercio no ve nada de esto, aunque le lleguen datos de campañas.
+  const comercioConCampanas = await leerLibro(construirLibro(datosCampo({
+    empresa:{ nombre:'Almacen', moneda:'PYG', rubro:'comercio' },
+  })), 'comercio-campanas.xlsx');
+  ok('un comercio no trae hojas de campañas',
+    comercioConCampanas.worksheets.map((h) => h.name).filter((n) => n === 'Campañas' || n === 'Liquidaciones'), []);
+  ok('ni la columna Campaña', comercioConCampanas.getWorksheet('Movimientos').getCell('L6').value, null);
+
+  // El ganadero: la hoja de campañas sí (con sus lotes), la de liquidaciones
+  // solo si hubo alguna. Una hoja vacía no informa.
+  const ganaderoSinLiq = await leerLibro(construirLibro(datosCampo({
+    empresa:{ nombre:'Estancia', moneda:'PYG', rubro:'ganaderia' }, campanas: [], liquidaciones: [],
+  })), 'ganaderia-campanas.xlsx');
+  const hojasGanadero = ganaderoSinLiq.worksheets.map((h) => h.name);
+  ok('un ganadero sin lotes igual ve la hoja, con su aviso', hojasGanadero.includes('Campañas'), true);
+  ok('y el aviso', ganaderoSinLiq.getWorksheet('Campañas').getCell('A7').value, 'Todavía no hay campañas cargadas.');
+  ok('sin liquidaciones no hay hoja de liquidaciones', hojasGanadero.includes('Liquidaciones'), false);
+
+  // El sojero en dólares que mira en guaraníes: la cotización guardada es
+  // 1/6.000 (100) y el Excel lo dice como se piensa, «1 US$ = Gs. 6.000».
+  const vistaGs = { moneda:'PYG', factor:1 / 0.0001666666667, propia:'USD', cotizacion:0.0001666666667, desde:'2026-09-01T12:00:00Z' };
+  const campoEnGs = await leerLibro(construirLibro(enLaMonedaDeLaVista(datosCampo(), vistaGs)), 'campo-gs.xlsx');
+  const hcGs = campoEnGs.getWorksheet('Campañas');
+  ok('el cambio se dice al revés: 1 US$ = Gs. 6.000', String(hcGs.getCell('A3').value).includes('1 US$ = Gs. 6.000'), true);
+  ok('el costo en guaraníes', Math.round(hcGs.getCell('J7').value), 128520000);
+  ok('el costo por hectárea también', Math.round(hcGs.getCell('K7').value), 2570400);
+  ok('los kilos no se convierten', [hcGs.getCell('O7').value, hcGs.getCell('P7').value], [30000, 600]);
+  ok('las hectáreas tampoco', hcGs.getCell('D7').value, 50);
+  ok('el neto de la liquidación en guaraníes', Math.round(campoEnGs.getWorksheet('Liquidaciones').getCell('J8').value), 9780000);
+  ok('con formato de guaraníes', String(hcGs.getCell('J7').numFmt).includes('Gs.'), true);
+  ok('los datos originales no se tocan', campanaNorte.costo, 21420);
+
+  // En portugués: «Safras», y ninguna celda fija en español.
+  const campoPt = await leerTextos(construirLibro(datosCampo({ idioma:'pt' })), 'campo-pt.xlsx');
+  ok('las hojas del campo en portugués', campoPt.l.worksheets.map((h) => h.name).slice(0, 3), ['Resumo','Safras','Liquidações']);
+  ok('la columna del lote dice «Lote» también en portugués', campoPt.l.getWorksheet('Safras').getCell('A6').value, 'Lote');
+  ok('ninguna celda fija del campo queda en español',
+    campoPt.celdas.filter((c) => soloEnEspanol.has(c)), []);
+
+  // La ruta: lee la ficha, no una lista de rubros escrita a mano.
+  const reporteTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'reporte.ts'), 'utf8');
+  ok('el Excel pregunta a la ficha si es de ciclo largo',
+    reporteTs.includes("fichaDe(empresa.rubro, empresa.tipo_cuenta ?? 'emprendedor').ciclosLargos")
+    && !reporteTs.includes("empresa.rubro === 'ganaderia'"), true);
+  ok('la ruta trae lo del campo solo en ciclo largo',
+    rutaExcel.includes('fichaDe(empresa.rubro, empresa.tipo_cuenta).ciclosLargos')
+    && rutaExcel.includes('await datosDelCampo('), true);
+
   console.log(fallos===0 ? '>>> EXCEL OK' : `>>> ${fallos} FALLAS`);
   process.exit(fallos?1:0);
 })();

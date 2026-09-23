@@ -4,8 +4,11 @@ import { clienteServidor } from '@/lib/supabase/servidor';
 import { hoyISO } from '@/lib/fechas';
 import { tieneSeccion } from '@/lib/rubros';
 import { transcribir } from '@/lib/transcribir';
-import type { CapturaInterpretada, Producto } from '@/lib/tipos';
-import { ESQUEMA, instrucciones } from '@/lib/captura';
+import type { Producto } from '@/lib/tipos';
+import {
+  ESQUEMA, instrucciones, sanearCampana, sanearCategoriaDeuda,
+  type CampanaConocida, type CapturaDeVoz,
+} from '@/lib/captura';
 import { sanearFicha, sanearProducto } from '@/lib/acciones';
 import { contextoAcciones, turnoDictado } from '@/lib/acciones-servidor';
 import { idiomaActual, textos } from '@/i18n';
@@ -100,7 +103,15 @@ export async function POST(request: Request) {
    * consulta salga en paralelo no cambia eso: lo que importa es que la
    * decisión se toma antes de gastar, y sigue siendo así.
    */
-  const [respCupo, respProductos, respDeudas, respCats, respFijos, respIngresos, respFiado] = await Promise.all([
+  /**
+   * Las campañas abiertas (100), solo si la cuenta tiene «/lotes»
+   * (agricultura y ganadería): así «gasté dos millones en semilla para el
+   * Norte» cae en el Norte. Viajan con el resto, en la misma tanda: son una
+   * consulta más, no una espera más.
+   */
+  const conCampanas = !esPersonal && tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/lotes');
+
+  const [respCupo, respProductos, respDeudas, respCats, respFijos, respIngresos, respFiado, respLotes] = await Promise.all([
     supabase.rpc('consumir_credito_ia', { p_empresa: empresaId }),
     esPersonal
       ? Promise.resolve({ data: [], error: null })
@@ -116,6 +127,9 @@ export async function POST(request: Request) {
     // Quién te debe y cuánto (054), para reconocer «Lucas me pagó» y saber
     // cuál Lucas. Si falla, la captura sigue: el cobro se elige a mano.
     supabase.rpc('resumen_fiado', { p_empresa: empresaId }),
+    conCampanas
+      ? supabase.rpc('listar_lotes', { p_empresa: empresaId, p_incluir_cerrados: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const { data: cupo, error: errorCupo } = respCupo;
@@ -221,6 +235,23 @@ export async function POST(request: Request) {
     .map((c: any) => ({ id: String(c.cliente_id), nombre: String(c.nombre ?? ''), saldo: Number(c.saldo ?? 0) }))
     .filter((d: { id: string; saldo: number }) => d.id !== '' && d.saldo > 0);
 
+  /**
+   * Las campañas abiertas, con lo justo para reconocerlas: nombre, cultivo,
+   * campaña y hectáreas. Los números (costo, resultado) no viajan: el modelo
+   * no los necesita y a quien no es administración no le tocan. Si falla, la
+   * captura sigue: la campaña se elige en la campaña misma, con «Sumar».
+   */
+  if (respLotes.error) console.error('[capturar] campañas', respLotes.error.message);
+  const campanas: CampanaConocida[] = (Array.isArray(respLotes.data) ? respLotes.data : [])
+    .filter((l: any) => l?.id && (l.estado ?? 'abierto') === 'abierto')
+    .map((l: any) => ({
+      id: String(l.id),
+      nombre: String(l.nombre ?? ''),
+      cultivo: String(l.cultivo ?? ''),
+      campana: String(l.campana ?? ''),
+      hectareas: l.hectareas != null && Number(l.hectareas) > 0 ? Number(l.hectareas) : null,
+    }));
+
   const hoy = hoyISO(empresa.zona_horaria);
 
   // Lo que no es plata y existe en esta cuenta: turnos, catálogo, clientes.
@@ -235,7 +266,7 @@ export async function POST(request: Request) {
 
   const sistema = instrucciones(
     hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores,
-    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos, idioma });
+    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos, idioma, campanas });
 
   try {
     let textoUsuario = '';
@@ -290,7 +321,7 @@ export async function POST(request: Request) {
     const crudo = completado.choices[0]?.message?.content;
     if (!crudo) return respuestaVacia(s.iaVacia, 502);
 
-    const datos = JSON.parse(crudo) as CapturaInterpretada;
+    const datos = JSON.parse(crudo) as CapturaDeVoz;
 
     // ---------- 5. Saneamiento del lado del servidor ----------
     const idsValidos = new Set(catalogo.map((p) => p.id));
@@ -373,10 +404,16 @@ export async function POST(request: Request) {
           vence_el: typeof d.vence_el === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.vence_el)
             ? d.vence_el : null,
           deuda_id: typeof d.deuda_id === 'string' && idsDeuda.has(d.deuda_id) ? d.deuda_id : null,
+          // Solo en una deuda nueva, y solo si es una categoría de gasto de
+          // esta cuenta: es la del gasto que nace al pagarla (100).
+          categoria: tipo === 'deuda' ? sanearCategoriaDeuda(d.categoria, categorias) : '',
         }
       : null;
 
-    const limpio: CapturaInterpretada = {
+    // La campaña, contra los ids reales: mismo trato que `deuda_id`.
+    const campana = sanearCampana(datos, tipo, campanas);
+
+    const limpio: CapturaDeVoz = {
       tipo,
       fecha: fechaValida,
       descripcion: String(datos.descripcion ?? '').slice(0, 200) || 'Movimiento',
@@ -393,6 +430,11 @@ export async function POST(request: Request) {
         : null,
       items: tipo === 'venta' ? items : [],
       deuda: infoDeuda,
+      lote_id: campana.lote_id,
+      lote_nombrado: campana.lote_nombrado,
+      lote_dudoso: campana.lote_dudoso,
+      // Para los chips de la revisión: solo si la cuenta tiene campañas abiertas.
+      ...(campanas.length ? { lotes: campanas } : {}),
       confianza: Math.min(1, Math.max(0, Number(datos.confianza) || 0.5)),
       aviso: datos.aviso ? String(datos.aviso).slice(0, 200) : null,
       transcripcion,

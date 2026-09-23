@@ -12,7 +12,8 @@ import { TarjetaPlan } from '@/components/TarjetaPlan';
 import { ZonaPeligro } from '@/components/ZonaPeligro';
 import { Soporte } from '@/components/Soporte';
 import { esSuperadmin } from '@/lib/admin';
-import { tieneSeccion } from '@/lib/rubros';
+import { conJerga } from '@/i18n/jergas';
+import { fichaDe, tieneSeccion } from '@/lib/rubros';
 import Link from 'next/link';
 import { MenuAjustes, CabeceraAjuste, SECCIONES_AJUSTES as SECCIONES, type SeccionAjustes as Clave } from '@/components/MenuAjustes';
 import type { Preferencias } from '@/lib/tipos';
@@ -39,7 +40,9 @@ export default async function PaginaAjustes({
   const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
   const supabase = clienteServidor();
-  const t = await textos();
+  // Con la jerga del rubro, como plan/page.tsx: en agricultura la tabla de
+  // permisos y los textos de costos dicen «Encargado» y no «Vendedor».
+  const t = conJerga(await textos(), fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).jerga, ctx.idioma);
   const s = t.ajustes.secciones;
 
   /**

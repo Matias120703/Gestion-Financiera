@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { estaConvertida, simboloDe, fechaLegible, type Vista } from '@/lib/formato';
+import { estaConvertida, simboloDe, fechaLegible, decimalesDe, type Vista } from '@/lib/formato';
 import { textos, idiomaActual, FICHA } from '@/i18n';
 import { Rico } from '@/components/Rico';
 
@@ -20,20 +20,30 @@ import { Rico } from '@/components/Rico';
  * No se muestra nada cuando no hay conversión: un cartel permanente que casi
  * siempre dice «todo normal» deja de leerse, y el día que importe tampoco se
  * va a leer.
+ *
+ * El cambio se dice en la dirección en que da un número que se lee. La
+ * cotización guardada es cuánto vale 1 de la moneda que se mira en la
+ * propia; un negocio en dólares que mira en guaraníes guarda 1/6000, y
+ * «1 Gs. = 0 US$» no dice nada. Cuando es menor que 1 se da vuelta:
+ * «1 US$ = 6.000 Gs.». Lo guardado no cambia.
  */
 export async function AvisoMonedaVista({ vista }: { vista: Vista }) {
   if (!estaConvertida(vista)) return null;
   const a = (await textos()).ajustes;
   const locale = FICHA[(await idiomaActual())].locale;
+  const cot = vista.cotizacion;
+  const alReves = cot != null && cot > 0 && cot < 1;
+  const cambio = cot == null ? null
+    : alReves
+      ? `1 ${simboloDe(vista.propia)} = ${(1 / cot).toLocaleString(locale, { maximumFractionDigits: decimalesDe(vista.moneda) })} ${simboloDe(vista.moneda)}`
+      : `1 ${simboloDe(vista.moneda)} = ${cot.toLocaleString(locale)} ${simboloDe(vista.propia)}`;
 
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5
                     rounded-xl border border-borde bg-arena px-4 py-2.5">
       <p className="text-[13px] leading-snug text-tinta/70">
         <Rico texto={a.estasViendoEnCorto(simboloDe(vista.moneda))} negrita="text-tinta" />
-        {vista.cotizacion != null && (
-          <> · 1 {simboloDe(vista.moneda)} = {vista.cotizacion.toLocaleString(locale)} {simboloDe(vista.propia)}</>
-        )}
+        {cambio && <> · {cambio}</>}
         {vista.desde && (
           <span className="text-tinta/45"> · {a.cargadoEl(fechaLegible(vista.desde.slice(0, 10), true, locale))}</span>
         )}

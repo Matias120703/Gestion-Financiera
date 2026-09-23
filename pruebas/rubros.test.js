@@ -321,6 +321,65 @@ const crear = async (db, uid, nombre, rubro) => {
     db.query('select public.cambiar_rubro($1,$2)', [profe.empresaId, 'clases']));
   ok('y volver', deVuelta.ok, true);
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('10 · La prueba arranca en un plan que se puede comprar (102)');
+  // ═══════════════════════════════════════════════════════════
+  // Cada rubro ofrece solo sus planes, y la prueba nace en uno de ellos:
+  // Pro si el rubro lo vende, si no el más alto de su lista. A un trainer
+  // no se le hace probar tres personas para ofrecerle después una.
+  const planDe = async (empresa) =>
+    (await db.query('select plan, estado from public.suscripciones where empresa_id = $1', [empresa])).rows[0];
+  const listaDe = async (rubro, tipo) =>
+    (await db.query('select public.planes_de_rubro($1, $2) l', [rubro, tipo])).rows[0].l;
+  const pruebaDe = async (rubro, tipo) =>
+    (await db.query('select public.plan_de_prueba($1, $2) p', [rubro, tipo])).rows[0].p;
+
+  ok('comercio ofrece los tres', await listaDe('comercio', 'emprendedor'), ['basico', 'pro', 'negocio']);
+  ok('servicios también', await listaDe('servicios', 'emprendedor'), ['basico', 'pro', 'negocio']);
+  ok('clases, solo básico', await listaDe('clases', 'emprendedor'), ['basico']);
+  ok('entrenamiento, solo básico', await listaDe('entrenamiento', 'emprendedor'), ['basico']);
+  ok('agricultura, básico y pro', await listaDe('agricultura', 'emprendedor'), ['basico', 'pro']);
+  ok('ganadería, básico y pro', await listaDe('ganaderia', 'emprendedor'), ['basico', 'pro']);
+  ok('la cuenta personal, su único plan', await listaDe('comercio', 'personal'), ['pro']);
+  ok('un rubro desconocido cae en comercio, como fichaDe()',
+    await listaDe('astronauta', 'emprendedor'), ['basico', 'pro', 'negocio']);
+
+  ok('el plan de prueba de cada uno',
+    [await pruebaDe('comercio', 'emprendedor'), await pruebaDe('servicios', 'emprendedor'),
+      await pruebaDe('clases', 'emprendedor'), await pruebaDe('entrenamiento', 'emprendedor'),
+      await pruebaDe('agricultura', 'emprendedor'), await pruebaDe('ganaderia', 'emprendedor'),
+      await pruebaDe('comercio', 'personal')],
+    ['pro', 'pro', 'basico', 'basico', 'pro', 'pro', 'pro']);
+
+  ok('un trainer nuevo prueba Básico', await planDe(trainer.empresaId), { plan: 'basico', estado: 'prueba' });
+  ok('un comercio nuevo prueba Pro', await planDe(viejo.empresaId), { plan: 'pro', estado: 'prueba' });
+  const sojero = await H.montarEmpresa(db, { email: 'soja@chacra.com', nombre: 'La Chacra', rubro: 'agricultura' });
+  ok('un agricultor nuevo prueba Pro', (await planDe(sojero.empresaId)).plan, 'pro');
+  const hogar = await H.montarEmpresa(db, { email: 'yo@hogar.com', nombre: 'Mi casa', tipoCuenta: 'personal' });
+  ok('la cuenta personal sigue probando lo de siempre', (await planDe(hogar.empresaId)).plan, 'pro');
+
+  // Cambiar de rubro durante la prueba muda la prueba.
+  const kiosco = await H.montarEmpresa(db, { email: 'kiosco@cambia.com', nombre: 'Kiosco que era gimnasio' });
+  const cambiar = (rubro) => H.intentar(db, kiosco.uid, () =>
+    db.query('select public.cambiar_rubro($1,$2)', [kiosco.empresaId, rubro]));
+  const finAntes = (await db.query('select prueba_fin from public.suscripciones where empresa_id = $1',
+    [kiosco.empresaId])).rows[0].prueba_fin;
+  await cambiar('entrenamiento');
+  ok('en prueba, pasarse a trainer baja la prueba a Básico', await planDe(kiosco.empresaId),
+    { plan: 'basico', estado: 'prueba' });
+  ok('sin tocar cuándo vence', String((await db.query(
+    'select prueba_fin from public.suscripciones where empresa_id = $1', [kiosco.empresaId])).rows[0].prueba_fin),
+  String(finAntes));
+  await cambiar('comercio');
+  ok('y volver a comercio la sube de nuevo a Pro', (await planDe(kiosco.empresaId)).plan, 'pro');
+
+  // Lo pago no se toca nunca: nunca se le quita nada a nadie.
+  await db.query(`update public.suscripciones set plan = 'negocio', estado = 'activa'
+    where empresa_id = $1`, [kiosco.empresaId]);
+  await cambiar('clases');
+  ok('una suscripción paga no cambia de plan al cambiar de rubro', await planDe(kiosco.empresaId),
+    { plan: 'negocio', estado: 'activa' });
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE RUBROS FALLARON`);

@@ -56,8 +56,10 @@ export const campanasEs = {
     editar: 'Editar',
     repetir: 'Repetir',
     repetirDetalle: 'Mismo nombre y mismas hectáreas; el ciclo nuevo se sugiere solo.',
-    listo: (nombre: string) => `Listo: ${nombre} quedó abierto.`,
+    /** Sin género fijo: «Norte · Soja» es campaña (femenino) y «Corral 3» es lote. */
+    listo: (nombre: string) => `Listo: ${nombre} ya está en curso.`,
     listoConPrecio: 'Cargá los gastos y te decimos cuántos kilos por hectárea necesitás.',
+    guardado: 'Listo: cambios guardados.',
     soloAdmin: 'Solo administración abre y edita lotes.',
   },
 
@@ -86,7 +88,9 @@ export const campanasEs = {
     vendisteMasQueCosecha: 'Vendiste más kilos de los que cargaste como cosecha. Revisá los tickets.',
     precioPromedio: 'Precio promedio',
     paraCubrir: (kgHa: string, precio: string) => `Para cubrir el costo necesitás ${kgHa} kg/ha a ${precio}`,
-    paraCubrirSacas: (sacas: string, precio: string) => `Para cubrir el costo necesitás ${sacas} sc/ha a ${precio}`,
+    /** Kilos primero y las sacas al lado, como en el panel: «742 kg/ha (12,4 sc/ha) a US$ 415/t». */
+    paraCubrirSacas: (kgHa: string, sacas: string, precio: string) =>
+      `Para cubrir el costo necesitás ${kgHa} kg/ha (${sacas} sc/ha) a ${precio}`,
     teFaltanVender: (kg: string) => `te faltan vender ${kg} kg`,
     yTenesEnSilo: (kg: string) => `y tenés ${kg} kg sin vender`,
     costoCubierto: 'Ya cubriste el costo.',
@@ -111,6 +115,10 @@ export const campanasEs = {
     movimientos: 'Movimientos',
     verTodo: 'Ver todo',
     ocultar: 'Ocultar',
+    /** «28.665 kg», para el renglón de lo cosechado. */
+    kilos: (kg: string) => `${kg} kg`,
+    /** «(9,6 sc/ha)» al lado de los kg/ha, en soja, maíz y trigo. */
+    entreParentesis: (texto: string) => `(${texto})`,
   },
 
   /** Cargar un ticket de balanza. */
@@ -148,6 +156,12 @@ export const campanasEs = {
     sinTickets: 'Todavía no cargaste ningún ticket.',
     cargadoPor: (quien: string) => `cargado por ${quien}`,
     enLoteCerrado: 'El lote está cerrado, pero se puede cargar igual: el resultado se corrige solo.',
+    /** Las unidades dentro del campo (son iguales en los dos idiomas, pero viven acá). */
+    unidadKg: 'kg',
+    unidadT: 't',
+    unidadPorcentaje: '%',
+    /** Escribiendo en toneladas: «= 28.665 kg» debajo, para ver qué se guarda. */
+    enKg: (kg: string) => `= ${kg} kg`,
   },
 
   /** La liquidación, tal como viene en el papel. */
@@ -227,6 +241,15 @@ export const campanasEs = {
     anular: 'Anular',
     confirmarAnular: (fecha: string) =>
       `¿Anular la liquidación del ${fecha}? Se deshacen la venta, los descuentos y lo que se cobró de las deudas, todo junto.`,
+    /**
+     * La hoja de anular: título y los dos botones con palabras distintas.
+     * En pt «anular» se dice «cancelar», igual que el «no» de siempre; si el
+     * título y los dos botones dijeran «Cancelar» no se sabría cuál deshace
+     * el papel.
+     */
+    tituloAnular: 'Anular la liquidación',
+    siAnular: 'Sí, anular',
+    noAnular: 'No, dejarla',
     motivo: 'Por qué',
     anulada: 'Anulada',
     anuladaListo: 'Liquidación anulada.',
@@ -235,6 +258,45 @@ export const campanasEs = {
     parteDe: (fecha: string) => `Parte de la liquidación del ${fecha}`,
     parteDeDetalle: 'Se maneja desde el lote: no se edita ni se anula suelta.',
     dosLotes: (n: number) => `Un papel con ${n} lotes`,
+    /**
+     * Las que siguen no nombran ni «lote» ni «campaña» a propósito: sirven
+     * igual para el ganadero y para el agricultor sin pasar por la jerga.
+     */
+    deDondeKilos: '¿De dónde eran los kilos?',
+    deDondeKilosDetalle: 'Te sugerimos lo que tenés sin vender. Cambialo por lo que dice el papel.',
+    /** El atajo del canje: kilos entregados para pagar el alquiler o un insumo, sin plata. */
+    canjeDetalle: 'Kilos que diste para pagar el alquiler o un insumo. No entra plata: el grano cuenta como venta y lo que pagó, como gasto.',
+    aQuienEntregaste: '¿A quién le entregaste los kilos?',
+    aQuienEjemplo: 'El dueño del campo, la casa de insumos',
+    canjeQuePago: '¿Qué pagaste con los kilos?',
+    canjeResto: (monto: string) => `Pagaste ${monto} con grano`,
+    canjeTodoDeuda: 'Todo el grano fue a las deudas que marcaste.',
+    guardarCanje: 'Guardar la entrega',
+    listoEntrega: (kg: string) => `Listo: ${kg} kg entregados para pagar.`,
+    /** El botón de la retención: se sugiere, no se precarga. */
+    usarRetencion: (pct: string, monto: string) => `Usar ${pct} % (${monto})`,
+    noCuadraSinDeudas: 'Los descuentos y lo que pagó el grano suman más que el bruto. Revisá los montos del papel.',
+    faltaPrecio: 'Poné el precio del papel para calcular el bruto.',
+    /** Los montos del papel en la otra moneda, ya pasados a la propia. */
+    montoConvertido: (monto: string) => `= ${monto}`,
+    /** El nombre de la moneda, para «Me pagaron en dólares». */
+    monedas: {
+      PYG: 'guaraníes',
+      USD: 'dólares',
+      BRL: 'reales',
+      ARS: 'pesos',
+      EUR: 'euros',
+    } as Record<string, string>,
+    /**
+     * Las categorías que crea la liquidación y que el diccionario general
+     * todavía no traduce (vienen de la 101). Se leen por acá primero.
+     */
+    categorias: {
+      'Secado y acopio': 'Secado y acopio',
+      'Retención de IVA': 'Retención de IVA',
+      'Intereses y bancos': 'Intereses y bancos',
+      'Granos': 'Granos',
+    } as Record<string, string>,
   },
 
   /** Las deudas «a la venta» dentro de la tarjeta. */
@@ -260,6 +322,14 @@ export const campanasEs = {
     comparar: 'Ciclo contra ciclo',
     compararDetalle: 'Los cerrados del mismo lote, lado a lado: kilos por hectárea y resultado por hectárea.',
     sinComparar: 'Cuando cierres dos ciclos del mismo lote los vas a ver acá, uno al lado del otro.',
+    /** «Todavía debés US$ 3.000 a la venta», cuando no quedan kilos pero sí deudas. */
+    todaviaDebes: (deuda: string) => `Todavía debés ${deuda}`,
+    /** Une los dos avisos: «…8.665 kg sin vender y US$ 3.000 a la venta». */
+    yTambien: (a: string, b: string) => `${a} y ${b}`,
+    /** El aviso con su cola: «…; el resultado se corrige cuando los cargues.» */
+    conCola: (aviso: string, cola: string) => `${aviso}; ${cola}`,
+    kgHa: 'kg/ha',
+    resultadoHa: 'Resultado por ha',
   },
 };
 
@@ -295,8 +365,9 @@ export const campanasPt: typeof campanasEs = {
     editar: 'Editar',
     repetir: 'Repetir',
     repetirDetalle: 'Mesmo nome e mesmos hectares; o ciclo novo é sugerido sozinho.',
-    listo: (nombre: string) => `Pronto: ${nombre} ficou aberto.`,
+    listo: (nombre: string) => `Pronto: ${nombre} já está em andamento.`,
     listoConPrecio: 'Lance as despesas e a gente diz quantos quilos por hectare você precisa.',
+    guardado: 'Pronto: mudanças salvas.',
     soloAdmin: 'Só a administração abre e edita lotes.',
   },
 
@@ -320,7 +391,8 @@ export const campanasPt: typeof campanasEs = {
     vendisteMasQueCosecha: 'Você vendeu mais quilos do que lançou como colheita. Confira os romaneios.',
     precioPromedio: 'Preço médio',
     paraCubrir: (kgHa: string, precio: string) => `Pra cobrir o custo você precisa de ${kgHa} kg/ha a ${precio}`,
-    paraCubrirSacas: (sacas: string, precio: string) => `Pra cobrir o custo você precisa de ${sacas} sc/ha a ${precio}`,
+    paraCubrirSacas: (kgHa: string, sacas: string, precio: string) =>
+      `Pra cobrir o custo você precisa de ${kgHa} kg/ha (${sacas} sc/ha) a ${precio}`,
     teFaltanVender: (kg: string) => `faltam vender ${kg} kg`,
     yTenesEnSilo: (kg: string) => `e você tem ${kg} kg a vender`,
     costoCubierto: 'Você já cobriu o custo.',
@@ -344,6 +416,8 @@ export const campanasPt: typeof campanasEs = {
     movimientos: 'Lançamentos',
     verTodo: 'Ver tudo',
     ocultar: 'Esconder',
+    kilos: (kg: string) => `${kg} kg`,
+    entreParentesis: (texto: string) => `(${texto})`,
   },
 
   cosecha: {
@@ -380,6 +454,10 @@ export const campanasPt: typeof campanasEs = {
     sinTickets: 'Você ainda não lançou nenhum romaneio.',
     cargadoPor: (quien: string) => `lançado por ${quien}`,
     enLoteCerrado: 'O lote está fechado, mas dá pra lançar igual: o resultado se corrige sozinho.',
+    unidadKg: 'kg',
+    unidadT: 't',
+    unidadPorcentaje: '%',
+    enKg: (kg: string) => `= ${kg} kg`,
   },
 
   liquidacion: {
@@ -452,16 +530,47 @@ export const campanasPt: typeof campanasEs = {
     compensado: 'Descontado de dívidas',
     pagadoConGrano: 'Pago com grão',
     sinLiquidaciones: 'Você ainda não lançou nenhuma liquidação.',
-    anular: 'Anular',
+    // «Cancelar» y no «anular»: es como dice anular el resto de pt.ts.
+    anular: 'Cancelar',
     confirmarAnular: (fecha: string) =>
-      `Anular a liquidação de ${fecha}? Desfaz a venda, os descontos e o que foi cobrado das dívidas, tudo junto.`,
+      `Cancelar a liquidação de ${fecha}? Desfaz a venda, os descontos e o que foi cobrado das dívidas, tudo junto.`,
+    tituloAnular: 'Cancelar a liquidação',
+    siAnular: 'Sim, cancelar',
+    noAnular: 'Não, deixa',
     motivo: 'Por quê',
-    anulada: 'Anulada',
-    anuladaListo: 'Liquidação anulada.',
-    yaAnulada: 'Essa liquidação já estava anulada.',
+    anulada: 'Cancelada',
+    anuladaListo: 'Liquidação cancelada.',
+    yaAnulada: 'Essa liquidação já estava cancelada.',
     parteDe: (fecha: string) => `Parte da liquidação de ${fecha}`,
-    parteDeDetalle: 'Se mexe a partir do lote: não se edita nem se anula solta.',
+    parteDeDetalle: 'Se mexe a partir do lote: não se edita nem se cancela solta.',
     dosLotes: (n: number) => `Um papel com ${n} lotes`,
+    deDondeKilos: 'De onde eram os quilos?',
+    deDondeKilosDetalle: 'A gente sugere o que você tem a vender. Troque pelo que diz o papel.',
+    canjeDetalle: 'Quilos que você deu pra pagar o arrendamento ou um insumo. Não entra dinheiro: o grão conta como venda e o que ele pagou, como despesa.',
+    aQuienEntregaste: 'Pra quem você entregou os quilos?',
+    aQuienEjemplo: 'O dono da terra, a revenda de insumos',
+    canjeQuePago: 'O que você pagou com os quilos?',
+    canjeResto: (monto: string) => `Você pagou ${monto} com grão`,
+    canjeTodoDeuda: 'Todo o grão foi pras dívidas que você marcou.',
+    guardarCanje: 'Salvar a entrega',
+    listoEntrega: (kg: string) => `Pronto: ${kg} kg entregues pra pagar.`,
+    usarRetencion: (pct: string, monto: string) => `Usar ${pct} % (${monto})`,
+    noCuadraSinDeudas: 'Os descontos e o que o grão pagou somam mais que o bruto. Confira os valores do papel.',
+    faltaPrecio: 'Coloque o preço do papel pra calcular o bruto.',
+    montoConvertido: (monto: string) => `= ${monto}`,
+    monedas: {
+      PYG: 'guaranis',
+      USD: 'dólares',
+      BRL: 'reais',
+      ARS: 'pesos',
+      EUR: 'euros',
+    } as Record<string, string>,
+    categorias: {
+      'Secado y acopio': 'Secagem e armazenagem',
+      'Retención de IVA': 'Retenção de IVA',
+      'Intereses y bancos': 'Juros e bancos',
+      'Granos': 'Grãos',
+    } as Record<string, string>,
   },
 
   deudas: {
@@ -485,5 +594,10 @@ export const campanasPt: typeof campanasEs = {
     comparar: 'Ciclo contra ciclo',
     compararDetalle: 'Os fechados do mesmo lote, lado a lado: quilos por hectare e resultado por hectare.',
     sinComparar: 'Quando você fechar dois ciclos do mesmo lote, vai vê-los aqui, um do lado do outro.',
+    todaviaDebes: (deuda: string) => `Você ainda deve ${deuda}`,
+    yTambien: (a: string, b: string) => `${a} e ${b}`,
+    conCola: (aviso: string, cola: string) => `${aviso}; ${cola}`,
+    kgHa: 'kg/ha',
+    resultadoHa: 'Resultado por ha',
   },
 };

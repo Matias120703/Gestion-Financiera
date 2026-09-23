@@ -9,7 +9,7 @@
  * sueldo de este mes» y el sistema contestó «no pude sacar el monto del
  * mensaje, escribilo vos». El monto estaba guardado. Nunca llegó al prompt.
  */
-const { instrucciones } = require('../.compilado/captura.js');
+const { instrucciones, ESQUEMA, sanearCampana, sanearCategoriaDeuda } = require('../.compilado/captura.js');
 
 let fallos = 0;
 let corridas = 0;
@@ -210,6 +210,106 @@ grupo('6 · La voz sirve para todo: turnos, catálogo y clientes');
     enPortugues.includes('EXACTAMENTE como están escritas en la lista'), true);
   ok('la cuenta personal en portugués también lo dice',
     personaPt.includes('IDIOMA\n') && !personaPt.includes('español rioplatense'), true);
+}
+
+// ═══════════════════════════════════════════════════════════
+grupo('7 · Las campañas: «gasté dos millones en semilla para el Norte»');
+
+// Sin la lista, el Norte quedaba como texto en la descripción y había que
+// ir a la campaña a «sumarlo» después — cosa que nadie hace dos veces. Con
+// la lista, la regla de la que NO nombra ninguna importa igual: una campaña
+// adivinada carga el costo de la soja en el maíz.
+{
+  const CAMPANAS = [
+    { id: 'l-norte', nombre: 'Norte', cultivo: 'Soja', campana: 'Zafra 2026/27', hectareas: 50 },
+    { id: 'l-t3', nombre: 'Talhão 3', cultivo: 'Soja', campana: 'Safra 26/27', hectareas: 120 },
+    { id: 'l-sur', nombre: 'Sur', cultivo: 'Maíz', campana: '', hectareas: null },
+  ];
+  const AGRO = [
+    { nombre: 'Semilla', pistas: 'semilla, bolsa · semente' },
+    { nombre: 'Fletes', pistas: 'flete, camión · frete, caminhão' },
+    { nombre: 'Agroquímicos', pistas: 'herbicida, glifosato · defensivo' },
+  ];
+  const es = instrucciones(HOY, 'USD', [], [], false, AGRO, [], [], [], { campanas: CAMPANAS });
+  const pt = instrucciones(HOY, 'USD', [], [], false, AGRO, [], [], [], { campanas: CAMPANAS, idioma: 'pt' });
+
+  ok('aparece el bloque con su encabezado',
+    es.includes('CAMPAÑAS ABIERTAS (id · nombre · cultivo · hectáreas)'), true);
+  ok('cada campaña con id, nombre, campaña, cultivo y hectáreas',
+    es.includes('- l-norte · Norte (Zafra 2026/27) · Soja · 50 ha'), true);
+  ok('sin hectáreas ni campaña no inventa nada',
+    es.includes('- l-sur · Sur · Maíz · —'), true);
+  ok('si nombra una campaña, pone su id',
+    es.includes('Si el usuario nombra una campaña, poné su id'), true);
+  ok('si nombra una que no está, lote_id vacío',
+    es.includes('Si nombra una que no está, dejá lote_id vacío'), true);
+  ok('y dice cómo la llamó', es.includes('"lote_nombrado" cómo la llamó'), true);
+  ok('sin nombrar ninguna, no adivina', es.includes('NO adivines'), true);
+  ok('dos que coinciden: elige la persona', es.includes('la persona elige'), true);
+  ok('el ejemplo en español', /gasté dos millones en semilla para el Norte"\s+→ gasto, categoría "Semilla", lote_id del Norte/.test(es), true);
+  ok('el ejemplo en portugués', /paguei o frete da soja do talhão 3"\s+→ gasto, categoría "Fletes", lote_id del talhão 3/.test(es), true);
+  ok('entiende las palabras del campo en los dos idiomas',
+    es.includes('talhão') && es.includes('safrinha') && es.includes('chacra'), true);
+  ok('el lote no es la categoría', es.includes('NO son la categoría'), true);
+  ok('en portugués llega el mismo bloque',
+    pt.includes('CAMPAÑAS ABIERTAS (id · nombre · cultivo · hectáreas)') && pt.includes('- l-t3 · Talhão 3 (Safra 26/27) · Soja · 120 ha'), true);
+  ok('el bloque va antes de las reglas', es.indexOf('CAMPAÑAS ABIERTAS') < es.indexOf('REGLAS:'), true);
+
+  const sinCampanas = instrucciones(HOY, 'PYG', [], [], false, AGRO);
+  ok('sin campañas no hay bloque', sinCampanas.includes('CAMPAÑAS ABIERTAS'), false);
+  ok('pero lote_id sigue yendo en null', sinCampanas.includes('"lote_id" y "lote_nombrado" van siempre en null'), true);
+  const persona = instrucciones(HOY, 'PYG', [], [], true);
+  ok('una cuenta personal no tiene campañas', persona.includes('CAMPAÑAS ABIERTAS'), false);
+  ok('y también manda lote_id en null', persona.includes('"lote_id" y "lote_nombrado" también van siempre en null'), true);
+
+  ok('la deuda pide la categoría del gasto que va a nacer',
+    es.includes('"deuda.categoria"') && es.includes('la categoría del gasto que va a nacer cuando la pague'), true);
+
+  // El esquema estricto exige que cada clave exista en la respuesta.
+  ok('el esquema pide lote_id', ESQUEMA.required.includes('lote_id') && !!ESQUEMA.properties.lote_id, true);
+  ok('y lote_nombrado', ESQUEMA.required.includes('lote_nombrado'), true);
+  ok('y la categoría dentro de la deuda',
+    ESQUEMA.properties.deuda.required.includes('categoria') && !!ESQUEMA.properties.deuda.properties.categoria, true);
+  ok('todas las claves pedidas existen',
+    ESQUEMA.required.every((k) => k in ESQUEMA.properties), true);
+
+  // ─── el saneo: una instrucción se puede ignorar, esto no ───
+  ok('un id real queda',
+    sanearCampana({ lote_id: 'l-norte', lote_nombrado: null }, 'gasto', CAMPANAS),
+    { lote_id: 'l-norte', lote_nombrado: null, lote_dudoso: false });
+  ok('un id inventado se tira y se pregunta',
+    sanearCampana({ lote_id: 'l-inventado', lote_nombrado: null }, 'gasto', CAMPANAS),
+    { lote_id: null, lote_nombrado: null, lote_dudoso: true });
+  ok('el id de otra cuenta tampoco pasa',
+    sanearCampana({ lote_id: 'l-de-otro', lote_nombrado: 'Norte de Juan' }, 'venta', CAMPANAS),
+    { lote_id: null, lote_nombrado: 'Norte de Juan', lote_dudoso: true });
+  ok('nombró una que no existe: sin campaña, con el nombre, y se pregunta',
+    sanearCampana({ lote_id: null, lote_nombrado: 'el Oeste' }, 'gasto', CAMPANAS),
+    { lote_id: null, lote_nombrado: 'el Oeste', lote_dudoso: true });
+  ok('el nombre coincide con una sola: es esa aunque el id venga mal',
+    sanearCampana({ lote_id: 'x', lote_nombrado: 'do talhao 3' }, 'gasto', CAMPANAS),
+    { lote_id: 'l-t3', lote_nombrado: null, lote_dudoso: false });
+  ok('sin nombrar nada, sin campaña y sin preguntar',
+    sanearCampana({ lote_id: null, lote_nombrado: null }, 'gasto', CAMPANAS),
+    { lote_id: null, lote_nombrado: null, lote_dudoso: false });
+  ok('en un ingreso y en una deuda también vale',
+    [sanearCampana({ lote_id: 'l-sur' }, 'ingreso', CAMPANAS).lote_id,
+      sanearCampana({ lote_id: 'l-sur' }, 'deuda', CAMPANAS).lote_id], ['l-sur', 'l-sur']);
+  ok('un pago de deuda no lleva campaña (la tiene la deuda)',
+    sanearCampana({ lote_id: 'l-norte' }, 'pago_deuda', CAMPANAS).lote_id, null);
+  ok('un fiado tampoco', sanearCampana({ lote_id: 'l-norte' }, 'fiado', CAMPANAS).lote_id, null);
+  ok('sin campañas abiertas, nada',
+    sanearCampana({ lote_id: 'l-norte', lote_nombrado: 'Norte' }, 'gasto', []),
+    { lote_id: null, lote_nombrado: null, lote_dudoso: false });
+  ok('lo que no es texto se ignora',
+    sanearCampana({ lote_id: 42, lote_nombrado: { x: 1 } }, 'gasto', CAMPANAS),
+    { lote_id: null, lote_nombrado: null, lote_dudoso: false });
+
+  // La categoría de la deuda: solo una de la lista, escrita como en la lista.
+  ok('categoría del rubro, escrita como en la lista',
+    sanearCategoriaDeuda('agroquimicos', AGRO), 'Agroquímicos');
+  ok('una inventada no pasa (nacería como «Deudas»)', sanearCategoriaDeuda('Veneno para la soja', AGRO), '');
+  ok('null no pasa', sanearCategoriaDeuda(null, AGRO), '');
 }
 
 console.log('\n' + '═'.repeat(62));

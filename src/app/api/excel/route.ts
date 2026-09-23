@@ -6,9 +6,13 @@ import {
   traerSerieDiaria, traerAhorroDelPeriodo,
   recorrerTodosLosMovimientos, contarMovimientos,
 } from '@/lib/agregados';
-import { construirLibro, enLaMonedaDeLaVista, nombreArchivo } from '@/lib/reporte';
+import {
+  construirLibro, enLaMonedaDeLaVista, nombreArchivo, nombreDeCampana, type FilaLiquidacion,
+} from '@/lib/reporte';
 import { vistaDeEmpresa } from '@/lib/sesion';
-import type { Empresa, Producto } from '@/lib/tipos';
+import { fichaDe } from '@/lib/rubros';
+import { traerLote, traerLotes } from '@/lib/lotes';
+import type { Empresa, Lote, Producto } from '@/lib/tipos';
 import { esErrorDeLectura } from '@/lib/lectura';
 import { idiomaActual, textos } from '@/i18n';
 import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
@@ -93,6 +97,13 @@ export async function GET(request: Request) {
       );
     }
 
+    // ---- Las campañas, en un negocio de ciclo largo (100) ----
+    // Si cualquiera de estas lecturas falla, el catch de abajo corta todo:
+    // una hoja de campañas a medias parece completa y no lo es.
+    const campo = fichaDe(empresa.rubro, empresa.tipo_cuenta).ciclosLargos
+      ? await datosDelCampo(supabase, empresa.id, desde, hasta)
+      : null;
+
     // En la moneda que se está mirando, con el mismo cambio que las pantallas
     // (051). Bajar el archivo no puede mostrar otros números que los que se
     // estaban viendo.
@@ -122,6 +133,7 @@ export async function GET(request: Request) {
         ...m, categoria: categoriaVisible(t, m.categoria), metodo_pago: metodoVisible(t, m.metodo_pago),
       })),
       productosBd: productos as Producto[],
+      ...(campo ?? {}),
       idioma,
     }, vista));
 
@@ -151,4 +163,74 @@ export async function GET(request: Request) {
       { status: 500 },
     );
   }
+}
+
+type Cliente = ReturnType<typeof clienteServidor>;
+
+/**
+ * Todas las filas de una consulta directa, página por página.
+ *
+ * La Data API recorta cada respuesta a su tope de filas sin avisar
+ * (`db-max-rows`). Se avanza por lo que de verdad llegó y se corta recién
+ * con una página vacía: así no importa cuál sea ese tope.
+ */
+async function todasLasFilas<T>(
+  pagina: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const filas: T[] = [];
+  const TAMANO = 1000;
+  for (;;) {
+    const { data, error } = await pagina(filas.length, filas.length + TAMANO - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) return filas;
+    filas.push(...data);
+  }
+}
+
+/**
+ * LO DEL CAMPO PARA EL EXCEL (100).
+ *
+ * · Las campañas que estuvieron abiertas en algún momento del período, con
+ *   los números de toda la campaña (`listar_lotes`, los mismos del panel).
+ * · Las liquidaciones del período, de `resumen_lote`: es la única lectura
+ *   que trae descuentos, compensado y pagado con grano (la tabla no deja
+ *   pedirlos por columnas). Solo se abren las campañas que tuvieron una.
+ * · De qué campaña es cada movimiento del período, para la columna nueva
+ *   de Movimientos. `pagina_movimientos` no trae `lote_id`; la columna sí
+ *   se puede leer directo (044), y la policy de la 047 deja ver todo a
+ *   administración, que es la única que baja el Excel.
+ */
+async function datosDelCampo(supabase: Cliente, empresaId: string, desde: string, hasta: string): Promise<{
+  campanas: Lote[];
+  liquidaciones: FilaLiquidacion[];
+  campanaDeMovimiento: Record<string, string>;
+}> {
+  const [lotes, movsConLote, liqsDelPeriodo] = await Promise.all([
+    traerLotes(empresaId, true),
+    todasLasFilas<{ id: string; lote_id: string }>((a, b) => supabase
+      .from('movimientos').select('id, lote_id')
+      .eq('empresa_id', empresaId).gte('fecha', desde).lte('fecha', hasta)
+      .not('lote_id', 'is', null)
+      .order('id').range(a, b)),
+    todasLasFilas<{ id: string; lote_id: string }>((a, b) => supabase
+      .from('liquidaciones').select('id, lote_id')
+      .eq('empresa_id', empresaId).gte('fecha', desde).lte('fecha', hasta)
+      .order('id').range(a, b)),
+  ]);
+
+  const nombres = new Map(lotes.map((l) => [l.id, nombreDeCampana(l)]));
+
+  // Abierta antes de que termine el período y no cerrada antes de que empiece.
+  const campanas = lotes.filter((l) => l.abierto_el <= hasta && (!l.cerrado_el || l.cerrado_el >= desde));
+
+  const campanaDeMovimiento: Record<string, string> = {};
+  for (const m of movsConLote) campanaDeMovimiento[m.id] = nombres.get(m.lote_id) ?? '';
+
+  const lotesConLiquidacion = Array.from(new Set(liqsDelPeriodo.map((q) => q.lote_id)));
+  const detalles = await Promise.all(lotesConLiquidacion.map((id) => traerLote(empresaId, id)));
+  const liquidaciones: FilaLiquidacion[] = detalles.flatMap((d) => (d.liquidaciones ?? [])
+    .filter((q) => q.fecha >= desde && q.fecha <= hasta)
+    .map((q) => ({ ...q, campana: nombres.get(d.id) ?? nombreDeCampana(d) })));
+
+  return { campanas, liquidaciones, campanaDeMovimiento };
 }

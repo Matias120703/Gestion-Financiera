@@ -4,8 +4,27 @@ import {
   type AhorroDelPeriodo, type FilaCategoria, type FilaDia, type FilaProducto, type Resumen,
 } from './calculos';
 import { decimalesDe, simboloDe, fechaLegible } from './formato';
-import type { Movimiento, Producto } from './tipos';
+import type { Liquidacion, Lote, Movimiento, Producto } from './tipos';
 import { textosExcel, type TextosExcel } from './reporte-textos';
+import { fichaDe } from './rubros';
+
+/**
+ * Una fila de la hoja «Liquidaciones»: la liquidación de una campaña, con
+ * el nombre de su campaña ya armado («Norte · Zafra 2026/27»). La ruta la
+ * trae de `resumen_lote`, que es la única lectura que devuelve los
+ * descuentos (la tabla no deja pedirlos por columnas).
+ */
+export interface FilaLiquidacion extends Liquidacion {
+  campana: string;
+}
+
+/**
+ * Cómo se nombra una campaña en una celda: el lote y la campaña, que es lo
+ * que la distingue de la del año anterior en el mismo lote.
+ */
+export function nombreDeCampana(l: { nombre: string; campana?: string | null }): string {
+  return [l.nombre, (l.campana ?? '').trim()].filter(Boolean).join(' · ');
+}
 
 const VERDE = 'FF17795A';
 const VERDE_SUAVE = 'FFE6F4EE';
@@ -117,6 +136,16 @@ export interface DatosReporte {
   movimientos: Movimiento[];
   productosBd: Producto[];
   /**
+   * Las campañas (lotes) que estuvieron abiertas en el período, con los
+   * números de `numeros_de_lote` de TODA la campaña: los mismos que la
+   * tarjeta y el panel. Solo en ciclo largo; sin esto no hay hoja.
+   */
+  campanas?: Lote[];
+  /** Las liquidaciones del período, activas y anuladas. Sin ninguna, no hay hoja. */
+  liquidaciones?: FilaLiquidacion[];
+  /** Id de movimiento → nombre de su campaña, para la columna «Campaña» de Movimientos. */
+  campanaDeMovimiento?: Record<string, string>;
+  /**
    * En qué idioma sale el archivo: el de quien lo baja. Sin idioma, español.
    * Las categorías y las formas de pago llegan ya traducidas: ver
    * reporte-textos.ts.
@@ -134,10 +163,13 @@ export function construirLibro(datos: DatosReporte): ExcelJS.Workbook {
 
 function libroDeNegocio({
   empresa, desde, hasta, resumen, ranking, categorias, serie, movimientos, productosBd, idioma,
+  campanas, liquidaciones, campanaDeMovimiento,
 }: DatosReporte): ExcelJS.Workbook {
   const tx = textosExcel(idioma);
   const moneda = empresa.moneda;
-  const cicloLargo = empresa.rubro === 'ganaderia' || empresa.rubro === 'agricultura';
+  // La ficha del rubro decide, no una lista escrita acá: el día que un
+  // rubro nuevo mida por ciclo, el Excel se entera solo (100).
+  const cicloLargo = fichaDe(empresa.rubro, empresa.tipo_cuenta ?? 'emprendedor').ciclosLargos;
   const fmt = formatoMoneda(moneda);
   const fmtPorc = '0.0"%"';
   const fmtNum = '#,##0.##';
@@ -274,6 +306,19 @@ function libroDeNegocio({
   }
 
   // ==========================================================
+  // LAS CAMPAÑAS Y LAS LIQUIDACIONES (100)
+  //
+  // Solo en ciclo largo, y segundas: para el que vive de campañas es lo
+  // primero que el contador le pregunta. Ver `hojaCampanas`.
+  // ==========================================================
+  if (cicloLargo && campanas) {
+    hojaCampanas(libro, empresa.nombre, periodo, campanas, fmt, tx);
+  }
+  if (cicloLargo && liquidaciones && liquidaciones.length > 0) {
+    hojaLiquidaciones(libro, empresa.nombre, periodo, liquidaciones, fmt, tx);
+  }
+
+  // ==========================================================
   // HOJA 2 · PRODUCTOS
   // ==========================================================
   {
@@ -377,13 +422,18 @@ function libroDeNegocio({
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
+    // En ciclo largo, una columna más al final: de qué campaña es cada
+    // movimiento (100). Al final y no en el medio, para que las de siempre
+    // queden en su lugar para quien ya tiene fórmulas armadas sobre ellas.
+    const cols = cicloLargo ? 12 : 11;
     h.columns = [
       { width: 12 }, { width: 11 }, { width: 36 }, { width: 16 }, { width: 14 },
       { width: 15 }, { width: 13 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 17 },
+      ...(cicloLargo ? [{ width: 26 }] : []),
     ];
-    encabezado(h, empresa.nombre, tx.detalleMovimientos, periodo, 11);
+    encabezado(h, empresa.nombre, tx.detalleMovimientos, periodo, cols);
 
-    filaEncabezadoTabla(h, 6, tx.columnasMovimientos);
+    filaEncabezadoTabla(h, 6, cicloLargo ? [...tx.columnasMovimientos, tx.columnaCampana] : tx.columnasMovimientos);
 
     const ordenados = [...movimientos].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 
@@ -408,12 +458,13 @@ function libroDeNegocio({
         Number(mv.costo_total ?? 0),
         ganancia,
         anulado ? `${tx.anulada}${mv.motivo_anulacion ? ` · ${mv.motivo_anulacion}` : ''}` : tx.valida,
+        ...(cicloLargo ? [campanaDeMovimiento?.[mv.id] ?? ''] : []),
       ];
       fila.height = 18;
       fila.eachCell((c, n) => {
         c.font = { name: 'Calibri', size: 10 };
         c.border = bordeFino;
-        c.alignment = { vertical: 'middle', horizontal: n >= 6 && n <= 10 ? 'right' : n === 3 || n === 11 ? 'left' : 'center' };
+        c.alignment = { vertical: 'middle', horizontal: n >= 6 && n <= 10 ? 'right' : n === 3 || n >= 11 ? 'left' : 'center' };
         if (n >= 6 && n <= 10) c.numFmt = fmt;
         if (i % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
       });
@@ -440,6 +491,7 @@ function libroDeNegocio({
       r.costoMercaderia,
       r.gananciaNeta,
       '',
+      ...(cicloLargo ? [''] : []),
     ];
     total.height = 22;
     total.eachCell((c, n) => {
@@ -450,7 +502,7 @@ function libroDeNegocio({
     });
 
     if (ordenados.length > 0) {
-      h.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + ordenados.length, column: 11 } };
+      h.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + ordenados.length, column: cols } };
     }
   }
 
@@ -541,6 +593,194 @@ function libroDeNegocio({
   }
 
   return libro;
+}
+
+/** Un número que puede faltar: lo que falta queda vacío, nunca en cero. */
+function quizas(v: number | null | undefined): number | null {
+  return v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v);
+}
+
+/** Σ de una columna que puede faltar: si falta en todas las filas, falta en el total. */
+function sumaQuizas<T>(filas: T[], valor: (f: T) => number | null | undefined): number | null {
+  const presentes = filas.map((f) => quizas(valor(f))).filter((v): v is number => v !== null);
+  return presentes.length === 0 ? null : presentes.reduce((s, v) => s + v, 0);
+}
+
+/**
+ * HOJA «CAMPAÑAS» (100): una fila por campaña, con los números de
+ * `numeros_de_lote` tal cual los ven la tarjeta y el panel. Nada se
+ * recalcula acá: el costo por hectárea del Excel tiene que ser el mismo
+ * que el de la pantalla, o el productor deja de creerle a los dos.
+ *
+ * Los por hectárea y el rendimiento no se suman en el total (una suma de
+ * promedios no es nada); el precio promedio del total sí se calcula, como
+ * lo hace la base: lo vendido sobre los kilos vendidos.
+ */
+function hojaCampanas(
+  libro: ExcelJS.Workbook, empresaNombre: string, periodo: string, campanas: Lote[], fmt: string, tx: TextosExcel,
+) {
+  const h = libro.addWorksheet(tx.hojaCampanas, {
+    views: [{ showGridLines: false, state: 'frozen', ySplit: 6, xSplit: 1 }],
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
+  });
+  const columnas = tx.columnasCampanas.length;
+  h.columns = [
+    { width: 22 }, { width: 13 }, { width: 16 }, { width: 11 }, { width: 11 }, { width: 13 }, { width: 13 },
+    { width: 15 }, { width: 15 }, { width: 15 }, { width: 13 }, { width: 15 }, { width: 15 }, { width: 13 },
+    { width: 14 }, { width: 10 }, { width: 13 }, { width: 15 }, { width: 13 },
+  ];
+  encabezado(h, empresaNombre, tx.campanasTitulo, periodo, columnas);
+  filaEncabezadoTabla(h, 6, tx.columnasCampanas);
+
+  // Qué es cada columna (1 = Lote … 19 = kg sin vender).
+  const PLATA = new Set([8, 9, 10, 11, 12, 13, 14, 18]);
+  const KILOS = new Set([15, 16, 17, 19]);
+  const fecha = (iso: string | null) => (iso ? fechaLegible(iso, true, tx.locale) : null);
+  const formatear = (c: ExcelJS.Cell, n: number) => {
+    if (PLATA.has(n)) c.numFmt = fmt;
+    if (KILOS.has(n)) c.numFmt = '#,##0';
+    if (n === 4) c.numFmt = '#,##0.##';
+  };
+
+  const nota = (fila: number, texto: string) => {
+    h.mergeCells(fila, 1, fila, Math.min(columnas, 10));
+    const c = h.getCell(fila, 1);
+    c.value = texto;
+    c.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: 'FF6B7C75' } };
+    c.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+    h.getRow(fila).height = 30;
+  };
+
+  if (campanas.length === 0) {
+    nota(7, tx.sinCampanas);
+    return;
+  }
+
+  campanas.forEach((l, i) => {
+    const fila = h.getRow(7 + i);
+    fila.values = [
+      l.nombre, l.cultivo || '', l.campana || '', quizas(l.hectareas),
+      l.estado === 'cerrado' ? tx.cerrada : tx.abierta, fecha(l.abierto_el), fecha(l.cerrado_el),
+      quizas(l.puesto), quizas(l.a_cosecha), quizas(l.costo), quizas(l.costo_ha),
+      quizas(l.cobrado), quizas(l.resultado), quizas(l.resultado_ha),
+      quizas(l.kg_cosechados), quizas(l.rendimiento), quizas(l.kg_vendidos),
+      quizas(l.precio_promedio), quizas(l.kg_sin_vender),
+    ];
+    fila.height = 18;
+    fila.eachCell({ includeEmpty: true }, (c, n) => {
+      c.font = { name: 'Calibri', size: 10 };
+      c.border = bordeFino;
+      c.alignment = { vertical: 'middle', horizontal: n <= 3 ? 'left' : n >= 5 && n <= 7 ? 'center' : 'right' };
+      formatear(c, n);
+      if (i % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
+    });
+    fila.getCell(1).font = { name: 'Calibri', size: 10, bold: true };
+    const res = quizas(l.resultado) ?? 0;
+    fila.getCell(13).font = { name: 'Calibri', size: 10, bold: true, color: { argb: res >= 0 ? VERDE : ROJO } };
+  });
+
+  const kgVendidos = sumaQuizas(campanas, (l) => l.kg_vendidos) ?? 0;
+  const vendido = sumaQuizas(campanas, (l) => l.vendido) ?? 0;
+  const fTotal = 7 + campanas.length;
+  const total = h.getRow(fTotal);
+  total.values = [
+    'TOTAL', '', '', sumaQuizas(campanas, (l) => l.hectareas), '', '', '',
+    sumaQuizas(campanas, (l) => l.puesto), sumaQuizas(campanas, (l) => l.a_cosecha),
+    sumaQuizas(campanas, (l) => l.costo), null,
+    sumaQuizas(campanas, (l) => l.cobrado), sumaQuizas(campanas, (l) => l.resultado), null,
+    sumaQuizas(campanas, (l) => l.kg_cosechados), null, kgVendidos,
+    kgVendidos > 0 ? Math.round((vendido / kgVendidos) * 1000 * 100) / 100 : null,
+    sumaQuizas(campanas, (l) => l.kg_sin_vender),
+  ];
+  total.height = 22;
+  total.eachCell({ includeEmpty: true }, (c, n) => {
+    c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+    c.alignment = { vertical: 'middle', horizontal: n <= 3 ? 'left' : 'right' };
+    formatear(c, n);
+  });
+
+  h.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + campanas.length, column: columnas } };
+
+  nota(fTotal + 2, tx.campanasEnteras);
+  nota(fTotal + 3, tx.campanasSonDeCaja);
+}
+
+/**
+ * HOJA «LIQUIDACIONES» (100): una fila por campaña y papel, como las guarda
+ * la base. Las anuladas figuran tachadas y no suman, igual que en
+ * Movimientos. Bruto − descuentos − compensado − pagado con grano = neto,
+ * fila por fila: es lo que dice el papel de la cooperativa.
+ */
+function hojaLiquidaciones(
+  libro: ExcelJS.Workbook, empresaNombre: string, periodo: string, filas: FilaLiquidacion[], fmt: string, tx: TextosExcel,
+) {
+  const h = libro.addWorksheet(tx.hojaLiquidaciones, {
+    views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
+  });
+  const columnas = tx.columnasLiquidaciones.length;
+  h.columns = [
+    { width: 13 }, { width: 26 }, { width: 22 }, { width: 12 }, { width: 13 }, { width: 15 },
+    { width: 15 }, { width: 17 }, { width: 15 }, { width: 15 }, { width: 13 },
+  ];
+  encabezado(h, empresaNombre, tx.liquidacionesTitulo, periodo, columnas);
+  filaEncabezadoTabla(h, 6, tx.columnasLiquidaciones);
+
+  const formatear = (c: ExcelJS.Cell, n: number) => {
+    if (n >= 5 && n <= 10) c.numFmt = fmt;
+    if (n === 4) c.numFmt = '#,##0';
+  };
+
+  const ordenadas = [...filas].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+  ordenadas.forEach((q, i) => {
+    const fila = h.getRow(7 + i);
+    const anulada = q.estado === 'anulada';
+    fila.values = [
+      fechaLegible(q.fecha, true, tx.locale), q.campana, q.comprador || '—',
+      quizas(q.kg), quizas(q.precio_tonelada), quizas(q.bruto),
+      quizas(q.descuentos), quizas(q.compensado), quizas(q.pagado_con_grano), quizas(q.neto),
+      anulada ? tx.anulada : tx.activa,
+    ];
+    fila.height = 18;
+    fila.eachCell({ includeEmpty: true }, (c, n) => {
+      c.font = { name: 'Calibri', size: 10 };
+      c.border = bordeFino;
+      c.alignment = { vertical: 'middle', horizontal: n === 2 || n === 3 ? 'left' : n === 1 || n === 11 ? 'center' : 'right' };
+      formatear(c, n);
+      if (i % 2 === 1) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRIS } };
+    });
+    fila.getCell(10).font = { name: 'Calibri', size: 10, bold: true, color: { argb: VERDE } };
+    if (anulada) {
+      fila.eachCell((c) => {
+        c.font = { ...(c.font ?? {}), strike: true, color: { argb: 'FF9AA5A0' }, italic: true };
+      });
+      fila.getCell(11).font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: ROJO } };
+    }
+  });
+
+  const activas = ordenadas.filter((q) => q.estado !== 'anulada');
+  const kg = sumaQuizas(activas, (q) => q.kg) ?? 0;
+  const bruto = sumaQuizas(activas, (q) => q.bruto) ?? 0;
+  const fTotal = 7 + ordenadas.length;
+  const total = h.getRow(fTotal);
+  total.values = [
+    '', tx.totalLiquidaciones, '', kg,
+    kg > 0 ? Math.round((bruto / kg) * 1000 * 100) / 100 : null,
+    bruto,
+    sumaQuizas(activas, (q) => q.descuentos), sumaQuizas(activas, (q) => q.compensado),
+    sumaQuizas(activas, (q) => q.pagado_con_grano), sumaQuizas(activas, (q) => q.neto) ?? 0,
+    '',
+  ];
+  total.height = 22;
+  total.eachCell({ includeEmpty: true }, (c, n) => {
+    c.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TINTA } };
+    c.alignment = { vertical: 'middle', horizontal: n <= 3 ? 'left' : 'right' };
+    formatear(c, n);
+  });
+
+  h.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + ordenadas.length, column: columnas } };
 }
 
 
@@ -1055,8 +1295,14 @@ function textoPeriodo(desde: string, hasta: string, empresa: DatosReporte['empre
     : tx.periodoRango(fecha(desde), fecha(hasta));
   const c = empresa.conversion;
   if (!c || !c.cotizacion) return periodo;
-  const cambio = c.cotizacion.toLocaleString(tx.locale, { maximumFractionDigits: 6 });
   const cuando = c.desde ? fecha(c.desde.slice(0, 10)) : null;
+  // Un negocio en dólares que mira en guaraníes guarda 1/6.000 (100): se
+  // dice al revés, «1 US$ = Gs. 6.000», que es como se piensa.
+  if (c.cotizacion < 1) {
+    const inverso = (1 / c.cotizacion).toLocaleString(tx.locale, { maximumFractionDigits: 2 });
+    return tx.conCambioInverso(periodo, simboloDe(empresa.moneda), cuando, simboloDe(c.propia), inverso);
+  }
+  const cambio = c.cotizacion.toLocaleString(tx.locale, { maximumFractionDigits: 6 });
   return tx.conCambio(periodo, simboloDe(empresa.moneda), cuando, simboloDe(c.propia), cambio);
 }
 
@@ -1144,5 +1390,21 @@ export function enLaMonedaDeLaVista(
       })),
     })),
     productosBd: datos.productosBd.map((p) => ({ ...p, precio: x(p.precio), costo: xn(p.costo) })),
+    // Las campañas y las liquidaciones (100): la plata se convierte, los
+    // kilos y las hectáreas no. Lo que es de administración y llega null
+    // sigue null. `precio_original` queda como vino en el papel: ya está en
+    // su propia moneda (`moneda_original`).
+    campanas: datos.campanas?.map((l) => ({
+      ...l,
+      puesto: x(l.puesto), cobrado: x(l.cobrado), resultado: x(l.resultado), vendido: x(l.vendido),
+      por_unidad: xn(l.por_unidad), a_cosecha: xn(l.a_cosecha), costo: xn(l.costo), costo_ha: xn(l.costo_ha),
+      resultado_ha: xn(l.resultado_ha), precio_promedio: xn(l.precio_promedio), precio_ref: xn(l.precio_ref),
+      precio_esperado: xn(l.precio_esperado), costo_ton: xn(l.costo_ton), falta_cubrir: xn(l.falta_cubrir),
+    })),
+    liquidaciones: datos.liquidaciones?.map((q) => ({
+      ...q,
+      precio_tonelada: x(q.precio_tonelada), bruto: x(q.bruto), neto: x(q.neto),
+      descuentos: xn(q.descuentos), compensado: xn(q.compensado), pagado_con_grano: xn(q.pagado_con_grano),
+    })),
   };
 }

@@ -75,6 +75,45 @@
 --   · 062_pedir_en_el_momento.sql
 --   · 063_la_comision_no_cuelga_del_asiento.sql
 --   · 064_datos_para_transferirte.sql
+--   · 065_fiado_en_resumen_personal.sql
+--   · 066_pedir_el_cobro.sql
+--   · 067_borrar_un_socio.sql
+--   · 068_el_codigo_no_se_pierde.sql
+--   · 069_el_candado_dice_la_verdad.sql
+--   · 070_saldo_y_retiros.sql
+--   · 071_orden_que_habla.sql
+--   · 072_agenda_en_calendario.sql
+--   · 073_ahorro_en_otra_moneda.sql
+--   · 074_billetera.sql
+--   · 075_cada_movimiento_su_cuenta.sql
+--   · 076_avisos_con_mas_fuerza.sql
+--   · 077_plan_basico.sql
+--   · 078_descuento_por_racha.sql
+--   · 079_descuento_por_constancia.sql
+--   · 080_ahorrar_tambien_es_cargar.sql
+--   · 081_el_calendario_de_los_avisos.sql
+--   · 082_deshacer_un_pago_de_deuda.sql
+--   · 083_nada_queda_fuera_de_la_billetera.sql
+--   · 084_prestar_plata_sale_de_una_cuenta.sql
+--   · 085_el_disponible_sale_de_la_plata_real.sql
+--   · 086_cada_cuenta_con_su_color.sql
+--   · 087_clases_y_cursos.sql
+--   · 088_el_paquete_de_clases.sql
+--   · 089_un_profe_no_tiene_link_publico.sql
+--   · 090_un_profe_no_cierra_caja.sql
+--   · 091_inscribir_a_un_alumno.sql
+--   · 092_la_clase_del_dia.sql
+--   · 093_constancia_al_cinco.sql
+--   · 094_que_se_le_ensena.sql
+--   · 095_el_cobro_dice_a_que_cuenta.sql
+--   · 096_la_venta_dice_a_que_cuenta.sql
+--   · 097_personal_trainer.sql
+--   · 098_rutinas_y_medidas.sql
+--   · 099_persona_por_telefono_y_borradores.sql
+--   · 100_campanas.sql
+--   · 101_categorias_agricultura.sql
+--   · 102_planes_por_rubro_y_comision.sql
+--   · 103_la_comision_guarda_lo_que_entro.sql
 -- ============================================================
 
 -- ############################################################
@@ -19625,3 +19664,13676 @@ end $fn$;
 
 revoke all on function public.mi_panel_socio() from public, anon;
 grant execute on function public.mi_panel_socio() to authenticated;
+
+
+-- ############################################################
+-- ##  065_fiado_en_resumen_personal.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 065 · El fiado cobrado también es plata disponible, en la cuenta personal
+--
+-- EL AGUJERO
+--
+-- Desde la 054, «Me deben» existe también en la cuenta personal: le
+-- prestaste plata a alguien, o te deben por lo que sea, y queda anotado
+-- ahí. La 056 decidió, con razón, que cobrar un fiado no crea un ingreso
+-- —esa plata ya había salido antes, y contarla de nuevo la duplicaría—, y
+-- la 057 le sumó al CIERRE DEL DÍA dos números aparte para que esa plata
+-- no desapareciera del resumen del negocio.
+--
+-- Pero `resumen_personal()` no se tocó desde la 030, antes de que el fiado
+-- existiera. Y la cuenta personal no tiene Cierre del día (en el código,
+-- PERSONAL.secciones['/cierre'] = false: esa pantalla es de un negocio, no
+-- de alguien con sueldo). Entonces cobrar un fiado en una cuenta personal
+-- no aparecía en NINGÚN lado: no sumaba a lo disponible, y no había una
+-- sola línea que dijera qué había pasado con esa plata. Entraba de verdad
+-- y el sistema no se enteraba.
+--
+-- LO QUE CAMBIA
+--
+-- `disponible` ahora también suma lo cobrado de fiado en este ciclo: es
+-- plata real en el bolsillo, aunque no sea ganancia — la misma distinción
+-- que ya vale para el negocio, acá aplicada al número del que depende una
+-- decisión de gasto. Y el resumen devuelve dos campos nuevos para que la
+-- persona vea de dónde salió ese número:
+--
+--   fiado_cobrado_en_el_ciclo → lo que cobró de fiados en este ciclo.
+--   fiado_pendiente           → lo que todavía le deben, en total.
+--
+-- Idempotente. No toca datos existentes: solo cambia lo que la función
+-- calcula a partir de ellos.
+-- ============================================================
+
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_c            record;
+  v_zona         text;
+  v_hoy          date;
+  v_entro        numeric := 0;
+  v_salio        numeric := 0;
+  v_cuotas       numeric := 0;
+  v_fijos_falta  numeric := 0;
+  v_ahorro_ciclo numeric := 0;
+  v_ahorro_total numeric := 0;
+  v_fiado_ciclo  numeric := 0;
+  v_fiado_total  numeric := 0;
+  v_dias         integer;
+  v_plan         jsonb;
+  v_sin_planear  numeric := 0;
+  v_entradas     jsonb;
+  v_salidas      jsonb;
+  v_fondos       jsonb;
+  v_de_donde     jsonb;
+  v_esperado     numeric := 0;
+  v_fijo_mes     numeric := 0;
+  v_hubo_ingreso boolean := false;
+  v_disponible   numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  select * into v_c from public.ciclo_personal(p_empresa);
+
+  select
+    coalesce(sum(m.monto) filter (where m.tipo in ('ingreso', 'venta')), 0),
+    coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+    bool_or(m.tipo in ('ingreso', 'venta'))
+  into v_entro, v_salio, v_hubo_ingreso
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(d.monto_cuota), 0) into v_cuotas
+  from public.deudas d
+  where d.empresa_id = p_empresa
+    and d.activa and d.saldo > 0
+    and d.monto_cuota is not null
+    and d.vence_el between v_hoy and v_c.hasta;
+
+  select coalesce(sum(greatest(0, f.total - coalesce(g.gastado, 0))), 0)
+  into v_fijos_falta
+  from (
+    select categoria, sum(importe) as total
+    from public.gastos_fijos
+    where empresa_id = p_empresa and activo
+    group by categoria
+  ) f
+  left join lateral (
+    select sum(m.monto) as gastado
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = f.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true;
+
+  select coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0)
+  into v_ahorro_ciclo
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa and ma.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(case when ma.tipo = 'aporte' then ma.monto else -ma.monto end), 0)
+  into v_ahorro_total
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa;
+
+  -- Lo cobrado de fiado en ESTE ciclo. `cobrar_fiado` (056) no crea
+  -- movimiento a propósito, así que sin esto esa plata no aparecía en
+  -- ningún cálculo.
+  select coalesce(sum(f.monto) filter (where f.tipo = 'cobro'), 0)
+  into v_fiado_ciclo
+  from public.fiado f
+  where f.empresa_id = p_empresa and f.fecha between v_c.desde and v_c.hasta;
+
+  -- Lo que le deben en total, sumando a todos los que le deben. Mismo
+  -- cálculo que `resumen_fiado()` (054), acá sin el desglose por persona
+  -- porque este resumen ya tiene bastante.
+  select coalesce(sum(case when f.tipo = 'fio' then f.monto else -f.monto end), 0)
+  into v_fiado_total
+  from public.fiado f
+  where f.empresa_id = p_empresa;
+
+  v_dias := greatest(1, (v_c.hasta - v_hoy) + 1);
+  -- El fiado cobrado suma a lo disponible: es plata real en el bolsillo,
+  -- aunque no haya sido «entro» (eso ya se explicó por qué no).
+  v_disponible := v_entro - v_salio - v_cuotas - v_fijos_falta - v_ahorro_ciclo + v_fiado_ciclo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'categoria', p.categoria,
+      'planeado',  p.importe,
+      'gastado',   coalesce(g.total, 0),
+      'resta',     p.importe - coalesce(g.total, 0)
+    ) order by p.categoria), '[]'::jsonb)
+  into v_plan
+  from public.presupuesto p
+  left join lateral (
+    select sum(m.monto) as total
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = p.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true
+  where p.empresa_id = p_empresa;
+
+  select coalesce(sum(m.monto), 0) into v_sin_planear
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+    and m.fecha between v_c.desde and v_c.hasta
+    and not exists (
+      select 1 from public.presupuesto p
+      where p.empresa_id = p_empresa and p.categoria = m.categoria);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', i.id, 'nombre', i.nombre, 'importe', i.importe,
+      'dia_del_mes', i.dia_del_mes, 'principal', i.principal
+    ) order by i.principal desc, i.importe desc), '[]'::jsonb),
+    coalesce(sum(i.importe), 0)
+  into v_entradas, v_esperado
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', g.id, 'nombre', g.nombre, 'importe', g.importe,
+      'categoria', g.categoria, 'dia_del_mes', g.dia_del_mes, 'notas', g.notas
+    ) order by g.dia_del_mes nulls last, g.importe desc), '[]'::jsonb),
+    coalesce(sum(g.importe), 0)
+  into v_salidas, v_fijo_mes
+  from public.gastos_fijos g
+  where g.empresa_id = p_empresa and g.activo;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', a.id, 'nombre', a.nombre, 'meta', a.meta,
+    'fecha_limite', a.fecha_limite,
+    'saldo', s.saldo,
+    'falta', case when a.meta is null then null
+                  else greatest(0, a.meta - s.saldo) end,
+    'dias_para_limite', case when a.fecha_limite is null then null
+                             else (a.fecha_limite - v_hoy) end,
+    'por_mes', case
+                 when a.meta is null or a.fecha_limite is null then null
+                 when a.meta - s.saldo <= 0 then 0
+                 when a.fecha_limite < v_hoy then null
+                 else round((a.meta - s.saldo)
+                            / greatest(1, ceil((a.fecha_limite - v_hoy)::numeric / 30)), 2)
+               end
+  ) order by a.created_at), '[]'::jsonb)
+  into v_fondos
+  from public.ahorros a
+  cross join lateral (select public.saldo_ahorro(a.id) as saldo) s
+  where a.empresa_id = p_empresa and a.activo;
+
+  select coalesce(jsonb_agg(x order by (x->>'monto')::numeric desc), '[]'::jsonb)
+  into v_de_donde
+  from (
+    select jsonb_build_object('categoria', m.categoria, 'monto', sum(m.monto)) as x
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo'
+      and m.tipo in ('ingreso', 'venta')
+      and m.fecha between v_c.desde and v_c.hasta
+    group by m.categoria
+  ) t;
+
+  return jsonb_build_object(
+    'desde', v_c.desde,
+    'hasta', v_c.hasta,
+    'dia_cobro', v_c.dia_cobro,
+    'dias_restantes', v_dias,
+    'entro', v_entro,
+    'salio', v_salio,
+    'cuotas_por_vencer', v_cuotas,
+    'fijos_por_pagar', v_fijos_falta,
+    'ahorrado_en_el_ciclo', v_ahorro_ciclo,
+    'ahorro_total', v_ahorro_total,
+    'fiado_cobrado_en_el_ciclo', v_fiado_ciclo,
+    'fiado_pendiente', v_fiado_total,
+    'disponible', v_disponible,
+    'por_dia', round(v_disponible / v_dias, 2),
+    'plan', v_plan,
+    'gastado_sin_planear', v_sin_planear,
+    'ingresos_fijos', v_entradas,
+    'gastos_fijos', v_salidas,
+    'ahorros', v_fondos,
+    'de_donde_vino', v_de_donde,
+    'esperado', v_esperado,
+    'fijo_mensual', v_fijo_mes,
+    'cobro_pendiente', v_esperado > 0 and not coalesce(v_hubo_ingreso, false)
+  );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  066_pedir_el_cobro.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 066 · El socio pide su cobro
+--
+-- LO QUE FALTABA
+--
+-- Desde la 060 la comisión nace sola cuando el referido paga, y desde la
+-- 061 el socio la ve en su pantalla. Pero no había forma de PEDIRLA: la
+-- plata figuraba como «te deben» y ahí se quedaba, esperando a que Matías
+-- se acordara de mirar el panel. El socio no tenía ningún botón y nosotros
+-- ningún aviso.
+--
+-- Eso es justo lo que mata un programa de referidos. Alguien trae un
+-- cliente, ve su comisión en pantalla, no pasa nada durante dos semanas, y
+-- no vuelve a recomendar nunca más.
+--
+-- CÓMO FUNCIONA
+--
+-- El socio toca «Pedir mi cobro» y se marcan sus comisiones por pagar con
+-- la fecha del pedido. Eso dispara un aviso a la administración (push, en
+-- la ruta que llama a esta función) y le deja al socio la promesa escrita:
+-- se transfiere dentro de las 24 a 48 horas hábiles.
+--
+-- DOS GUARDAS QUE IMPORTAN
+--
+--   · SIN DATOS BANCARIOS NO SE PUEDE PEDIR. Pedir un cobro sin decir a
+--     dónde transferir deja a la administración con un aviso que no puede
+--     resolver, y al socio esperando una plata que nadie sabe mandar.
+--   · NO SE PIDE DOS VECES. `solicitada_at` se escribe una sola vez por
+--     comisión: quien toca el botón cinco veces no manda cinco avisos. La
+--     función contesta que ya estaba pedido y cuándo, y la pantalla lo
+--     dice.
+--
+-- Idempotente.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. CUÁNDO LO PIDIÓ
+--
+--    Una fecha y no un booleano, por lo mismo que `avisado_at` en la 043:
+--    saber que pidió no sirve tanto como saber hace cuánto. «Pidió hace
+--    tres días» es un reclamo; «pidió hace diez minutos» es una tarea.
+-- ------------------------------------------------------------
+alter table public.comisiones
+  add column if not exists solicitada_at timestamptz;
+
+comment on column public.comisiones.solicitada_at is
+  'Cuándo el socio pidió que se le transfiera. Null = todavía no lo pidió.';
+
+create index if not exists comisiones_solicitadas_idx
+  on public.comisiones (solicitada_at desc)
+  where estado = 'por_pagar' and solicitada_at is not null;
+
+-- ------------------------------------------------------------
+-- 2. PEDIR EL COBRO
+--
+--    La llama el propio socio, con su sesión. No recibe a quién pagarle:
+--    se resuelve de `auth.uid()`, así que nadie puede pedir el cobro de
+--    otro por más que arme el pedido a mano.
+-- ------------------------------------------------------------
+create or replace function public.solicitar_cobro()
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_uid     uuid := auth.uid();
+  v_socio   public.socios;
+  v_pendientes integer;
+  v_nuevas  integer;
+  v_total   numeric;
+  v_desde   timestamptz;
+begin
+  if v_uid is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios where user_id = v_uid;
+  if v_socio.id is null then
+    raise exception 'Todavía no pediste tu código de recomendación.' using errcode = '22023';
+  end if;
+
+  if not v_socio.activo then
+    raise exception 'Tu código está pausado. Escribinos y lo vemos.' using errcode = '42501';
+  end if;
+
+  select count(*)::int, coalesce(sum(monto), 0)
+  into v_pendientes, v_total
+  from public.comisiones
+  where socio_id = v_socio.id and estado = 'por_pagar';
+
+  if v_pendientes = 0 then
+    raise exception 'Todavía no tenés nada por cobrar.' using errcode = '22023';
+  end if;
+
+  -- Sin saber a dónde transferir, el pedido no se puede resolver. Se frena
+  -- acá y no en la pantalla: la pantalla puede cambiar, esto no.
+  if coalesce(nullif(trim(v_socio.cuenta), ''), nullif(trim(v_socio.cobra_en), '')) is null then
+    raise exception 'Antes de pedir el cobro, completá dónde te transferimos.'
+      using errcode = '22023';
+  end if;
+
+  -- Solo las que todavía no pidió. Tocar el botón de nuevo no vuelve a
+  -- avisar: quien llama mira `nuevas` para decidir si manda el push.
+  update public.comisiones
+  set solicitada_at = now()
+  where socio_id = v_socio.id and estado = 'por_pagar' and solicitada_at is null;
+
+  get diagnostics v_nuevas = row_count;
+
+  select min(solicitada_at) into v_desde
+  from public.comisiones
+  where socio_id = v_socio.id and estado = 'por_pagar' and solicitada_at is not null;
+
+  return jsonb_build_object(
+    'ok', true,
+    'socio', v_socio.nombre,
+    'socio_id', v_socio.id,
+    'comisiones', v_pendientes,
+    'total', v_total,
+    'nuevas', v_nuevas,
+    -- true = ya lo había pedido antes y no hay que volver a avisar.
+    'ya_estaba', v_nuevas = 0,
+    'pedido_el', v_desde,
+    'donde', coalesce(nullif(trim(v_socio.cuenta), ''), v_socio.cobra_en)
+  );
+end $fn$;
+
+revoke all on function public.solicitar_cobro() from public, anon;
+grant execute on function public.solicitar_cobro() to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. QUE EL SOCIO VEA QUE YA LO PIDIÓ
+--
+--    Redefine `mi_panel_socio()` de la 064 sumando dos campos. Sin esto, el
+--    socio toca el botón, recarga la pantalla y vuelve a ver el botón como
+--    si no hubiera pasado nada — que es exactamente la sensación que este
+--    cambio venía a arreglar.
+-- ------------------------------------------------------------
+create or replace function public.mi_panel_socio()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_uid   uuid := auth.uid();
+  v_socio public.socios;
+  v_lista jsonb;
+  v_pedido timestamptz;
+begin
+  if v_uid is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios where user_id = v_uid;
+
+  if v_socio.id is null then
+    return jsonb_build_object('tiene_codigo', false);
+  end if;
+
+  select coalesce(jsonb_agg(x order by x->>'desde' desc), '[]'::jsonb) into v_lista
+  from (
+    select jsonb_build_object(
+      'negocio',  coalesce(e.nombre, 'Negocio borrado'),
+      'desde',    r.created_at,
+      'paga',     public.plan_efectivo_calculado(r.empresa_id) <> 'gratis',
+      'plan',     public.plan_efectivo_calculado(r.empresa_id),
+      'estado',   coalesce(c.estado, 'sin_pagar'),
+      'monto',    coalesce(c.monto, 0),
+      'cuando',   c.created_at,
+      'pagada_at', c.pagada_at
+    ) as x
+    from public.referidos r
+    left join public.empresas e on e.id = r.empresa_id
+    left join public.comisiones c on c.empresa_id = r.empresa_id
+    where r.socio_id = v_socio.id
+  ) t;
+
+  -- El pedido más viejo que sigue sin pagarse: es el que cuenta para saber
+  -- hace cuánto está esperando.
+  select min(solicitada_at) into v_pedido
+  from public.comisiones
+  where socio_id = v_socio.id and estado = 'por_pagar' and solicitada_at is not null;
+
+  return jsonb_build_object(
+    'tiene_codigo', true,
+    'codigo',    v_socio.codigo,
+    'nombre',    v_socio.nombre,
+    'cobra_en',  v_socio.cobra_en,
+    'banco',     v_socio.banco,
+    'titular',   v_socio.titular,
+    'cuenta',    v_socio.cuenta,
+    'documento', v_socio.documento,
+    'activo',    v_socio.activo,
+    'traidos',   (select count(*) from public.referidos r where r.socio_id = v_socio.id),
+    'pagaron',   (select count(*) from public.comisiones c
+                  where c.socio_id = v_socio.id and c.estado <> 'anulada'),
+    'por_pagar', coalesce((select sum(c.monto) from public.comisiones c
+                           where c.socio_id = v_socio.id and c.estado = 'por_pagar'), 0),
+    'pagado',    coalesce((select sum(c.monto) from public.comisiones c
+                           where c.socio_id = v_socio.id and c.estado = 'pagada'), 0),
+    'cobro_pedido_el', v_pedido,
+    'referidos', v_lista
+  );
+end $fn$;
+
+revoke all on function public.mi_panel_socio() from public, anon;
+grant execute on function public.mi_panel_socio() to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. Y QUE LA ADMINISTRACIÓN VEA QUIÉN LO PIDIÓ
+--
+--    Redefine `listar_comisiones()` de la 064 sumando `solicitada_at`. El
+--    push avisa una vez; el panel es donde se trabaja, y sin este dato no
+--    hay forma de saber a quién le urge.
+-- ------------------------------------------------------------
+create or replace function public.listar_comisiones(
+  p_estado text default null,
+  p_socio  uuid default null,
+  p_limite integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x order by x->>'creado' desc), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'id',         c.id,
+      'socio_id',   c.socio_id,
+      'socio',      s.nombre,
+      'telefono',   s.telefono,
+      'cobra_en',   s.cobra_en,
+      'banco',      s.banco,
+      'titular',    s.titular,
+      'cuenta',     s.cuenta,
+      'documento',  s.documento,
+      'empresa_id', c.empresa_id,
+      'negocio',    coalesce(e.nombre, 'Negocio borrado'),
+      'base',       c.base,
+      'porcentaje', c.porcentaje,
+      'monto',      c.monto,
+      'estado',     c.estado,
+      'creado',     c.created_at,
+      'pagada_at',  c.pagada_at,
+      'solicitada_at', c.solicitada_at,
+      'medio',      c.medio,
+      'nota',       c.nota,
+      'ingreso_anulado', coalesce(mv.estado::text, '') = 'anulado'
+    ) as x
+    from public.comisiones c
+    join public.socios s on s.id = c.socio_id
+    left join public.empresas e on e.id = c.empresa_id
+    left join public.movimientos mv on mv.id = c.movimiento_id
+    where (p_estado is null or trim(p_estado) = '' or c.estado = p_estado)
+      and (p_socio is null or c.socio_id = p_socio)
+    order by c.created_at desc
+    limit greatest(1, least(coalesce(p_limite, 200), 500))
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.listar_comisiones(text, uuid, integer) from public, anon;
+grant execute on function public.listar_comisiones(text, uuid, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. A QUIÉN AVISARLE
+--
+--    La ruta que manda el push necesita los usuarios de la administración.
+--    `superadmins` solo deja que cada uno se vea a sí mismo (016), así que
+--    hace falta esta función para que el servidor los lea a todos.
+--
+--    Solo `service_role`: es la lista de quiénes administran Orden, y no
+--    tiene por qué salir hacia ningún navegador.
+-- ------------------------------------------------------------
+create or replace function public.usuarios_de_la_administracion()
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select coalesce(jsonb_agg(s.usuario_id), '[]'::jsonb) from public.superadmins s;
+$fn$;
+
+revoke all on function public.usuarios_de_la_administracion() from public, anon, authenticated;
+grant execute on function public.usuarios_de_la_administracion() to service_role;
+
+
+-- ############################################################
+-- ##  067_borrar_un_socio.sql
+-- ############################################################
+
+-- ============================================================
+-- 067 · BORRAR UN SOCIO
+--
+-- Hasta ahora un socio se podía crear y desactivar, pero nunca sacar. En
+-- la práctica quedó a la vista el 2026-09-16: había una fila de alguien
+-- cuya cuenta ya no existía, no servía para nada y no se podía quitar. La
+-- única salida a mano era desactivarlo —que es otra cosa: desactivado
+-- sigue en la lista, solo que no suma negocios nuevos— así que la lista
+-- se iba a ir llenando de gente que ya no está.
+--
+-- QUÉ NO SE BORRA
+--
+-- `referidos.socio_id` y `comisiones.socio_id` son `on delete restrict`
+-- (060), o sea que la base ya frenaba el borrado. Eso está bien y no se
+-- toca: lo que faltaba era decirlo con palabras en vez de un error de
+-- llave foránea.
+--
+--   · Con comisiones anotadas NO se borra, ni pagadas ni anuladas. Una
+--     comisión es plata que se movió; sacar al socio dejaría el historial
+--     de Orden hablando de alguien que no existe.
+--   · Con negocios traídos NO se borra. Ese vínculo es lo que hace nacer
+--     la comisión cuando el cliente paga: borrarlo en silencio sería
+--     regalarse a sí mismo la comisión del mes que viene. Primero hay que
+--     sacarle el referido a cada cuenta, una por una y a conciencia.
+--
+-- Queda entonces para lo que de verdad sobra: el socio cargado por error,
+-- el que se probó una vez, el que nunca trajo a nadie.
+--
+-- SE ESCRIBE EL NOMBRE
+--
+-- Igual que `borrar_cuenta` (022): hay que escribir el nombre exacto. Es
+-- la misma idea de siempre —que borrar cueste un segundo más que tocar un
+-- botón— y de paso obliga a mirar a quién se está borrando.
+-- ============================================================
+
+create or replace function public.borrar_socio(
+  p_socio       uuid,
+  p_confirmacion text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_socio      public.socios;
+  v_traidos    integer;
+  v_comisiones integer;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios where id = p_socio;
+  if v_socio.id is null then
+    raise exception 'Ese socio no existe.' using errcode = 'P0002';
+  end if;
+
+  if trim(coalesce(p_confirmacion, '')) <> v_socio.nombre then
+    raise exception 'Para borrar hay que escribir el nombre exacto: %', v_socio.nombre
+      using errcode = '22023';
+  end if;
+
+  select count(*) into v_traidos    from public.referidos  where socio_id = p_socio;
+  select count(*) into v_comisiones from public.comisiones where socio_id = p_socio;
+
+  -- Las dos puertas, en orden de gravedad. Se cuentan antes de intentar el
+  -- delete para poder decir cuántos son: «tiene 3 cuentas anotadas» ayuda
+  -- mucho más que «no se puede».
+  if v_comisiones > 0 then
+    raise exception
+      'Tiene % comisión(es) en el historial de Orden, así que no se puede borrar. Si ya no trabaja con nosotros, desactivalo: desactivado no recibe negocios nuevos y el historial queda entero.',
+      v_comisiones using errcode = '22023';
+  end if;
+
+  if v_traidos > 0 then
+    raise exception
+      'Trajo % cuenta(s). Sacale el referido a esas cuentas primero, desde la ficha de cada una, y después borralo.',
+      v_traidos using errcode = '22023';
+  end if;
+
+  -- Constancia antes de borrar: después la fila ya no existe y el nombre
+  -- se pierde. Esto es lo único que va a quedar de este socio.
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), null, 'borrar_socio', jsonb_build_object(
+    'socio_id', v_socio.id,
+    'nombre',   v_socio.nombre,
+    'codigo',   v_socio.codigo,
+    'email',    v_socio.email,
+    'tenia_cuenta', v_socio.user_id is not null
+  ));
+
+  delete from public.socios where id = p_socio;
+
+  return jsonb_build_object('ok', true, 'nombre', v_socio.nombre);
+end $fn$;
+
+revoke all on function public.borrar_socio(uuid, text) from public, anon;
+grant execute on function public.borrar_socio(uuid, text) to authenticated;
+
+
+-- ############################################################
+-- ##  068_el_codigo_no_se_pierde.sql
+-- ############################################################
+
+-- ============================================================
+-- 068 · EL CÓDIGO DEL ENLACE NO SE PIERDE EN SILENCIO
+--
+-- LO QUE PASÓ (2026-09-16)
+--
+-- Matías había desactivado su propio socio a la mañana: era la única forma
+-- de sacarlo de la lista antes de que existiera borrar (067). A la tarde
+-- alguien entró con su enlace, creó la cuenta y pagó. Resultado:
+--
+--   1. `usar_codigo_referido` rechazó el código —«Ese código ya no está
+--      activo»—, que es exactamente lo que tiene que hacer con uno pausado.
+--   2. La pantalla borró el código del navegador ANTES de intentar usarlo,
+--      y el rechazo no se guardó en ningún lado. `aplicarRef` además
+--      esperaba una excepción, y supabase-js no tira: devuelve `{ error }`.
+--      No quedó ni un rastro de que esa cuenta había llegado por un enlace.
+--   3. Al cobrarle, como no había referido, no nació ninguna comisión.
+--   4. Al querer anotarlo a mano después, la regla del grupo 4 de las
+--      pruebas —anotar tarde no inventa comisiones viejas— dejó al socio
+--      sin la comisión del primer pago, que era suya.
+--
+-- La regla del punto 4 está bien y NO se toca: si la administración le
+-- atribuye a alguien un cliente viejo que nunca usó su enlace, no le
+-- corresponde lo que ese cliente ya pagó. Lo que faltaba era poder probar
+-- el otro caso: la cuenta SÍ entró con ese código, antes de pagar, y se
+-- perdió en el camino.
+--
+-- LO QUE CAMBIA
+--
+--   · `codigos_rechazados`: cuando el código del enlace se rechaza al crear
+--     la cuenta, queda anotado con el motivo. Una fila por negocio.
+--   · `listar_codigos_rechazados()`: el panel de administración los ve en
+--     la ficha de cada cuenta, con el motivo y a quién pertenecía.
+--   · `asignar_referido()`: si el código que se anota es el mismo con el
+--     que la cuenta intentó entrar, se anota como que vino por el enlace y
+--     la comisión sale del PRIMER pago, como si nunca se hubiera perdido.
+--     Si no coincide, todo sigue exactamente como antes.
+--   · De paso, «ya pagó N veces» se cuenta por el importe y no por el
+--     asiento contable, igual que hace `usar_codigo_referido` desde la 063.
+--     Con la empresa de Orden sin elegir, el asiento no existe aunque el
+--     cliente haya pagado, y el aviso no aparecía.
+-- ============================================================
+
+create table if not exists public.codigos_rechazados (
+  empresa_id    uuid primary key references public.empresas (id) on delete cascade,
+  codigo        text not null,
+  motivo        text not null default '',
+  intentado_por uuid references auth.users (id) on delete set null,
+  intentado_at  timestamptz not null default now()
+);
+
+alter table public.codigos_rechazados enable row level security;
+revoke all on public.codigos_rechazados from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 1. ANOTAR EL RECHAZO
+--
+--    Lo llama la pantalla de registro cuando `usar_codigo_referido` dice
+--    que no. Solo el dueño de la cuenta, y solo si la cuenta todavía no
+--    tiene a nadie anotado: una vez que hay referido, un rechazo posterior
+--    es ruido.
+--
+--    El motivo lo manda el navegador, así que no se le cree para nada más
+--    que para mostrárselo a la administración. Nada se decide con él.
+-- ------------------------------------------------------------
+create or replace function public.guardar_codigo_rechazado(
+  p_empresa uuid,
+  p_codigo  text,
+  p_motivo  text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_uid    uuid := auth.uid();
+  v_codigo text := left(upper(trim(coalesce(p_codigo, ''))), 12);
+begin
+  if v_uid is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1 from public.miembros m
+    where m.empresa_id = p_empresa and m.user_id = v_uid and m.rol = 'propietario'
+  ) then
+    raise exception 'Solo el dueño de la cuenta puede usar un código.' using errcode = '42501';
+  end if;
+
+  if v_codigo = '' or exists (select 1 from public.referidos where empresa_id = p_empresa) then
+    return jsonb_build_object('ok', true, 'guardado', false);
+  end if;
+
+  -- Se queda el primero: es el enlace con el que la persona llegó. Si
+  -- después prueba otro código a mano, el que importa sigue siendo aquel.
+  insert into public.codigos_rechazados (empresa_id, codigo, motivo, intentado_por)
+  values (p_empresa, v_codigo, left(coalesce(p_motivo, ''), 200), v_uid)
+  on conflict (empresa_id) do nothing;
+
+  return jsonb_build_object('ok', true, 'guardado', true);
+end $fn$;
+
+revoke all on function public.guardar_codigo_rechazado(uuid, text, text) from public, anon;
+grant execute on function public.guardar_codigo_rechazado(uuid, text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. QUE LA ADMINISTRACIÓN LOS VEA
+-- ------------------------------------------------------------
+create or replace function public.listar_codigos_rechazados()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'empresa_id',   c.empresa_id,
+      'codigo',       c.codigo,
+      'motivo',       c.motivo,
+      'intentado_at', c.intentado_at,
+      'socio_id',     s.id,
+      'socio',        s.nombre,
+      'socio_activo', s.activo
+    ) order by c.intentado_at desc)
+    from public.codigos_rechazados c
+    left join public.socios s on s.codigo = c.codigo
+    -- Si ya se anotó a alguien, el rechazo ya no es asunto de nadie.
+    where not exists (select 1 from public.referidos r where r.empresa_id = c.empresa_id)
+  ), '[]'::jsonb);
+end $fn$;
+
+revoke all on function public.listar_codigos_rechazados() from public, anon;
+grant execute on function public.listar_codigos_rechazados() to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. ANOTARLO A MANO, SABIENDO SI VINO POR EL ENLACE
+-- ------------------------------------------------------------
+create or replace function public.asignar_referido(
+  p_empresa uuid,
+  p_codigo  text,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_socio      public.socios;
+  v_ya         uuid;
+  v_pagos      integer;
+  v_aviso      text := null;
+  v_rechazo    public.codigos_rechazados;
+  v_por_enlace boolean := false;
+  v_primero    record;
+  v_pct        numeric;
+  v_comision   boolean := false;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios
+  where codigo = upper(trim(coalesce(p_codigo, '')));
+
+  if v_socio.id is null then
+    raise exception 'No hay ningún socio con ese código.' using errcode = '22023';
+  end if;
+
+  if not v_socio.activo then
+    raise exception '% está desactivado como socio. Activalo en «Socios» y volvé a anotarlo.',
+      v_socio.nombre using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from public.empresas where id = p_empresa) then
+    raise exception 'Ese negocio no existe.' using errcode = '22023';
+  end if;
+
+  if v_socio.user_id is not null and exists (
+    select 1 from public.miembros m
+    where m.empresa_id = p_empresa and m.user_id = v_socio.user_id
+  ) then
+    raise exception
+      '% trabaja en ese negocio: no se cobra comisión por traerse a uno mismo.',
+      v_socio.nombre using errcode = '22023';
+  end if;
+
+  select socio_id into v_ya from public.referidos where empresa_id = p_empresa;
+
+  if v_ya is not null then
+    if v_ya = v_socio.id then
+      return jsonb_build_object(
+        'ok', true, 'socio', v_socio.nombre,
+        'aviso', 'Ya estaba anotado a nombre de ' || v_socio.nombre || '.'
+      );
+    end if;
+    raise exception
+      'Ese negocio ya está anotado a nombre de %. Se cuenta una sola vez y no se cambia.',
+      coalesce((select nombre from public.socios where id = v_ya), 'otra persona')
+      using errcode = '22023';
+  end if;
+
+  -- ¿Esta cuenta intentó entrar con ESTE código y se lo rechazaron?
+  select * into v_rechazo from public.codigos_rechazados where empresa_id = p_empresa;
+  v_por_enlace := v_rechazo.empresa_id is not null and v_rechazo.codigo = v_socio.codigo;
+
+  -- «Ya pagó» se mide por el importe, no por el asiento (ver arriba).
+  select count(*)::int into v_pagos
+  from public.registro_admin r
+  where r.empresa_id = p_empresa
+    and r.accion = 'cambiar_plan'
+    and coalesce(r.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+    and (r.detalle->>'importe')::numeric > 0;
+
+  insert into public.referidos (empresa_id, socio_id, origen, nota, creado_por)
+  values (
+    p_empresa, v_socio.id,
+    case when v_por_enlace then 'link' else 'a_mano' end,
+    left(coalesce(p_nota, ''), 300), auth.uid()
+  );
+
+  if v_por_enlace and v_pagos > 0 then
+    -- Entró con el enlace antes de pagar: la comisión del primer pago es
+    -- suya, igual que si el código no se hubiera perdido. El primero y no
+    -- el último, por la misma razón que en la 063.
+    select (ra.detalle->>'importe')::numeric as importe,
+           nullif(ra.detalle->>'ingreso_id', '')::uuid as ingreso,
+           ra.created_at
+    into v_primero
+    from public.registro_admin ra
+    where ra.empresa_id = p_empresa
+      and ra.accion = 'cambiar_plan'
+      and coalesce(ra.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+      and (ra.detalle->>'importe')::numeric > 0
+    order by ra.created_at
+    limit 1;
+
+    select coalesce(a.comision_porcentaje, 50) into v_pct from public.ajustes_orden a where a.unica;
+    v_pct := coalesce(v_pct, 50);
+
+    begin
+      insert into public.comisiones (
+        socio_id, empresa_id, movimiento_id, base, porcentaje, monto, nota
+      ) values (
+        v_socio.id, p_empresa, v_primero.ingreso, v_primero.importe, v_pct,
+        round(v_primero.importe * v_pct / 100),
+        'Entró con el enlace el ' || to_char(v_rechazo.intentado_at at time zone 'America/Asuncion', 'DD/MM/YYYY')
+          || ', pero el código fue rechazado (' || coalesce(nullif(v_rechazo.motivo, ''), 'sin motivo') || ') y se anotó después.'
+      );
+      v_comision := true;
+      v_aviso := 'Entró con este código y se había perdido. Se generó la comisión por su primer pago.';
+    exception when unique_violation then
+      v_aviso := 'Entró con este código y se había perdido. Ya tenía una comisión, así que no se generó otra.';
+    end;
+  elsif v_por_enlace then
+    v_aviso := 'Entró con este código y se había perdido. Cuando pague, la comisión sale sola.';
+  elsif v_pagos > 0 then
+    v_aviso := 'Ojo: este negocio ya pagó ' || v_pagos
+            || (case when v_pagos = 1 then ' vez' else ' veces' end)
+            || ' antes de anotarlo. La comisión no se genera por esos pagos, sino con el próximo cobro. Revisá el monto antes de pagarla.';
+  end if;
+
+  -- Resuelto: el rechazo deja de figurar.
+  delete from public.codigos_rechazados where empresa_id = p_empresa;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'asignar_referido', jsonb_build_object(
+    'socio_id', v_socio.id, 'socio', v_socio.nombre, 'codigo', v_socio.codigo,
+    'pagos_previos', v_pagos, 'por_enlace', v_por_enlace, 'comision_generada', v_comision
+  ));
+
+  return jsonb_build_object(
+    'ok', true, 'socio', v_socio.nombre, 'aviso', v_aviso,
+    'por_enlace', v_por_enlace, 'comision_generada', v_comision
+  );
+end $fn$;
+
+revoke all on function public.asignar_referido(uuid, text, text) from public, anon;
+grant execute on function public.asignar_referido(uuid, text, text) to authenticated;
+
+
+-- ############################################################
+-- ##  069_el_candado_dice_la_verdad.sql
+-- ############################################################
+
+-- ============================================================
+-- 069 · EL MENSAJE DE CUENTA VENCIDA DICE LO QUE PASA DE VERDAD
+--
+-- `exigir_cuenta_activa` (018) frena cualquier escritura de una cuenta con
+-- la prueba o el plan vencidos, y lo explicaba así:
+--
+--   «Se te terminó la prueba. Podés seguir viendo todo y bajando tu Excel,
+--    pero para cargar hay que activar el plan.»
+--
+-- Era cierto cuando se escribió: la 018 decidió a propósito que una cuenta
+-- vencida siguiera mirando. El 2026-09-15 Matías lo decidió al revés —vencida
+-- la cuenta, Orden se cierra entero hasta que se pague (ver CandadoCuenta)—,
+-- y este mensaje quedó prometiendo algo que ya no existe.
+--
+-- Solo cambia el texto. La regla —qué se frena y qué no— es exactamente la
+-- misma de la 018.
+-- ============================================================
+
+create or replace function public.exigir_cuenta_activa()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  if not public.puede_cargar(new.empresa_id) then
+    raise exception 'Se te terminó la prueba. Para seguir usando Orden hace falta activar tu plan.'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end $fn$;
+
+revoke all on function public.exigir_cuenta_activa() from public, anon, authenticated;
+
+
+-- ############################################################
+-- ##  070_saldo_y_retiros.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 070 · El socio tiene un saldo y retira lo que quiere
+--
+-- LO QUE CAMBIA
+--
+-- Hasta la 066 el socio pedía «todo lo pendiente» de una: cada comisión era
+-- una unidad y se pagaba entera. Matías lo pidió distinto (16/09/2026):
+--
+--   «Un usuario tiene un millón de saldo, decide retirar quinientos mil, eso
+--    es lo que se le transfiere, y queda el resto de su saldo.»
+--
+-- Y con un mínimo: menos de Gs. 120.000 no se retira, porque transferir de a
+-- poco cuesta más en tiempo que lo que se paga.
+--
+-- EL MODELO
+--
+--   · Las comisiones siguen naciendo igual (060) y siguen siendo una por
+--     negocio. Mientras están «por_pagar», suman al saldo.
+--   · Un RETIRO es un pedido de plata contra ese saldo: tiene monto, estado
+--     (pedido, pagado, rechazado) y la foto de a dónde había que transferir
+--     en el momento de pedirlo.
+--   · SALDO = comisiones por_pagar − retiros pedidos o pagados.
+--
+--   Un retiro pedido ya descuenta: si no, alguien con un millón podría pedir
+--   un millón dos veces antes de que nadie pague la primera. Si se rechaza,
+--   vuelve solo al saldo, porque deja de contar.
+--
+--   Las comisiones marcadas «pagada» antes de esto (pago directo, 060) no
+--   entran en el saldo: esa plata ya se transfirió.
+--
+-- UN PEDIDO A LA VEZ
+--
+-- Un índice único parcial: mientras hay un retiro pedido, no se puede pedir
+-- otro. Para la administración, una sola transferencia pendiente por persona
+-- es algo que se resuelve; tres pedidos chicos del mismo socio es desorden.
+--
+-- Idempotente.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. EL MÍNIMO, EN UN SOLO LUGAR
+-- ------------------------------------------------------------
+alter table public.ajustes_orden
+  add column if not exists retiro_minimo numeric(14,2) not null default 120000;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'ajustes_orden_retiro_minimo') then
+    alter table public.ajustes_orden
+      add constraint ajustes_orden_retiro_minimo check (retiro_minimo >= 0);
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- 2. LOS RETIROS
+-- ------------------------------------------------------------
+create table if not exists public.retiros (
+  id           uuid primary key default gen_random_uuid(),
+  socio_id     uuid not null references public.socios (id) on delete restrict,
+  monto        numeric(14,2) not null check (monto > 0),
+  estado       text not null default 'pedido' check (estado in ('pedido', 'pagado', 'rechazado')),
+  pedido_at    timestamptz not null default now(),
+  resuelto_at  timestamptz,
+  -- A dónde había que transferir cuando lo pidió. Si después cambia sus
+  -- datos, este pedido sigue diciendo a qué cuenta se prometió.
+  banco        text not null default '',
+  titular      text not null default '',
+  cuenta       text not null default '',
+  documento    text not null default '',
+  medio        text not null default '' check (char_length(medio) <= 60),
+  nota         text not null default '' check (char_length(nota) <= 300),
+  -- El gasto de Orden al pagarlo, como en la 060.
+  gasto_id     uuid references public.movimientos (id) on delete set null,
+  resuelto_por uuid references auth.users (id) on delete set null,
+  created_at   timestamptz not null default now()
+);
+
+create unique index if not exists retiros_uno_pedido_por_socio
+  on public.retiros (socio_id) where estado = 'pedido';
+
+create index if not exists retiros_estado_idx on public.retiros (estado, pedido_at desc);
+
+alter table public.retiros enable row level security;
+revoke all on public.retiros from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. DOS AYUDAS: EL SALDO Y LA PLATA ESCRITA
+-- ------------------------------------------------------------
+create or replace function public.saldo_socio(p_socio uuid)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select coalesce((select sum(monto) from public.comisiones
+                    where socio_id = p_socio and estado = 'por_pagar'), 0)
+       - coalesce((select sum(monto) from public.retiros
+                    where socio_id = p_socio and estado in ('pedido', 'pagado')), 0);
+$fn$;
+
+revoke all on function public.saldo_socio(uuid) from public, anon, authenticated;
+
+-- «Gs. 120.000», con punto de miles como se escribe acá. La coma de
+-- to_char es fija (no depende del idioma del servidor) y se cambia por punto.
+create or replace function public.guaranies(p numeric)
+returns text language sql immutable set search_path = public as $fn$
+  select 'Gs. ' || replace(to_char(round(coalesce(p, 0)), 'FM999,999,999,990'), ',', '.');
+$fn$;
+
+revoke all on function public.guaranies(numeric) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. PEDIR UN RETIRO
+--
+--    Lo llama el socio con su sesión: el socio sale de auth.uid(). Reemplaza
+--    a `solicitar_cobro()` de la 066, que pedía todo junto.
+-- ------------------------------------------------------------
+create or replace function public.solicitar_retiro(p_monto numeric)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_uid    uuid := auth.uid();
+  v_socio  public.socios;
+  v_minimo numeric;
+  v_saldo  numeric;
+  v_monto  numeric := round(coalesce(p_monto, 0));
+  v_pedido public.retiros;
+  v_id     uuid;
+begin
+  if v_uid is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios where user_id = v_uid;
+  if v_socio.id is null then
+    raise exception 'Todavía no pediste tu código de recomendación.' using errcode = '22023';
+  end if;
+
+  if not v_socio.activo then
+    raise exception 'Tu código está pausado. Escribinos y lo vemos.' using errcode = '42501';
+  end if;
+
+  select * into v_pedido from public.retiros where socio_id = v_socio.id and estado = 'pedido';
+  if v_pedido.id is not null then
+    raise exception 'Ya pediste un retiro de % el %. Cuando te lo transfiramos vas a poder pedir otro.',
+      public.guaranies(v_pedido.monto),
+      to_char(v_pedido.pedido_at at time zone 'America/Asuncion', 'DD/MM/YYYY')
+      using errcode = '22023';
+  end if;
+
+  select coalesce(retiro_minimo, 120000) into v_minimo from public.ajustes_orden where unica;
+  v_minimo := coalesce(v_minimo, 120000);
+  v_saldo := public.saldo_socio(v_socio.id);
+
+  if v_saldo <= 0 then
+    raise exception 'Todavía no tenés nada por cobrar.' using errcode = '22023';
+  end if;
+
+  if coalesce(nullif(trim(v_socio.cuenta), ''), nullif(trim(v_socio.cobra_en), '')) is null then
+    raise exception 'Antes de pedir el cobro, completá dónde te transferimos.'
+      using errcode = '22023';
+  end if;
+
+  if v_saldo < v_minimo then
+    raise exception 'Para retirar necesitás al menos %. Hoy tenés %.',
+      public.guaranies(v_minimo), public.guaranies(v_saldo)
+      using errcode = '22023';
+  end if;
+
+  if v_monto <= 0 then
+    raise exception 'Escribí cuánto querés retirar.' using errcode = '22023';
+  end if;
+
+  if v_monto < v_minimo then
+    raise exception 'El mínimo para retirar es %.', public.guaranies(v_minimo) using errcode = '22023';
+  end if;
+
+  if v_monto > v_saldo then
+    raise exception 'No podés retirar más de lo que tenés: tu saldo es %.', public.guaranies(v_saldo)
+      using errcode = '22023';
+  end if;
+
+  insert into public.retiros (socio_id, monto, banco, titular, cuenta, documento)
+  values (v_socio.id, v_monto, v_socio.banco, v_socio.titular,
+          coalesce(nullif(trim(v_socio.cuenta), ''), v_socio.cobra_en), v_socio.documento)
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'retiro_id', v_id,
+    'socio', v_socio.nombre,
+    'socio_id', v_socio.id,
+    'monto', v_monto,
+    'saldo', v_saldo - v_monto,
+    'banco', v_socio.banco,
+    'titular', v_socio.titular,
+    'documento', v_socio.documento,
+    'donde', coalesce(nullif(trim(v_socio.cuenta), ''), v_socio.cobra_en)
+  );
+end $fn$;
+
+revoke all on function public.solicitar_retiro(numeric) from public, anon;
+grant execute on function public.solicitar_retiro(numeric) to authenticated;
+
+-- El pedido de todo junto ya no existe: dejarlo sería una segunda puerta
+-- para cobrar sin mínimo y sin saldo.
+drop function if exists public.solicitar_cobro();
+
+-- ------------------------------------------------------------
+-- 5. LA ADMINISTRACIÓN: VER LOS RETIROS
+-- ------------------------------------------------------------
+create or replace function public.listar_retiros(
+  p_estado text default null,
+  p_limite integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x order by x->>'pedido_at' desc), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'id',          r.id,
+      'socio_id',    r.socio_id,
+      'socio',       s.nombre,
+      'telefono',    s.telefono,
+      'monto',       r.monto,
+      'estado',      r.estado,
+      'pedido_at',   r.pedido_at,
+      'resuelto_at', r.resuelto_at,
+      'banco',       r.banco,
+      'titular',     r.titular,
+      'cuenta',      r.cuenta,
+      'documento',   r.documento,
+      'medio',       r.medio,
+      'nota',        r.nota
+    ) as x
+    from public.retiros r
+    join public.socios s on s.id = r.socio_id
+    where (p_estado is null or trim(p_estado) = '' or r.estado = p_estado)
+    order by r.pedido_at desc
+    limit greatest(1, least(coalesce(p_limite, 200), 500))
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.listar_retiros(text, integer) from public, anon;
+grant execute on function public.listar_retiros(text, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. LA ADMINISTRACIÓN: YA LE TRANSFERÍ
+--
+--    Queda como gasto de Orden, igual que el pago de una comisión en la 060.
+--    Devuelve el usuario del socio: la ruta que llama a esto le manda el
+--    push de «tu pago ya fue realizado».
+-- ------------------------------------------------------------
+create or replace function public.marcar_retiro_pagado(
+  p_retiro uuid,
+  p_medio  text default '',
+  p_nota   text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_r     public.retiros;
+  v_socio public.socios;
+  v_orden uuid;
+  v_gasto uuid;
+  v_aviso text := null;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_r from public.retiros where id = p_retiro for update;
+  if v_r.id is null then
+    raise exception 'Ese retiro no existe.' using errcode = '22023';
+  end if;
+  if v_r.estado = 'pagado' then
+    raise exception 'Ese retiro ya está pagado.' using errcode = '22023';
+  end if;
+  if v_r.estado = 'rechazado' then
+    raise exception 'Ese retiro está rechazado: la plata volvió a su saldo.' using errcode = '22023';
+  end if;
+
+  select * into v_socio from public.socios where id = v_r.socio_id;
+  select empresa_id into v_orden from public.ajustes_orden where unica;
+
+  if v_orden is null then
+    v_aviso := 'No hay una empresa de Orden elegida, así que el pago no se anotó en tus finanzas.';
+  else
+    begin
+      insert into public.movimientos (
+        empresa_id, tipo, estado, fecha, descripcion, categoria,
+        subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+      ) values (
+        v_orden, 'gasto', 'activo', public.hoy_empresa(v_orden),
+        'Retiro de ' || coalesce(v_socio.nombre, 'socio'), 'Comisiones',
+        v_r.monto, 0, v_r.monto, 0, 'transferencia',
+        left(coalesce(v_socio.nombre, ''), 80), auth.uid()
+      )
+      returning id into v_gasto;
+    exception when others then
+      v_aviso := 'El retiro quedó pagado, pero el gasto no se pudo anotar: ' || sqlerrm;
+    end;
+  end if;
+
+  update public.retiros set
+    estado       = 'pagado',
+    resuelto_at  = now(),
+    resuelto_por = auth.uid(),
+    gasto_id     = v_gasto,
+    medio        = left(coalesce(trim(p_medio), ''), 60),
+    nota         = left(coalesce(trim(p_nota), ''), 300)
+  where id = p_retiro;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), null, 'pagar_retiro', jsonb_build_object(
+    'retiro_id', v_r.id, 'socio_id', v_r.socio_id, 'socio', v_socio.nombre,
+    'monto', v_r.monto, 'medio', left(coalesce(trim(p_medio), ''), 60), 'gasto_id', v_gasto
+  ));
+
+  return jsonb_build_object(
+    'ok', true,
+    'monto', v_r.monto,
+    'socio', v_socio.nombre,
+    'socio_user_id', v_socio.user_id,
+    'saldo', greatest(public.saldo_socio(v_r.socio_id), 0),
+    'gasto_anotado', v_gasto is not null,
+    'aviso', v_aviso
+  );
+end $fn$;
+
+revoke all on function public.marcar_retiro_pagado(uuid, text, text) from public, anon;
+grant execute on function public.marcar_retiro_pagado(uuid, text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 7. LA ADMINISTRACIÓN: NO SE PUEDE PAGAR
+--
+--    Los datos no sirven, la cuenta no existe. La plata vuelve a su saldo
+--    sola (un retiro rechazado no descuenta) y el motivo queda escrito.
+-- ------------------------------------------------------------
+create or replace function public.rechazar_retiro(
+  p_retiro uuid,
+  p_nota   text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_r     public.retiros;
+  v_socio public.socios;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_r from public.retiros where id = p_retiro for update;
+  if v_r.id is null then
+    raise exception 'Ese retiro no existe.' using errcode = '22023';
+  end if;
+  if v_r.estado <> 'pedido' then
+    raise exception 'Solo se puede rechazar un retiro que todavía no se pagó.' using errcode = '22023';
+  end if;
+  if coalesce(trim(p_nota), '') = '' then
+    raise exception 'Escribí por qué no se pudo pagar: es lo que va a leer.' using errcode = '22023';
+  end if;
+
+  update public.retiros set
+    estado       = 'rechazado',
+    resuelto_at  = now(),
+    resuelto_por = auth.uid(),
+    nota         = left(trim(p_nota), 300)
+  where id = p_retiro;
+
+  select * into v_socio from public.socios where id = v_r.socio_id;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), null, 'rechazar_retiro', jsonb_build_object(
+    'retiro_id', v_r.id, 'socio_id', v_r.socio_id, 'monto', v_r.monto,
+    'motivo', left(trim(p_nota), 300)
+  ));
+
+  return jsonb_build_object(
+    'ok', true,
+    'monto', v_r.monto,
+    'socio', v_socio.nombre,
+    'socio_user_id', v_socio.user_id,
+    'motivo', left(trim(p_nota), 300)
+  );
+end $fn$;
+
+revoke all on function public.rechazar_retiro(uuid, text) from public, anon;
+grant execute on function public.rechazar_retiro(uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 8. AJUSTAR UNA COMISIÓN
+--
+--    En la 060 el monto se ajustaba al pagarla (un negocio que pagó un año
+--    de una). Ahora la comisión no se paga sola —se retira del saldo—, así
+--    que el ajuste va antes: se corrige la comisión y el saldo la sigue.
+-- ------------------------------------------------------------
+create or replace function public.ajustar_comision(
+  p_comision uuid,
+  p_monto    numeric,
+  p_nota     text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_c public.comisiones;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_c from public.comisiones where id = p_comision for update;
+  if v_c.id is null then
+    raise exception 'Esa comisión no existe.' using errcode = '22023';
+  end if;
+  if v_c.estado <> 'por_pagar' then
+    raise exception 'Solo se ajusta una comisión que todavía está en el saldo.' using errcode = '22023';
+  end if;
+  if p_monto is null or p_monto < 0 then
+    raise exception 'El monto no puede ser negativo.' using errcode = '22023';
+  end if;
+  if public.saldo_socio(v_c.socio_id) - v_c.monto + p_monto < 0 then
+    raise exception 'Ese socio ya retiró parte de esa plata: el monto no puede bajar de %.',
+      public.guaranies(v_c.monto - public.saldo_socio(v_c.socio_id))
+      using errcode = '22023';
+  end if;
+
+  update public.comisiones set
+    monto = round(p_monto),
+    nota  = left(
+      case when coalesce(trim(p_nota), '') = '' then nota else trim(p_nota) end, 300)
+  where id = p_comision;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), v_c.empresa_id, 'ajustar_comision', jsonb_build_object(
+    'comision_id', v_c.id, 'socio_id', v_c.socio_id,
+    'antes', v_c.monto, 'ahora', round(p_monto), 'nota', left(coalesce(trim(p_nota), ''), 300)
+  ));
+
+  return jsonb_build_object('ok', true, 'monto', round(p_monto));
+end $fn$;
+
+revoke all on function public.ajustar_comision(uuid, numeric, text) from public, anon;
+grant execute on function public.ajustar_comision(uuid, numeric, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 9. LOS DOS CAMINOS VIEJOS, CON UNA GUARDA
+--
+--    Pagar o anular una comisión suelta sigue sirviendo para los socios que
+--    nunca retiraron. Pero si ya retiró, sacar esa comisión del saldo lo
+--    dejaría en negativo: se le pagó plata que ya no figura en ningún lado.
+--    Mismo cuerpo que la 060, con la guarda marcada (070).
+-- ------------------------------------------------------------
+create or replace function public.marcar_comision_pagada(
+  p_comision uuid,
+  p_monto    numeric default null,
+  p_medio    text default '',
+  p_nota     text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_c     public.comisiones;
+  v_socio text;
+  v_monto numeric;
+  v_orden uuid;
+  v_gasto uuid;
+  v_aviso text := null;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_c from public.comisiones where id = p_comision;
+
+  if v_c.id is null then
+    raise exception 'Esa comisión no existe.' using errcode = '22023';
+  end if;
+
+  if v_c.estado = 'pagada' then
+    raise exception 'Esa comisión ya está pagada.' using errcode = '22023';
+  end if;
+
+  if v_c.estado = 'anulada' then
+    raise exception 'Esa comisión está anulada: el cobro que la generó se deshizo.'
+      using errcode = '22023';
+  end if;
+
+  -- (070) Quien ya cobra por retiros se paga por retiros.
+  if exists (select 1 from public.retiros where socio_id = v_c.socio_id and estado in ('pedido', 'pagado')) then
+    raise exception 'Este socio cobra con retiros desde su saldo. Registrá el pago desde su pedido de retiro.'
+      using errcode = '22023';
+  end if;
+
+  v_monto := coalesce(p_monto, v_c.monto);
+
+  if v_monto < 0 then
+    raise exception 'El monto no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  select nombre into v_socio from public.socios where id = v_c.socio_id;
+  select empresa_id into v_orden from public.ajustes_orden where unica;
+
+  if v_orden is null then
+    v_aviso := 'No hay una empresa de Orden elegida, así que el pago no se anotó en tus finanzas.';
+  elsif v_monto > 0 then
+    begin
+      insert into public.movimientos (
+        empresa_id, tipo, estado, fecha, descripcion, categoria,
+        subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+      ) values (
+        v_orden, 'gasto', 'activo', public.hoy_empresa(v_orden),
+        'Comisión a ' || coalesce(v_socio, 'socio'), 'Comisiones',
+        v_monto, 0, v_monto, 0, 'transferencia',
+        left(coalesce(v_socio, ''), 80), auth.uid()
+      )
+      returning id into v_gasto;
+    exception when others then
+      v_aviso := 'La comisión quedó pagada, pero el gasto no se pudo anotar: ' || sqlerrm;
+    end;
+  end if;
+
+  update public.comisiones set
+    estado    = 'pagada',
+    monto     = v_monto,
+    pagada_at = now(),
+    gasto_id  = v_gasto,
+    medio     = left(coalesce(trim(p_medio), ''), 60),
+    nota      = left(coalesce(trim(p_nota), ''), 300)
+  where id = p_comision;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), v_c.empresa_id, 'pagar_comision', jsonb_build_object(
+    'comision_id', v_c.id,
+    'socio_id', v_c.socio_id,
+    'socio', v_socio,
+    'monto_calculado', v_c.monto,
+    'monto_pagado', v_monto,
+    'medio', left(coalesce(trim(p_medio), ''), 60),
+    'gasto_id', v_gasto
+  ));
+
+  return jsonb_build_object(
+    'ok', true,
+    'monto', v_monto,
+    'ajustado', v_monto <> v_c.monto,
+    'gasto_anotado', v_gasto is not null,
+    'aviso', v_aviso
+  );
+end $fn$;
+
+revoke all on function public.marcar_comision_pagada(uuid, numeric, text, text) from public, anon;
+grant execute on function public.marcar_comision_pagada(uuid, numeric, text, text) to authenticated;
+
+create or replace function public.anular_comision(
+  p_comision uuid,
+  p_nota     text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_c public.comisiones;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_c from public.comisiones where id = p_comision;
+
+  if v_c.id is null then
+    raise exception 'Esa comisión no existe.' using errcode = '22023';
+  end if;
+
+  if v_c.estado = 'pagada' then
+    raise exception
+      'Esa comisión ya se pagó. Si hay que recuperar la plata, eso se arregla con la persona, no borrando el registro.'
+      using errcode = '22023';
+  end if;
+
+  -- (070) Si ya la retiró, anularla lo deja debiendo plata que se le pagó.
+  if v_c.estado = 'por_pagar' and public.saldo_socio(v_c.socio_id) - v_c.monto < 0 then
+    raise exception
+      'Ese socio ya retiró esa plata. Si hay que recuperarla, eso se arregla con la persona, no anulando la comisión.'
+      using errcode = '22023';
+  end if;
+
+  update public.comisiones set
+    estado = 'anulada',
+    nota   = left(coalesce(trim(p_nota), ''), 300)
+  where id = p_comision;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), v_c.empresa_id, 'anular_comision', jsonb_build_object(
+    'comision_id', v_c.id, 'socio_id', v_c.socio_id, 'monto', v_c.monto,
+    'motivo', left(coalesce(trim(p_nota), ''), 300)
+  ));
+
+  return jsonb_build_object('ok', true);
+end $fn$;
+
+revoke all on function public.anular_comision(uuid, text) from public, anon;
+grant execute on function public.anular_comision(uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 10. LO QUE VE EL SOCIO
+--
+--     Redefine `mi_panel_socio()` de la 066. `por_pagar` pasa a ser el saldo
+--     disponible (lo que puede retirar), y `pagado` suma lo que se le pagó
+--     de las dos formas: comisiones pagadas directo y retiros pagados.
+-- ------------------------------------------------------------
+create or replace function public.mi_panel_socio()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_uid    uuid := auth.uid();
+  v_socio  public.socios;
+  v_lista  jsonb;
+  v_retiros jsonb;
+  v_pedido public.retiros;
+  v_minimo numeric;
+begin
+  if v_uid is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios where user_id = v_uid;
+
+  if v_socio.id is null then
+    return jsonb_build_object('tiene_codigo', false);
+  end if;
+
+  select coalesce(jsonb_agg(x order by x->>'desde' desc), '[]'::jsonb) into v_lista
+  from (
+    select jsonb_build_object(
+      'negocio',  coalesce(e.nombre, 'Negocio borrado'),
+      'desde',    r.created_at,
+      'paga',     public.plan_efectivo_calculado(r.empresa_id) <> 'gratis',
+      'plan',     public.plan_efectivo_calculado(r.empresa_id),
+      'estado',   coalesce(c.estado, 'sin_pagar'),
+      'monto',    coalesce(c.monto, 0),
+      'cuando',   c.created_at,
+      'pagada_at', c.pagada_at
+    ) as x
+    from public.referidos r
+    left join public.empresas e on e.id = r.empresa_id
+    left join public.comisiones c on c.empresa_id = r.empresa_id
+    where r.socio_id = v_socio.id
+  ) t;
+
+  select coalesce(jsonb_agg(x order by x->>'pedido_at' desc), '[]'::jsonb) into v_retiros
+  from (
+    select jsonb_build_object(
+      'id', rt.id, 'monto', rt.monto, 'estado', rt.estado,
+      'pedido_at', rt.pedido_at, 'resuelto_at', rt.resuelto_at,
+      -- El motivo se muestra solo si lo rechazaron: es lo que tiene que leer.
+      'nota', case when rt.estado = 'rechazado' then rt.nota else '' end
+    ) as x
+    from public.retiros rt
+    where rt.socio_id = v_socio.id
+    order by rt.pedido_at desc
+    limit 20
+  ) t;
+
+  select * into v_pedido from public.retiros where socio_id = v_socio.id and estado = 'pedido';
+  select retiro_minimo into v_minimo from public.ajustes_orden where unica;
+
+  return jsonb_build_object(
+    'tiene_codigo', true,
+    'codigo',    v_socio.codigo,
+    'nombre',    v_socio.nombre,
+    'cobra_en',  v_socio.cobra_en,
+    'banco',     v_socio.banco,
+    'titular',   v_socio.titular,
+    'cuenta',    v_socio.cuenta,
+    'documento', v_socio.documento,
+    'activo',    v_socio.activo,
+    'traidos',   (select count(*) from public.referidos r where r.socio_id = v_socio.id),
+    'pagaron',   (select count(*) from public.comisiones c
+                  where c.socio_id = v_socio.id and c.estado <> 'anulada'),
+    'por_pagar', greatest(public.saldo_socio(v_socio.id), 0),
+    'pagado',    coalesce((select sum(c.monto) from public.comisiones c
+                           where c.socio_id = v_socio.id and c.estado = 'pagada'), 0)
+               + coalesce((select sum(rt.monto) from public.retiros rt
+                           where rt.socio_id = v_socio.id and rt.estado = 'pagado'), 0),
+    'minimo',    coalesce(v_minimo, 120000),
+    'cobro_pedido_el', v_pedido.pedido_at,
+    'retiro_pedido', case when v_pedido.id is null then null else jsonb_build_object(
+      'id', v_pedido.id, 'monto', v_pedido.monto, 'pedido_at', v_pedido.pedido_at
+    ) end,
+    'retiros',   v_retiros,
+    'referidos', v_lista
+  );
+end $fn$;
+
+revoke all on function public.mi_panel_socio() from public, anon;
+grant execute on function public.mi_panel_socio() to authenticated;
+
+-- ------------------------------------------------------------
+-- 11. Y LO QUE VE LA ADMINISTRACIÓN DE CADA SOCIO
+--
+--     Redefine `listar_socios()` de la 064: el saldo real y cuánto tiene
+--     pedido, en vez de la suma de comisiones sin descontar retiros.
+-- ------------------------------------------------------------
+create or replace function public.listar_socios(
+  p_busqueda text default null,
+  p_limite   integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x order by x->>'nombre'), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'id',        s.id,
+      'nombre',    s.nombre,
+      'telefono',  s.telefono,
+      'email',     s.email,
+      'codigo',    s.codigo,
+      'activo',    s.activo,
+      'cobra_en',  s.cobra_en,
+      'banco',     s.banco,
+      'titular',   s.titular,
+      'cuenta',    s.cuenta,
+      'documento', s.documento,
+      'notas',     s.notas,
+      'tiene_cuenta', s.user_id is not null,
+      'creado',    s.created_at,
+      'traidos',   (select count(*) from public.referidos r where r.socio_id = s.id),
+      'pagaron',   (select count(*) from public.comisiones c
+                    where c.socio_id = s.id and c.estado <> 'anulada'),
+      -- Lo que todavía se le debe: su saldo más lo que tiene pedido.
+      'por_pagar', greatest(public.saldo_socio(s.id), 0)
+                 + coalesce((select sum(rt.monto) from public.retiros rt
+                             where rt.socio_id = s.id and rt.estado = 'pedido'), 0),
+      'pagado',    coalesce((select sum(c.monto) from public.comisiones c
+                             where c.socio_id = s.id and c.estado = 'pagada'), 0)
+                 + coalesce((select sum(rt.monto) from public.retiros rt
+                             where rt.socio_id = s.id and rt.estado = 'pagado'), 0)
+    ) as x
+    from public.socios s
+    where (
+        p_busqueda is null
+        or trim(p_busqueda) = ''
+        or s.nombre ilike '%' || trim(p_busqueda) || '%'
+        or s.codigo ilike '%' || trim(p_busqueda) || '%'
+        or s.telefono ilike '%' || trim(p_busqueda) || '%'
+        or s.email ilike '%' || trim(p_busqueda) || '%'
+      )
+    order by s.nombre
+    limit greatest(1, least(coalesce(p_limite, 200), 500))
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.listar_socios(text, integer) from public, anon;
+grant execute on function public.listar_socios(text, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  071_orden_que_habla.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 071 · Una app que habla todos los días
+--
+-- LO QUE PIDIÓ MATÍAS (16/09/2026)
+--
+--   «Tiene que ser bien activo Orden, que le esté enviando notificaciones
+--    todos los días: no te olvides de cargar hoy, hoy ganaste esto, hoy
+--    estás un dos por ciento más de venta que ayer, hoy tenés estos gastos.
+--    Que la aplicación sea más viva.»
+--
+-- Hasta acá Orden hablaba una sola vez por día, y solo para salvar una
+-- racha. Esto suma tres momentos: a la mañana (cómo fue ayer), a la tarde
+-- (si todavía no cargó nada) y a la noche (cómo fue hoy, contra ayer). Y el
+-- aviso de que la prueba se termina, que es el que más importa para que la
+-- cuenta no se corte sin que la persona lo vea venir.
+--
+-- LO QUE SIGUE SIENDO REGLA
+--
+--   · Una preferencia para apagarlo (`aviso_diario`). Un aviso que no se
+--     puede apagar termina con la persona apagando TODOS los avisos.
+--   · Solo cuentas vivas: con algo cargado en los últimos 30 días o creadas
+--     en la última semana. A quien abandonó hace meses no se le escribe.
+--   · Solo rubros de ciclo diario. A un ganadero no se le pregunta todos los
+--     días si vendió algo (ver 024, `rubro_cierra_el_dia`).
+--   · Una vez por persona, momento y día: la tabla `envios` (010).
+--
+-- Los números salen acá y no en el servidor: el servidor solo arma la frase
+-- en el idioma de cada uno.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA PREFERENCIA
+-- ------------------------------------------------------------
+alter table public.preferencias
+  add column if not exists aviso_diario boolean not null default true;
+
+create or replace function public.mis_preferencias()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select jsonb_build_object(
+    'idioma', p.idioma, 'aviso_cierre', p.aviso_cierre,
+    'aviso_semanal', p.aviso_semanal, 'aviso_turnos', p.aviso_turnos,
+    'aviso_diario', p.aviso_diario,
+    'hora_cierre', p.hora_cierre
+  ) into v_res
+  from public.preferencias p where p.user_id = auth.uid();
+
+  return coalesce(v_res, jsonb_build_object(
+    'idioma', 'es', 'aviso_cierre', true, 'aviso_semanal', true,
+    'aviso_turnos', true, 'aviso_diario', true, 'hora_cierre', 20));
+end $fn$;
+
+-- La firma cambia: sin borrar la de cinco, una llamada con algunos campos
+-- queda ambigua (ver 043).
+drop function if exists public.guardar_preferencias(text, boolean, boolean, smallint, boolean);
+
+create or replace function public.guardar_preferencias(
+  p_idioma text default null,
+  p_aviso_cierre boolean default null,
+  p_aviso_semanal boolean default null,
+  p_hora_cierre smallint default null,
+  p_aviso_turnos boolean default null,
+  p_aviso_diario boolean default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  insert into public.preferencias as p (
+    user_id, idioma, aviso_cierre, aviso_semanal, hora_cierre, aviso_turnos, aviso_diario)
+  values (
+    auth.uid(),
+    coalesce(nullif(lower(trim(p_idioma)), ''), 'es'),
+    coalesce(p_aviso_cierre, true),
+    coalesce(p_aviso_semanal, true),
+    coalesce(p_hora_cierre, 20::smallint),
+    coalesce(p_aviso_turnos, true),
+    coalesce(p_aviso_diario, true)
+  )
+  on conflict (user_id) do update set
+    idioma        = coalesce(nullif(lower(trim(p_idioma)), ''), p.idioma),
+    aviso_cierre  = coalesce(p_aviso_cierre,  p.aviso_cierre),
+    aviso_semanal = coalesce(p_aviso_semanal, p.aviso_semanal),
+    hora_cierre   = coalesce(p_hora_cierre,   p.hora_cierre),
+    aviso_turnos  = coalesce(p_aviso_turnos,  p.aviso_turnos),
+    aviso_diario  = coalesce(p_aviso_diario,  p.aviso_diario),
+    updated_at    = now();
+
+  return public.mis_preferencias();
+end $fn$;
+
+revoke all on function public.mis_preferencias() from public, anon;
+grant execute on function public.mis_preferencias() to authenticated;
+revoke all on function public.guardar_preferencias(text, boolean, boolean, smallint, boolean, boolean)
+  from public, anon;
+grant execute on function public.guardar_preferencias(text, boolean, boolean, smallint, boolean, boolean)
+  to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. LOS NÚMEROS DE HOY Y DE AYER, POR CUENTA
+--
+--    Solo para service_role: son los números de todos los negocios.
+--    `ganancia` es la misma cuenta que el panel: lo que entró menos el costo
+--    de lo vendido menos los gastos.
+-- ------------------------------------------------------------
+create or replace function public.avisos_del_dia()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',  e.id,
+      'nombre',      e.nombre,
+      'moneda',      e.moneda,
+      'tipo_cuenta', coalesce(e.tipo_cuenta, 'emprendedor'),
+      -- La fecha de hoy EN LA ZONA DEL NEGOCIO: con ella se arma la clave
+      -- de «una vez por día».
+      'fecha',       z.hoy,
+      'hoy', jsonb_build_object(
+        'ventas', a.ventas_hoy, 'ingresos', a.ingresos_hoy, 'gastos', a.gastos_hoy,
+        'ganancia', a.ventas_hoy + a.ingresos_hoy - a.costo_hoy - a.gastos_hoy, 'cargados', a.n_hoy),
+      'ayer', jsonb_build_object(
+        'ventas', a.ventas_ayer, 'ingresos', a.ingresos_ayer, 'gastos', a.gastos_ayer,
+        'ganancia', a.ventas_ayer + a.ingresos_ayer - a.costo_ayer - a.gastos_ayer, 'cargados', a.n_ayer),
+      'destinatarios', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'user_id', mi.user_id, 'idioma', coalesce(p.idioma, 'es'))), '[]'::jsonb)
+        from public.miembros mi
+        left join public.preferencias p on p.user_id = mi.user_id
+        where mi.empresa_id = e.id
+          and mi.rol in ('propietario', 'admin')
+          and coalesce(p.aviso_diario, true)
+      )
+    ) as x
+    from public.empresas e
+    cross join lateral (
+      select (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as hoy
+    ) z
+    cross join lateral (
+      select
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'venta'), 0)       as ventas_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'ingreso'), 0)     as ingresos_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'gasto'), 0)       as gastos_hoy,
+        coalesce(sum(coalesce(m.costo_total, 0)) filter (where m.fecha = z.hoy and m.tipo = 'venta'), 0) as costo_hoy,
+        count(*) filter (where m.fecha = z.hoy)::int                                       as n_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'venta'), 0)   as ventas_ayer,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'ingreso'), 0) as ingresos_ayer,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'gasto'), 0)   as gastos_ayer,
+        coalesce(sum(coalesce(m.costo_total, 0)) filter (where m.fecha = z.hoy - 1 and m.tipo = 'venta'), 0) as costo_ayer,
+        count(*) filter (where m.fecha = z.hoy - 1)::int                                   as n_ayer
+      from public.movimientos m
+      where m.empresa_id = e.id and m.estado = 'activo'
+        and m.fecha between z.hoy - 1 and z.hoy
+    ) a
+    where (
+        coalesce(e.tipo_cuenta, 'emprendedor') = 'personal'
+        or public.rubro_cierra_el_dia(e.rubro, e.tipo_cuenta)
+      )
+      -- Una cuenta vencida no puede cargar: pedirle que cargue es mentirle.
+      and public.puede_cargar(e.id)
+      and (
+        e.created_at > now() - interval '7 days'
+        or exists (select 1 from public.movimientos m2
+                   where m2.empresa_id = e.id and m2.created_at > now() - interval '30 days')
+      )
+  ) s;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.avisos_del_dia() from public, anon, authenticated;
+grant execute on function public.avisos_del_dia() to service_role;
+
+-- ------------------------------------------------------------
+-- 3. LAS PRUEBAS QUE SE TERMINAN
+--
+--    Faltando 3 días, 1 día y el último día. `dias` se cuenta en la fecha de
+--    la zona del negocio: «termina mañana» tiene que ser mañana para él.
+-- ------------------------------------------------------------
+create or replace function public.pruebas_por_terminar()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x order by (x->>'dias')::int), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',  e.id,
+      'nombre',      e.nombre,
+      'tipo_cuenta', coalesce(e.tipo_cuenta, 'emprendedor'),
+      'fin',         s.periodo_fin,
+      'dias',        (s.periodo_fin at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date
+                     - (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date,
+      'destinatarios', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'user_id', mi.user_id, 'idioma', coalesce(p.idioma, 'es'))), '[]'::jsonb)
+        from public.miembros mi
+        left join public.preferencias p on p.user_id = mi.user_id
+        where mi.empresa_id = e.id and mi.rol in ('propietario', 'admin')
+      )
+    ) as x
+    from public.suscripciones s
+    join public.empresas e on e.id = s.empresa_id
+    where s.estado = 'prueba'
+      and s.periodo_fin > now()
+      and (s.periodo_fin at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date
+          - (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date in (0, 1, 3)
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.pruebas_por_terminar() from public, anon, authenticated;
+grant execute on function public.pruebas_por_terminar() to service_role;
+
+
+-- ############################################################
+-- ##  072_agenda_en_calendario.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 072 · La agenda vista como calendario
+--
+-- LO QUE PIDIÓ MATÍAS (16/09/2026)
+--
+--   «Añadir calendario para ver la agenda. El calendario como una opción
+--    para ver: una semana, un mes o el rango que quieran, si tienen
+--    disponible o no.»
+--
+-- Hasta acá la agenda se miraba de a un día. Para saber si el jueves que
+-- viene hay lugar había que avanzar día por día con la flecha.
+--
+-- QUÉ DEVUELVE, POR DÍA
+--
+--   · cuántos turnos hay (sin contar los cancelados);
+--   · cuántos minutos atiende el local ese día (la suma de las franjas de
+--     cada profesional, o la del día especial si hay una excepción);
+--   · cuántos de esos minutos ya están tomados;
+--   · y una sola palabra para pintarlo: libre, casi (60% o más ocupado),
+--     lleno (90% o más) o cerrado.
+--
+-- Es la misma regla de horarios que usa `huecos_del_dia` (037): la excepción
+-- de la persona gana sobre la del local, y sin excepción manda el horario de
+-- siempre. Un calendario que dijera «libre» un feriado sería peor que no
+-- tener calendario.
+-- ============================================================
+
+create or replace function public.agenda_calendario(
+  p_empresa uuid,
+  p_desde   date,
+  p_hasta   date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona text;
+  v_res  jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22023';
+  end if;
+
+  -- Tres meses alcanzan para cualquier vista y no dejan pedir un año entero.
+  if p_hasta - p_desde > 92 then
+    raise exception 'Elegí un rango de hasta tres meses.' using errcode = '22023';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas where id = p_empresa;
+
+  with dias as (
+    select d::date as fecha from generate_series(p_desde, p_hasta, interval '1 day') d
+  ),
+  gente as (
+    select p.id from public.turnos_profesional p
+    where p.empresa_id = p_empresa and p.activo
+  ),
+  -- Para cada día y persona, la excepción que manda (la suya antes que la del local).
+  excepcion as (
+    select distinct on (d.fecha, g.id)
+      d.fecha, g.id as profesional_id, x.cerrado, x.desde, x.hasta
+    from dias d
+    cross join gente g
+    join public.turnos_excepcion x
+      on x.empresa_id = p_empresa and x.fecha = d.fecha
+     and (x.profesional_id = g.id or x.profesional_id is null)
+    order by d.fecha, g.id, x.profesional_id nulls last
+  ),
+  abierto as (
+    select d.fecha, g.id as profesional_id,
+      case
+        when e.profesional_id is not null then
+          case when e.cerrado then 0 else extract(epoch from (e.hasta - e.desde)) / 60 end
+        else coalesce((
+          select sum(extract(epoch from (h.hasta - h.desde)) / 60)
+          from public.turnos_horario h
+          where h.profesional_id = g.id and h.activo
+            and h.dia_semana = extract(dow from d.fecha)::smallint
+        ), 0)
+      end as minutos
+    from dias d
+    cross join gente g
+    left join excepcion e on e.fecha = d.fecha and e.profesional_id = g.id
+  ),
+  tomado as (
+    select (r.inicia at time zone v_zona)::date as fecha,
+      count(*)::int as turnos,
+      sum(extract(epoch from (r.termina - r.inicia)) / 60) as minutos
+    from public.turnos_reserva r
+    where r.empresa_id = p_empresa
+      and r.estado in ('pendiente', 'confirmada', 'atendida', 'no_vino')
+      and r.inicia >= (p_desde::timestamp at time zone v_zona)
+      and r.inicia <  ((p_hasta + 1)::timestamp at time zone v_zona)
+    group by 1
+  ),
+  por_dia as (
+    select d.fecha,
+      coalesce((select sum(a.minutos) from abierto a where a.fecha = d.fecha), 0)::int as abierto_min,
+      coalesce(t.minutos, 0)::int as ocupado_min,
+      coalesce(t.turnos, 0) as turnos
+    from dias d
+    left join tomado t on t.fecha = d.fecha
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'fecha', fecha,
+    'turnos', turnos,
+    'abierto_min', abierto_min,
+    'ocupado_min', least(ocupado_min, abierto_min),
+    'libre_min', greatest(abierto_min - ocupado_min, 0),
+    'estado', case
+      when abierto_min = 0 then 'cerrado'
+      when ocupado_min >= abierto_min * 0.9 then 'lleno'
+      when ocupado_min >= abierto_min * 0.6 then 'casi'
+      else 'libre'
+    end
+  ) order by fecha), '[]'::jsonb) into v_res
+  from por_dia;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.agenda_calendario(uuid, date, date) from public, anon;
+grant execute on function public.agenda_calendario(uuid, date, date) to authenticated;
+
+
+-- ############################################################
+-- ##  073_ahorro_en_otra_moneda.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 073 · Ahorrar en la moneda que uno quiera
+--
+-- LO QUE PIDIÓ MATÍAS (16/09/2026)
+--
+--   «Mucha gente no ahorra en su moneda local. Debemos poner la opción de si
+--    quiere ahorrar en su moneda o elegir una moneda: dólares, euros, libras.»
+--
+-- En Paraguay casi todo el que ahorra en serio ahorra en dólares. Hasta acá
+-- un fondo estaba siempre en la moneda de la cuenta: quien compraba 100
+-- dólares tenía que anotar «Gs. 750.000» y, cuando el dólar subía, su fondo
+-- decía una mentira.
+--
+-- EL MODELO
+--
+--   · Cada fondo tiene su moneda (`ahorros.moneda`; null = la de la cuenta).
+--     El saldo, la meta y cada depósito van en ESA moneda: «US$ 350».
+--   · Cada movimiento de un fondo en otra moneda guarda además cuánto costó
+--     (o cuánto se recibió) en la moneda de la cuenta: `monto_local`. Es el
+--     cambio que le hicieron a ESA persona ese día, no una cotización de
+--     internet.
+--   · Todo lo que SUMA —lo guardado en el mes, el resumen, el Excel— suma
+--     `monto_local`: no se pueden sumar guaraníes con dólares.
+--
+-- La moneda de un fondo se elige al crearlo y no se cambia si ya tiene
+-- movimientos: cambiarla reetiquetaría lo guardado sin convertirlo (la misma
+-- regla que la moneda de la cuenta, 051).
+-- ============================================================
+
+alter table public.ahorros
+  add column if not exists moneda text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'ahorros_moneda_valida') then
+    alter table public.ahorros
+      add constraint ahorros_moneda_valida check (moneda is null or moneda ~ '^[A-Z]{3}$');
+  end if;
+end $$;
+
+alter table public.movimientos_ahorro
+  add column if not exists monto_local numeric(14,2);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'movimientos_ahorro_local_positivo') then
+    alter table public.movimientos_ahorro
+      add constraint movimientos_ahorro_local_positivo check (monto_local is null or monto_local > 0);
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- 1. CREAR O EDITAR UN FONDO, CON SU MONEDA
+-- ------------------------------------------------------------
+drop function if exists public.guardar_ahorro(uuid, text, numeric, date, uuid);
+
+create or replace function public.guardar_ahorro(
+  p_empresa      uuid,
+  p_nombre       text,
+  p_meta         numeric default null,
+  p_fecha_limite date    default null,
+  p_id           uuid    default null,
+  p_moneda       text    default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id       uuid;
+  v_zona     text;
+  v_hoy      date;
+  v_anterior date;
+  v_propia   text;
+  v_moneda   text;
+  v_antes    public.ahorros;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber para qué estás juntando.' using errcode = '22023';
+  end if;
+
+  if p_meta is not null and p_meta <= 0 then
+    raise exception 'La meta tiene que ser mayor que cero, o dejala vacía.' using errcode = '22023';
+  end if;
+
+  select zona_horaria, moneda into v_zona, v_propia from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  -- La moneda de la cuenta se guarda como null: «la de siempre».
+  v_moneda := nullif(upper(trim(coalesce(p_moneda, ''))), '');
+  if v_moneda is not null and v_moneda !~ '^[A-Z]{3}$' then
+    raise exception 'Esa moneda no es válida.' using errcode = '22023';
+  end if;
+  if v_moneda = v_propia then
+    v_moneda := null;
+  end if;
+
+  if p_id is not null then
+    select * into v_antes from public.ahorros where id = p_id and empresa_id = p_empresa;
+    v_anterior := v_antes.fecha_limite;
+  end if;
+
+  if p_fecha_limite is not null
+     and p_fecha_limite < v_hoy
+     and p_fecha_limite is distinct from v_anterior then
+    raise exception 'Esa fecha ya pasó. Poné para cuándo lo querés juntar.' using errcode = '22007';
+  end if;
+
+  if p_id is null then
+    insert into public.ahorros (empresa_id, nombre, meta, fecha_limite, moneda)
+    values (p_empresa, trim(p_nombre), p_meta, p_fecha_limite, v_moneda)
+    returning id into v_id;
+  else
+    if v_antes.id is null then
+      raise exception 'Ese fondo no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+
+    -- Editar sin mandar moneda la deja como estaba.
+    if p_moneda is null then
+      v_moneda := v_antes.moneda;
+    end if;
+
+    if v_moneda is distinct from v_antes.moneda
+       and exists (select 1 from public.movimientos_ahorro where ahorro_id = p_id) then
+      raise exception 'Ese fondo ya tiene movimientos: no se le puede cambiar la moneda. Creá otro fondo.'
+        using errcode = '22023';
+    end if;
+
+    update public.ahorros
+    set nombre = trim(p_nombre), meta = p_meta, fecha_limite = p_fecha_limite,
+        moneda = v_moneda, updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_ahorro(uuid, text, numeric, date, uuid, text) from public, anon;
+grant execute on function public.guardar_ahorro(uuid, text, numeric, date, uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. GUARDAR O RETIRAR, CON LO QUE COSTÓ
+-- ------------------------------------------------------------
+drop function if exists public.mover_ahorro(uuid, uuid, text, numeric, date, text);
+
+create or replace function public.mover_ahorro(
+  p_empresa     uuid,
+  p_ahorro      uuid,
+  p_tipo        text,
+  p_monto       numeric,
+  p_fecha       date default null,
+  p_nota        text default '',
+  p_monto_local numeric default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_saldo  numeric;
+  v_zona   text;
+  v_id     uuid;
+  v_moneda text;
+  v_propia text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if p_tipo not in ('aporte', 'retiro') then
+    raise exception 'Solo se puede guardar o retirar.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  select public.saldo_ahorro(a.id), a.moneda into v_saldo, v_moneda
+  from public.ahorros a where a.id = p_ahorro and a.empresa_id = p_empresa;
+
+  if v_saldo is null then
+    raise exception 'Ese fondo no existe en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if p_tipo = 'retiro' and p_monto > v_saldo then
+    raise exception 'Ese fondo tiene menos de lo que querés retirar.' using errcode = '22023';
+  end if;
+
+  select zona_horaria, moneda into v_zona, v_propia from public.empresas where id = p_empresa;
+
+  -- (073) Un fondo en otra moneda necesita lo que costó en la de la cuenta:
+  -- sin eso no se puede sumar a lo que guardaste este mes.
+  if v_moneda is not null and coalesce(p_monto_local, 0) <= 0 then
+    raise exception 'Escribí cuánto fue en %: sin eso no se puede sumar a tus números.', v_propia
+      using errcode = '22023';
+  end if;
+
+  insert into public.movimientos_ahorro (empresa_id, ahorro_id, tipo, monto, monto_local, fecha, nota, creado_por)
+  values (p_empresa, p_ahorro, p_tipo, p_monto,
+          case when v_moneda is null then null else p_monto_local end,
+          coalesce(p_fecha, (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date),
+          left(coalesce(p_nota, ''), 200), auth.uid())
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'id', v_id,
+    'saldo', v_saldo + case when p_tipo = 'aporte' then p_monto else -p_monto end);
+end $fn$;
+
+revoke all on function public.mover_ahorro(uuid, uuid, text, numeric, date, text, numeric) from public, anon;
+grant execute on function public.mover_ahorro(uuid, uuid, text, numeric, date, text, numeric) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. EL RESUMEN PERSONAL: SUMA EN LA MONEDA DE LA CUENTA
+--
+--    Mismo cuerpo que la 065, con lo marcado (073).
+-- ------------------------------------------------------------
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_c            record;
+  v_zona         text;
+  v_hoy          date;
+  v_entro        numeric := 0;
+  v_salio        numeric := 0;
+  v_cuotas       numeric := 0;
+  v_fijos_falta  numeric := 0;
+  v_ahorro_ciclo numeric := 0;
+  v_ahorro_total numeric := 0;
+  v_fiado_ciclo  numeric := 0;
+  v_fiado_total  numeric := 0;
+  v_dias         integer;
+  v_plan         jsonb;
+  v_sin_planear  numeric := 0;
+  v_entradas     jsonb;
+  v_salidas      jsonb;
+  v_fondos       jsonb;
+  v_de_donde     jsonb;
+  v_esperado     numeric := 0;
+  v_fijo_mes     numeric := 0;
+  v_hubo_ingreso boolean := false;
+  v_disponible   numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  select zona_horaria into v_zona from public.empresas where id = p_empresa;
+  v_hoy := (now() at time zone coalesce(v_zona, 'America/Asuncion'))::date;
+
+  select * into v_c from public.ciclo_personal(p_empresa);
+
+  select
+    coalesce(sum(m.monto) filter (where m.tipo in ('ingreso', 'venta')), 0),
+    coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+    bool_or(m.tipo in ('ingreso', 'venta'))
+  into v_entro, v_salio, v_hubo_ingreso
+  from public.movimientos m
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(d.monto_cuota), 0) into v_cuotas
+  from public.deudas d
+  where d.empresa_id = p_empresa
+    and d.activa and d.saldo > 0
+    and d.monto_cuota is not null
+    and d.vence_el between v_hoy and v_c.hasta;
+
+  select coalesce(sum(greatest(0, f.total - coalesce(g.gastado, 0))), 0)
+  into v_fijos_falta
+  from (
+    select categoria, sum(importe) as total
+    from public.gastos_fijos
+    where empresa_id = p_empresa and activo
+    group by categoria
+  ) f
+  left join lateral (
+    select sum(m.monto) as gastado
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = f.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true;
+
+  select coalesce(sum(case when ma.tipo = 'aporte' then coalesce(ma.monto_local, ma.monto) else -coalesce(ma.monto_local, ma.monto) end), 0)
+  into v_ahorro_ciclo
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa and ma.fecha between v_c.desde and v_c.hasta;
+
+  select coalesce(sum(case when ma.tipo = 'aporte' then coalesce(ma.monto_local, ma.monto) else -coalesce(ma.monto_local, ma.monto) end), 0)
+  into v_ahorro_total
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa;
+
+  -- Lo cobrado de fiado en ESTE ciclo. `cobrar_fiado` (056) no crea
+  -- movimiento a propósito, así que sin esto esa plata no aparecía en
+  -- ningún cálculo.
+  select coalesce(sum(f.monto) filter (where f.tipo = 'cobro'), 0)
+  into v_fiado_ciclo
+  from public.fiado f
+  where f.empresa_id = p_empresa and f.fecha between v_c.desde and v_c.hasta;
+
+  -- Lo que le deben en total, sumando a todos los que le deben. Mismo
+  -- cálculo que `resumen_fiado()` (054), acá sin el desglose por persona
+  -- porque este resumen ya tiene bastante.
+  select coalesce(sum(case when f.tipo = 'fio' then f.monto else -f.monto end), 0)
+  into v_fiado_total
+  from public.fiado f
+  where f.empresa_id = p_empresa;
+
+  v_dias := greatest(1, (v_c.hasta - v_hoy) + 1);
+  -- El fiado cobrado suma a lo disponible: es plata real en el bolsillo,
+  -- aunque no haya sido «entro» (eso ya se explicó por qué no).
+  v_disponible := v_entro - v_salio - v_cuotas - v_fijos_falta - v_ahorro_ciclo + v_fiado_ciclo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'categoria', p.categoria,
+      'planeado',  p.importe,
+      'gastado',   coalesce(g.total, 0),
+      'resta',     p.importe - coalesce(g.total, 0)
+    ) order by p.categoria), '[]'::jsonb)
+  into v_plan
+  from public.presupuesto p
+  left join lateral (
+    select sum(m.monto) as total
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+      and m.categoria = p.categoria
+      and m.fecha between v_c.desde and v_c.hasta
+  ) g on true
+  where p.empresa_id = p_empresa;
+
+  select coalesce(sum(m.monto), 0) into v_sin_planear
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+    and m.fecha between v_c.desde and v_c.hasta
+    and not exists (
+      select 1 from public.presupuesto p
+      where p.empresa_id = p_empresa and p.categoria = m.categoria);
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', i.id, 'nombre', i.nombre, 'importe', i.importe,
+      'dia_del_mes', i.dia_del_mes, 'principal', i.principal
+    ) order by i.principal desc, i.importe desc), '[]'::jsonb),
+    coalesce(sum(i.importe), 0)
+  into v_entradas, v_esperado
+  from public.ingresos_fijos i
+  where i.empresa_id = p_empresa and i.activo;
+
+  select
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', g.id, 'nombre', g.nombre, 'importe', g.importe,
+      'categoria', g.categoria, 'dia_del_mes', g.dia_del_mes, 'notas', g.notas
+    ) order by g.dia_del_mes nulls last, g.importe desc), '[]'::jsonb),
+    coalesce(sum(g.importe), 0)
+  into v_salidas, v_fijo_mes
+  from public.gastos_fijos g
+  where g.empresa_id = p_empresa and g.activo;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', a.id, 'nombre', a.nombre, 'meta', a.meta,
+    'fecha_limite', a.fecha_limite,
+    'saldo', s.saldo,
+    -- (073) En qué moneda está el fondo (null = la de la cuenta) y cuánto
+    -- costó en la moneda de la cuenta lo que tiene guardado.
+    'moneda', a.moneda,
+    'saldo_local', sl.saldo_local,
+    'falta', case when a.meta is null then null
+                  else greatest(0, a.meta - s.saldo) end,
+    'dias_para_limite', case when a.fecha_limite is null then null
+                             else (a.fecha_limite - v_hoy) end,
+    'por_mes', case
+                 when a.meta is null or a.fecha_limite is null then null
+                 when a.meta - s.saldo <= 0 then 0
+                 when a.fecha_limite < v_hoy then null
+                 else round((a.meta - s.saldo)
+                            / greatest(1, ceil((a.fecha_limite - v_hoy)::numeric / 30)), 2)
+               end
+  ) order by a.created_at), '[]'::jsonb)
+  into v_fondos
+  from public.ahorros a
+  cross join lateral (select public.saldo_ahorro(a.id) as saldo) s
+  cross join lateral (
+    select coalesce(sum(case when ma.tipo = 'aporte' then coalesce(ma.monto_local, ma.monto) else -coalesce(ma.monto_local, ma.monto) end), 0) as saldo_local
+    from public.movimientos_ahorro ma where ma.ahorro_id = a.id
+  ) sl
+  where a.empresa_id = p_empresa and a.activo;
+
+  select coalesce(jsonb_agg(x order by (x->>'monto')::numeric desc), '[]'::jsonb)
+  into v_de_donde
+  from (
+    select jsonb_build_object('categoria', m.categoria, 'monto', sum(m.monto)) as x
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo'
+      and m.tipo in ('ingreso', 'venta')
+      and m.fecha between v_c.desde and v_c.hasta
+    group by m.categoria
+  ) t;
+
+  return jsonb_build_object(
+    'desde', v_c.desde,
+    'hasta', v_c.hasta,
+    'dia_cobro', v_c.dia_cobro,
+    'dias_restantes', v_dias,
+    'entro', v_entro,
+    'salio', v_salio,
+    'cuotas_por_vencer', v_cuotas,
+    'fijos_por_pagar', v_fijos_falta,
+    'ahorrado_en_el_ciclo', v_ahorro_ciclo,
+    'ahorro_total', v_ahorro_total,
+    'fiado_cobrado_en_el_ciclo', v_fiado_ciclo,
+    'fiado_pendiente', v_fiado_total,
+    'disponible', v_disponible,
+    'por_dia', round(v_disponible / v_dias, 2),
+    'plan', v_plan,
+    'gastado_sin_planear', v_sin_planear,
+    'ingresos_fijos', v_entradas,
+    'gastos_fijos', v_salidas,
+    'ahorros', v_fondos,
+    'de_donde_vino', v_de_donde,
+    'esperado', v_esperado,
+    'fijo_mensual', v_fijo_mes,
+    'cobro_pendiente', v_esperado > 0 and not coalesce(v_hubo_ingreso, false)
+  );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. EL AHORRO DEL PERÍODO (EXCEL): TAMBIÉN
+--
+--    Mismo cuerpo que la 030, con lo marcado (073).
+-- ------------------------------------------------------------
+create or replace function public.resumen_ahorro_periodo(
+  p_empresa uuid,
+  p_desde   date,
+  p_hasta   date
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_aportado numeric := 0;
+  v_retirado numeric := 0;
+  v_fondos   jsonb;
+begin
+  -- Se lee con `es_admin` y no con `es_miembro`, igual que las tablas de
+  -- ahorro desde la 026: cuánto guarda alguien no lo ve un vendedor.
+  if not public.es_admin(p_empresa) then
+    raise exception 'No tenés acceso a esta cuenta.' using errcode = '42501';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception 'El rango de fechas no es válido.' using errcode = '22007';
+  end if;
+
+  select
+    coalesce(sum(coalesce(ma.monto_local, ma.monto)) filter (where ma.tipo = 'aporte'), 0),
+    coalesce(sum(coalesce(ma.monto_local, ma.monto)) filter (where ma.tipo = 'retiro'), 0)
+  into v_aportado, v_retirado
+  from public.movimientos_ahorro ma
+  where ma.empresa_id = p_empresa
+    and ma.fecha between p_desde and p_hasta;
+
+  -- Solo los fondos que se movieron en el período. Listar los quietos en cero
+  -- alargaría la hoja sin decir nada: que un fondo no se haya tocado en marzo
+  -- no es información, es ruido.
+  select coalesce(jsonb_agg(x order by (x->>'neto')::numeric desc), '[]'::jsonb)
+  into v_fondos
+  from (
+    select jsonb_build_object(
+      'nombre',   a.nombre,
+      'aportado', coalesce(sum(coalesce(ma.monto_local, ma.monto)) filter (where ma.tipo = 'aporte'), 0),
+      'retirado', coalesce(sum(coalesce(ma.monto_local, ma.monto)) filter (where ma.tipo = 'retiro'), 0),
+      'neto',     coalesce(sum(case when ma.tipo = 'aporte' then coalesce(ma.monto_local, ma.monto) else -coalesce(ma.monto_local, ma.monto) end), 0),
+      -- El saldo del fondo a hoy, que es de otro recorte y por eso va con su
+      -- propio nombre: la hoja lo rotula aparte para que nadie lo sume con
+      -- las columnas del período.
+      -- (073) En la moneda de la cuenta: la planilla suma y compara en una
+      -- sola moneda. Para un fondo en dólares es lo que costó lo guardado.
+      'saldo_hoy', (select coalesce(sum(case when m2.tipo = 'aporte' then coalesce(m2.monto_local, m2.monto)
+                                        else -coalesce(m2.monto_local, m2.monto) end), 0)
+                    from public.movimientos_ahorro m2 where m2.ahorro_id = a.id),
+      'moneda', a.moneda
+    ) as x
+    from public.movimientos_ahorro ma
+    join public.ahorros a on a.id = ma.ahorro_id
+    where ma.empresa_id = p_empresa
+      and ma.fecha between p_desde and p_hasta
+    group by a.id, a.nombre, a.moneda
+  ) t;
+
+  return jsonb_build_object(
+    'aportado', v_aportado,
+    'retirado', v_retirado,
+    'neto',     v_aportado - v_retirado,
+    'por_fondo', v_fondos
+  );
+end $fn$;
+
+revoke all on function public.resumen_ahorro_periodo(uuid, date, date) from public, anon;
+grant execute on function public.resumen_ahorro_periodo(uuid, date, date) to authenticated;
+
+
+-- ############################################################
+-- ##  074_billetera.sql
+-- ############################################################
+
+-- ============================================================
+-- ORDEN · Migración 074 · La billetera: cuánto hay en cada banco
+--
+-- LO QUE PIDIÓ MATÍAS (16/09/2026)
+--
+--   «Todas las personas tienen muchos bancos, no solamente un banco. En el
+--    Banco Familiar recibe su sueldo, tiene un poquito más de plata en otro
+--    banco, y así. Que puedan cargar cuánto saldo tiene cada banco.»
+--
+-- Y eligió que el saldo SE MUEVA CON LO QUE CARGA, no que se escriba a mano.
+--
+-- CÓMO SE MUEVE SOLO
+--
+-- Cada cuenta dice qué formas de pago entran en ella: «Efectivo» recibe lo
+-- cobrado en efectivo; «Banco Familiar», las transferencias y la tarjeta.
+-- Cuando se carga una venta, un gasto o un ingreso, un trigger mira su forma
+-- de pago y lo anota en esa cuenta.
+--
+-- Así no hubo que tocar ninguna de las puertas por donde entra un
+-- movimiento —la venta, el gasto a mano, la voz, la foto, el ingreso fijo,
+-- el pago de una deuda—: todas terminan en `movimientos`, y ahí se resuelve.
+--
+--   SALDO = saldo con que se creó la cuenta
+--         + lo que entró por ella (ventas e ingresos activos)
+--         − lo que salió (gastos activos)
+--         + ajustes y transferencias.
+--
+-- Lo cargado ANTES de crear la cuenta no cuenta: ese pasado ya está dentro
+-- del saldo inicial que la persona escribió al crearla.
+--
+-- LO QUE NO HACE, Y HAY QUE DECIRLO
+--
+-- En Paraguay no hay forma de conectarse a los bancos. El saldo es el que
+-- calcula Orden con lo que la persona carga, y puede no coincidir con el del
+-- banco (una comisión, algo que se olvidó cargar). Para eso está «ajustar
+-- saldo»: queda como un ajuste con fecha, no se reescribe la historia.
+--
+-- Solo el dueño y los administradores: cuánto hay en cada banco no lo ve un
+-- vendedor.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LAS CUENTAS
+-- ------------------------------------------------------------
+create table if not exists public.cuentas_dinero (
+  id            uuid primary key default gen_random_uuid(),
+  empresa_id    uuid not null references public.empresas (id) on delete cascade,
+  nombre        text not null check (char_length(trim(nombre)) between 1 and 40),
+  tipo          text not null default 'banco' check (tipo in ('banco', 'efectivo', 'billetera')),
+  saldo_inicial numeric(14,2) not null default 0,
+  -- Qué formas de pago caen acá. Cada forma, en una sola cuenta.
+  metodos       text[] not null default '{}',
+  activa        boolean not null default true,
+  orden         smallint not null default 0,
+  creada_por    uuid references auth.users (id) on delete set null,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists cuentas_dinero_empresa_idx on public.cuentas_dinero (empresa_id) where activa;
+
+alter table public.cuentas_dinero enable row level security;
+revoke all on public.cuentas_dinero from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. AJUSTES Y TRANSFERENCIAS
+--
+--    Una transferencia son dos filas con el mismo `par`: sale de una y entra
+--    en la otra. Pasar plata del banco al bolsillo no es un gasto ni un
+--    ingreso: no cambia cuánto tenés, cambia dónde.
+-- ------------------------------------------------------------
+create table if not exists public.ajustes_cuenta (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  cuenta_id  uuid not null references public.cuentas_dinero (id) on delete cascade,
+  tipo       text not null check (tipo in ('ajuste', 'transferencia')),
+  monto      numeric(14,2) not null check (monto <> 0),
+  par        uuid,
+  fecha      date not null,
+  nota       text not null default '' check (char_length(nota) <= 200),
+  creado_por uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ajustes_cuenta_idx on public.ajustes_cuenta (cuenta_id, fecha desc);
+
+alter table public.ajustes_cuenta enable row level security;
+revoke all on public.ajustes_cuenta from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. CADA MOVIMIENTO, EN SU CUENTA
+-- ------------------------------------------------------------
+alter table public.movimientos
+  add column if not exists cuenta_id uuid references public.cuentas_dinero (id) on delete set null;
+
+create index if not exists movimientos_cuenta_idx
+  on public.movimientos (cuenta_id) where cuenta_id is not null;
+
+create or replace function public.cuenta_de_metodo(p_empresa uuid, p_metodo text)
+returns uuid language sql stable security definer set search_path = public as $fn$
+  select c.id from public.cuentas_dinero c
+  where c.empresa_id = p_empresa and c.activa and p_metodo = any (c.metodos)
+  order by c.orden, c.created_at
+  limit 1;
+$fn$;
+
+revoke all on function public.cuenta_de_metodo(uuid, text) from public, anon, authenticated;
+
+create or replace function public.anotar_en_su_cuenta()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if tg_op = 'UPDATE' and new.metodo_pago is distinct from old.metodo_pago then
+    -- Si se corrige la forma de pago, el movimiento se muda de cuenta.
+    new.cuenta_id := public.cuenta_de_metodo(new.empresa_id, new.metodo_pago);
+  elsif tg_op = 'UPDATE' and new.cuenta_id is distinct from old.cuenta_id
+        and new.cuenta_id is not null
+        and not exists (select 1 from public.cuentas_dinero c
+                        where c.id = new.cuenta_id and c.empresa_id = new.empresa_id) then
+    new.cuenta_id := old.cuenta_id;
+  elsif tg_op = 'INSERT' then
+    -- Una cuenta de OTRO negocio no se acepta aunque alguien arme el pedido a
+    -- mano: sería meterle plata en el saldo de un desconocido.
+    if new.cuenta_id is not null
+       and not exists (select 1 from public.cuentas_dinero c
+                       where c.id = new.cuenta_id and c.empresa_id = new.empresa_id) then
+      new.cuenta_id := null;
+    end if;
+    if new.cuenta_id is null then
+      new.cuenta_id := public.cuenta_de_metodo(new.empresa_id, new.metodo_pago);
+    end if;
+  end if;
+  return new;
+end $fn$;
+
+revoke all on function public.anotar_en_su_cuenta() from public, anon, authenticated;
+
+drop trigger if exists anotar_en_su_cuenta on public.movimientos;
+create trigger anotar_en_su_cuenta
+  before insert or update on public.movimientos
+  for each row execute function public.anotar_en_su_cuenta();
+
+-- ------------------------------------------------------------
+-- 4. EL SALDO
+-- ------------------------------------------------------------
+create or replace function public.saldo_cuenta_dinero(p_cuenta uuid)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select c.saldo_inicial
+       + coalesce((select sum(case when m.tipo = 'gasto' then -m.monto else m.monto end)
+                   from public.movimientos m
+                   where m.cuenta_id = c.id and m.empresa_id = c.empresa_id and m.estado = 'activo'), 0)
+       + coalesce((select sum(a.monto) from public.ajustes_cuenta a where a.cuenta_id = c.id), 0)
+  from public.cuentas_dinero c
+  where c.id = p_cuenta;
+$fn$;
+
+revoke all on function public.saldo_cuenta_dinero(uuid) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LA BILLETERA ENTERA
+-- ------------------------------------------------------------
+create or replace function public.billetera(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_cuentas jsonb;
+  v_zona    text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', c.id,
+    'nombre', c.nombre,
+    'tipo', c.tipo,
+    'metodos', to_jsonb(c.metodos),
+    'saldo', s.saldo,
+    -- Lo que se movió este mes por esta cuenta, para que el número no esté solo.
+    'entro_mes', coalesce(mes.entro, 0),
+    'salio_mes', coalesce(mes.salio, 0)
+  ) order by c.orden, c.created_at), '[]'::jsonb)
+  into v_cuentas
+  from public.cuentas_dinero c
+  cross join lateral (select public.saldo_cuenta_dinero(c.id) as saldo) s
+  left join lateral (
+    select
+      sum(m.monto) filter (where m.tipo <> 'gasto') as entro,
+      sum(m.monto) filter (where m.tipo = 'gasto')  as salio
+    from public.movimientos m
+    where m.cuenta_id = c.id and m.estado = 'activo'
+      and m.fecha >= date_trunc('month', (now() at time zone v_zona))::date
+  ) mes on true
+  where c.empresa_id = p_empresa and c.activa;
+
+  return jsonb_build_object(
+    'cuentas', v_cuentas,
+    'total', coalesce((select sum((x->>'saldo')::numeric) from jsonb_array_elements(v_cuentas) x), 0)
+  );
+end $fn$;
+
+revoke all on function public.billetera(uuid) from public, anon;
+grant execute on function public.billetera(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. CREAR O EDITAR UNA CUENTA
+--
+--    El saldo inicial se escribe al crearla y después no se toca: una
+--    corrección posterior es un ajuste con fecha (ver 7). Si se toca el
+--    inicial, cambia todo el pasado sin dejar rastro.
+--
+--    Una forma de pago va a una sola cuenta: marcar «transferencia» en el
+--    Itaú la saca del Familiar. Si no, cada cobro tendría dos casas.
+-- ------------------------------------------------------------
+create or replace function public.guardar_cuenta_dinero(
+  p_empresa       uuid,
+  p_nombre        text,
+  p_tipo          text default 'banco',
+  p_saldo_inicial numeric default 0,
+  p_metodos       text[] default '{}',
+  p_id            uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id      uuid;
+  v_metodos text[];
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre: el del banco, «Efectivo», «Tigo Money».' using errcode = '22023';
+  end if;
+
+  if coalesce(p_tipo, '') not in ('banco', 'efectivo', 'billetera') then
+    raise exception 'Ese tipo de cuenta no existe.' using errcode = '22023';
+  end if;
+
+  select coalesce(array_agg(distinct m), '{}') into v_metodos
+  from unnest(coalesce(p_metodos, '{}')) m
+  where m in ('efectivo', 'transferencia', 'tarjeta', 'credito', 'otro');
+
+  if p_id is null then
+    if (select count(*) from public.cuentas_dinero where empresa_id = p_empresa and activa) >= 20 then
+      raise exception 'Ya tenés 20 cuentas. Archivá alguna antes de sumar otra.' using errcode = '22023';
+    end if;
+
+    insert into public.cuentas_dinero (empresa_id, nombre, tipo, saldo_inicial, metodos, orden, creada_por)
+    values (p_empresa, trim(p_nombre), p_tipo, coalesce(p_saldo_inicial, 0), v_metodos,
+            coalesce((select max(orden) + 1 from public.cuentas_dinero where empresa_id = p_empresa), 0),
+            auth.uid())
+    returning id into v_id;
+  else
+    update public.cuentas_dinero
+    set nombre = trim(p_nombre), tipo = p_tipo, metodos = v_metodos, updated_at = now()
+    where id = p_id and empresa_id = p_empresa and activa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  -- Cada forma de pago, en una sola casa.
+  update public.cuentas_dinero
+  set metodos = array(select x from unnest(metodos) x where not (x = any (v_metodos))),
+      updated_at = now()
+  where empresa_id = p_empresa and id <> v_id and metodos && v_metodos;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid) from public, anon;
+grant execute on function public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 7. AJUSTAR EL SALDO A LO QUE DICE EL BANCO
+-- ------------------------------------------------------------
+create or replace function public.ajustar_saldo_cuenta(
+  p_empresa    uuid,
+  p_cuenta     uuid,
+  p_saldo_real numeric,
+  p_nota       text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_saldo numeric;
+  v_dif   numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if p_saldo_real is null then
+    raise exception 'Escribí cuánto dice tu banco que tenés.' using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from public.cuentas_dinero where id = p_cuenta and empresa_id = p_empresa and activa) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  v_saldo := public.saldo_cuenta_dinero(p_cuenta);
+  v_dif := round(p_saldo_real - v_saldo, 2);
+
+  if v_dif <> 0 then
+    insert into public.ajustes_cuenta (empresa_id, cuenta_id, tipo, monto, fecha, nota, creado_por)
+    values (p_empresa, p_cuenta, 'ajuste', v_dif, public.hoy_empresa(p_empresa),
+            left(coalesce(trim(p_nota), ''), 200), auth.uid());
+  end if;
+
+  return jsonb_build_object('ok', true, 'antes', v_saldo, 'ahora', p_saldo_real, 'diferencia', v_dif);
+end $fn$;
+
+revoke all on function public.ajustar_saldo_cuenta(uuid, uuid, numeric, text) from public, anon;
+grant execute on function public.ajustar_saldo_cuenta(uuid, uuid, numeric, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 8. PASAR PLATA DE UNA CUENTA A OTRA
+-- ------------------------------------------------------------
+create or replace function public.transferir_entre_cuentas(
+  p_empresa uuid,
+  p_desde   uuid,
+  p_hacia   uuid,
+  p_monto   numeric,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_par uuid := gen_random_uuid();
+  v_hoy date;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  if p_desde = p_hacia then
+    raise exception 'Elegí dos cuentas distintas.' using errcode = '22023';
+  end if;
+
+  if (select count(*) from public.cuentas_dinero
+      where id in (p_desde, p_hacia) and empresa_id = p_empresa and activa) <> 2 then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  v_hoy := public.hoy_empresa(p_empresa);
+
+  insert into public.ajustes_cuenta (empresa_id, cuenta_id, tipo, monto, par, fecha, nota, creado_por)
+  values
+    (p_empresa, p_desde, 'transferencia', -p_monto, v_par, v_hoy, left(coalesce(trim(p_nota), ''), 200), auth.uid()),
+    (p_empresa, p_hacia, 'transferencia',  p_monto, v_par, v_hoy, left(coalesce(trim(p_nota), ''), 200), auth.uid());
+
+  return jsonb_build_object('ok', true, 'par', v_par);
+end $fn$;
+
+revoke all on function public.transferir_entre_cuentas(uuid, uuid, uuid, numeric, text) from public, anon;
+grant execute on function public.transferir_entre_cuentas(uuid, uuid, uuid, numeric, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 9. SACAR UNA CUENTA
+--
+--    Sin historia se borra. Con historia se archiva: los movimientos viejos
+--    siguen diciendo de dónde salieron, y deja de recibir los nuevos.
+-- ------------------------------------------------------------
+create or replace function public.quitar_cuenta_dinero(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.cuentas_dinero where id = p_id and empresa_id = p_empresa) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  if exists (select 1 from public.movimientos where cuenta_id = p_id)
+     or exists (select 1 from public.ajustes_cuenta where cuenta_id = p_id) then
+    update public.cuentas_dinero set activa = false, metodos = '{}', updated_at = now()
+    where id = p_id;
+    return jsonb_build_object('ok', true, 'archivada', true);
+  end if;
+
+  delete from public.cuentas_dinero where id = p_id;
+  return jsonb_build_object('ok', true, 'archivada', false);
+end $fn$;
+
+revoke all on function public.quitar_cuenta_dinero(uuid, uuid) from public, anon;
+grant execute on function public.quitar_cuenta_dinero(uuid, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  075_cada_movimiento_su_cuenta.sql
+-- ############################################################
+
+-- ============================================================
+-- 075 · EN QUÉ CUENTA ENTRÓ O DE CUÁL SALIÓ, ELEGIDO A MANO
+-- ============================================================
+--
+-- La 074 hizo que cada movimiento caiga solo en la cuenta que recibe su
+-- forma de pago. Alcanza cuando hay un banco: lo cobrado por transferencia
+-- va ahí y listo. Con dos bancos ya no alcanza —«transferencia» no dice a
+-- cuál de los dos— y Matías lo pidió explícito: «si tengo varias cuentas en
+-- mi billetera, quiero elegir de qué banco salió, o si fue en efectivo».
+--
+-- Para los movimientos eso ya funciona sin tocar la base: el disparador
+-- `anotar_en_su_cuenta` (074) respeta la `cuenta_id` que venga escrita y solo
+-- la deduce de la forma de pago cuando llega vacía. Y si alguien manda la
+-- cuenta de otro negocio, la descarta.
+--
+-- Lo que falta es el OTRO pedido: el sueldo. «El ingreso fijo normalmente es
+-- un sueldo, y normalmente se cobra en un banco en específico.» Eso es parte
+-- de la definición del ingreso, no de un movimiento suelto: se guarda una vez
+-- y después cada cobro ya sabe dónde cae.
+--
+-- `on delete set null`: si la cuenta se archiva, el sueldo no se borra —
+-- queda sin cuenta asignada, que es exactamente lo que pasó.
+
+alter table public.ingresos_fijos
+  add column if not exists cuenta_id uuid references public.cuentas_dinero (id) on delete set null;
+
+comment on column public.ingresos_fijos.cuenta_id is
+  'En qué cuenta de la billetera se cobra este ingreso. Null = sin definir.';
+
+-- La versión de seis parámetros se borra en vez de dejarla al lado: con las
+-- dos vivas, una llamada por nombre queda ambigua y PostgREST no sabe cuál
+-- elegir.
+drop function if exists public.guardar_ingreso_fijo(uuid, text, numeric, integer, boolean, uuid);
+
+create or replace function public.guardar_ingreso_fijo(
+  p_empresa   uuid,
+  p_nombre    text,
+  p_importe   numeric,
+  p_dia       integer default 1,
+  p_principal boolean default false,
+  p_id        uuid default null,
+  p_cuenta    uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare v_id uuid;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre, para saber qué es cuando entre.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_importe, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  -- Una cuenta de otro negocio no se acepta ni por error ni a propósito.
+  if p_cuenta is not null and not exists (
+    select 1 from public.cuentas_dinero c
+    where c.id = p_cuenta and c.empresa_id = p_empresa
+  ) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  -- Si este pasa a ser el principal, el anterior deja de serlo. Se hace
+  -- ANTES de escribir, porque el índice único no admite dos.
+  if coalesce(p_principal, false) then
+    update public.ingresos_fijos
+    set principal = false, updated_at = now()
+    where empresa_id = p_empresa and principal
+      and (p_id is null or id <> p_id);
+  end if;
+
+  if p_id is null then
+    insert into public.ingresos_fijos (empresa_id, nombre, importe, dia_del_mes, principal, cuenta_id)
+    values (p_empresa, trim(p_nombre), p_importe,
+            least(greatest(coalesce(p_dia, 1), 1), 31), coalesce(p_principal, false), p_cuenta)
+    returning id into v_id;
+  else
+    update public.ingresos_fijos
+    set nombre = trim(p_nombre), importe = p_importe,
+        dia_del_mes = least(greatest(coalesce(p_dia, 1), 1), 31),
+        principal = coalesce(p_principal, false),
+        cuenta_id = p_cuenta, updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese ingreso no existe en esta cuenta.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_ingreso_fijo(uuid, text, numeric, integer, boolean, uuid, uuid)
+  from public, anon;
+grant execute on function public.guardar_ingreso_fijo(uuid, text, numeric, integer, boolean, uuid, uuid)
+  to authenticated;
+
+-- ------------------------------------------------------------
+-- LAS CUENTAS, SOLO PARA ELEGIR UNA
+-- ------------------------------------------------------------
+--
+-- `cuentas_dinero` no se lee directo desde el navegador (la 074 le revocó
+-- todo) y `billetera()` calcula el saldo de cada cuenta, que acá no hace
+-- falta: para llenar un selector alcanzan el nombre y el tipo. Esta devuelve
+-- eso y nada más, y solo a quien administra la cuenta.
+create or replace function public.cuentas_para_elegir(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'nombre', c.nombre, 'tipo', c.tipo)
+                            order by c.orden, c.created_at), '[]'::jsonb)
+  into v_lista
+  from public.cuentas_dinero c
+  where c.empresa_id = p_empresa and c.activa;
+
+  return v_lista;
+end $fn$;
+
+revoke all on function public.cuentas_para_elegir(uuid) from public, anon;
+grant execute on function public.cuentas_para_elegir(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  076_avisos_con_mas_fuerza.sql
+-- ############################################################
+
+-- ============================================================
+-- 076 · LOS AVISOS DIARIOS, CON MÁS FUERZA
+-- ============================================================
+--
+-- No hay widget de pantalla de inicio: eso pide una app nativa (Swift para
+-- iPhone, Kotlin para Android) subida a cada tienda, y Orden es una PWA a
+-- propósito —se instala en un minuto, sin pasar por ninguna revisión—. Es
+-- una limitación real del sistema, no una que se resuelva con código.
+--
+-- Matías, de acuerdo: «por ahora metámosle más fuerza a los avisos, y
+-- cuando subamos a las tiendas metemos los widgets». Esto es la primera
+-- parte: los avisos de la mañana, la tarde y la noche (071) ahora también
+-- dicen la racha de días seguidos, que es lo que en Duolingo hace que la app
+-- se sienta presente sin necesitar un widget.
+--
+-- La racha ya se calculaba para el panel (`racha_empresa`, 008), pero esa
+-- función exige `auth.uid()` porque la llama la persona con su sesión. Acá
+-- la llama un cron con el rol de servicio, sin sesión de nadie: se repite el
+-- mismo cálculo, sin la comprobación de sesión, adentro de esta función.
+
+create or replace function public.avisos_del_dia()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',  e.id,
+      'nombre',      e.nombre,
+      'moneda',      e.moneda,
+      'tipo_cuenta', coalesce(e.tipo_cuenta, 'emprendedor'),
+      -- La fecha de hoy EN LA ZONA DEL NEGOCIO: con ella se arma la clave
+      -- de «una vez por día».
+      'fecha',       z.hoy,
+      'hoy', jsonb_build_object(
+        'ventas', a.ventas_hoy, 'ingresos', a.ingresos_hoy, 'gastos', a.gastos_hoy,
+        'ganancia', a.ventas_hoy + a.ingresos_hoy - a.costo_hoy - a.gastos_hoy, 'cargados', a.n_hoy),
+      'ayer', jsonb_build_object(
+        'ventas', a.ventas_ayer, 'ingresos', a.ingresos_ayer, 'gastos', a.gastos_ayer,
+        'ganancia', a.ventas_ayer + a.ingresos_ayer - a.costo_ayer - a.gastos_ayer, 'cargados', a.n_ayer),
+      -- Días seguidos cargando, la misma cuenta que ve el panel (008). Si
+      -- hoy ya cargó algo, cuenta hasta hoy; si no, hasta ayer —que es
+      -- justo lo que hace falta a la tarde para el empujón «no la cortés»—.
+      'racha', jsonb_build_object('dias', r.dias, 'en_riesgo', r.en_riesgo),
+      'destinatarios', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'user_id', mi.user_id, 'idioma', coalesce(p.idioma, 'es'))), '[]'::jsonb)
+        from public.miembros mi
+        left join public.preferencias p on p.user_id = mi.user_id
+        where mi.empresa_id = e.id
+          and mi.rol in ('propietario', 'admin')
+          and coalesce(p.aviso_diario, true)
+      )
+    ) as x
+    from public.empresas e
+    cross join lateral (
+      select (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as hoy
+    ) z
+    cross join lateral (
+      select
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'venta'), 0)       as ventas_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'ingreso'), 0)     as ingresos_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'gasto'), 0)       as gastos_hoy,
+        coalesce(sum(coalesce(m.costo_total, 0)) filter (where m.fecha = z.hoy and m.tipo = 'venta'), 0) as costo_hoy,
+        count(*) filter (where m.fecha = z.hoy)::int                                       as n_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'venta'), 0)   as ventas_ayer,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'ingreso'), 0) as ingresos_ayer,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'gasto'), 0)   as gastos_ayer,
+        coalesce(sum(coalesce(m.costo_total, 0)) filter (where m.fecha = z.hoy - 1 and m.tipo = 'venta'), 0) as costo_ayer,
+        count(*) filter (where m.fecha = z.hoy - 1)::int                                   as n_ayer
+      from public.movimientos m
+      where m.empresa_id = e.id and m.estado = 'activo'
+        and m.fecha between z.hoy - 1 and z.hoy
+    ) a
+    cross join lateral (
+      with dias as (
+        select distinct m.fecha
+        from public.movimientos m
+        where m.empresa_id = e.id and m.estado = 'activo' and m.fecha <= z.hoy
+      ),
+      numeradas as (
+        select fecha, (fecha - (row_number() over (order by fecha))::int) as isla
+        from dias
+      ),
+      rachas as (
+        select isla, count(*)::int as largo, max(fecha) as hasta
+        from numeradas group by isla
+      ),
+      vigente as (
+        select * from rachas where hasta in (z.hoy, z.hoy - 1) order by hasta desc limit 1
+      )
+      select
+        coalesce((select largo from vigente), 0) as dias,
+        -- En riesgo: la racha llega hasta ayer y hoy todavía no cargó nada.
+        -- Sin racha (dias = 0) esto da false, que es lo correcto.
+        coalesce((select hasta from vigente), z.hoy - 2) = z.hoy - 1 as en_riesgo
+    ) r
+    where (
+        coalesce(e.tipo_cuenta, 'emprendedor') = 'personal'
+        or public.rubro_cierra_el_dia(e.rubro, e.tipo_cuenta)
+      )
+      -- Una cuenta vencida no puede cargar: pedirle que cargue es mentirle.
+      and public.puede_cargar(e.id)
+      and (
+        e.created_at > now() - interval '7 days'
+        or exists (select 1 from public.movimientos m2
+                   where m2.empresa_id = e.id and m2.created_at > now() - interval '30 days')
+      )
+  ) s;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.avisos_del_dia() from public, anon, authenticated;
+grant execute on function public.avisos_del_dia() to service_role;
+
+
+-- ############################################################
+-- ##  077_plan_basico.sql
+-- ############################################################
+
+-- ============================================================
+-- 077 · EL PLAN BÁSICO: UN NEGOCIO DE UNA SOLA PERSONA
+-- ============================================================
+--
+-- Hasta hoy un negocio tenía dos precios: Pro (190.000, hasta 3 personas) y
+-- Premium (250.000, hasta 15). Los dos cobran por gente que muchos no
+-- tienen: el que atiende solo su despensa, el que arregla celulares, el que
+-- corta el pelo en su casa. A ese le estábamos cobrando vendedores que nunca
+-- va a cargar.
+--
+-- Decisión de Matías: un tercer plan, **Básico**, a 110.000 Gs. Es el negocio
+-- completo —ventas, gastos, fiado, agenda, billetera, reportes, Excel— con
+-- una sola diferencia: **una sola persona**. Sin vendedores. Vale para todos
+-- los rubros: comercio, servicios y oficios.
+--
+-- POR QUÉ `miembros = 1` Y NO UN CAMPO NUEVO
+--
+-- El tope de gente ya sale de `limites_plan()` y lo aplica `tope_de_miembros`
+-- (048), que suma `tope_vendedores + 1` cuando la administración cobró
+-- sillas. Con `miembros = 1` el plan Básico queda cerrado a una persona sin
+-- tocar una sola función más, y si algún día alguien paga una silla suelta,
+-- el mecanismo de siempre la habilita.
+
+-- ------------------------------------------------------------
+-- 1. LOS CHECKS CONOCEN EL PLAN NUEVO
+-- ------------------------------------------------------------
+alter table public.empresas      drop constraint if exists empresas_plan_check;
+alter table public.suscripciones drop constraint if exists suscripciones_plan_check;
+alter table public.precios       drop constraint if exists precios_plan_check;
+
+alter table public.empresas
+  add constraint empresas_plan_check check (plan in ('gratis', 'basico', 'pro', 'negocio'));
+
+alter table public.suscripciones
+  add constraint suscripciones_plan_check check (plan in ('gratis', 'basico', 'pro', 'negocio'));
+
+alter table public.precios
+  add constraint precios_plan_check check (plan in ('basico', 'pro', 'negocio'));
+
+-- ------------------------------------------------------------
+-- 2. QUÉ INCLUYE
+--
+--    Todo lo de un negocio, con una persona. Las capturas con IA van en 300
+--    —la mitad de Pro— porque es el único costo que crece con el uso y el
+--    plan sale casi la mitad. No es un recorte de funciones: es el mismo
+--    Orden, para uno solo.
+-- ------------------------------------------------------------
+create or replace function public.limites_plan(p_plan text)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case coalesce(p_plan, 'gratis')
+    when 'negocio' then jsonb_build_object(
+      'capturas_mes', 3000, 'miembros', 15,
+      'adjuntos', true, 'excel', true, 'avisos', true, 'escritura', true)
+    when 'pro' then jsonb_build_object(
+      'capturas_mes', 600, 'miembros', 3,
+      'adjuntos', true, 'excel', true, 'avisos', true, 'escritura', true)
+    when 'basico' then jsonb_build_object(
+      'capturas_mes', 300, 'miembros', 1,
+      'adjuntos', true, 'excel', true, 'avisos', true, 'escritura', true)
+    else jsonb_build_object(
+      'capturas_mes', 0, 'miembros', 1,
+      'adjuntos', false, 'excel', true, 'avisos', true, 'escritura', false)
+  end;
+$fn$;
+
+-- ------------------------------------------------------------
+-- 3. EL PRECIO
+--
+--    Solo para cuentas de negocio: una cuenta personal ya es de una sola
+--    persona y tiene su propio precio. El anual son once meses, como en los
+--    otros dos planes.
+-- ------------------------------------------------------------
+insert into public.precios (plan, tipo_cuenta, moneda, periodo, importe) values
+  ('basico', 'emprendedor', 'PYG', 'mensual',  110000),
+  ('basico', 'emprendedor', 'PYG', 'anual',   1210000),
+  ('basico', 'emprendedor', 'USD', 'mensual',      19),
+  ('basico', 'emprendedor', 'USD', 'anual',       209)
+on conflict (tipo_cuenta, plan, moneda, periodo) do nothing;
+
+
+-- ############################################################
+-- ##  078_descuento_por_racha.sql
+-- ############################################################
+
+-- ============================================================
+-- 078 · EL DESCUENTO QUE SE GANA USANDO ORDEN EN LA PRUEBA
+-- ============================================================
+--
+-- Idea de Matías: la prueba gratis no alcanza para que alguien tome el
+-- hábito. Hay que darle un motivo para volver TODOS los días, y que ese
+-- motivo valga plata: **si durante la prueba junta una racha de días
+-- seguidos cargando, se lleva un descuento en su primer mes.**
+--
+--   · Negocio  → 8 días seguidos.
+--   · Personal → 5 días seguidos (carga menos cosas por día; pedirle ocho
+--     sería pedirle el doble de esfuerzo por el mismo premio).
+--   · El premio: 18% del primer pago.
+--
+-- POR QUÉ NO SE GUARDA UN «YA LO GANÓ» EN NINGUNA COLUMNA
+--
+-- Un premio ganado no se puede perder, y una bandera se puede perder: un
+-- borrado, un rollback, un movimiento anulado y la persona que cumplió ve
+-- que su descuento desapareció. Acá se calcula de los hechos —qué días
+-- tuvieron movimientos dentro de la ventana de la prueba— así que la
+-- respuesta es siempre la misma y se puede auditar mirando la lista de
+-- movimientos. Si mañana cambia el objetivo, los que ya lo cumplieron lo
+-- siguen teniendo.
+--
+-- La ventana es la prueba y nada más: desde que se creó la suscripción hasta
+-- que termina (o hasta hoy, si sigue corriendo). Cargar después de pagar ya
+-- no suma — el descuento es para el primer mes.
+
+-- ------------------------------------------------------------
+-- 1. LOS NÚMEROS SE EDITAN, NO SE DESPLIEGAN
+--
+--    Mismo criterio que la comisión y el retiro mínimo: viven en
+--    `ajustes_orden` para que cambiar la promo sea un UPDATE.
+-- ------------------------------------------------------------
+alter table public.ajustes_orden
+  add column if not exists descuento_racha_porcentaje numeric(5,2) not null default 18
+    check (descuento_racha_porcentaje >= 0 and descuento_racha_porcentaje <= 100),
+  add column if not exists racha_objetivo_negocio integer not null default 8
+    check (racha_objetivo_negocio between 1 and 60),
+  add column if not exists racha_objetivo_personal integer not null default 5
+    check (racha_objetivo_personal between 1 and 60);
+
+comment on column public.ajustes_orden.descuento_racha_porcentaje is
+  'Cuánto se descuenta del primer mes al que junta la racha durante la prueba.';
+
+-- ------------------------------------------------------------
+-- 2. CUÁNTO LLEVA Y CUÁNTO LE FALTA
+--
+--    `mejor` es la racha más larga DENTRO de la prueba, no la de hoy: quien
+--    hizo ocho días y después se tomó el domingo no perdió lo ganado.
+-- ------------------------------------------------------------
+create or replace function public.descuento_por_racha(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_tipo     text;
+  v_zona     text;
+  v_desde    date;
+  v_hasta    date;
+  v_hoy      date;
+  v_objetivo integer;
+  v_pct      numeric;
+  v_mejor    integer := 0;
+  v_vigente  boolean := false;
+  v_sus      record;
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(e.tipo_cuenta, 'emprendedor'), coalesce(e.zona_horaria, 'America/Asuncion')
+  into v_tipo, v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select descuento_racha_porcentaje,
+         case when v_tipo = 'personal' then racha_objetivo_personal else racha_objetivo_negocio end
+  into v_pct, v_objetivo
+  from public.ajustes_orden where unica;
+
+  v_pct      := coalesce(v_pct, 18);
+  v_objetivo := coalesce(v_objetivo, case when v_tipo = 'personal' then 5 else 8 end);
+  v_hoy      := (now() at time zone v_zona)::date;
+
+  select s.* into v_sus from public.suscripciones s where s.empresa_id = p_empresa;
+
+  -- Sin suscripción no hay prueba de la que hablar.
+  if v_sus.empresa_id is null then
+    return jsonb_build_object('objetivo', v_objetivo, 'mejor', 0, 'faltan', v_objetivo,
+                              'logrado', false, 'porcentaje', v_pct, 'vigente', false);
+  end if;
+
+  v_desde := (v_sus.created_at at time zone v_zona)::date;
+  v_hasta := least(v_hoy, (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date);
+  -- Todavía se puede sumar mientras la prueba corre y no se pagó nada.
+  v_vigente := v_sus.estado = 'prueba' and v_hoy <= (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date;
+
+  with dias as (
+    select distinct m.fecha
+    from public.movimientos m
+    where m.empresa_id = p_empresa
+      and m.estado = 'activo'
+      and m.fecha between v_desde and v_hasta
+  ),
+  numeradas as (
+    select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+  )
+  select coalesce(max(largo), 0) into v_mejor
+  from (select count(*)::int as largo from numeradas group by isla) r;
+
+  return jsonb_build_object(
+    'objetivo',   v_objetivo,
+    'mejor',      v_mejor,
+    'faltan',     greatest(0, v_objetivo - v_mejor),
+    'logrado',    v_mejor >= v_objetivo,
+    'porcentaje', v_pct,
+    'vigente',    v_vigente
+  );
+end $fn$;
+
+revoke all on function public.descuento_por_racha(uuid) from public, anon;
+grant execute on function public.descuento_por_racha(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LOS NÚMEROS DE LA PROMO, PARA LA PORTADA
+--
+--    La portada la lee alguien que todavía no tiene cuenta, así que esto es
+--    público. No dice nada de nadie: solo cuánto se descuenta y cuántos días
+--    hay que juntar. Si el número se cambia en `ajustes_orden`, la portada
+--    lo dice al instante — sin desplegar.
+-- ------------------------------------------------------------
+create or replace function public.promo_de_la_prueba()
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'porcentaje', coalesce((select descuento_racha_porcentaje from public.ajustes_orden where unica), 18),
+    'negocio',    coalesce((select racha_objetivo_negocio    from public.ajustes_orden where unica), 8),
+    'personal',   coalesce((select racha_objetivo_personal   from public.ajustes_orden where unica), 5)
+  );
+$fn$;
+
+grant execute on function public.promo_de_la_prueba() to anon, authenticated;
+
+
+-- ############################################################
+-- ##  079_descuento_por_constancia.sql
+-- ############################################################
+
+-- ============================================================
+-- 079 · EL DESCUENTO QUE SE MANTIENE: RACHA VIVA, 20% MENOS
+-- ============================================================
+--
+-- La 078 le puso premio a la prueba: junta la racha y tu PRIMER mes sale más
+-- barato. Matías: «eso está bien para que arranque, pero después se acaba.
+-- Si mantenés la racha de 30 días, siempre vas a tener el 20%». O sea: el
+-- premio deja de ser de bienvenida y pasa a ser por constancia.
+--
+-- LAS DOS ETAPAS, UNA SOLA FUNCIÓN
+--
+-- Es el mismo trato contado en dos momentos de la vida de una cuenta, así
+-- que `descuento_por_racha()` ahora contesta según dónde está parada:
+--
+--   · TODAVÍA NO PAGÓ (prueba, o prueba vencida sin pagar)
+--     Objetivo corto —8 días un negocio, 5 una cuenta personal— y el premio
+--     es del PRIMER mes. Se mira la MEJOR racha dentro de la prueba: una vez
+--     ganado no se pierde, aunque después se tome un día.
+--
+--   · YA PAGA (suscripción activa)
+--     Objetivo 30 días y el premio es 20% de cada renovación. Acá se mira la
+--     racha VIVA, no la mejor: el premio es por sostenerla. Si la corta,
+--     deja de tener descuento hasta que la vuelva a levantar. Eso es lo que
+--     pidió: «si mantenés tu racha, siempre vas a tener el 20%».
+--
+-- La racha viva se cuenta igual que en el panel (`racha_empresa`, 008):
+-- vale si llega hasta hoy o hasta ayer. Tiene que ser el MISMO número que la
+-- persona ve en su pantalla — si el panel dice 31 y el descuento dice 30,
+-- el que pierde es el descuento, porque nadie le cree.
+--
+-- El cobro sigue siendo a mano: esto le dice al cliente lo que se ganó y le
+-- dice a la administración cuánto cobrar. Cuando entre la pasarela, el mismo
+-- número se aplica solo al cobrar.
+
+-- ------------------------------------------------------------
+-- 1. LOS NÚMEROS DE LA SEGUNDA ETAPA
+-- ------------------------------------------------------------
+alter table public.ajustes_orden
+  add column if not exists descuento_constancia_porcentaje numeric(5,2) not null default 20
+    check (descuento_constancia_porcentaje >= 0 and descuento_constancia_porcentaje <= 100),
+  add column if not exists racha_objetivo_constancia integer not null default 30
+    check (racha_objetivo_constancia between 1 and 365);
+
+comment on column public.ajustes_orden.descuento_constancia_porcentaje is
+  'Cuánto se descuenta de cada renovación mientras la cuenta mantenga su racha viva.';
+
+-- ------------------------------------------------------------
+-- 2. EL DESCUENTO QUE CORRESPONDE HOY
+-- ------------------------------------------------------------
+create or replace function public.descuento_por_racha(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_tipo     text;
+  v_zona     text;
+  v_desde    date;
+  v_hasta    date;
+  v_hoy      date;
+  v_objetivo integer;
+  v_pct      numeric;
+  v_mejor    integer := 0;
+  v_vigente  boolean := false;
+  v_fase     text;
+  v_ajustes  record;
+  v_sus      record;
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(e.tipo_cuenta, 'emprendedor'), coalesce(e.zona_horaria, 'America/Asuncion')
+  into v_tipo, v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select * into v_ajustes from public.ajustes_orden where unica;
+  v_hoy := (now() at time zone v_zona)::date;
+
+  select s.* into v_sus from public.suscripciones s where s.empresa_id = p_empresa;
+
+  -- Sin suscripción no hay nada que ofrecer todavía.
+  if v_sus.empresa_id is null then
+    return jsonb_build_object(
+      'fase', 'prueba', 'objetivo', coalesce(v_ajustes.racha_objetivo_negocio, 8),
+      'mejor', 0, 'faltan', coalesce(v_ajustes.racha_objetivo_negocio, 8),
+      'logrado', false, 'porcentaje', coalesce(v_ajustes.descuento_racha_porcentaje, 18),
+      'vigente', false);
+  end if;
+
+  -- Paga de verdad: el trato pasa a ser por constancia.
+  v_fase := case
+    when v_sus.estado = 'activa' and coalesce(v_sus.plan, 'gratis') <> 'gratis' then 'constancia'
+    else 'prueba'
+  end;
+
+  if v_fase = 'constancia' then
+    v_pct      := coalesce(v_ajustes.descuento_constancia_porcentaje, 20);
+    v_objetivo := coalesce(v_ajustes.racha_objetivo_constancia, 30);
+    -- La racha VIVA, la misma que muestra el panel: vale hasta ayer.
+    with dias as (
+      select distinct m.fecha
+      from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.fecha <= v_hoy
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    ),
+    rachas as (
+      select isla, count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+    )
+    select coalesce((select largo from rachas where hasta in (v_hoy, v_hoy - 1)
+                     order by hasta desc limit 1), 0)
+    into v_mejor;
+    -- Siempre se puede sostener: mientras pague, el trato sigue en pie.
+    v_vigente := true;
+  else
+    v_pct      := coalesce(v_ajustes.descuento_racha_porcentaje, 18);
+    v_objetivo := coalesce(
+      case when v_tipo = 'personal' then v_ajustes.racha_objetivo_personal
+           else v_ajustes.racha_objetivo_negocio end,
+      case when v_tipo = 'personal' then 5 else 8 end);
+
+    v_desde := (v_sus.created_at at time zone v_zona)::date;
+    v_hasta := least(v_hoy, (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date);
+    v_vigente := v_sus.estado = 'prueba'
+                 and v_hoy <= (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date;
+
+    -- La MEJOR de la prueba: lo ganado no se pierde.
+    with dias as (
+      select distinct m.fecha
+      from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo'
+        and m.fecha between v_desde and v_hasta
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    )
+    select coalesce(max(largo), 0) into v_mejor
+    from (select count(*)::int as largo from numeradas group by isla) r;
+  end if;
+
+  return jsonb_build_object(
+    'fase',       v_fase,
+    'objetivo',   v_objetivo,
+    'mejor',      v_mejor,
+    'faltan',     greatest(0, v_objetivo - v_mejor),
+    'logrado',    v_mejor >= v_objetivo,
+    'porcentaje', v_pct,
+    'vigente',    v_vigente
+  );
+end $fn$;
+
+revoke all on function public.descuento_por_racha(uuid) from public, anon;
+grant execute on function public.descuento_por_racha(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LA PROMO ENTERA, PARA LA PORTADA
+--
+--    Se le suman los números de la segunda etapa sin tocar los que ya lee
+--    la portada: quien mira precios tiene que ver las dos mitades del trato
+--    —el primer mes y los que siguen— antes de registrarse.
+-- ------------------------------------------------------------
+create or replace function public.promo_de_la_prueba()
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'porcentaje',            coalesce((select descuento_racha_porcentaje from public.ajustes_orden where unica), 18),
+    'negocio',               coalesce((select racha_objetivo_negocio    from public.ajustes_orden where unica), 8),
+    'personal',              coalesce((select racha_objetivo_personal   from public.ajustes_orden where unica), 5),
+    'constancia_porcentaje', coalesce((select descuento_constancia_porcentaje from public.ajustes_orden where unica), 20),
+    'constancia_dias',       coalesce((select racha_objetivo_constancia       from public.ajustes_orden where unica), 30)
+  );
+$fn$;
+
+grant execute on function public.promo_de_la_prueba() to anon, authenticated;
+
+
+-- ############################################################
+-- ##  080_ahorrar_tambien_es_cargar.sql
+-- ############################################################
+
+-- ============================================================
+-- 080 · AHORRAR TAMBIÉN ES CARGAR (Y UN SOLO LUGAR QUE LO DECIDE)
+-- ============================================================
+--
+-- La racha contaba los días que tienen algún movimiento. Guardar plata en un
+-- fondo de ahorro no es un movimiento: va a `movimientos_ahorro`, que es otra
+-- tabla. Resultado: alguien que un martes abre Orden y manda Gs. 200.000 al
+-- fondo «Viaje» hizo exactamente lo que queremos que haga, y a la noche
+-- pierde la racha igual. Eso no se explica; se arregla.
+--
+-- Desde acá, un día cuenta si la persona registró ALGO ese día: un
+-- movimiento (venta, gasto, ingreso) o un movimiento de ahorro.
+--
+-- POR QUÉ UNA FUNCIÓN Y NO TRES CONSULTAS IGUALES
+--
+-- La misma cuenta —«qué días cargó»— estaba escrita tres veces: en la racha
+-- del panel (008), en el descuento (078/079) y en los avisos diarios (076).
+-- Tres copias de una regla es la garantía de que el día que cambie, cambie
+-- en dos lugares y no en tres: el panel diría 31 días y el descuento 30, y
+-- el que pierde es el descuento, porque nadie le cree a un número que se
+-- contradice con el de al lado. Ahora la regla vive en `dias_cargados()` y
+-- las tres la llaman.
+--
+-- Retirar del fondo también cuenta. No es «portarse bien», pero es usar
+-- Orden para registrar plata que se movió, que es el hábito que se premia.
+
+-- ------------------------------------------------------------
+-- 1. QUÉ DÍAS CUENTAN
+--
+--    Devuelve las fechas, sin repetir, hasta `p_hasta` inclusive. La usan
+--    funciones que ya son SECURITY DEFINER, así que no la ejecuta nadie de
+--    afuera: quien pregunta por una cuenta ajena lo hace por la función de
+--    arriba, que sí comprueba permisos.
+-- ------------------------------------------------------------
+create or replace function public.dias_cargados(p_empresa uuid, p_hasta date)
+returns setof date language sql stable security definer set search_path = public as $fn$
+  select fecha
+  from (
+    select m.fecha
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.fecha <= p_hasta
+    union
+    select a.fecha
+    from public.movimientos_ahorro a
+    where a.empresa_id = p_empresa and a.fecha <= p_hasta
+  ) d
+  group by fecha;
+$fn$;
+
+revoke all on function public.dias_cargados(uuid, date) from public, anon, authenticated;
+
+comment on function public.dias_cargados(uuid, date) is
+  'Los días en que la cuenta registró algo: movimientos y movimientos de ahorro. Única fuente de la racha.';
+
+-- ------------------------------------------------------------
+-- 2. LA RACHA DEL PANEL, SOBRE LA MISMA REGLA
+-- ------------------------------------------------------------
+create or replace function public.racha_empresa(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_hoy   date;
+  v_ayer  date;
+  v_res   jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_hoy  := public.hoy_empresa(p_empresa);
+  v_ayer := v_hoy - 1;
+
+  with dias as (
+    select d.fecha from public.dias_cargados(p_empresa, v_hoy) d(fecha)
+  ),
+  numeradas as (
+    select fecha, (fecha - (row_number() over (order by fecha))::int) as isla
+    from dias
+  ),
+  rachas as (
+    select isla, count(*)::int as largo, min(fecha) as desde, max(fecha) as hasta
+    from numeradas group by isla
+  ),
+  vigente as (
+    select * from rachas where hasta in (v_hoy, v_ayer) order by hasta desc limit 1
+  )
+  select jsonb_build_object(
+    'hoy',           v_hoy,
+    'dias',          coalesce((select largo from vigente), 0),
+    'desde',         (select desde from vigente),
+    'hoy_cargado',   exists (select 1 from dias where fecha = v_hoy),
+    -- Solo está en riesgo si HAY algo que perder.
+    'en_riesgo',     coalesce((select hasta from vigente), v_ayer - 1) = v_ayer,
+    'mejor',         coalesce((select max(largo) from rachas), 0),
+    'dias_activos',  (select count(*)::int from dias)
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 3. EL DESCUENTO, SOBRE LA MISMA REGLA
+--
+--    Igual que en la 079 —prueba: la mejor racha de la ventana; constancia:
+--    la racha viva—, solo cambia de dónde salen los días.
+-- ------------------------------------------------------------
+create or replace function public.descuento_por_racha(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_tipo     text;
+  v_zona     text;
+  v_desde    date;
+  v_hasta    date;
+  v_hoy      date;
+  v_objetivo integer;
+  v_pct      numeric;
+  v_mejor    integer := 0;
+  v_vigente  boolean := false;
+  v_fase     text;
+  v_ajustes  record;
+  v_sus      record;
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(e.tipo_cuenta, 'emprendedor'), coalesce(e.zona_horaria, 'America/Asuncion')
+  into v_tipo, v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select * into v_ajustes from public.ajustes_orden where unica;
+  v_hoy := (now() at time zone v_zona)::date;
+
+  select s.* into v_sus from public.suscripciones s where s.empresa_id = p_empresa;
+
+  if v_sus.empresa_id is null then
+    return jsonb_build_object(
+      'fase', 'prueba', 'objetivo', coalesce(v_ajustes.racha_objetivo_negocio, 8),
+      'mejor', 0, 'faltan', coalesce(v_ajustes.racha_objetivo_negocio, 8),
+      'logrado', false, 'porcentaje', coalesce(v_ajustes.descuento_racha_porcentaje, 18),
+      'vigente', false);
+  end if;
+
+  v_fase := case
+    when v_sus.estado = 'activa' and coalesce(v_sus.plan, 'gratis') <> 'gratis' then 'constancia'
+    else 'prueba'
+  end;
+
+  if v_fase = 'constancia' then
+    v_pct      := coalesce(v_ajustes.descuento_constancia_porcentaje, 20);
+    v_objetivo := coalesce(v_ajustes.racha_objetivo_constancia, 30);
+    with dias as (
+      select d.fecha from public.dias_cargados(p_empresa, v_hoy) d(fecha)
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    ),
+    rachas as (
+      select isla, count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+    )
+    select coalesce((select largo from rachas where hasta in (v_hoy, v_hoy - 1)
+                     order by hasta desc limit 1), 0)
+    into v_mejor;
+    v_vigente := true;
+  else
+    v_pct      := coalesce(v_ajustes.descuento_racha_porcentaje, 18);
+    v_objetivo := coalesce(
+      case when v_tipo = 'personal' then v_ajustes.racha_objetivo_personal
+           else v_ajustes.racha_objetivo_negocio end,
+      case when v_tipo = 'personal' then 5 else 8 end);
+
+    v_desde := (v_sus.created_at at time zone v_zona)::date;
+    v_hasta := least(v_hoy, (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date);
+    v_vigente := v_sus.estado = 'prueba'
+                 and v_hoy <= (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date;
+
+    with dias as (
+      select d.fecha from public.dias_cargados(p_empresa, v_hasta) d(fecha)
+      where d.fecha >= v_desde
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    )
+    select coalesce(max(largo), 0) into v_mejor
+    from (select count(*)::int as largo from numeradas group by isla) r;
+  end if;
+
+  return jsonb_build_object(
+    'fase',       v_fase,
+    'objetivo',   v_objetivo,
+    'mejor',      v_mejor,
+    'faltan',     greatest(0, v_objetivo - v_mejor),
+    'logrado',    v_mejor >= v_objetivo,
+    'porcentaje', v_pct,
+    'vigente',    v_vigente
+  );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 4. LOS AVISOS DIARIOS, SOBRE LA MISMA REGLA
+--
+--    Además de la racha, cambia una cosa más: el aviso de la tarde («todavía
+--    no cargaste nada hoy») ya no se manda a quien hoy solo movió su ahorro.
+--    Decirle «no cargaste nada» a alguien que acaba de guardar plata es
+--    pedirle que ignore la notificación siguiente.
+--
+--    `cargados` sigue contando solo movimientos: es el número con el que se
+--    arma el resumen de la noche, y un día de puro ahorro no tiene resumen
+--    de ventas ni de gastos que contar. Por eso el ahorro va aparte.
+-- ------------------------------------------------------------
+create or replace function public.avisos_del_dia()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'empresa_id',  e.id,
+      'nombre',      e.nombre,
+      'moneda',      e.moneda,
+      'tipo_cuenta', coalesce(e.tipo_cuenta, 'emprendedor'),
+      'fecha',       z.hoy,
+      'hoy', jsonb_build_object(
+        'ventas', a.ventas_hoy, 'ingresos', a.ingresos_hoy, 'gastos', a.gastos_hoy,
+        'ganancia', a.ventas_hoy + a.ingresos_hoy - a.costo_hoy - a.gastos_hoy,
+        'cargados', a.n_hoy,
+        -- Movimientos de ahorro de hoy: no arman resumen, pero sí cuentan
+        -- como «ya usó Orden hoy» para no empujarlo a la tarde.
+        'ahorros', h.n_ahorro_hoy),
+      'ayer', jsonb_build_object(
+        'ventas', a.ventas_ayer, 'ingresos', a.ingresos_ayer, 'gastos', a.gastos_ayer,
+        'ganancia', a.ventas_ayer + a.ingresos_ayer - a.costo_ayer - a.gastos_ayer,
+        'cargados', a.n_ayer),
+      'racha', jsonb_build_object('dias', r.dias, 'en_riesgo', r.en_riesgo),
+      'destinatarios', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'user_id', mi.user_id, 'idioma', coalesce(p.idioma, 'es'))), '[]'::jsonb)
+        from public.miembros mi
+        left join public.preferencias p on p.user_id = mi.user_id
+        where mi.empresa_id = e.id
+          and mi.rol in ('propietario', 'admin')
+          and coalesce(p.aviso_diario, true)
+      )
+    ) as x
+    from public.empresas e
+    cross join lateral (
+      select (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as hoy
+    ) z
+    cross join lateral (
+      select
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'venta'), 0)       as ventas_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'ingreso'), 0)     as ingresos_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy and m.tipo = 'gasto'), 0)       as gastos_hoy,
+        coalesce(sum(coalesce(m.costo_total, 0)) filter (where m.fecha = z.hoy and m.tipo = 'venta'), 0) as costo_hoy,
+        count(*) filter (where m.fecha = z.hoy)::int                                       as n_hoy,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'venta'), 0)   as ventas_ayer,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'ingreso'), 0) as ingresos_ayer,
+        coalesce(sum(m.monto) filter (where m.fecha = z.hoy - 1 and m.tipo = 'gasto'), 0)   as gastos_ayer,
+        coalesce(sum(coalesce(m.costo_total, 0)) filter (where m.fecha = z.hoy - 1 and m.tipo = 'venta'), 0) as costo_ayer,
+        count(*) filter (where m.fecha = z.hoy - 1)::int                                   as n_ayer
+      from public.movimientos m
+      where m.empresa_id = e.id and m.estado = 'activo'
+        and m.fecha between z.hoy - 1 and z.hoy
+    ) a
+    cross join lateral (
+      select count(*)::int as n_ahorro_hoy
+      from public.movimientos_ahorro ma
+      where ma.empresa_id = e.id and ma.fecha = z.hoy
+    ) h
+    cross join lateral (
+      with dias as (
+        select d.fecha from public.dias_cargados(e.id, z.hoy) d(fecha)
+      ),
+      numeradas as (
+        select fecha, (fecha - (row_number() over (order by fecha))::int) as isla
+        from dias
+      ),
+      rachas as (
+        select isla, count(*)::int as largo, max(fecha) as hasta
+        from numeradas group by isla
+      ),
+      vigente as (
+        select * from rachas where hasta in (z.hoy, z.hoy - 1) order by hasta desc limit 1
+      )
+      select
+        coalesce((select largo from vigente), 0) as dias,
+        coalesce((select hasta from vigente), z.hoy - 2) = z.hoy - 1 as en_riesgo
+    ) r
+    where (
+        coalesce(e.tipo_cuenta, 'emprendedor') = 'personal'
+        or public.rubro_cierra_el_dia(e.rubro, e.tipo_cuenta)
+      )
+      and public.puede_cargar(e.id)
+      and (
+        e.created_at > now() - interval '7 days'
+        or exists (select 1 from public.movimientos m2
+                   where m2.empresa_id = e.id and m2.created_at > now() - interval '30 days')
+        or exists (select 1 from public.movimientos_ahorro a2
+                   where a2.empresa_id = e.id and a2.created_at > now() - interval '30 days')
+      )
+  ) s;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.avisos_del_dia() from public, anon, authenticated;
+grant execute on function public.avisos_del_dia() to service_role;
+
+
+-- ############################################################
+-- ##  081_el_calendario_de_los_avisos.sql
+-- ############################################################
+
+-- ============================================================
+-- 081 · EL CALENDARIO DE LOS AVISOS, DESDE LA BASE
+-- ============================================================
+--
+-- QUÉ PASABA
+--
+-- Matías: «no me llega ninguna notificación». Se revisó la base y el código
+-- estaba bien: la persona tiene su iPhone registrado, `avisos_del_dia()`
+-- devuelve a quién escribirle, y la frase se arma. Lo que faltaba era el
+-- reloj. En `envios` solo hay avisos de tipo `diario_manana`: de la tarde y
+-- de la noche no hay NINGUNO, y no es que no hubiera a quién escribirle —el
+-- 18/09 tres cuentas no habían cargado nada a las tres de la tarde, y una
+-- había cargado a la noche—. Las tareas de la tarde y de la noche nunca
+-- corrieron. La de la mañana corrió una vez, 45 minutos tarde.
+--
+-- Eso es el plan gratuito de Vercel: las tareas programadas corren «alguna
+-- vez dentro de la hora» y con un tope por cuenta. Hay seis en vercel.json y
+-- se ejecuta una.
+--
+-- QUÉ SE HACE
+--
+-- El reloj se trae acá. Supabase tiene `pg_cron` —el planificador de
+-- PostgreSQL— y `pg_net` —llamadas HTTP desde la base—, gratis y sin tope.
+-- Cada horario llama a la misma ruta de siempre; no cambia nada del envío.
+--
+-- Los dos relojes pueden convivir sin peligro: cada aviso pasa por
+-- `reservar_envio`, que garantiza uno por persona, momento y día. Si Vercel
+-- llega primero, la corrida de la base no manda nada, y al revés. Por eso no
+-- se toca vercel.json: si algún día el plan cambia, sobra, no estorba.
+--
+-- EL SECRETO NO ESTÁ ACÁ
+--
+-- Las rutas piden `Authorization: Bearer <CRON_SECRETO>`. Ese secreto no se
+-- escribe en una migración —esto vive en git— ni lo maneja nadie más que
+-- Matías: se guarda en el Vault de Supabase, con una sola instrucción que
+-- corre él. Hasta que lo haga, `disparar_tarea` no llama a nada y lo dice.
+--
+--   select vault.create_secret('<el CRON_SECRETO de Vercel>', 'cron_secreto');
+--
+-- Para cambiarlo después:
+--
+--   select vault.update_secret(
+--     (select id from vault.secrets where name = 'cron_secreto'),
+--     '<el nuevo>');
+
+-- ------------------------------------------------------------
+-- 1. A QUÉ DIRECCIÓN LLAMAR
+--
+--    No es secreto —es la dirección pública del sitio— pero sí tiene que ser
+--    editable: en un entorno de prueba apunta a otro lado.
+-- ------------------------------------------------------------
+alter table public.ajustes_orden
+  add column if not exists sitio_url text not null default 'https://orden.com.py';
+
+comment on column public.ajustes_orden.sitio_url is
+  'De dónde cuelgan las rutas de tareas que dispara pg_cron (081).';
+
+-- ------------------------------------------------------------
+-- 2. LA LLAMADA
+--
+--    No la ejecuta nadie de afuera: `cron` corre como el dueño de la base.
+--    Se revoca de todos igual, porque una función que hace pedidos HTTP con
+--    un secreto adentro es exactamente lo que no se quiere dejar suelto.
+-- ------------------------------------------------------------
+create or replace function public.disparar_tarea(p_ruta text)
+returns text language plpgsql security definer set search_path = public as $fn$
+declare
+  v_url     text;
+  v_secreto text;
+begin
+  -- Solo rutas de tareas: si alguna vez esta función se alcanza desde otro
+  -- lado, que no sirva para pedirle nada a ninguna otra dirección.
+  if p_ruta !~ '^/api/tareas/[a-z-]+$' then
+    raise exception 'Esa no es una ruta de tareas.' using errcode = '22023';
+  end if;
+
+  select coalesce(sitio_url, 'https://orden.com.py') into v_url
+  from public.ajustes_orden where unica;
+  v_url := coalesce(v_url, 'https://orden.com.py') || p_ruta;
+
+  begin
+    select decrypted_secret into v_secreto
+    from vault.decrypted_secrets where name = 'cron_secreto';
+  exception when others then
+    v_secreto := null;
+  end;
+
+  if v_secreto is null or v_secreto = '' then
+    -- Sin secreto la ruta contestaría 401. Mejor no llamar y dejar dicho por
+    -- qué, que llenar el registro de pedidos rechazados.
+    raise warning 'Falta el secreto «cron_secreto» en el Vault: no se llamó a %.', p_ruta;
+    return 'sin secreto';
+  end if;
+
+  perform net.http_get(
+    url     := v_url,
+    headers := jsonb_build_object('Authorization', 'Bearer ' || v_secreto),
+    timeout_milliseconds := 55000
+  );
+
+  return v_url;
+end $fn$;
+
+revoke all on function public.disparar_tarea(text) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LOS HORARIOS
+--
+--    En UTC, que es la hora de la base. Paraguay es UTC-3:
+--
+--      12:00 → 09:00, cómo fue ayer
+--      18:00 → 15:00, «todavía no cargaste nada hoy»
+--      23:30 → 20:30, cómo fue hoy
+--
+--    Va adentro de un bloque que se traga el error a propósito: las pruebas
+--    corren estas migraciones sobre una base de mentira (pglite) que no
+--    tiene pg_cron ni pg_net. Que ahí no se programe nada es lo correcto;
+--    lo que no puede pasar es que reviente la suite entera.
+-- ------------------------------------------------------------
+do $cal$
+declare
+  v_horarios constant text[][] := array[
+    ['orden-avisos-manana',  '0 12 * * *',  '/api/tareas/avisos-manana'],
+    ['orden-avisos-tarde',   '0 18 * * *',  '/api/tareas/avisos-tarde'],
+    ['orden-avisos-noche',   '30 23 * * *', '/api/tareas/avisos-noche'],
+    ['orden-recordatorio',   '0 0 * * *',   '/api/tareas/recordatorio'],
+    ['orden-turnos-manana',  '0 22 * * *',  '/api/tareas/turnos-manana'],
+    ['orden-resumen-semanal','30 11 * * 1', '/api/tareas/resumen-semanal']
+  ];
+  v_i integer;
+begin
+  execute 'create extension if not exists pg_cron';
+  execute 'create extension if not exists pg_net';
+
+  for v_i in 1 .. array_length(v_horarios, 1) loop
+    -- `schedule` con un nombre que ya existe lo reemplaza, así que volver a
+    -- aplicar esta migración no duplica nada.
+    execute format(
+      'select cron.schedule(%L, %L, %L)',
+      v_horarios[v_i][1],
+      v_horarios[v_i][2],
+      format('select public.disparar_tarea(%L)', v_horarios[v_i][3])
+    );
+  end loop;
+exception when others then
+  raise notice 'Sin pg_cron acá (%): los avisos no se programan en este entorno.', sqlerrm;
+end $cal$;
+
+
+-- ############################################################
+-- ##  082_deshacer_un_pago_de_deuda.sql
+-- ############################################################
+
+-- ============================================================
+-- 082 · DESHACER UN PAGO DE DEUDA QUE NO FUE
+-- ============================================================
+--
+-- Matías: «pagué una deuda que en realidad no pagué. Borré el historial y me
+-- seguía apareciendo como pagada». Las dos mitades del problema:
+--
+--   1. No había forma de anular un pago. `registrar_pago_deuda` baja el
+--      saldo, suma una cuota, corre el vencimiento un mes y crea el gasto.
+--      Nada de eso tenía vuelta atrás.
+--   2. Borrar el movimiento a mano no alcanza y encima confunde: el saldo de
+--      la deuda vive en `deudas.saldo`, no se recalcula de los pagos. El
+--      gasto desaparecía y la deuda seguía saldada.
+--
+-- Anular un pago tiene que deshacer las cuatro cosas juntas o ninguna.
+--
+-- POR QUÉ SE GUARDA EL «ANTES» Y NO SE RECALCULA
+--
+-- El saldo se puede devolver sumando: es plata. El vencimiento no. Si el
+-- pago dejó la deuda saldada, `vence_el` quedó en null, y de un null no se
+-- deduce qué fecha había antes. Lo mismo con la cuota: solo se sumó si la
+-- deuda tenía cuotas y faltaban, así que restar siempre uno sería inventar.
+--
+-- Por eso cada pago anota qué había antes de tocarlo. Es la misma idea que
+-- el resto del sistema: guardar el hecho, no la conclusión. Los pagos
+-- anteriores a esta migración no lo tienen, y ahí se hace lo mejor posible
+-- —restar un mes si hay fecha, restar la cuota si hay cuotas— y se avisa en
+-- la respuesta, para que la pantalla pueda pedir que revise el vencimiento.
+--
+-- EL GASTO SE ANULA, NO SE BORRA
+--
+-- `anular_movimiento` lo deja marcado con quién y cuándo. El saldo de la
+-- cuenta cuenta solo los activos, así que la billetera vuelve sola a donde
+-- estaba, y queda el rastro de que hubo un pago y se deshizo.
+
+-- ------------------------------------------------------------
+-- 1. QUÉ HABÍA ANTES DE ESTE PAGO
+-- ------------------------------------------------------------
+alter table public.pagos_deuda
+  add column if not exists vence_antes   date,
+  add column if not exists cuota_contada boolean;
+
+comment on column public.pagos_deuda.vence_antes is
+  'El vencimiento de la deuda antes de este pago, para poder deshacerlo (082).';
+comment on column public.pagos_deuda.cuota_contada is
+  'Si este pago sumó una cuota. Null en los pagos anteriores a la 082.';
+
+-- ------------------------------------------------------------
+-- 2. REGISTRAR UN PAGO, ANOTANDO EL ANTES
+--
+--    Igual que en la 015; lo único nuevo es que deja constancia de lo que
+--    cambió, para que se pueda volver.
+-- ------------------------------------------------------------
+create or replace function public.registrar_pago_deuda(
+  p_deuda       uuid,
+  p_monto       numeric,
+  p_fecha       date default null,
+  p_crear_gasto boolean default true,
+  p_metodo      text default 'efectivo',
+  p_nota        text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_deuda      public.deudas;
+  v_fecha      date;
+  v_aplicado   numeric;
+  v_movimiento uuid;
+  v_pago       uuid;
+  v_cuenta     boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_deuda from public.deudas where id = p_deuda;
+  if v_deuda.id is null then
+    raise exception 'Esa deuda no existe.' using errcode = 'P0002';
+  end if;
+  if not public.es_admin(v_deuda.empresa_id) then
+    raise exception 'Solo el propietario o un administrador puede registrar pagos.' using errcode = '42501';
+  end if;
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El pago tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+  if v_deuda.saldo <= 0 then
+    raise exception 'Esa deuda ya está saldada.' using errcode = '22023';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(v_deuda.empresa_id));
+
+  -- Nunca más de lo que falta.
+  v_aplicado := least(p_monto, v_deuda.saldo);
+
+  -- La misma condición que usa el update de abajo: se decide una vez y se
+  -- guarda, para que deshacerlo no tenga que adivinarla.
+  v_cuenta := v_deuda.cuotas_totales is not null
+              and v_deuda.cuotas_pagadas < v_deuda.cuotas_totales;
+
+  -- El gasto primero: si falla, no queremos haber bajado el saldo.
+  if p_crear_gasto then
+    insert into public.movimientos (
+      empresa_id, tipo, fecha, descripcion, categoria,
+      subtotal, descuento, monto, costo_total, metodo_pago, creado_por
+    ) values (
+      v_deuda.empresa_id, 'gasto', v_fecha,
+      'Pago ' || v_deuda.nombre, 'Deudas',
+      v_aplicado, 0, v_aplicado, 0, coalesce(p_metodo, 'efectivo'), auth.uid()
+    )
+    returning id into v_movimiento;
+  end if;
+
+  insert into public.pagos_deuda (
+    deuda_id, empresa_id, monto, fecha, movimiento_id, nota, creado_por,
+    vence_antes, cuota_contada
+  )
+  values (p_deuda, v_deuda.empresa_id, v_aplicado, v_fecha, v_movimiento,
+          coalesce(left(p_nota, 300), ''), auth.uid(),
+          v_deuda.vence_el, v_cuenta)
+  returning id into v_pago;
+
+  update public.deudas
+  set saldo = saldo - v_aplicado,
+      cuotas_pagadas = case when v_cuenta then cuotas_pagadas + 1 else cuotas_pagadas end,
+      vence_el = case
+        when saldo - v_aplicado <= 0 then null
+        when vence_el is not null then vence_el + interval '1 month'
+        else null
+      end,
+      updated_at = now()
+  where id = p_deuda;
+
+  return jsonb_build_object(
+    'pago_id', v_pago,
+    'aplicado', v_aplicado,
+    'sobrante', greatest(p_monto - v_aplicado, 0),
+    'saldo', v_deuda.saldo - v_aplicado,
+    'saldada', (v_deuda.saldo - v_aplicado) <= 0,
+    'movimiento_id', v_movimiento
+  );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 3. DESHACERLO
+--
+--    Devuelve `vencimiento_a_revisar` cuando el pago es viejo y no guardó su
+--    «antes»: la deuda vuelve, pero la fecha puede no ser la que era y quien
+--    la mira tiene que poder enterarse.
+-- ------------------------------------------------------------
+create or replace function public.anular_pago_deuda(p_pago uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_pago    public.pagos_deuda;
+  v_deuda   public.deudas;
+  v_revisar boolean := false;
+  v_vence   date;
+  v_cuotas  integer;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_pago from public.pagos_deuda where id = p_pago;
+  if v_pago.id is null then
+    raise exception 'Ese pago no existe.' using errcode = 'P0002';
+  end if;
+  if not public.es_admin(v_pago.empresa_id) then
+    raise exception 'Solo el propietario o un administrador puede deshacer un pago.' using errcode = '42501';
+  end if;
+
+  select * into v_deuda from public.deudas where id = v_pago.deuda_id;
+  if v_deuda.id is null then
+    raise exception 'Esa deuda no existe.' using errcode = 'P0002';
+  end if;
+
+  -- El vencimiento: el guardado, o lo mejor que se pueda deducir.
+  if v_pago.vence_antes is not null then
+    v_vence := v_pago.vence_antes;
+  elsif v_deuda.vence_el is not null then
+    v_vence := (v_deuda.vence_el - interval '1 month')::date;
+    v_revisar := true;
+  else
+    v_vence := null;
+    -- Quedó en null porque el pago la saldó, y no hay de dónde sacar la
+    -- fecha vieja. La deuda vuelve sin vencimiento y se edita a mano.
+    v_revisar := true;
+  end if;
+
+  -- La cuota: solo se descuenta la que este pago sumó.
+  v_cuotas := case
+    when v_pago.cuota_contada is true then greatest(0, v_deuda.cuotas_pagadas - 1)
+    when v_pago.cuota_contada is false then v_deuda.cuotas_pagadas
+    -- Pago viejo, sin constancia: se deshace lo que la 015 habría hecho.
+    when v_deuda.cuotas_totales is not null then greatest(0, v_deuda.cuotas_pagadas - 1)
+    else v_deuda.cuotas_pagadas
+  end;
+
+  -- El gasto se anula, no se borra: queda el rastro y la billetera vuelve
+  -- sola, porque el saldo de una cuenta solo suma los movimientos activos.
+  if v_pago.movimiento_id is not null then
+    begin
+      perform public.anular_movimiento(v_pago.movimiento_id, 'Se deshizo el pago de la deuda');
+    exception when others then
+      -- Ya estaba anulado, o lo borraron a mano. El resto se deshace igual:
+      -- dejar la deuda pagada porque el gasto no estaba sería peor.
+      null;
+    end;
+  end if;
+
+  update public.deudas
+  set saldo          = saldo + v_pago.monto,
+      cuotas_pagadas = v_cuotas,
+      vence_el       = v_vence,
+      updated_at     = now()
+  where id = v_deuda.id;
+
+  delete from public.pagos_deuda where id = p_pago;
+
+  return jsonb_build_object(
+    'deuda_id',  v_deuda.id,
+    'devuelto',  v_pago.monto,
+    'saldo',     v_deuda.saldo + v_pago.monto,
+    'vencimiento_a_revisar', v_revisar
+  );
+end $fn$;
+
+revoke all on function public.anular_pago_deuda(uuid) from public, anon;
+grant execute on function public.anular_pago_deuda(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  083_nada_queda_fuera_de_la_billetera.sql
+-- ############################################################
+
+-- ============================================================
+-- 083 · LO QUE QUEDÓ FUERA DE LA BILLETERA SE VE Y SE ARREGLA
+-- ============================================================
+--
+-- Matías: «entro a Orden y lo primero que veo es cuánto tengo. Si gasté de
+-- mi Banco Atlas y no se me descuenta, eso no es lo que tengo». Tenía razón,
+-- y el agujero es más ancho de lo que parecía.
+--
+-- CÓMO FUNCIONA EL REPARTO (074) Y DÓNDE SE ROMPE
+--
+-- Cada forma de pago vive en UNA sola cuenta: transferencia en el banco,
+-- efectivo en la caja. Al cargar un movimiento, un trigger lo manda a la
+-- cuenta que reclama esa forma de pago. Limpio, mientras todas las formas de
+-- pago tengan casa. Cuando alguna no la tiene, el movimiento se guarda con
+-- `cuenta_id` en null y **desaparece de la billetera sin decir nada**.
+--
+-- Pasa más de lo que uno creería. Mirando la base el 21/09:
+--
+--   · «otro» no estaba asignado a ninguna cuenta en NINGUNA empresa. Todo
+--     gasto cargado con esa forma de pago caía al vacío.
+--   · «Banco Atlas» existía con la lista de formas de pago vacía: una cuenta
+--     que no puede recibir nada, ahí en la pantalla como si funcionara.
+--   · Había Gs. 13.000.000 y Gs. 2.711.156 sin asignar en dos cuentas.
+--
+-- QUÉ SE HACE ACÁ
+--
+-- Nada de adivinar. Un movimiento que no se pudo repartir NO se manda a una
+-- cuenta cualquiera para que el total cierre: eso sería cambiar un número
+-- que miente por otro que miente distinto. Lo que se hace es **mostrarlo**,
+-- con el monto y la cantidad, y dar la forma de asignarlo —de a uno o todos
+-- juntos—. La plata la ubica quien sabe dónde estuvo.
+--
+-- El arreglo de raíz es de pantalla y va aparte: que al cargar un gasto se
+-- pregunte siempre de qué cuenta sale.
+
+-- ------------------------------------------------------------
+-- 1. LA BILLETERA TAMBIÉN CUENTA LO QUE NO ESTÁ EN ELLA
+--
+--    Va adentro de `billetera()` y no en una función aparte para que sea
+--    imposible dibujar el total sin tener a mano lo que falta: quien pinte
+--    la pantalla lo recibe sí o sí.
+-- ------------------------------------------------------------
+create or replace function public.billetera(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_cuentas jsonb;
+  v_zona    text;
+  v_sueltos record;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', c.id,
+    'nombre', c.nombre,
+    'tipo', c.tipo,
+    'metodos', to_jsonb(c.metodos),
+    'saldo', s.saldo,
+    -- Lo que se movió este mes por esta cuenta, para que el número no esté solo.
+    'entro_mes', coalesce(mes.entro, 0),
+    'salio_mes', coalesce(mes.salio, 0)
+  ) order by c.orden, c.created_at), '[]'::jsonb)
+  into v_cuentas
+  from public.cuentas_dinero c
+  cross join lateral (select public.saldo_cuenta_dinero(c.id) as saldo) s
+  left join lateral (
+    select
+      sum(m.monto) filter (where m.tipo <> 'gasto') as entro,
+      sum(m.monto) filter (where m.tipo = 'gasto')  as salio
+    from public.movimientos m
+    where m.cuenta_id = c.id and m.estado = 'activo'
+      and m.fecha >= date_trunc('month', (now() at time zone v_zona))::date
+  ) mes on true
+  where c.empresa_id = p_empresa and c.activa;
+
+  -- Lo que se cargó y no llegó a ninguna cuenta. El neto y no la suma a
+  -- secas: un gasto de 100 y un ingreso de 100 sin asignar no son 200 de
+  -- desajuste, son cero.
+  select count(*)::int as cantidad,
+         coalesce(sum(case when m.tipo = 'gasto' then -m.monto else m.monto end), 0) as neto,
+         min(m.fecha) as desde
+  into v_sueltos
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.cuenta_id is null;
+
+  return jsonb_build_object(
+    'cuentas', v_cuentas,
+    'total', coalesce((select sum((x->>'saldo')::numeric) from jsonb_array_elements(v_cuentas) x), 0),
+    'sin_cuenta', jsonb_build_object(
+      'cantidad', coalesce(v_sueltos.cantidad, 0),
+      'neto',     coalesce(v_sueltos.neto, 0),
+      'desde',    v_sueltos.desde
+    ),
+    -- Formas de pago que no tienen dónde caer. Con esto la pantalla puede
+    -- decir «arreglá esto» en vez de esperar a que la plata se pierda.
+    'metodos_sin_cuenta', (
+      select coalesce(jsonb_agg(m order by m), '[]'::jsonb)
+      from unnest(array['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro']) m
+      where exists (select 1 from public.cuentas_dinero c2
+                    where c2.empresa_id = p_empresa and c2.activa)
+        and not exists (select 1 from public.cuentas_dinero c3
+                        where c3.empresa_id = p_empresa and c3.activa and m = any (c3.metodos))
+    )
+  );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 2. LA LISTA DE LO QUE QUEDÓ SUELTO
+--
+--    Con la forma de pago adentro: es el dato que le dice a la persona de
+--    qué cuenta salió realmente («fue transferencia» → fue del banco).
+-- ------------------------------------------------------------
+create or replace function public.movimientos_sin_cuenta(p_empresa uuid, p_limite integer default 100)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', x.id, 'fecha', x.fecha, 'tipo', x.tipo, 'descripcion', x.descripcion,
+    'categoria', x.categoria, 'monto', x.monto, 'metodo_pago', x.metodo_pago
+  ) order by x.fecha desc, x.created_at desc), '[]'::jsonb)
+  into v_res
+  from (
+    select m.id, m.fecha, m.tipo, m.descripcion, m.categoria, m.monto, m.metodo_pago, m.created_at
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.cuenta_id is null
+    order by m.fecha desc, m.created_at desc
+    limit greatest(1, least(coalesce(p_limite, 100), 500))
+  ) x;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.movimientos_sin_cuenta(uuid, integer) from public, anon;
+grant execute on function public.movimientos_sin_cuenta(uuid, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. PONERLE CUENTA A LO QUE NO LA TIENE
+--
+--    Solo mueve lo que está suelto. Un movimiento que YA tiene cuenta no se
+--    toca desde acá: cambiarle la cuenta a algo que ya cuadró es corregir un
+--    error distinto, y para eso está editar el movimiento.
+-- ------------------------------------------------------------
+create or replace function public.asignar_cuenta_a_sueltos(
+  p_empresa uuid,
+  p_cuenta  uuid,
+  p_movimiento uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_filas integer;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.cuentas_dinero c
+                 where c.id = p_cuenta and c.empresa_id = p_empresa and c.activa) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  update public.movimientos m
+  set cuenta_id = p_cuenta
+  where m.empresa_id = p_empresa
+    and m.estado = 'activo'
+    and m.cuenta_id is null
+    and (p_movimiento is null or m.id = p_movimiento);
+
+  get diagnostics v_filas = row_count;
+
+  return jsonb_build_object('asignados', v_filas, 'saldo', public.saldo_cuenta_dinero(p_cuenta));
+end $fn$;
+
+revoke all on function public.asignar_cuenta_a_sueltos(uuid, uuid, uuid) from public, anon;
+grant execute on function public.asignar_cuenta_a_sueltos(uuid, uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. EL SELECTOR TIENE QUE PODER DECIR A DÓNDE VA A IR LA PLATA
+--
+--    Sin las formas de pago de cada cuenta, la pantalla puede ofrecer
+--    «automática» pero no puede decir qué significa. Y «automática» sin
+--    decir a dónde es exactamente el agujero de esta migración: la persona
+--    elige confiando y la plata se va a ningún lado.
+-- ------------------------------------------------------------
+create or replace function public.cuentas_para_elegir(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+                    'id', c.id, 'nombre', c.nombre, 'tipo', c.tipo,
+                    'metodos', to_jsonb(c.metodos))
+                            order by c.orden, c.created_at), '[]'::jsonb)
+  into v_lista
+  from public.cuentas_dinero c
+  where c.empresa_id = p_empresa and c.activa;
+
+  return v_lista;
+end $fn$;
+
+
+-- ############################################################
+-- ##  084_prestar_plata_sale_de_una_cuenta.sql
+-- ############################################################
+
+-- ============================================================
+-- 084 · PRESTAR PLATA SALE DE UNA CUENTA (Y NO ES UN GASTO)
+-- ============================================================
+--
+-- Matías: «el fiado puede ser prestarle plata de tu billetera a alguien. Yo
+-- le presté 300.000 y se los transferí de mi banco. Tendría que poder elegir
+-- de cuál banco lo debité, así se actualiza el saldo que tengo realmente. O
+-- el fiado puede ser solo porque te debe: tiene que estar la opción de
+-- «¿querés debitar de tu billetera o dejamos así nomás?»».
+--
+-- Son dos cosas distintas que hoy se anotaban igual:
+--
+--   · FIASTE UNA VENTA. Entregaste mercadería, no plata. De tus cuentas no
+--     salió nada, y está bien que el saldo no se mueva.
+--   · PRESTASTE PLATA. Salió de una cuenta tuya de verdad. Que el saldo no
+--     baje es mentirle a la persona sobre cuánto tiene.
+--
+-- POR QUÉ NO SE REGISTRA COMO GASTO
+--
+-- Sería lo fácil: un gasto baja el saldo y listo. Pero prestar plata NO es
+-- un gasto, es la misma plata cambiada de lugar —de tu banco a «lo que me
+-- deben»—. Anotarlo como gasto le inflaría los gastos del mes y le bajaría
+-- la ganancia neta por algo que no perdió. Ese es justamente el número que
+-- Matías ya vio raro («me aparece en negativo cuando no tenía nada que ver»).
+--
+-- Va como un ajuste de cuenta, que es lo que mueve el saldo sin tocar las
+-- ventas ni los gastos. Con su propio tipo, `prestamo`, para que la fila
+-- diga qué es y no se confunda con una corrección a mano.
+--
+-- LO QUE ESTA MIGRACIÓN NO RESUELVE
+--
+-- Cuando el cliente devuelve la plata, `cobrar_fiado` la registra como «otro
+-- ingreso». Para una venta fiada eso es correcto —la plata entra recién ahí—
+-- pero para un préstamo devuelto no: estás recuperando lo tuyo, no ganando.
+-- Se deja así a propósito: un cobro se hace contra el total del cliente, que
+-- puede mezclar ventas fiadas y préstamos, y repartirlo entre los dos es una
+-- decisión de producto que hay que tomar con Matías, no adivinar acá.
+
+-- ------------------------------------------------------------
+-- 1. UN AJUSTE PUEDE SER UN PRÉSTAMO
+-- ------------------------------------------------------------
+alter table public.ajustes_cuenta drop constraint if exists ajustes_cuenta_tipo_check;
+alter table public.ajustes_cuenta
+  add constraint ajustes_cuenta_tipo_check
+  check (tipo in ('ajuste', 'transferencia', 'prestamo'));
+
+-- ------------------------------------------------------------
+-- 2. EL FIADO RECUERDA DE DÓNDE SALIÓ LA PLATA
+--
+--    En null cuando no salió de ningún lado, que es el caso de una venta
+--    fiada. No es lo mismo «no se eligió cuenta» que «no salió plata»: acá
+--    significan lo mismo a propósito, porque si no salió de una cuenta el
+--    saldo no tiene por qué moverse.
+-- ------------------------------------------------------------
+alter table public.fiado
+  add column if not exists cuenta_id uuid references public.cuentas_dinero (id) on delete set null;
+
+comment on column public.fiado.cuenta_id is
+  'De qué cuenta salió la plata prestada. Null si fue una venta fiada: ahí no salió plata (084).';
+
+-- ------------------------------------------------------------
+-- 3. ANOTAR: CON CUENTA ES PRÉSTAMO, SIN CUENTA ES FIADO
+--
+--    La firma vieja se borra antes de crear la nueva. Si quedaran las dos,
+--    llamarla con cinco argumentos sería ambiguo y PostgreSQL rechazaría la
+--    llamada: la pantalla dejaría de poder anotar nada.
+-- ------------------------------------------------------------
+drop function if exists public.anotar_fiado(uuid, uuid, numeric, text, date);
+
+create or replace function public.anotar_fiado(
+  p_empresa  uuid,
+  p_cliente  uuid,
+  p_monto    numeric,
+  p_concepto text default '',
+  p_fecha    date default null,
+  p_cuenta   uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id     uuid;
+  v_fecha  date;
+  v_nombre text;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  select nombre into v_nombre from public.clientes
+  where id = p_cliente and empresa_id = p_empresa;
+  if v_nombre is null then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Tocar el saldo de una cuenta es cosa de quien administra la plata, no de
+  -- cualquiera que pueda anotar un fiado.
+  if p_cuenta is not null then
+    if not public.es_admin(p_empresa) then
+      raise exception 'Solo el dueño de la cuenta puede sacar plata de la billetera.' using errcode = '42501';
+    end if;
+    if not exists (select 1 from public.cuentas_dinero c
+                   where c.id = p_cuenta and c.empresa_id = p_empresa and c.activa) then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  insert into public.fiado (empresa_id, cliente_id, tipo, monto, fecha, concepto, cuenta_id, creado_por)
+  values (p_empresa, p_cliente, 'fio', p_monto, v_fecha,
+          left(coalesce(p_concepto, ''), 200), p_cuenta, auth.uid())
+  returning id into v_id;
+
+  -- La plata salió: el saldo baja. Como ajuste y no como gasto, porque no
+  -- perdiste esa plata, la prestaste.
+  if p_cuenta is not null then
+    insert into public.ajustes_cuenta (empresa_id, cuenta_id, tipo, monto, fecha, nota, creado_por)
+    values (p_empresa, p_cuenta, 'prestamo', -p_monto, v_fecha,
+            left('Le prestaste a ' || v_nombre, 200), auth.uid());
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.anotar_fiado(uuid, uuid, numeric, text, date, uuid) from public, anon;
+grant execute on function public.anotar_fiado(uuid, uuid, numeric, text, date, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. Y COBRAR ENTRA EN LA CUENTA QUE SE ELIJA
+--
+--    Matías: «me puede pagar por transferencia, y yo elijo el banco al que
+--    me transfirió, así ya me aparece actualizado en mi billetera».
+--
+--    OJO CON CÓMO SE ARREGLA ESTO. La 056 sacó a propósito el ingreso que
+--    creaba el cobro, porque inflaba la ganancia: una venta fiada de 500.000
+--    se contaba el día de la venta y otra vez el día del cobro. Volver a
+--    crear ese movimiento para mover el saldo sería revertir ese arreglo y
+--    devolverle al negocio una ganancia que no tuvo.
+--
+--    Va por el mismo camino que el préstamo, y por el mismo motivo: un
+--    ajuste de cuenta mueve el saldo SIN tocar ventas, ingresos ni ganancia.
+--    Queda simétrico y se lee solo:
+--
+--      · prestar  → ajuste  −monto  (bajó tu plata, no fue un gasto)
+--      · cobrar   → ajuste  +monto  (subió tu plata, no fue una ganancia)
+--
+--    Sin cuenta elegida no se toca ningún saldo, igual que hasta ahora: si
+--    te pagaron en efectivo y no llevás caja en Orden, nada que mover.
+-- ------------------------------------------------------------
+drop function if exists public.cobrar_fiado(uuid, uuid, numeric, text, date);
+
+create or replace function public.cobrar_fiado(
+  p_empresa uuid,
+  p_cliente uuid,
+  p_monto   numeric,
+  p_metodo  text default 'efectivo',
+  p_fecha   date default null,
+  p_cuenta  uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_saldo  numeric;
+  v_nombre text;
+  v_id     uuid;
+  v_debe   text;
+  v_fecha  date;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+
+  select nombre into v_nombre from public.clientes
+  where id = p_cliente and empresa_id = p_empresa
+  for update;
+  if v_nombre is null then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if coalesce(p_metodo, '') not in ('efectivo', 'transferencia', 'tarjeta', 'otro') then
+    raise exception 'Esa forma de cobro no es válida.' using errcode = '22023';
+  end if;
+
+  -- Decir en qué cuenta entró es administrar la billetera, igual que sacar
+  -- plata de ella para prestarla.
+  if p_cuenta is not null then
+    if not public.es_admin(p_empresa) then
+      raise exception 'Solo el dueño de la cuenta puede elegir en qué cuenta entra.' using errcode = '42501';
+    end if;
+    if not exists (select 1 from public.cuentas_dinero c
+                   where c.id = p_cuenta and c.empresa_id = p_empresa and c.activa) then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  v_saldo := public.saldo_fiado(p_cliente);
+  if v_saldo <= 0 then
+    raise exception '% no te debe nada.', v_nombre using errcode = '22023';
+  end if;
+
+  if p_monto > v_saldo then
+    -- «600.000» y no «600000.00»: esto lo lee una persona.
+    v_debe := case when v_saldo = trunc(v_saldo)
+                   then replace(to_char(v_saldo, 'FM999,999,999,990'), ',', '.')
+                   else v_saldo::text end;
+    raise exception '% te debe %, no podés cobrarle más que eso.', v_nombre, v_debe
+      using errcode = '22023';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  insert into public.fiado (
+    empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, cuenta_id, creado_por
+  ) values (
+    p_empresa, p_cliente, 'cobro', p_monto, v_fecha,
+    'Pago recibido', p_metodo, p_cuenta, auth.uid()
+  )
+  returning id into v_id;
+
+  if p_cuenta is not null then
+    insert into public.ajustes_cuenta (empresa_id, cuenta_id, tipo, monto, fecha, nota, creado_por)
+    values (p_empresa, p_cuenta, 'prestamo', p_monto, v_fecha,
+            left('Te pagó ' || v_nombre, 200), auth.uid());
+  end if;
+
+  return jsonb_build_object('id', v_id, 'saldo', public.saldo_fiado(p_cliente));
+end $fn$;
+
+revoke all on function public.cobrar_fiado(uuid, uuid, numeric, text, date, uuid) from public, anon;
+grant execute on function public.cobrar_fiado(uuid, uuid, numeric, text, date, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  085_el_disponible_sale_de_la_plata_real.sql
+-- ############################################################
+
+-- ============================================================
+-- 085 · EL DISPONIBLE SALE DE LA PLATA QUE TENÉS DE VERDAD
+-- ============================================================
+--
+-- Matías: «entro en mi billetera y tengo cinco mil guaraníes, entro en mi
+-- presupuesto y tengo todavía dos millones. Como que no conecta, no tiene
+-- sentido».
+--
+-- POR QUÉ NO CONECTABAN
+--
+-- Eran dos formas distintas de contar la misma plata:
+--
+--   · La billetera suma los saldos de las cuentas. Es «lo que tengo ahora»,
+--     venga de donde venga, incluida plata de meses anteriores.
+--   · El disponible arrancaba en cero cada ciclo: «lo que entró este ciclo,
+--     menos lo que salió, menos lo que falta pagar». No sabía nada de lo que
+--     ya había antes, ni de que esa plata se hubiera ido.
+--
+-- LO QUE PIDIÓ, EN SUS PALABRAS
+--
+-- «Cargo mi ingreso fijo con cómo me pagan y a qué cuenta. El 21 se acredita
+-- y el Atlas sube en mi billetera. Ahí me aparece el disponible y cuánto por
+-- día. Y durante el mes, cada movimiento en esa cuenta tiene que actualizar
+-- ese saldo y recalcular el por día».
+--
+-- Así que el disponible deja de ser un flujo del ciclo y pasa a ser plata
+-- real: lo que hay en las cuentas, menos lo que ya tiene dueño.
+--
+--     disponible = saldo de las cuentas
+--                − lo guardado en los fondos de ahorro
+--                − los gastos fijos que faltan pagar
+--                − las cuotas que vencen antes de que cierre el ciclo
+--
+-- POR QUÉ SE RESTA EL AHORRO ENTERO Y NO SOLO EL DE ESTE CICLO
+--
+-- Porque guardar en un fondo NO baja ningún saldo: los fondos viven en
+-- `movimientos_ahorro`, que la billetera no mira. Esa plata sigue contada
+-- dentro del banco. Si no se restara, el disponible incluiría los ahorros de
+-- toda la vida como si fueran para gastar. Y se resta el total y no el del
+-- ciclo justamente porque lo de los ciclos anteriores también sigue adentro.
+--
+-- EL RESPALDO, QUE NO ES UN DETALLE
+--
+-- Quien todavía no cargó ninguna cuenta en la billetera sigue con el cálculo
+-- de siempre. Si no, abriría Orden y vería «disponible: Gs. 0» teniendo
+-- plata, que es peor que un número impreciso: es un número que asusta. Al
+-- 21/09 hay tres cuentas de Matías sin cuentas de dinero creadas.
+
+-- ------------------------------------------------------------
+-- 1. EL CÁLCULO DE SIEMPRE, CON SU NOMBRE PROPIO
+--
+--    Se renombra en vez de copiarlo: son doscientas líneas y tener dos
+--    versiones de la misma cuenta es tenerlas esperando a separarse. El
+--    bloque se traga el error si ya se renombró, para que volver a aplicar
+--    la migración no falle.
+-- ------------------------------------------------------------
+do $ren$
+begin
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'resumen_personal'
+  ) and not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'resumen_personal_por_ciclo'
+  ) then
+    alter function public.resumen_personal(uuid) rename to resumen_personal_por_ciclo;
+  end if;
+end $ren$;
+
+revoke all on function public.resumen_personal_por_ciclo(uuid) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. Y EL QUE MIRA LA PLATA DE VERDAD
+-- ------------------------------------------------------------
+create or replace function public.resumen_personal(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+  v_cuentas integer;
+  v_en_cuentas numeric;
+  v_dias integer;
+  v_hoy date;
+  v_hasta date;
+  v_descontar numeric;
+begin
+  -- Se parte del resumen de siempre y se corrige el disponible. Repetir
+  -- acá las doscientas líneas que lo arman sería tener dos versiones de la
+  -- misma cuenta esperando a separarse.
+  v_res := public.resumen_personal_por_ciclo(p_empresa);
+
+  select count(*)::int into v_cuentas
+  from public.cuentas_dinero c where c.empresa_id = p_empresa and c.activa;
+
+  -- Sin cuentas cargadas no hay saldo real del que partir: queda el cálculo
+  -- por ciclo, que es impreciso pero no asusta.
+  if v_cuentas = 0 then
+    return v_res;
+  end if;
+
+  select coalesce(sum(public.saldo_cuenta_dinero(c.id)), 0) into v_en_cuentas
+  from public.cuentas_dinero c where c.empresa_id = p_empresa and c.activa;
+
+  -- Lo que está en las cuentas pero ya tiene dueño.
+  v_descontar := coalesce((v_res->>'ahorro_total')::numeric, 0)
+               + coalesce((v_res->>'fijos_por_pagar')::numeric, 0)
+               + coalesce((v_res->>'cuotas_por_vencer')::numeric, 0);
+
+  v_hoy   := public.hoy_empresa(p_empresa);
+  v_hasta := (v_res->>'hasta')::date;
+  v_dias  := greatest(1, (v_hasta - v_hoy) + 1);
+
+  return v_res
+    || jsonb_build_object(
+         'disponible', v_en_cuentas - v_descontar,
+         'por_dia',    round((v_en_cuentas - v_descontar) / v_dias, 2),
+         -- Para que la pantalla pueda explicar de dónde sale el número en
+         -- vez de pedir que se le crea.
+         'en_cuentas', v_en_cuentas,
+         'desde_la_billetera', true
+       );
+end $fn$;
+
+revoke all on function public.resumen_personal(uuid) from public, anon;
+grant execute on function public.resumen_personal(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  086_cada_cuenta_con_su_color.sql
+-- ############################################################
+
+-- ============================================================
+-- 086 · CADA CUENTA CON SU COLOR
+-- ============================================================
+--
+-- Matías: «los colores de cada banco. El Ueno es verde, el Atlas rojo
+-- oscuro, el Continental azul marino, el Familiar celeste».
+--
+-- PARA QUÉ
+--
+-- En el panel las cuentas son tarjetas que se deslizan de costado. Con seis
+-- tarjetas iguales hay que leer cada nombre para saber cuál es; con seis
+-- colores no hace falta leer. La pantalla ya sabe pintar los bancos que
+-- reconoce por el nombre —eso no necesita base—, pero dos cosas sí:
+--
+--   · el banco que no está en esa lista, que hay muchos;
+--   · y el gusto de cada uno, que gana siempre sobre lo que adivinemos.
+--
+-- POR NOMBRE Y NO POR CÓDIGO DE COLOR
+--
+-- Se guarda «azul», no «#1B3A6B». Dos motivos. Uno: un código libre deja
+-- entrar blanco sobre blanco, y una cuenta que no se ve. Dos: el tono exacto
+-- depende de si la pantalla está en claro o en oscuro, y eso lo sabe la
+-- pantalla, no la base. Guardando el nombre, retocar un tono es cambiar una
+-- línea en el código y no tocar una sola fila.
+--
+-- En null significa «el que corresponda»: el del banco si lo reconocemos, y
+-- si no uno sacado del nombre. Nadie queda sin color.
+
+-- ------------------------------------------------------------
+-- 1. LA COLUMNA
+-- ------------------------------------------------------------
+alter table public.cuentas_dinero
+  add column if not exists color text;
+
+alter table public.cuentas_dinero drop constraint if exists cuentas_dinero_color_check;
+alter table public.cuentas_dinero
+  add constraint cuentas_dinero_color_check
+  check (color is null or color in
+    ('verde', 'rojo', 'azul', 'celeste', 'naranja', 'violeta', 'rosa', 'gris'));
+
+comment on column public.cuentas_dinero.color is
+  'Color elegido a mano. Null: lo decide la pantalla por el nombre del banco (086).';
+
+-- ------------------------------------------------------------
+-- 2. GUARDARLO AL CREAR O EDITAR
+--
+--    La firma vieja se borra antes de crear la nueva. `create or replace`
+--    con un parámetro más no reemplaza: crea una segunda función al lado, y
+--    entonces la llamada de siempre se vuelve ambigua y PostgreSQL la
+--    rechaza. La pantalla dejaría de poder guardar una cuenta.
+-- ------------------------------------------------------------
+drop function if exists public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid);
+
+create or replace function public.guardar_cuenta_dinero(
+  p_empresa       uuid,
+  p_nombre        text,
+  p_tipo          text default 'banco',
+  p_saldo_inicial numeric default 0,
+  p_metodos       text[] default '{}',
+  p_id            uuid default null,
+  p_color         text default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id      uuid;
+  v_metodos text[];
+  v_color   text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede tocar esto.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre: el del banco, «Efectivo», «Tigo Money».' using errcode = '22023';
+  end if;
+
+  if coalesce(p_tipo, '') not in ('banco', 'efectivo', 'billetera') then
+    raise exception 'Ese tipo de cuenta no existe.' using errcode = '22023';
+  end if;
+
+  -- Un color que no conocemos no es motivo para no guardar la cuenta: se
+  -- deja en null y la pantalla elige. Lo que se pierde es una preferencia;
+  -- lo que se salvaría rechazando, nada.
+  v_color := case
+    when p_color in ('verde', 'rojo', 'azul', 'celeste', 'naranja', 'violeta', 'rosa', 'gris')
+    then p_color else null end;
+
+  select coalesce(array_agg(distinct m), '{}') into v_metodos
+  from unnest(coalesce(p_metodos, '{}')) m
+  where m in ('efectivo', 'transferencia', 'tarjeta', 'credito', 'otro');
+
+  if p_id is null then
+    if (select count(*) from public.cuentas_dinero where empresa_id = p_empresa and activa) >= 20 then
+      raise exception 'Ya tenés 20 cuentas. Archivá alguna antes de sumar otra.' using errcode = '22023';
+    end if;
+
+    insert into public.cuentas_dinero (empresa_id, nombre, tipo, saldo_inicial, metodos, color, orden, creada_por)
+    values (p_empresa, trim(p_nombre), p_tipo, coalesce(p_saldo_inicial, 0), v_metodos, v_color,
+            coalesce((select max(orden) + 1 from public.cuentas_dinero where empresa_id = p_empresa), 0),
+            auth.uid())
+    returning id into v_id;
+  else
+    update public.cuentas_dinero
+    set nombre = trim(p_nombre), tipo = p_tipo, metodos = v_metodos, color = v_color, updated_at = now()
+    where id = p_id and empresa_id = p_empresa and activa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  -- Cada forma de pago, en una sola casa.
+  update public.cuentas_dinero
+  set metodos = array(select x from unnest(metodos) x where not (x = any (v_metodos))),
+      updated_at = now()
+  where empresa_id = p_empresa and id <> v_id and metodos && v_metodos;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid, text) from public, anon;
+grant execute on function public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. Y QUE LLEGUE A LA PANTALLA
+--
+--    Sin esto la columna existe y no la ve nadie. Va en las dos funciones
+--    que arman cuentas para mostrar.
+-- ------------------------------------------------------------
+create or replace function public.billetera(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_cuentas jsonb;
+  v_zona    text;
+  v_sueltos record;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', c.id,
+    'nombre', c.nombre,
+    'tipo', c.tipo,
+    'color', c.color,
+    'metodos', to_jsonb(c.metodos),
+    'saldo', s.saldo,
+    -- Lo que se movió este mes por esta cuenta, para que el número no esté solo.
+    'entro_mes', coalesce(mes.entro, 0),
+    'salio_mes', coalesce(mes.salio, 0)
+  ) order by c.orden, c.created_at), '[]'::jsonb)
+  into v_cuentas
+  from public.cuentas_dinero c
+  cross join lateral (select public.saldo_cuenta_dinero(c.id) as saldo) s
+  left join lateral (
+    select
+      sum(m.monto) filter (where m.tipo <> 'gasto') as entro,
+      sum(m.monto) filter (where m.tipo = 'gasto')  as salio
+    from public.movimientos m
+    where m.cuenta_id = c.id and m.estado = 'activo'
+      and m.fecha >= date_trunc('month', (now() at time zone v_zona))::date
+  ) mes on true
+  where c.empresa_id = p_empresa and c.activa;
+
+  -- Lo que se cargó y no llegó a ninguna cuenta. El neto y no la suma a
+  -- secas: un gasto de 100 y un ingreso de 100 sin asignar no son 200 de
+  -- desajuste, son cero.
+  select count(*)::int as cantidad,
+         coalesce(sum(case when m.tipo = 'gasto' then -m.monto else m.monto end), 0) as neto,
+         min(m.fecha) as desde
+  into v_sueltos
+  from public.movimientos m
+  where m.empresa_id = p_empresa and m.estado = 'activo' and m.cuenta_id is null;
+
+  return jsonb_build_object(
+    'cuentas', v_cuentas,
+    'total', coalesce((select sum((x->>'saldo')::numeric) from jsonb_array_elements(v_cuentas) x), 0),
+    'sin_cuenta', jsonb_build_object(
+      'cantidad', coalesce(v_sueltos.cantidad, 0),
+      'neto',     coalesce(v_sueltos.neto, 0),
+      'desde',    v_sueltos.desde
+    ),
+    'metodos_sin_cuenta', (
+      select coalesce(jsonb_agg(m order by m), '[]'::jsonb)
+      from unnest(array['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro']) m
+      where exists (select 1 from public.cuentas_dinero c2
+                    where c2.empresa_id = p_empresa and c2.activa)
+        and not exists (select 1 from public.cuentas_dinero c3
+                        where c3.empresa_id = p_empresa and c3.activa and m = any (c3.metodos))
+    )
+  );
+end $fn$;
+
+create or replace function public.cuentas_para_elegir(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+                    'id', c.id, 'nombre', c.nombre, 'tipo', c.tipo, 'color', c.color,
+                    'metodos', to_jsonb(c.metodos))
+                            order by c.orden, c.created_at), '[]'::jsonb)
+  into v_lista
+  from public.cuentas_dinero c
+  where c.empresa_id = p_empresa and c.activa;
+
+  return v_lista;
+end $fn$;
+
+
+-- ############################################################
+-- ##  087_clases_y_cursos.sql
+-- ############################################################
+
+-- ============================================================
+-- 087 · UN RUBRO PARA QUIEN VENDE CLASES
+-- ============================================================
+--
+-- Matías quiere que Orden sirva también a quien da clases: profes de inglés,
+-- de matemática, de música, de programación, presenciales u online.
+--
+-- POR QUÉ NO ALCANZA CON «SERVICIOS Y OFICIOS»
+--
+-- Un plomero y un profe de inglés se parecen en que los dos venden su
+-- tiempo, y ahí se termina el parecido:
+--
+--   · El plomero cobra un trabajo y se termina. El profe tiene ALUMNOS, que
+--     vuelven todas las semanas durante meses.
+--   · El plomero factura un arreglo. El profe vende OCHO CLASES juntas y
+--     después las va dando.
+--   · El plomero gasta en cemento y repuestos. El profe gasta en internet,
+--     en el micrófono y en la plataforma que le come una comisión.
+--
+-- Meterlos en la misma puerta le deja a cada uno la mitad de las palabras
+-- equivocadas. Y hay un motivo más concreto: los paquetes de clases se van a
+-- prender solo acá, y no en la barbería, donde no significan nada.
+--
+-- QUÉ HACE ESTA MIGRACIÓN Y QUÉ NO
+--
+-- Solo abre la puerta: que el rubro exista, que tenga sus categorías de
+-- gasto y que se pueda elegir. Los paquetes vienen aparte, en su propia
+-- migración, porque tocan plata y esto no toca nada.
+--
+-- LA LISTA ESTABA ESCRITA CUATRO VECES
+--
+-- En el constraint de `empresas`, en `cambiar_rubro`, en `crear_empresa` y,
+-- de refilón, en `categorias_de_rubro`. Cuatro copias que tienen que decir
+-- lo mismo o el rubro se rompe de una forma particularmente fea: la peor es
+-- la de `crear_empresa`, que a un rubro que no conoce NO lo rechaza —lo
+-- convierte en 'comercio' sin avisar—. Alguien elegiría «Clases y cursos»,
+-- vería la pantalla de un almacén, y no habría ningún error en ningún lado.
+--
+-- Así que primero se deja una sola lista y después se agrega el rubro. El
+-- que viene detrás —personal trainer— va a ser una línea.
+
+-- ------------------------------------------------------------
+-- 1. LA ÚNICA LISTA DE RUBROS
+--
+--    `immutable` para poder usarla dentro de un CHECK. Que no revalide las
+--    filas viejas al cambiarla no es un problema acá: esta lista solo crece.
+-- ------------------------------------------------------------
+create or replace function public.rubros_validos()
+returns text[] language sql immutable set search_path = public as $fn$
+  select array['comercio', 'ganaderia', 'agricultura', 'servicios', 'clases'];
+$fn$;
+
+grant execute on function public.rubros_validos() to anon, authenticated;
+
+alter table public.empresas drop constraint if exists empresas_rubro_check;
+alter table public.empresas
+  add constraint empresas_rubro_check
+  check (rubro = any (public.rubros_validos()));
+
+-- ------------------------------------------------------------
+-- 2. EN QUÉ GASTA QUIEN DA CLASES
+--
+--    Se redefine la versión de DOS argumentos, que es la que vive desde la
+--    024. Crear una de un argumento al lado sería dejar una función muerta:
+--    la app llama a la de dos, y el rubro nuevo caería en el `else` —las
+--    categorías de un almacén— sin que nada fallara.
+--
+--    Con pistas, como todas: un nombre de categoría solo no alcanza para que
+--    el modelo clasifique bien lo que se dicta. «Pagué el Zoom» tiene que
+--    caer en Internet y plataformas, no en Otros.
+--
+--    La categoría que ningún otro rubro tiene es «Comisiones»: quien enseña
+--    por Preply, Superprof o Italki no cobra lo que factura, cobra lo que
+--    queda después de que la plataforma se lleve su parte. Sin esa
+--    categoría, esa mordida se reparte entre «Otros» y la nada, y el profe
+--    nunca ve cuánto le cuesta de verdad conseguir alumnos ahí.
+-- ------------------------------------------------------------
+create or replace function public.categorias_de_rubro(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case
+    when coalesce(p_tipo_cuenta, 'emprendedor') = 'personal' then jsonb_build_array(
+      jsonb_build_object('nombre','Comida','pistas','supermercado, almacén, verdulería, carnicería, despensa, panadería'),
+      jsonb_build_object('nombre','Alquiler','pistas','alquiler, expensas, condominio'),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono, cable, gas'),
+      jsonb_build_object('nombre','Transporte','pistas','colectivo, nafta, combustible, pasaje, taxi, uber, peaje'),
+      jsonb_build_object('nombre','Salud','pistas','farmacia, remedios, médico, dentista, seguro médico, análisis'),
+      jsonb_build_object('nombre','Educación','pistas','colegio, cuota, universidad, útiles, curso, libros'),
+      jsonb_build_object('nombre','Ropa','pistas','ropa, calzado, zapatillas, campera'),
+      jsonb_build_object('nombre','Cuidado personal','pistas','peluquería, uñas, barbería, cosmética, gimnasio, perfume'),
+      jsonb_build_object('nombre','Ocio','pistas','salida, restaurante, cine, streaming, viaje, cerveza, cumpleaños'),
+      jsonb_build_object('nombre','Hogar','pistas','limpieza, muebles, arreglos, electrodomésticos, ferretería'),
+      jsonb_build_object('nombre','Cuotas y deudas','pistas','tarjeta, préstamo, cuota, financiera'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'ganaderia' then jsonb_build_array(
+      jsonb_build_object('nombre','Alimentación','pistas','maíz, balanceado, ración, fardos, sal, pasto'),
+      jsonb_build_object('nombre','Sanidad','pistas','vacunas, antiparasitarios, veterinario, remedios'),
+      jsonb_build_object('nombre','Personal','pistas','peón, capataz, jornales, sueldos'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo, pastaje'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de hacienda, camión jaula'),
+      jsonb_build_object('nombre','Mantenimiento','pistas','alambrado, aguadas, maquinaria, herramientas'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'agricultura' then jsonb_build_array(
+      jsonb_build_object('nombre','Semilla','pistas','semilla, plantines'),
+      jsonb_build_object('nombre','Fertilizante','pistas','urea, fosfato, abono'),
+      jsonb_build_object('nombre','Agroquímicos','pistas','herbicida, fungicida, insecticida'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Cosecha','pistas','cosechadora, trilla, secado'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de granos'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo'),
+      jsonb_build_object('nombre','Personal','pistas','jornales, tractorista, peón'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'servicios' then jsonb_build_array(
+      jsonb_build_object('nombre','Materiales','pistas','cemento, arena, cables, pintura, insumos'),
+      jsonb_build_object('nombre','Repuestos','pistas','piezas, filtros, aceite'),
+      jsonb_build_object('nombre','Herramientas','pistas',''),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Personal','pistas','ayudante, jornales, sueldos'),
+      jsonb_build_object('nombre','Transporte','pistas','flete, viaje, delivery'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'clases' then jsonb_build_array(
+      jsonb_build_object('nombre','Internet y plataformas','pistas','internet, wifi, Zoom, Meet, plan del celular, hosting'),
+      jsonb_build_object('nombre','Comisiones','pistas','Preply, Italki, Superprof, lo que se lleva la plataforma, comisión de cobro'),
+      jsonb_build_object('nombre','Material','pistas','libros, licencias, PDF, impresiones, fotocopias, cuadernos'),
+      jsonb_build_object('nombre','Equipo','pistas','notebook, micrófono, cámara, auriculares, tablet, pizarra, luz'),
+      jsonb_build_object('nombre','Publicidad','pistas','anuncios, Instagram, Facebook, volantes'),
+      jsonb_build_object('nombre','Capacitación','pistas','cursos propios, certificaciones, exámenes, membresías'),
+      jsonb_build_object('nombre','Alquiler','pistas','aula, salón, espacio de trabajo'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    else jsonb_build_array(
+      jsonb_build_object('nombre','Mercadería','pistas','lo que comprás para revender'),
+      jsonb_build_object('nombre','Transporte','pistas','combustible, flete, delivery'),
+      jsonb_build_object('nombre','Comida','pistas',''),
+      jsonb_build_object('nombre','Publicidad','pistas',''),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono'),
+      jsonb_build_object('nombre','Alquiler','pistas',''),
+      jsonb_build_object('nombre','Sueldos','pistas','empleados, jornales'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+  end;
+$fn$;
+
+grant execute on function public.categorias_de_rubro(text, text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. SÍ CIERRA EL DÍA
+--
+--    Un profe da sus clases hoy y las cobra hoy: el día es su unidad, igual
+--    que la de un peluquero. Por eso tiene cierre y tiene racha.
+--
+--    Es lo contrario del ganadero, que vende tres veces al año: a él se le
+--    apagó justamente para no decirle todas las noches que no cargó nada.
+--
+--    También acá se redefine la de dos argumentos: la cuenta personal no
+--    cierra el día sea cual sea su rubro, y esa regla no se puede perder.
+-- ------------------------------------------------------------
+create or replace function public.rubro_cierra_el_dia(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns boolean language sql immutable set search_path = public as $fn$
+  select coalesce(p_tipo_cuenta, 'emprendedor') <> 'personal'
+     and coalesce(p_rubro, 'comercio') in ('comercio', 'servicios', 'clases');
+$fn$;
+
+grant execute on function public.rubro_cierra_el_dia(text, text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. CAMBIAR DE RUBRO, CONTRA LA LISTA ÚNICA
+-- ------------------------------------------------------------
+create or replace function public.cambiar_rubro(p_empresa uuid, p_rubro text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el propietario o un administrador puede cambiar el rubro.'
+      using errcode = '42501';
+  end if;
+
+  if not (p_rubro = any (public.rubros_validos())) then
+    raise exception 'Rubro desconocido: %', p_rubro using errcode = '22023';
+  end if;
+
+  select rubro into v_antes from public.empresas where id = p_empresa;
+  if v_antes is null then
+    raise exception 'Esa empresa no existe.' using errcode = 'P0002';
+  end if;
+
+  update public.empresas set rubro = p_rubro where id = p_empresa;
+
+  return jsonb_build_object('rubro', p_rubro, 'antes', v_antes);
+end $fn$;
+
+revoke all on function public.cambiar_rubro(uuid, text) from public, anon;
+grant execute on function public.cambiar_rubro(uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. CREAR LA EMPRESA, TAMBIÉN CONTRA LA LISTA ÚNICA
+--
+--    Copia exacta de la versión que está viva (023), con UNA línea
+--    cambiada: la que decide `v_rubro`. Se transcribe entera porque
+--    PostgreSQL no sabe reemplazar un pedazo del cuerpo de una función.
+--
+--    Sigue cayendo a 'comercio' cuando el rubro no existe, y eso queda a
+--    propósito: en el alta, rechazar es dejar a alguien afuera de Orden por
+--    un dato que se arregla después en Ajustes. Lo que cambia es que ahora
+--    'clases' sí está en la lista, que era el agujero.
+-- ------------------------------------------------------------
+create or replace function public.crear_empresa(
+  p_nombre text,
+  p_moneda text default 'PYG',
+  p_nombre_usuario text default null,
+  p_zona text default 'America/Asuncion',
+  p_tipo_cuenta text default 'emprendedor',
+  p_rubro text default 'comercio',
+  p_como_nos_conocio text default '',
+  p_telefono text default '',
+  p_se_dedica text default ''
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id uuid;
+  v_codigo text;
+  v_intentos int := 0;
+  v_fin timestamptz;
+  v_tipo text;
+  v_rubro text;
+  v_contacto text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) < 2 then
+    raise exception 'El nombre del negocio es muy corto.' using errcode = '22023';
+  end if;
+
+  v_tipo := case when p_tipo_cuenta = 'personal' then 'personal' else 'emprendedor' end;
+  v_rubro := case
+    when v_tipo = 'personal' then 'comercio'
+    when p_rubro = any (public.rubros_validos()) then p_rubro
+    else 'comercio' end;
+
+  loop
+    v_codigo := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+    exit when not exists (select 1 from public.empresa_accesos where codigo = v_codigo);
+    v_intentos := v_intentos + 1;
+    if v_intentos > 12 then
+      raise exception 'No se pudo generar un código de acceso.' using errcode = '55000';
+    end if;
+  end loop;
+
+  insert into public.empresas (
+    nombre, moneda, creada_por, zona_horaria, tipo_cuenta, rubro, como_nos_conocio)
+  values (trim(p_nombre), coalesce(p_moneda, 'PYG'), auth.uid(),
+          coalesce(nullif(trim(p_zona), ''), 'America/Asuncion'), v_tipo, v_rubro,
+          left(coalesce(p_como_nos_conocio, ''), 80))
+  returning id into v_id;
+
+  v_contacto := nullif(trim(coalesce(p_nombre_usuario, '')), '');
+
+  insert into public.miembros (empresa_id, user_id, nombre, rol)
+  values (v_id, auth.uid(), coalesce(v_contacto, 'Propietario'), 'propietario');
+
+  insert into public.empresa_accesos (empresa_id, codigo) values (v_id, v_codigo);
+
+  if v_contacto is not null
+     or nullif(trim(coalesce(p_telefono, '')), '') is not null
+     or nullif(trim(coalesce(p_se_dedica, '')), '') is not null then
+    insert into public.ficha_cliente (empresa_id, contacto, telefono, se_dedica, updated_at)
+    values (v_id,
+            left(coalesce(v_contacto, ''), 120),
+            left(regexp_replace(coalesce(p_telefono, ''), '[^0-9+]', '', 'g'), 40),
+            left(coalesce(trim(p_se_dedica), ''), 200),
+            now())
+    on conflict (empresa_id) do nothing;
+  end if;
+
+  v_fin := now() + make_interval(days => public.dias_de_prueba(v_tipo));
+  insert into public.suscripciones (empresa_id, plan, estado, periodo_inicio, periodo_fin, prueba_fin)
+  values (v_id, 'pro', 'prueba', now(), v_fin, v_fin);
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas set plan = 'pro' where id = v_id;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.crear_empresa(text, text, text, text, text, text, text, text, text)
+  from public, anon;
+grant execute on function public.crear_empresa(text, text, text, text, text, text, text, text, text)
+  to authenticated;
+
+
+-- ############################################################
+-- ##  088_el_paquete_de_clases.sql
+-- ############################################################
+
+-- ============================================================
+-- 088 · EL PAQUETE DE CLASES
+-- ============================================================
+--
+-- «Ocho clases por Gs. 400.000, pagadas el día 1.» Es la forma en que cobra
+-- casi todo el que enseña, y hasta ahora Orden no tenía dónde anotarla: se
+-- cargaba una venta de 400.000 y el profe llevaba en la cabeza —o en un
+-- cuaderno— cuántas le quedaban a cada alumno.
+--
+-- LO QUE DECIDIÓ MATÍAS, Y QUÉ SIGNIFICA ACÁ
+--
+-- «Se gana al cobrar.» Los 400.000 cuentan como ingreso el día que entran,
+-- no clase por clase. Por eso esta migración NO inventa ninguna lógica de
+-- plata: el paquete se cobra con `registrar_venta`, igual que cualquier
+-- venta. Cae en la billetera por su forma de pago, suma en la ganancia, y
+-- si se fía queda en el fiado. Todo eso ya estaba probado; acá no se toca.
+--
+-- Lo que el paquete agrega es solo el CONTADOR: cuántas clases se
+-- compraron, cuántas se dieron, cuántas quedan.
+--
+-- LA CONSECUENCIA, DICHA UNA VEZ
+--
+-- Si un alumno abandona en la tercera clase y se le devuelve plata, esa
+-- devolución cae en el mes en que se devuelve, no en el que pagó. Es la
+-- regla que eligió Matías con esa consecuencia a la vista.
+--
+-- LO USADO SE CALCULA, NO SE GUARDA
+--
+-- Cada clase dada es una fila, con su fecha. Lo usado es la suma de esas
+-- filas, igual que el saldo de una cuenta es la suma de sus movimientos. Un
+-- contador guardado aparte termina, tarde o temprano, diciendo otra cosa
+-- que su historia —y el alumno que pregunta «¿cuándo usé mis clases?»
+-- merece una respuesta con fechas, no un número.
+
+-- ------------------------------------------------------------
+-- 1. EL PAQUETE
+-- ------------------------------------------------------------
+create table if not exists public.paquetes (
+  id            uuid primary key default gen_random_uuid(),
+  empresa_id    uuid not null references public.empresas (id) on delete cascade,
+  -- El alumno. `restrict`: un alumno con paquetes no se borra por
+  -- accidente llevándose la historia de lo que pagó.
+  cliente_id    uuid not null references public.clientes (id) on delete restrict,
+  nombre        text not null check (char_length(trim(nombre)) between 1 and 80),
+  -- `numeric` y no entero: el mismo paquete sirve para «8 clases», para
+  -- «10 horas» y para una clase de hora y media que cuenta 1,5.
+  clases        numeric(8, 2) not null check (clases > 0 and clases <= 1000),
+  precio        numeric not null check (precio >= 0),
+  -- La venta que lo pagó. En null si el paquete fue gratis (una clase de
+  -- prueba): no hay venta de cero que anotar.
+  movimiento_id uuid references public.movimientos (id) on delete set null,
+  -- En null no vence. Matías: «vos decidís en cada paquete».
+  vence_el      date,
+  -- Cerrado a mano: el alumno abandonó. Las clases que quedaban no se
+  -- pueden usar, pero la historia sigue ahí.
+  cerrado       boolean not null default false,
+  creado_por    uuid references auth.users (id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists paquetes_alumno_idx on public.paquetes (cliente_id, created_at desc);
+create index if not exists paquetes_empresa_idx on public.paquetes (empresa_id);
+
+alter table public.paquetes enable row level security;
+revoke all on public.paquetes from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. CADA CLASE QUE SE DESCONTÓ
+--
+--    `motivo` distingue la clase que se dio de la falta que se descontó:
+--    Matías quiere decidir en cada falta si se cobra. Las dos restan igual,
+--    pero en la historia no son lo mismo.
+--
+--    `reserva_id` queda listo para cuando se enganche la agenda: el turno
+--    marcado como atendido va a descontar solo. El índice único garantiza
+--    que un mismo turno nunca descuente dos veces, aunque alguien toque el
+--    botón dos veces o la pantalla reintente.
+-- ------------------------------------------------------------
+create table if not exists public.clases_dadas (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  paquete_id  uuid not null references public.paquetes (id) on delete cascade,
+  fecha       date not null,
+  cantidad    numeric(8, 2) not null check (cantidad > 0),
+  motivo      text not null default 'dada' check (motivo in ('dada', 'falta')),
+  reserva_id  uuid references public.turnos_reserva (id) on delete set null,
+  creado_por  uuid references auth.users (id) on delete set null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists clases_dadas_paquete_idx on public.clases_dadas (paquete_id, fecha desc);
+create unique index if not exists clases_dadas_reserva_idx
+  on public.clases_dadas (reserva_id) where reserva_id is not null;
+
+alter table public.clases_dadas enable row level security;
+revoke all on public.clases_dadas from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LO QUE SE LEE DE UN PAQUETE
+--
+--    Un solo lugar que dice cuánto se usó y en qué estado está, para que la
+--    pantalla y las funciones de abajo no puedan contestar distinto.
+-- ------------------------------------------------------------
+create or replace function public.estado_paquete(p_paquete uuid)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'usadas', coalesce(u.usadas, 0),
+    'quedan', greatest(0, p.clases - coalesce(u.usadas, 0)),
+    'estado', case
+      when p.cerrado then 'cerrado'
+      when coalesce(u.usadas, 0) >= p.clases then 'terminado'
+      when p.vence_el is not null and p.vence_el < public.hoy_empresa(p.empresa_id) then 'vencido'
+      else 'activo' end
+  )
+  from public.paquetes p
+  left join lateral (
+    select sum(c.cantidad) as usadas from public.clases_dadas c where c.paquete_id = p.id
+  ) u on true
+  where p.id = p_paquete;
+$fn$;
+
+revoke all on function public.estado_paquete(uuid) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. VENDER UN PAQUETE
+--
+--    Todo o nada: la venta y el paquete se crean juntos. Un paquete sin su
+--    venta es un alumno con clases que nadie cobró; una venta sin paquete es
+--    plata que entró sin que se sepa por qué.
+-- ------------------------------------------------------------
+create or replace function public.vender_paquete(
+  p_empresa uuid,
+  p_cliente uuid,
+  p_nombre  text,
+  p_clases  numeric,
+  p_precio  numeric,
+  p_metodo  text default 'efectivo',
+  p_fecha   date default null,
+  p_vence   date default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_alumno text;
+  v_mov    uuid;
+  v_id     uuid;
+  v_fecha  date;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'Ponele un nombre al paquete: «8 clases de inglés».' using errcode = '22023';
+  end if;
+
+  if coalesce(p_clases, 0) <= 0 then
+    raise exception 'El paquete tiene que tener al menos una clase.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_precio, -1) < 0 then
+    raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  select nombre into v_alumno from public.clientes
+  where id = p_cliente and empresa_id = p_empresa;
+  if v_alumno is null then
+    raise exception 'Ese alumno no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  if p_vence is not null and p_vence < v_fecha then
+    raise exception 'El paquete no puede vencer antes de venderse.' using errcode = '22023';
+  end if;
+
+  -- La plata, por el camino de siempre. Sin costo: una clase no tiene
+  -- mercadería, así que todo lo cobrado es ganancia bruta.
+  if p_precio > 0 then
+    v_mov := public.registrar_venta(
+      p_empresa     => p_empresa,
+      p_items       => jsonb_build_array(jsonb_build_object(
+                         'nombre', left(trim(p_nombre), 80),
+                         'cantidad', 1,
+                         'precio_unitario', p_precio,
+                         'costo_unitario', 0)),
+      p_fecha       => v_fecha,
+      p_descripcion => left(trim(p_nombre), 80),
+      p_metodo_pago => coalesce(p_metodo, 'efectivo'),
+      p_contraparte => v_alumno,
+      p_cliente     => p_cliente
+    );
+  end if;
+
+  insert into public.paquetes (empresa_id, cliente_id, nombre, clases, precio, movimiento_id, vence_el, creado_por)
+  values (p_empresa, p_cliente, trim(p_nombre), p_clases, p_precio, v_mov, p_vence, auth.uid())
+  returning id into v_id;
+
+  return jsonb_build_object('paquete', v_id, 'movimiento', v_mov);
+end $fn$;
+
+revoke all on function public.vender_paquete(uuid, uuid, text, numeric, numeric, text, date, date) from public, anon;
+grant execute on function public.vender_paquete(uuid, uuid, text, numeric, numeric, text, date, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. DESCONTAR UNA CLASE
+--
+--    `for update` sobre el paquete: dos toques casi juntos —el profe y la
+--    agenda, o un reintento de la red— no pueden descontar las dos la
+--    última clase que quedaba.
+-- ------------------------------------------------------------
+create or replace function public.dar_clase(
+  p_paquete  uuid,
+  p_cantidad numeric default 1,
+  p_fecha    date default null,
+  p_motivo   text default 'dada',
+  p_reserva  uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_p      record;
+  v_estado jsonb;
+  v_fecha  date;
+begin
+  select * into v_p from public.paquetes where id = p_paquete for update;
+  if v_p.id is null then
+    raise exception 'Ese paquete no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v_p.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_cantidad, 0) <= 0 then
+    raise exception 'Hay que descontar al menos una clase.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_motivo, '') not in ('dada', 'falta') then
+    raise exception 'Eso no es una clase ni una falta.' using errcode = '22023';
+  end if;
+
+  v_estado := public.estado_paquete(p_paquete);
+  v_fecha  := coalesce(p_fecha, public.hoy_empresa(v_p.empresa_id));
+
+  if v_estado->>'estado' = 'cerrado' then
+    raise exception 'Ese paquete está cerrado.' using errcode = '22023';
+  end if;
+
+  -- Vencido se mira contra la fecha de la clase y no contra hoy: una clase
+  -- que se dio el día 30 se puede anotar el 2, aunque el paquete venciera
+  -- el 31. Lo que importa es cuándo fue, no cuándo se acordó alguien.
+  if v_p.vence_el is not null and v_fecha > v_p.vence_el then
+    raise exception 'Ese paquete venció el %.', to_char(v_p.vence_el, 'DD/MM') using errcode = '22023';
+  end if;
+
+  if (v_estado->>'quedan')::numeric < p_cantidad then
+    raise exception 'Le quedan % clases y querés descontar %.',
+      trim(to_char((v_estado->>'quedan')::numeric, 'FM999990.##')),
+      trim(to_char(p_cantidad, 'FM999990.##'))
+      using errcode = '22023';
+  end if;
+
+  insert into public.clases_dadas (empresa_id, paquete_id, fecha, cantidad, motivo, reserva_id, creado_por)
+  values (v_p.empresa_id, p_paquete, v_fecha, p_cantidad, p_motivo, p_reserva, auth.uid());
+
+  return public.estado_paquete(p_paquete);
+end $fn$;
+
+revoke all on function public.dar_clase(uuid, numeric, date, text, uuid) from public, anon;
+grant execute on function public.dar_clase(uuid, numeric, date, text, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. DESHACER UNA CLASE ANOTADA POR ERROR
+--
+--    Se borra la fila, sin más. No es plata —la plata está en la venta, que
+--    no se toca—: es una marca en un contador, y el error más común del
+--    mundo es tocar el botón dos veces.
+-- ------------------------------------------------------------
+create or replace function public.deshacer_clase(p_clase uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+  v_paquete uuid;
+begin
+  select empresa_id, paquete_id into v_empresa, v_paquete
+  from public.clases_dadas where id = p_clase;
+  if v_empresa is null then
+    raise exception 'Esa clase no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  delete from public.clases_dadas where id = p_clase;
+
+  return public.estado_paquete(v_paquete);
+end $fn$;
+
+revoke all on function public.deshacer_clase(uuid) from public, anon;
+grant execute on function public.deshacer_clase(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 7. CERRAR EL PAQUETE DE QUIEN ABANDONÓ
+--
+--    Y reabrirlo, porque el que dijo «no vuelvo más» a veces vuelve. Cerrar
+--    es cosa de quien administra: es decidir que unas clases pagadas ya no
+--    se van a dar.
+-- ------------------------------------------------------------
+create or replace function public.cerrar_paquete(p_paquete uuid, p_cerrado boolean default true)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+begin
+  select empresa_id into v_empresa from public.paquetes where id = p_paquete;
+  if v_empresa is null then
+    raise exception 'Ese paquete no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_admin(v_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede cerrar un paquete.' using errcode = '42501';
+  end if;
+
+  update public.paquetes set cerrado = coalesce(p_cerrado, true) where id = p_paquete;
+
+  return public.estado_paquete(p_paquete);
+end $fn$;
+
+revoke all on function public.cerrar_paquete(uuid, boolean) from public, anon;
+grant execute on function public.cerrar_paquete(uuid, boolean) to authenticated;
+
+-- ------------------------------------------------------------
+-- 8. LOS PAQUETES DE UN ALUMNO, CON SU HISTORIA
+--
+--    Primero los que se pueden usar, después los viejos. Cada uno con las
+--    clases que se descontaron y cuándo: es la respuesta a «¿cuándo usé mis
+--    clases?».
+-- ------------------------------------------------------------
+create or replace function public.paquetes_del_alumno(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x.fila order by x.orden, x.creado desc), '[]'::jsonb)
+  into v_lista
+  from (
+    select
+      p.created_at as creado,
+      case when (public.estado_paquete(p.id)->>'estado') = 'activo' then 0 else 1 end as orden,
+      jsonb_build_object(
+        'id', p.id,
+        'nombre', p.nombre,
+        'clases', p.clases,
+        'precio', p.precio,
+        'vence_el', p.vence_el,
+        'creado', p.created_at
+      ) || public.estado_paquete(p.id)
+        || jsonb_build_object('historia', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', c.id, 'fecha', c.fecha, 'cantidad', c.cantidad, 'motivo', c.motivo)
+                    order by c.fecha desc, c.created_at desc)
+             from public.clases_dadas c where c.paquete_id = p.id
+           ), '[]'::jsonb)) as fila
+    from public.paquetes p
+    where p.empresa_id = p_empresa and p.cliente_id = p_cliente
+  ) x;
+
+  return v_lista;
+end $fn$;
+
+revoke all on function public.paquetes_del_alumno(uuid, uuid) from public, anon;
+grant execute on function public.paquetes_del_alumno(uuid, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  089_un_profe_no_tiene_link_publico.sql
+-- ############################################################
+
+-- ============================================================
+-- 089 · UN PROFE NO TIENE LINK PÚBLICO DE RESERVAS
+-- ============================================================
+--
+-- Matías: «el link, no sé para qué estaría sirviendo. Si entro a reservar,
+-- solo voy a poder reservar un día y una hora. Pero un profesor no trabaja
+-- así: tiene un horario definido para cada alumno —todos los martes,
+-- miércoles y viernes a tal hora— y se cobra el mes antes de empezar».
+--
+-- Tiene razón, y es más que una preferencia. El link de la 038 se hizo
+-- para una barbería: un desconocido entra, ve los huecos libres y toma uno.
+-- Un profe no deja que un desconocido le tome un hueco de la agenda: los
+-- horarios los arma él, alumno por alumno. Un link así abierto sería una
+-- puerta por la que le entran reservas que después tiene que ir a cancelar.
+--
+-- POR QUÉ SE CIERRA ACÁ Y NO SOLO EN LA PANTALLA
+--
+-- Esconder la tarjeta del link alcanza para que nadie lo configure. No
+-- alcanza para el caso que sí va a pasar: una barbería que tenía su link
+-- publicado y un día se pasa a «Clases y cursos». Su link sigue en la
+-- biografía de Instagram, y seguiría tomando reservas.
+--
+-- Las tres puertas públicas (`agenda_publica`, `huecos_publicos`,
+-- `reservar_publico`) ya miran si el link está activo, y a un link apagado
+-- le contestan lo mismo que a uno que no existe. Así que no se tocan: se
+-- garantiza que el link de un profe nunca esté activo, y las tres se
+-- cierran de una. Reescribir tres funciones de seguridad para agregarles
+-- una condición sería arriesgar lo que ya estaba probado.
+--
+-- Pasarse de vuelta a un rubro con link NO lo reactiva solo: el dueño lo
+-- vuelve a prender cuando quiera. Un link que reaparece sin que nadie lo
+-- pida es tan sorpresivo como uno que desaparece.
+
+-- ------------------------------------------------------------
+-- 1. QUÉ RUBROS TRABAJAN CON ALUMNOS DE HORARIO FIJO
+--
+--    Espejo de `agendaDeAlumnos` en `src/lib/rubros.ts`. Una sola pregunta
+--    en un solo lugar de la base, igual que `rubro_cierra_el_dia`.
+-- ------------------------------------------------------------
+create or replace function public.rubro_de_alumnos(p_rubro text)
+returns boolean language sql immutable set search_path = public as $fn$
+  select coalesce(p_rubro, '') = 'clases';
+$fn$;
+
+grant execute on function public.rubro_de_alumnos(text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. EL LINK DE UN PROFE NO SE PUEDE PRENDER
+--
+--    Se rechaza con un mensaje, no se apaga en silencio: si alguien llega
+--    hasta acá, tiene que saber por qué su link no anda.
+-- ------------------------------------------------------------
+create or replace function public.link_publico_segun_rubro()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if new.activo and public.rubro_de_alumnos(
+       (select e.rubro from public.empresas e where e.id = new.empresa_id)) then
+    raise exception 'Una cuenta de clases no tiene link de reservas: los horarios de cada alumno los armás vos.'
+      using errcode = '22023';
+  end if;
+  return new;
+end $fn$;
+
+revoke all on function public.link_publico_segun_rubro() from public, anon, authenticated;
+
+drop trigger if exists link_publico_segun_rubro on public.turnos_publico;
+create trigger link_publico_segun_rubro
+  before insert or update on public.turnos_publico
+  for each row execute function public.link_publico_segun_rubro();
+
+-- ------------------------------------------------------------
+-- 3. PASARSE A CLASES APAGA EL LINK QUE HUBIERA
+--
+--    Es la barbería del ejemplo de arriba. Se apaga, no se borra: el slug
+--    es la dirección del negocio (038) y si vuelve a su rubro anterior lo
+--    tiene que encontrar igual.
+-- ------------------------------------------------------------
+create or replace function public.apagar_link_de_alumnos()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if public.rubro_de_alumnos(new.rubro) and not public.rubro_de_alumnos(old.rubro) then
+    update public.turnos_publico
+    set activo = false, updated_at = now()
+    where empresa_id = new.id and activo;
+  end if;
+  return new;
+end $fn$;
+
+revoke all on function public.apagar_link_de_alumnos() from public, anon, authenticated;
+
+drop trigger if exists apagar_link_de_alumnos on public.empresas;
+create trigger apagar_link_de_alumnos
+  after update of rubro on public.empresas
+  for each row execute function public.apagar_link_de_alumnos();
+
+-- ------------------------------------------------------------
+-- 4. Y SI YA HABÍA ALGUNO, SE APAGA AHORA
+--
+--    No debería haber ninguno —el rubro existe desde la 087, de hoy—, pero
+--    la regla vale desde que se aplica, no desde el próximo cambio.
+-- ------------------------------------------------------------
+update public.turnos_publico tp
+set activo = false, updated_at = now()
+from public.empresas e
+where e.id = tp.empresa_id and public.rubro_de_alumnos(e.rubro) and tp.activo;
+
+
+-- ############################################################
+-- ##  090_un_profe_no_cierra_caja.sql
+-- ############################################################
+
+-- ============================================================
+-- 090 · UN PROFE NO CIERRA CAJA
+-- ============================================================
+--
+-- Matías, mirando el rubro terminado: «¿cómo vas a comprar y vender un
+-- curso? Aparece invertido en stock, reponer. No tiene sentido. Esto es
+-- para que el profesor se administre con su agenda, con lo que entra y con
+-- lo que sale».
+--
+-- La mayor parte de ese cambio es de pantalla (`src/lib/rubros.ts`): se
+-- van los productos, la pantalla de cobrar y el cierre del día. Pero el
+-- cierre tiene una mitad que vive acá, y es la que molesta de verdad: el
+-- recordatorio de la noche. Con el rubro en `true`, a un profe que no da
+-- clases los sábados le llegaría todos los sábados «no cargaste nada hoy».
+-- Es retarlo por descansar.
+--
+-- La racha no se toca en esta migración. Hoy cuenta los días con algo
+-- cargado; va a pasar a contar los días que tenía clases y las marcó,
+-- cuando exista marcar una clase como dada. Hasta entonces sigue como está.
+
+create or replace function public.rubro_cierra_el_dia(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns boolean language sql immutable set search_path = public as $fn$
+  select coalesce(p_tipo_cuenta, 'emprendedor') <> 'personal'
+     and coalesce(p_rubro, 'comercio') in ('comercio', 'servicios');
+$fn$;
+
+grant execute on function public.rubro_cierra_el_dia(text, text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  091_inscribir_a_un_alumno.sql
+-- ############################################################
+
+-- ============================================================
+-- 091 · INSCRIBIR A UN ALUMNO
+-- ============================================================
+--
+-- Cómo trabaja un profe online, en palabras de Matías:
+--
+--   «El alumno se conecta con el profesor por WhatsApp. El profesor entra a
+--   su sistema para ver si tiene libre tal día, tal hora. Cuando llegan a un
+--   acuerdo —cuántos días, cuántas semanas, cuántos meses— el profesor anota:
+--   Matías va a tener clases lunes, martes y jueves de 6 a 7 de la tarde. Yo
+--   cobro 50.000 la hora. Y automáticamente se calcula cuánto sería en el
+--   plazo que marqué. El alumno paga y el profesor registra ese pago.»
+--
+-- Eso es esta migración. Una inscripción es:
+--
+--   · un horario  — qué días de la semana, de qué hora a qué hora;
+--   · un período  — desde cuándo hasta cuándo;
+--   · un precio   — por hora (y Orden multiplica) o cerrado;
+--   · y las clases que salen de cruzar lo anterior, puestas en la agenda.
+--
+-- POR DENTRO ES UN PAQUETE (088) CON HORARIO
+--
+-- Lo que la 088 llamaba paquete —N clases, un precio, un vencimiento, un
+-- contador— es exactamente lo que resulta de inscribir a alguien: trece
+-- clases, Gs. 650.000, vence el 31. Así que no se crea otra tabla: el
+-- paquete gana el horario, y las clases de la agenda saben de qué paquete
+-- salieron. Nada de lo que ya estaba probado se tira.
+--
+-- SE GANA AL COBRAR, TAMBIÉN ACÁ
+--
+-- Matías lo eligió: la plata cuenta el día que entra. Por eso una
+-- inscripción que todavía no se pagó NO es una venta fiada. Una venta fiada
+-- cuenta como cobrada el día de la venta (056), y eso sería decirle al profe
+-- que ganó en octubre plata que recién le pagan en noviembre. Una
+-- inscripción sin pagar queda «por cobrar», sin movimiento de plata, y la
+-- venta nace el día que el alumno paga.
+
+-- ------------------------------------------------------------
+-- 1. EL PAQUETE GANA UN HORARIO
+--
+--    `dias` con la numeración de PostgreSQL (`extract(dow)`): 0 es domingo,
+--    1 lunes… 6 sábado. Todo o nada: un horario a medias no genera clases.
+-- ------------------------------------------------------------
+alter table public.paquetes
+  add column if not exists dias        smallint[],
+  add column if not exists hora_desde  time,
+  add column if not exists hora_hasta  time,
+  add column if not exists desde       date,
+  add column if not exists precio_hora numeric;
+
+alter table public.paquetes drop constraint if exists paquete_horario_completo;
+alter table public.paquetes add constraint paquete_horario_completo check (
+  (dias is null and hora_desde is null and hora_hasta is null and desde is null)
+  or (dias is not null and cardinality(dias) > 0
+      and hora_desde is not null and hora_hasta is not null and hora_hasta > hora_desde
+      and desde is not null)
+);
+
+alter table public.paquetes drop constraint if exists paquete_precio_hora;
+alter table public.paquetes add constraint paquete_precio_hora
+  check (precio_hora is null or precio_hora >= 0);
+
+-- ------------------------------------------------------------
+-- 2. CADA CLASE DE LA AGENDA SABE DE QUÉ INSCRIPCIÓN SALIÓ
+--
+--    El alumno ya lo sabía: `cliente_id` existe desde la 052. Lo nuevo es
+--    el paquete, que es lo que va a permitir descontar la clase al marcarla
+--    como dada, y cancelar las que faltan si el alumno deja.
+-- ------------------------------------------------------------
+alter table public.turnos_reserva
+  add column if not exists paquete_id uuid references public.paquetes (id) on delete cascade;
+
+create index if not exists turnos_reserva_paquete_idx
+  on public.turnos_reserva (paquete_id) where paquete_id is not null;
+
+-- ------------------------------------------------------------
+-- 3. LAS FECHAS QUE SALEN DE UN HORARIO
+--
+--    Tope de un año: un error de tipeo en el año («2062») generaría miles
+--    de clases, y nadie inscribe a un alumno por más de un año de una vez.
+-- ------------------------------------------------------------
+create or replace function public.fechas_de_horario(p_dias smallint[], p_desde date, p_hasta date)
+returns setof date language sql immutable set search_path = public as $fn$
+  select d::date
+  from generate_series(p_desde, least(p_hasta, p_desde + 366), interval '1 day') d
+  where extract(dow from d)::smallint = any (p_dias)
+  order by 1;
+$fn$;
+
+revoke all on function public.fechas_de_horario(smallint[], date, date) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. LO QUE VA A PASAR, ANTES DE QUE PASE
+--
+--    La pantalla lo llama mientras el profe completa el formulario: cuántas
+--    clases, cuántas horas, cuánto da, y con quién choca. Es lo que le
+--    reemplaza el cuaderno: «el jueves 15 a las 18 ya tenés a Ana».
+--
+--    Choca con cualquier clase pendiente o confirmada de la cuenta, sea de
+--    quien sea: un profe da una clase a la vez.
+-- ------------------------------------------------------------
+create or replace function public.vista_previa_inscripcion(
+  p_empresa     uuid,
+  p_dias        smallint[],
+  p_hora_desde  time,
+  p_hora_hasta  time,
+  p_desde       date,
+  p_hasta       date,
+  p_precio_hora numeric default null,
+  p_total       numeric default null
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona   text;
+  v_clases integer;
+  v_horas  numeric;
+  v_total  numeric;
+  v_choques jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  -- Un formulario a medio completar no es un error: devuelve ceros.
+  if p_dias is null or cardinality(p_dias) = 0 or p_hora_desde is null or p_hora_hasta is null
+     or p_hora_hasta <= p_hora_desde or p_desde is null or p_hasta is null or p_hasta < p_desde then
+    return jsonb_build_object('clases', 0, 'horas', 0, 'total', 0, 'choques', '[]'::jsonb);
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  select count(*)::int into v_clases from public.fechas_de_horario(p_dias, p_desde, p_hasta);
+  v_horas := round(v_clases * extract(epoch from (p_hora_hasta - p_hora_desde)) / 3600.0, 2);
+  v_total := coalesce(p_total, round(v_horas * coalesce(p_precio_hora, 0)));
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'fecha', f.d,
+           'hora', to_char(r.inicia at time zone v_zona, 'HH24:MI'),
+           'alumno', r.cliente_nombre
+         ) order by f.d, r.inicia), '[]'::jsonb)
+  into v_choques
+  from public.fechas_de_horario(p_dias, p_desde, p_hasta) f(d)
+  join public.turnos_reserva r
+    on r.empresa_id = p_empresa
+   and r.estado in ('pendiente', 'confirmada')
+   and r.inicia < ((f.d + p_hora_hasta) at time zone v_zona)
+   and ((f.d + p_hora_desde) at time zone v_zona) < r.termina;
+
+  return jsonb_build_object('clases', v_clases, 'horas', v_horas, 'total', v_total, 'choques', v_choques);
+end $fn$;
+
+revoke all on function public.vista_previa_inscripcion(uuid, smallint[], time, time, date, date, numeric, numeric) from public, anon;
+grant execute on function public.vista_previa_inscripcion(uuid, smallint[], time, time, date, date, numeric, numeric) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. EL QUE DA LAS CLASES Y LO QUE SE DA
+--
+--    La agenda exige un profesional y un servicio por turno: se hizo para
+--    una barbería. Un profe no tiene por qué saberlo. Si no existen, se
+--    crean acá: él, sin comisión (`local`: todo queda para el negocio), y un
+--    servicio «Clase» que nunca ve, porque no tiene catálogo.
+-- ------------------------------------------------------------
+create or replace function public.profe_y_clase(p_empresa uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_prof     uuid;
+  v_producto uuid;
+  v_nombre   text;
+begin
+  select id into v_prof from public.turnos_profesional
+  where empresa_id = p_empresa and activo
+  order by (user_id = auth.uid()) desc nulls last, created_at
+  limit 1;
+
+  if v_prof is null then
+    select nombre into v_nombre from public.miembros
+    where empresa_id = p_empresa and user_id = auth.uid();
+    insert into public.turnos_profesional (empresa_id, nombre, user_id, reparto)
+    values (p_empresa, left(coalesce(nullif(trim(v_nombre), ''), 'Yo'), 60), auth.uid(), 'local')
+    returning id into v_prof;
+  end if;
+
+  select id into v_producto from public.productos
+  where empresa_id = p_empresa and nombre = 'Clase' and activo and not controla_stock
+  order by created_at limit 1;
+
+  if v_producto is null then
+    insert into public.productos (empresa_id, nombre, precio, costo, controla_stock)
+    values (p_empresa, 'Clase', 0, 0, false)
+    returning id into v_producto;
+  end if;
+
+  return jsonb_build_object('profesional', v_prof, 'producto', v_producto);
+end $fn$;
+
+revoke all on function public.profe_y_clase(uuid) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6. COBRAR UNA INSCRIPCIÓN
+--
+--    Es la venta de siempre, el día que el alumno paga. Va antes de
+--    `inscribir_alumno` porque la usa cuando el pago es en el momento.
+-- ------------------------------------------------------------
+create or replace function public.cobrar_inscripcion(
+  p_paquete uuid,
+  p_metodo  text default 'efectivo',
+  p_fecha   date default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_p      record;
+  v_alumno text;
+  v_mov    uuid;
+begin
+  select * into v_p from public.paquetes where id = p_paquete for update;
+  if v_p.id is null then
+    raise exception 'Ese paquete no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v_p.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if v_p.movimiento_id is not null then
+    raise exception 'Esa inscripción ya está cobrada.' using errcode = '22023';
+  end if;
+
+  if coalesce(v_p.precio, 0) <= 0 then
+    raise exception 'Esa inscripción no tiene nada que cobrar.' using errcode = '22023';
+  end if;
+
+  -- El fiado no es un pago: sería volver a anotar como deuda lo que ya es
+  -- una deuda, y contarlo como cobrado el día que no se cobró.
+  if coalesce(p_metodo, '') = 'credito' then
+    raise exception 'Para dejarlo pendiente no hace falta cobrar: ya queda por cobrar.' using errcode = '22023';
+  end if;
+
+  select nombre into v_alumno from public.clientes where id = v_p.cliente_id;
+
+  v_mov := public.registrar_venta(
+    p_empresa     => v_p.empresa_id,
+    p_items       => jsonb_build_array(jsonb_build_object(
+                       'nombre', left(v_p.nombre, 80),
+                       'cantidad', 1,
+                       'precio_unitario', v_p.precio,
+                       'costo_unitario', 0)),
+    p_fecha       => coalesce(p_fecha, public.hoy_empresa(v_p.empresa_id)),
+    p_descripcion => left(v_p.nombre, 80),
+    p_metodo_pago => coalesce(p_metodo, 'efectivo'),
+    p_contraparte => coalesce(v_alumno, ''),
+    p_cliente     => v_p.cliente_id
+  );
+
+  update public.paquetes set movimiento_id = v_mov where id = p_paquete;
+
+  return jsonb_build_object('movimiento', v_mov, 'monto', v_p.precio);
+end $fn$;
+
+revoke all on function public.cobrar_inscripcion(uuid, text, date) from public, anon;
+grant execute on function public.cobrar_inscripcion(uuid, text, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 7. INSCRIBIR
+--
+--    Todo o nada: el paquete, sus clases en la agenda y —si ya pagó— la
+--    venta. Si una sola clase choca, no se inscribe nada: una inscripción a
+--    la que le faltan dos martes es peor que ninguna, porque el profe cree
+--    que las tiene.
+-- ------------------------------------------------------------
+create or replace function public.inscribir_alumno(
+  p_empresa     uuid,
+  p_cliente     uuid,
+  p_dias        smallint[],
+  p_hora_desde  time,
+  p_hora_hasta  time,
+  p_desde       date,
+  p_hasta       date,
+  p_precio_hora numeric default null,
+  p_total       numeric default null,
+  p_pagado      boolean default false,
+  p_metodo      text default 'efectivo',
+  p_nombre      text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_alumno   record;
+  v_zona     text;
+  v_previa   jsonb;
+  v_choque   jsonb;
+  v_base     jsonb;
+  v_id       uuid;
+  v_mov      uuid;
+  v_total    numeric;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select id, nombre, coalesce(telefono, '') as telefono into v_alumno
+  from public.clientes where id = p_cliente and empresa_id = p_empresa;
+  if v_alumno.id is null then
+    raise exception 'Ese alumno no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if p_dias is null or cardinality(p_dias) = 0
+     or exists (select 1 from unnest(p_dias) d where d not between 0 and 6) then
+    raise exception 'Elegí al menos un día de la semana.' using errcode = '22023';
+  end if;
+
+  if p_hora_desde is null or p_hora_hasta is null or p_hora_hasta <= p_hora_desde then
+    raise exception 'La clase tiene que terminar después de empezar.' using errcode = '22023';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then
+    raise exception 'El período tiene que terminar después de empezar.' using errcode = '22023';
+  end if;
+
+  if p_hasta > p_desde + 366 then
+    raise exception 'Se puede inscribir hasta un año de una vez.' using errcode = '22023';
+  end if;
+
+  if p_total is null and p_precio_hora is null then
+    raise exception 'Poné cuánto cobrás: por hora o un precio cerrado.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_total, 0) < 0 or coalesce(p_precio_hora, 0) < 0 then
+    raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  v_previa := public.vista_previa_inscripcion(
+    p_empresa, p_dias, p_hora_desde, p_hora_hasta, p_desde, p_hasta, p_precio_hora, p_total);
+
+  if (v_previa->>'clases')::int = 0 then
+    raise exception 'En ese período no cae ningún día de los que elegiste.' using errcode = '22023';
+  end if;
+
+  v_choque := v_previa->'choques'->0;
+  if v_choque is not null then
+    raise exception 'El % a las % ya tenés a %.',
+      to_char((v_choque->>'fecha')::date, 'DD/MM'), v_choque->>'hora', v_choque->>'alumno'
+      using errcode = '23P01';
+  end if;
+
+  v_total := (v_previa->>'total')::numeric;
+  v_base  := public.profe_y_clase(p_empresa);
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  insert into public.paquetes (
+    empresa_id, cliente_id, nombre, clases, precio, vence_el, creado_por,
+    dias, hora_desde, hora_hasta, desde, precio_hora)
+  values (
+    p_empresa, p_cliente,
+    left(coalesce(nullif(trim(p_nombre), ''), 'Clases'), 80),
+    (v_previa->>'clases')::numeric, v_total, p_hasta, auth.uid(),
+    (select array_agg(distinct d order by d) from unnest(p_dias) d),
+    p_hora_desde, p_hora_hasta, p_desde,
+    case when p_total is null then p_precio_hora end)
+  returning id into v_id;
+
+  -- Las clases, en la agenda. Confirmadas: ya se acordaron por WhatsApp.
+  insert into public.turnos_reserva (
+    empresa_id, profesional_id, producto_id, inicia, termina,
+    cliente_nombre, cliente_telefono, cliente_id, paquete_id, estado, origen, creada_por)
+  select
+    p_empresa, (v_base->>'profesional')::uuid, (v_base->>'producto')::uuid,
+    (f.d + p_hora_desde) at time zone v_zona,
+    (f.d + p_hora_hasta) at time zone v_zona,
+    v_alumno.nombre, v_alumno.telefono, p_cliente, v_id, 'confirmada', 'local', auth.uid()
+  from public.fechas_de_horario(p_dias, p_desde, p_hasta) f(d);
+
+  if coalesce(p_pagado, false) and v_total > 0 then
+    v_mov := (public.cobrar_inscripcion(v_id, p_metodo, null)->>'movimiento')::uuid;
+  end if;
+
+  return jsonb_build_object(
+    'paquete', v_id, 'clases', (v_previa->>'clases')::int, 'total', v_total, 'movimiento', v_mov);
+end $fn$;
+
+revoke all on function public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text) from public, anon;
+grant execute on function public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 8. LO QUE FALTA COBRAR
+--
+--    Inscripciones con precio, sin cobrar y sin cerrar. Es lo que el profe
+--    ve arriba de sus alumnos: a quién le tiene que pedir la plata.
+-- ------------------------------------------------------------
+create or replace function public.por_cobrar_alumnos(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'paquete', p.id, 'cliente_id', p.cliente_id, 'alumno', c.nombre,
+           'nombre', p.nombre, 'monto', p.precio, 'desde', p.desde, 'hasta', p.vence_el)
+         order by p.desde nulls last, c.nombre), '[]'::jsonb)
+  into v_lista
+  from public.paquetes p
+  join public.clientes c on c.id = p.cliente_id
+  where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado;
+
+  return jsonb_build_object(
+    'total', coalesce((select sum((x->>'monto')::numeric) from jsonb_array_elements(v_lista) x), 0),
+    'lista', v_lista);
+end $fn$;
+
+revoke all on function public.por_cobrar_alumnos(uuid) from public, anon;
+grant execute on function public.por_cobrar_alumnos(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 9. CERRAR UNA INSCRIPCIÓN SACA SUS CLASES DE LA AGENDA
+--
+--    El alumno dejó: las clases que faltaban no se van a dar, y si quedan
+--    en la agenda ocupan un horario que el profe podría darle a otro.
+--    Reabrirla las vuelve a poner, pero solo si ese horario sigue libre: el
+--    profe pudo habérselo dado a alguien mientras tanto.
+-- ------------------------------------------------------------
+create or replace function public.cerrar_paquete(p_paquete uuid, p_cerrado boolean default true)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+begin
+  select empresa_id into v_empresa from public.paquetes where id = p_paquete;
+  if v_empresa is null then
+    raise exception 'Ese paquete no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_admin(v_empresa) then
+    raise exception 'Solo el dueño de la cuenta puede cerrar un paquete.' using errcode = '42501';
+  end if;
+
+  update public.paquetes set cerrado = coalesce(p_cerrado, true) where id = p_paquete;
+
+  if coalesce(p_cerrado, true) then
+    update public.turnos_reserva
+    set estado = 'cancelada'
+    where paquete_id = p_paquete and estado in ('pendiente', 'confirmada') and inicia > now();
+  else
+    update public.turnos_reserva r
+    set estado = 'confirmada'
+    where r.paquete_id = p_paquete and r.estado = 'cancelada' and r.inicia > now()
+      and not exists (
+        select 1 from public.turnos_reserva o
+        where o.empresa_id = r.empresa_id and o.id <> r.id
+          and o.estado in ('pendiente', 'confirmada')
+          and o.inicia < r.termina and r.inicia < o.termina);
+  end if;
+
+  return public.estado_paquete(p_paquete);
+end $fn$;
+
+revoke all on function public.cerrar_paquete(uuid, boolean) from public, anon;
+grant execute on function public.cerrar_paquete(uuid, boolean) to authenticated;
+
+-- ------------------------------------------------------------
+-- 10. LA FICHA DEL ALUMNO VE EL HORARIO Y SI ESTÁ PAGADO
+-- ------------------------------------------------------------
+create or replace function public.paquetes_del_alumno(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x.fila order by x.orden, x.creado desc), '[]'::jsonb)
+  into v_lista
+  from (
+    select
+      p.created_at as creado,
+      case when (public.estado_paquete(p.id)->>'estado') = 'activo' then 0 else 1 end as orden,
+      jsonb_build_object(
+        'id', p.id,
+        'nombre', p.nombre,
+        'clases', p.clases,
+        'precio', p.precio,
+        'vence_el', p.vence_el,
+        'creado', p.created_at,
+        'dias', to_jsonb(p.dias),
+        'hora_desde', to_char(p.hora_desde, 'HH24:MI'),
+        'hora_hasta', to_char(p.hora_hasta, 'HH24:MI'),
+        'desde', p.desde,
+        'precio_hora', p.precio_hora,
+        -- Pagado si tiene su venta, o si no había nada que cobrar.
+        'pagado', p.movimiento_id is not null or coalesce(p.precio, 0) = 0
+      ) || public.estado_paquete(p.id)
+        || jsonb_build_object('historia', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', c.id, 'fecha', c.fecha, 'cantidad', c.cantidad, 'motivo', c.motivo)
+                    order by c.fecha desc, c.created_at desc)
+             from public.clases_dadas c where c.paquete_id = p.id
+           ), '[]'::jsonb)) as fila
+    from public.paquetes p
+    where p.empresa_id = p_empresa and p.cliente_id = p_cliente
+  ) x;
+
+  return v_lista;
+end $fn$;
+
+revoke all on function public.paquetes_del_alumno(uuid, uuid) from public, anon;
+grant execute on function public.paquetes_del_alumno(uuid, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  092_la_clase_del_dia.sql
+-- ############################################################
+
+-- ============================================================
+-- 092 · LA CLASE DEL DÍA, EL PANEL DEL PROFE Y SU RACHA
+-- ============================================================
+--
+-- Matías, después de probar: «llega el día y me aparece atendido, cobrar,
+-- mover, cancelar, no vino. Atendido y cobrar no se puede, porque yo ya
+-- cobré por adelantado. Lo que podría hacer es "clase finalizada", para
+-- marcar que sí se tuvo. Y si no se tuvo, en vez de "no vino", "no se tuvo
+-- la clase"».
+--
+-- Y sobre el panel: «si entro como profesor no me puede aparecer lo
+-- vendido, ganancia bruta, ganancia neta, lo que más se vendió. Tiene que
+-- estar adaptado a su rubro».
+--
+-- MARCAR UNA CLASE NO COBRA NADA
+--
+-- `atender_reserva` es de la barbería: marcar atendido ES cobrar el corte,
+-- ahí mismo. Un profe ya cobró el período al inscribir. Marcar la clase es
+-- solo decir que pasó —y descontarla del período, por el camino de la 088,
+-- con la reserva pegada para que un doble toque no la descuente dos veces.
+--
+-- LA CLASE QUE NO SE TUVO
+--
+-- Matías decidió que en cada falta se pregunte si se descuenta. Acá se
+-- recibe la respuesta: con descuento queda como «falta» en la historia del
+-- alumno; sin descuento la clase sigue disponible, como si nunca hubiera
+-- estado agendada. En la agenda queda igual «no se tuvo».
+
+-- ------------------------------------------------------------
+-- 1. LA AGENDA DEL DÍA DICE DE QUÉ INSCRIPCIÓN ES CADA CLASE
+--
+--    Sin esto la pantalla no puede saber si un turno es una clase de un
+--    período pagado o un corte que hay que cobrar.
+-- ------------------------------------------------------------
+create or replace function public.agenda_del_dia(
+  p_empresa uuid,
+  p_fecha   date default null
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona  text;
+  v_fecha date;
+  v_res   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas where id = p_empresa;
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',          r.id,
+    'inicia',      r.inicia,
+    'termina',     r.termina,
+    'profesional', p.nombre,
+    'profesional_id', r.profesional_id,
+    'servicio',    pr.nombre,
+    'producto_id', r.producto_id,
+    'cliente',     r.cliente_nombre,
+    'telefono',    r.cliente_telefono,
+    'estado',      r.estado,
+    'origen',      r.origen,
+    'token',       r.token,
+    'avisado',     (r.avisado_at is not null),
+    'paquete_id',  r.paquete_id
+  ) order by r.inicia), '[]'::jsonb)
+  into v_res
+  from public.turnos_reserva r
+  join public.turnos_profesional p on p.id = r.profesional_id
+  join public.productos pr on pr.id = r.producto_id
+  where r.empresa_id = p_empresa
+    and (r.inicia at time zone v_zona)::date = v_fecha
+    and r.estado <> 'cancelada';
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.agenda_del_dia(uuid, date) from public, anon;
+grant execute on function public.agenda_del_dia(uuid, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. MARCAR LA CLASE: SE TUVO, O NO SE TUVO
+-- ------------------------------------------------------------
+create or replace function public.marcar_clase(
+  p_reserva   uuid,
+  p_dada      boolean default true,
+  p_descontar boolean default true
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_r     public.turnos_reserva%rowtype;
+  v_zona  text;
+  v_fecha date;
+  v_paq   jsonb;
+begin
+  select * into v_r from public.turnos_reserva where id = p_reserva for update;
+  if not found then
+    raise exception 'Esa reserva no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v_r.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if v_r.estado not in ('pendiente', 'confirmada') then
+    raise exception 'Esa reserva ya se cerró.' using errcode = '23505';
+  end if;
+
+  if v_r.paquete_id is null then
+    raise exception 'Esa clase no es de ninguna inscripción.' using errcode = '22023';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas where id = v_r.empresa_id;
+  -- La fecha de la CLASE, no la de hoy: la del lunes que se marca el martes
+  -- sigue siendo del lunes.
+  v_fecha := (v_r.inicia at time zone v_zona)::date;
+
+  if coalesce(p_dada, true) then
+    v_paq := public.dar_clase(v_r.paquete_id, 1, v_fecha, 'dada', p_reserva);
+    update public.turnos_reserva set estado = 'atendida' where id = p_reserva;
+  else
+    if coalesce(p_descontar, true) then
+      v_paq := public.dar_clase(v_r.paquete_id, 1, v_fecha, 'falta', p_reserva);
+    else
+      v_paq := public.estado_paquete(v_r.paquete_id);
+    end if;
+    update public.turnos_reserva set estado = 'no_vino' where id = p_reserva;
+  end if;
+
+  return jsonb_build_object('reserva', p_reserva, 'paquete', v_paq);
+end $fn$;
+
+revoke all on function public.marcar_clase(uuid, boolean, boolean) from public, anon;
+grant execute on function public.marcar_clase(uuid, boolean, boolean) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LA RACHA CUENTA LOS DÍAS CON CLASE DADA
+--
+--    Un profe no cierra caja ni carga ventas: su «cargué algo hoy» es marcar
+--    la clase. Va a la única fuente de la racha (080), así que el panel, el
+--    descuento por constancia y el recordatorio miran lo mismo.
+--
+--    Lo que todavía NO hace: que los días sin clases no corten la racha.
+--    Eso cambia la regla de las islas y va aparte.
+-- ------------------------------------------------------------
+create or replace function public.dias_cargados(p_empresa uuid, p_hasta date)
+returns setof date language sql stable security definer set search_path = public as $fn$
+  select fecha
+  from (
+    select m.fecha
+    from public.movimientos m
+    where m.empresa_id = p_empresa and m.estado = 'activo' and m.fecha <= p_hasta
+    union
+    select a.fecha
+    from public.movimientos_ahorro a
+    where a.empresa_id = p_empresa and a.fecha <= p_hasta
+    union
+    select c.fecha
+    from public.clases_dadas c
+    where c.empresa_id = p_empresa and c.motivo = 'dada' and c.fecha <= p_hasta
+  ) d
+  group by fecha;
+$fn$;
+
+revoke all on function public.dias_cargados(uuid, date) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. LO QUE MIRA UN PROFE AL ABRIR ORDEN
+--
+--    Nada de vendido ni de ganancia bruta. Sus preguntas son otras: ¿qué
+--    clases tengo hoy?, ¿cuánto cobré?, ¿quién me debe?, ¿cuántos alumnos
+--    activos tengo?
+-- ------------------------------------------------------------
+create or replace function public.panel_profe(p_empresa uuid, p_desde date, p_hasta date)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona text;
+  v_hoy  date;
+  v_res  jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+  v_hoy := public.hoy_empresa(p_empresa);
+
+  select jsonb_build_object(
+    'hoy', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', r.id, 'hora', to_char(r.inicia at time zone v_zona, 'HH24:MI'),
+        'alumno', r.cliente_nombre, 'estado', r.estado) order by r.inicia)
+      from public.turnos_reserva r
+      where r.empresa_id = p_empresa and r.estado <> 'cancelada'
+        and (r.inicia at time zone v_zona)::date = v_hoy), '[]'::jsonb),
+    'clases_periodo', (
+      select count(*)::int from public.turnos_reserva r
+      where r.empresa_id = p_empresa and r.estado = 'atendida'
+        and (r.inicia at time zone v_zona)::date between p_desde and p_hasta),
+    'cobrado', coalesce((
+      select sum(m.monto) from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo in ('venta', 'ingreso')
+        and m.fecha between p_desde and p_hasta), 0),
+    'gastado', coalesce((
+      select sum(m.monto) from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+        and m.fecha between p_desde and p_hasta), 0),
+    'por_cobrar', coalesce((
+      select sum(p.precio) from public.paquetes p
+      where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado), 0),
+    'deben', (
+      select count(distinct p.cliente_id)::int from public.paquetes p
+      where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado),
+    'alumnos_activos', (
+      select count(distinct p.cliente_id)::int from public.paquetes p
+      where p.empresa_id = p_empresa and not p.cerrado
+        and (public.estado_paquete(p.id)->>'estado') = 'activo')
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.panel_profe(uuid, date, date) from public, anon;
+grant execute on function public.panel_profe(uuid, date, date) to authenticated;
+
+
+-- ############################################################
+-- ##  093_constancia_al_cinco.sql
+-- ############################################################
+
+-- ============================================================
+-- 093 · EL DESCUENTO POR CONSTANCIA BAJA A 5%
+-- ============================================================
+--
+-- Matías: «el descuento después de la primera suscripción, si completaba
+-- la racha de 30 días, era de 20%. Estuve calculando y 20% es muchísimo.
+-- Quiero que sea solo 5%».
+--
+-- LO QUE QUEDA, ENTERO
+--
+--   · LA PRUEBA NO CAMBIA. Junta la racha de la prueba —8 días un negocio,
+--     5 una cuenta personal— y el primer mes sale 18% más barato.
+--   · DESPUÉS DE PAGAR: con 30 días seguidos cargando, la renovación sale
+--     5% más barata. Y así todos los meses, mientras la racha siga viva.
+--     Si se corta, se pausa hasta volver a juntar los 30. Es el mismo
+--     trato de la 079, con otro número.
+--
+-- A QUIÉN LE TOCA
+--
+-- A nadie se le quita algo que ya ganó. Al 21/09 hay dos suscripciones
+-- activas, y ninguna tiene racha hoy: la más larga que llegaron a juntar
+-- fue de 2 días, lejos de los 30 que hacían falta para el 20%.
+--
+-- EL NÚMERO VIVE EN UN SOLO LUGAR
+--
+-- `ajustes_orden.descuento_constancia_porcentaje`. Todos los textos —el
+-- panel, el plan, la página de inicio, el correo de activación, el
+-- recordatorio— lo leen de ahí. Se cambia también el valor por defecto de
+-- la columna y la reserva de las dos funciones que lo leen, para que no
+-- quede un 20 escrito en ningún lado esperando a reaparecer.
+
+-- ------------------------------------------------------------
+-- 1. EL NÚMERO
+-- ------------------------------------------------------------
+alter table public.ajustes_orden
+  alter column descuento_constancia_porcentaje set default 5;
+
+update public.ajustes_orden set descuento_constancia_porcentaje = 5 where unica;
+
+-- ------------------------------------------------------------
+-- 2. LO QUE MUESTRA LA PÁGINA DE INICIO
+--
+--    Copia exacta de la versión viva (079), con la reserva de la
+--    constancia en 5.
+-- ------------------------------------------------------------
+create or replace function public.promo_de_la_prueba()
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'porcentaje',            coalesce((select descuento_racha_porcentaje from public.ajustes_orden where unica), 18),
+    'negocio',               coalesce((select racha_objetivo_negocio    from public.ajustes_orden where unica), 8),
+    'personal',              coalesce((select racha_objetivo_personal   from public.ajustes_orden where unica), 5),
+    'constancia_porcentaje', coalesce((select descuento_constancia_porcentaje from public.ajustes_orden where unica), 5),
+    'constancia_dias',       coalesce((select racha_objetivo_constancia       from public.ajustes_orden where unica), 30)
+  );
+$fn$;
+
+-- ------------------------------------------------------------
+-- 3. EL DESCUENTO QUE CORRESPONDE HOY
+--
+--    Copia exacta de la versión viva (080), con la reserva de la
+--    constancia en 5. Nada más cambia: ni las fases, ni los objetivos, ni
+--    cómo se cuenta la racha.
+-- ------------------------------------------------------------
+create or replace function public.descuento_por_racha(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_tipo     text;
+  v_zona     text;
+  v_desde    date;
+  v_hasta    date;
+  v_hoy      date;
+  v_objetivo integer;
+  v_pct      numeric;
+  v_mejor    integer := 0;
+  v_vigente  boolean := false;
+  v_fase     text;
+  v_ajustes  record;
+  v_sus      record;
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(e.tipo_cuenta, 'emprendedor'), coalesce(e.zona_horaria, 'America/Asuncion')
+  into v_tipo, v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select * into v_ajustes from public.ajustes_orden where unica;
+  v_hoy := (now() at time zone v_zona)::date;
+
+  select s.* into v_sus from public.suscripciones s where s.empresa_id = p_empresa;
+
+  if v_sus.empresa_id is null then
+    return jsonb_build_object(
+      'fase', 'prueba', 'objetivo', coalesce(v_ajustes.racha_objetivo_negocio, 8),
+      'mejor', 0, 'faltan', coalesce(v_ajustes.racha_objetivo_negocio, 8),
+      'logrado', false, 'porcentaje', coalesce(v_ajustes.descuento_racha_porcentaje, 18),
+      'vigente', false);
+  end if;
+
+  v_fase := case
+    when v_sus.estado = 'activa' and coalesce(v_sus.plan, 'gratis') <> 'gratis' then 'constancia'
+    else 'prueba'
+  end;
+
+  if v_fase = 'constancia' then
+    v_pct      := coalesce(v_ajustes.descuento_constancia_porcentaje, 5);
+    v_objetivo := coalesce(v_ajustes.racha_objetivo_constancia, 30);
+    with dias as (
+      select d.fecha from public.dias_cargados(p_empresa, v_hoy) d(fecha)
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    ),
+    rachas as (
+      select isla, count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+    )
+    select coalesce((select largo from rachas where hasta in (v_hoy, v_hoy - 1)
+                     order by hasta desc limit 1), 0)
+    into v_mejor;
+    v_vigente := true;
+  else
+    v_pct      := coalesce(v_ajustes.descuento_racha_porcentaje, 18);
+    v_objetivo := coalesce(
+      case when v_tipo = 'personal' then v_ajustes.racha_objetivo_personal
+           else v_ajustes.racha_objetivo_negocio end,
+      case when v_tipo = 'personal' then 5 else 8 end);
+
+    v_desde := (v_sus.created_at at time zone v_zona)::date;
+    v_hasta := least(v_hoy, (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date);
+    v_vigente := v_sus.estado = 'prueba'
+                 and v_hoy <= (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date;
+
+    with dias as (
+      select d.fecha from public.dias_cargados(p_empresa, v_hasta) d(fecha)
+      where d.fecha >= v_desde
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    )
+    select coalesce(max(largo), 0) into v_mejor
+    from (select count(*)::int as largo from numeradas group by isla) r;
+  end if;
+
+  return jsonb_build_object(
+    'fase',       v_fase,
+    'objetivo',   v_objetivo,
+    'mejor',      v_mejor,
+    'faltan',     greatest(0, v_objetivo - v_mejor),
+    'logrado',    v_mejor >= v_objetivo,
+    'porcentaje', v_pct,
+    'vigente',    v_vigente
+  );
+end $fn$;
+
+revoke all on function public.descuento_por_racha(uuid) from public, anon;
+grant execute on function public.descuento_por_racha(uuid) to authenticated;
+grant execute on function public.promo_de_la_prueba() to anon, authenticated;
+
+
+-- ############################################################
+-- ##  094_que_se_le_ensena.sql
+-- ############################################################
+
+-- ============================================================
+-- 094 · QUÉ SE LE ENSEÑA A CADA ALUMNO
+-- ============================================================
+--
+-- Matías: «al momento de inscribir a un alumno, tener una opción donde
+-- especificar qué es lo que se le va a enseñar: inglés, matemática, o algo
+-- distinto. Así para saber qué se le enseña a cada alumno».
+--
+-- Un profe que da inglés a las cinco y matemática a las seis mira la agenda
+-- y tiene que saber qué preparar sin abrir la ficha de cada uno. Así que la
+-- materia se anota al inscribir y se ve donde se mira el día: la agenda, las
+-- clases de hoy del panel, la ficha del alumno y lo que falta cobrar.
+--
+-- ES DE LA INSCRIPCIÓN, NO DEL ALUMNO
+--
+-- El mismo alumno puede tomar inglés en marzo y francés en agosto, o las dos
+-- cosas a la vez en dos horarios. La materia va con cada inscripción.
+--
+-- TEXTO LIBRE, CON SUGERENCIAS
+--
+-- No hay una lista cerrada de materias: nadie puede adivinar qué enseña cada
+-- profe («Guitarra», «Excel», «Apoyo escolar 3er grado»). Se escribe lo que
+-- sea, y al escribir se sugieren las que ese profe ya usó, para que «Inglés»
+-- no termine siendo también «ingles» e «Ingles».
+
+-- ------------------------------------------------------------
+-- 1. LA COLUMNA
+-- ------------------------------------------------------------
+alter table public.paquetes
+  add column if not exists materia text check (materia is null or char_length(materia) <= 60);
+
+comment on column public.paquetes.materia is
+  'Qué se le enseña en esta inscripción (094). Texto libre; null si no se dijo.';
+
+-- ------------------------------------------------------------
+-- 2. INSCRIBIR, AHORA CON LA MATERIA
+--
+--    La firma vieja se borra antes de crear la nueva: con un parámetro
+--    más, `create or replace` no reemplaza, crea una segunda función al
+--    lado, y la llamada de siempre se vuelve ambigua.
+--
+--    Copia exacta de la 091 salvo `p_materia` y la columna que la guarda.
+-- ------------------------------------------------------------
+drop function if exists public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text);
+
+create or replace function public.inscribir_alumno(
+  p_empresa     uuid,
+  p_cliente     uuid,
+  p_dias        smallint[],
+  p_hora_desde  time,
+  p_hora_hasta  time,
+  p_desde       date,
+  p_hasta       date,
+  p_precio_hora numeric default null,
+  p_total       numeric default null,
+  p_pagado      boolean default false,
+  p_metodo      text default 'efectivo',
+  p_nombre      text default null,
+  p_materia     text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_alumno   record;
+  v_zona     text;
+  v_previa   jsonb;
+  v_choque   jsonb;
+  v_base     jsonb;
+  v_id       uuid;
+  v_mov      uuid;
+  v_total    numeric;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select id, nombre, coalesce(telefono, '') as telefono into v_alumno
+  from public.clientes where id = p_cliente and empresa_id = p_empresa;
+  if v_alumno.id is null then
+    raise exception 'Ese alumno no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if p_dias is null or cardinality(p_dias) = 0
+     or exists (select 1 from unnest(p_dias) d where d not between 0 and 6) then
+    raise exception 'Elegí al menos un día de la semana.' using errcode = '22023';
+  end if;
+
+  if p_hora_desde is null or p_hora_hasta is null or p_hora_hasta <= p_hora_desde then
+    raise exception 'La clase tiene que terminar después de empezar.' using errcode = '22023';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then
+    raise exception 'El período tiene que terminar después de empezar.' using errcode = '22023';
+  end if;
+
+  if p_hasta > p_desde + 366 then
+    raise exception 'Se puede inscribir hasta un año de una vez.' using errcode = '22023';
+  end if;
+
+  if p_total is null and p_precio_hora is null then
+    raise exception 'Poné cuánto cobrás: por hora o un precio cerrado.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_total, 0) < 0 or coalesce(p_precio_hora, 0) < 0 then
+    raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  v_previa := public.vista_previa_inscripcion(
+    p_empresa, p_dias, p_hora_desde, p_hora_hasta, p_desde, p_hasta, p_precio_hora, p_total);
+
+  if (v_previa->>'clases')::int = 0 then
+    raise exception 'En ese período no cae ningún día de los que elegiste.' using errcode = '22023';
+  end if;
+
+  v_choque := v_previa->'choques'->0;
+  if v_choque is not null then
+    raise exception 'El % a las % ya tenés a %.',
+      to_char((v_choque->>'fecha')::date, 'DD/MM'), v_choque->>'hora', v_choque->>'alumno'
+      using errcode = '23P01';
+  end if;
+
+  v_total := (v_previa->>'total')::numeric;
+  v_base  := public.profe_y_clase(p_empresa);
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  insert into public.paquetes (
+    empresa_id, cliente_id, nombre, clases, precio, vence_el, creado_por,
+    dias, hora_desde, hora_hasta, desde, precio_hora, materia)
+  values (
+    p_empresa, p_cliente,
+    left(coalesce(nullif(trim(p_nombre), ''), 'Clases'), 80),
+    (v_previa->>'clases')::numeric, v_total, p_hasta, auth.uid(),
+    (select array_agg(distinct d order by d) from unnest(p_dias) d),
+    p_hora_desde, p_hora_hasta, p_desde,
+    case when p_total is null then p_precio_hora end,
+    nullif(left(trim(coalesce(p_materia, '')), 60), ''))
+  returning id into v_id;
+
+  insert into public.turnos_reserva (
+    empresa_id, profesional_id, producto_id, inicia, termina,
+    cliente_nombre, cliente_telefono, cliente_id, paquete_id, estado, origen, creada_por)
+  select
+    p_empresa, (v_base->>'profesional')::uuid, (v_base->>'producto')::uuid,
+    (f.d + p_hora_desde) at time zone v_zona,
+    (f.d + p_hora_hasta) at time zone v_zona,
+    v_alumno.nombre, v_alumno.telefono, p_cliente, v_id, 'confirmada', 'local', auth.uid()
+  from public.fechas_de_horario(p_dias, p_desde, p_hasta) f(d);
+
+  if coalesce(p_pagado, false) and v_total > 0 then
+    v_mov := (public.cobrar_inscripcion(v_id, p_metodo, null)->>'movimiento')::uuid;
+  end if;
+
+  return jsonb_build_object(
+    'paquete', v_id, 'clases', (v_previa->>'clases')::int, 'total', v_total, 'movimiento', v_mov);
+end $fn$;
+
+revoke all on function public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text, text) from public, anon;
+grant execute on function public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LAS MATERIAS QUE YA USÓ, PARA SUGERIRLAS
+--
+--    La más usada primero. Así el profe escribe «In» y le aparece «Inglés»
+--    tal como la escribió la primera vez.
+-- ------------------------------------------------------------
+create or replace function public.materias_usadas(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(m.materia order by m.veces desc, m.ultima desc), '[]'::jsonb)
+  into v_lista
+  from (
+    select p.materia, count(*) as veces, max(p.created_at) as ultima
+    from public.paquetes p
+    where p.empresa_id = p_empresa and p.materia is not null
+    group by p.materia
+    order by count(*) desc, max(p.created_at) desc
+    limit 30
+  ) m;
+
+  return v_lista;
+end $fn$;
+
+revoke all on function public.materias_usadas(uuid) from public, anon;
+grant execute on function public.materias_usadas(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. LA AGENDA DEL DÍA DICE QUÉ SE DA EN CADA CLASE
+--
+--    Copia exacta de la 092 con la materia de la inscripción.
+-- ------------------------------------------------------------
+create or replace function public.agenda_del_dia(
+  p_empresa uuid,
+  p_fecha   date default null
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona  text;
+  v_fecha date;
+  v_res   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas where id = p_empresa;
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',          r.id,
+    'inicia',      r.inicia,
+    'termina',     r.termina,
+    'profesional', p.nombre,
+    'profesional_id', r.profesional_id,
+    'servicio',    pr.nombre,
+    'producto_id', r.producto_id,
+    'cliente',     r.cliente_nombre,
+    'telefono',    r.cliente_telefono,
+    'estado',      r.estado,
+    'origen',      r.origen,
+    'token',       r.token,
+    'avisado',     (r.avisado_at is not null),
+    'paquete_id',  r.paquete_id,
+    'materia',     pq.materia
+  ) order by r.inicia), '[]'::jsonb)
+  into v_res
+  from public.turnos_reserva r
+  join public.turnos_profesional p on p.id = r.profesional_id
+  join public.productos pr on pr.id = r.producto_id
+  left join public.paquetes pq on pq.id = r.paquete_id
+  where r.empresa_id = p_empresa
+    and (r.inicia at time zone v_zona)::date = v_fecha
+    and r.estado <> 'cancelada';
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.agenda_del_dia(uuid, date) from public, anon;
+grant execute on function public.agenda_del_dia(uuid, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LAS CLASES DE HOY DEL PANEL, CON SU MATERIA
+--
+--    Copia exacta de la 092 con la materia en cada clase de hoy.
+-- ------------------------------------------------------------
+create or replace function public.panel_profe(p_empresa uuid, p_desde date, p_hasta date)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona text;
+  v_hoy  date;
+  v_res  jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+  v_hoy := public.hoy_empresa(p_empresa);
+
+  select jsonb_build_object(
+    'hoy', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', r.id, 'hora', to_char(r.inicia at time zone v_zona, 'HH24:MI'),
+        'alumno', r.cliente_nombre, 'estado', r.estado, 'materia', pq.materia) order by r.inicia)
+      from public.turnos_reserva r
+      left join public.paquetes pq on pq.id = r.paquete_id
+      where r.empresa_id = p_empresa and r.estado <> 'cancelada'
+        and (r.inicia at time zone v_zona)::date = v_hoy), '[]'::jsonb),
+    'clases_periodo', (
+      select count(*)::int from public.turnos_reserva r
+      where r.empresa_id = p_empresa and r.estado = 'atendida'
+        and (r.inicia at time zone v_zona)::date between p_desde and p_hasta),
+    'cobrado', coalesce((
+      select sum(m.monto) from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo in ('venta', 'ingreso')
+        and m.fecha between p_desde and p_hasta), 0),
+    'gastado', coalesce((
+      select sum(m.monto) from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+        and m.fecha between p_desde and p_hasta), 0),
+    'por_cobrar', coalesce((
+      select sum(p.precio) from public.paquetes p
+      where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado), 0),
+    'deben', (
+      select count(distinct p.cliente_id)::int from public.paquetes p
+      where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado),
+    'alumnos_activos', (
+      select count(distinct p.cliente_id)::int from public.paquetes p
+      where p.empresa_id = p_empresa and not p.cerrado
+        and (public.estado_paquete(p.id)->>'estado') = 'activo')
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.panel_profe(uuid, date, date) from public, anon;
+grant execute on function public.panel_profe(uuid, date, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 6. LA FICHA DEL ALUMNO Y LO QUE FALTA COBRAR, CON LA MATERIA
+--
+--    Copias exactas de la 091 con la materia.
+-- ------------------------------------------------------------
+create or replace function public.paquetes_del_alumno(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x.fila order by x.orden, x.creado desc), '[]'::jsonb)
+  into v_lista
+  from (
+    select
+      p.created_at as creado,
+      case when (public.estado_paquete(p.id)->>'estado') = 'activo' then 0 else 1 end as orden,
+      jsonb_build_object(
+        'id', p.id,
+        'nombre', p.nombre,
+        'materia', p.materia,
+        'clases', p.clases,
+        'precio', p.precio,
+        'vence_el', p.vence_el,
+        'creado', p.created_at,
+        'dias', to_jsonb(p.dias),
+        'hora_desde', to_char(p.hora_desde, 'HH24:MI'),
+        'hora_hasta', to_char(p.hora_hasta, 'HH24:MI'),
+        'desde', p.desde,
+        'precio_hora', p.precio_hora,
+        'pagado', p.movimiento_id is not null or coalesce(p.precio, 0) = 0
+      ) || public.estado_paquete(p.id)
+        || jsonb_build_object('historia', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', c.id, 'fecha', c.fecha, 'cantidad', c.cantidad, 'motivo', c.motivo)
+                    order by c.fecha desc, c.created_at desc)
+             from public.clases_dadas c where c.paquete_id = p.id
+           ), '[]'::jsonb)) as fila
+    from public.paquetes p
+    where p.empresa_id = p_empresa and p.cliente_id = p_cliente
+  ) x;
+
+  return v_lista;
+end $fn$;
+
+revoke all on function public.paquetes_del_alumno(uuid, uuid) from public, anon;
+grant execute on function public.paquetes_del_alumno(uuid, uuid) to authenticated;
+
+create or replace function public.por_cobrar_alumnos(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'paquete', p.id, 'cliente_id', p.cliente_id, 'alumno', c.nombre,
+           'nombre', p.nombre, 'materia', p.materia,
+           'monto', p.precio, 'desde', p.desde, 'hasta', p.vence_el)
+         order by p.desde nulls last, c.nombre), '[]'::jsonb)
+  into v_lista
+  from public.paquetes p
+  join public.clientes c on c.id = p.cliente_id
+  where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado;
+
+  return jsonb_build_object(
+    'total', coalesce((select sum((x->>'monto')::numeric) from jsonb_array_elements(v_lista) x), 0),
+    'lista', v_lista);
+end $fn$;
+
+revoke all on function public.por_cobrar_alumnos(uuid) from public, anon;
+grant execute on function public.por_cobrar_alumnos(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  095_el_cobro_dice_a_que_cuenta.sql
+-- ############################################################
+
+-- ============================================================
+-- 095 · EL COBRO DICE A QUÉ CUENTA ENTRÓ
+-- ============================================================
+--
+-- Matías: «al cobrar, si selecciono transferencia, me debería aparecer la
+-- opción de a cuál banco se me va a acreditar. Tengo Atlas, Continental,
+-- Ueno registrados en la billetera. Si se me transfirió en mi Continental y
+-- en Orden se me carga en el Atlas, no tiene sentido: no es sincronización».
+--
+-- Tiene razón. Desde la 074 cada forma de pago vive en UNA cuenta: todas
+-- las transferencias caen en el banco que reclama «transferencia». Con un
+-- solo banco da igual; con tres, el alumno que te transfirió al Continental
+-- te aparece en el Atlas, y la billetera de Orden deja de coincidir con la
+-- de tu celular. Que es justamente lo único que tiene que hacer.
+--
+-- Así que cobrar una inscripción —al inscribir o después— puede decir en
+-- qué cuenta entró. Si no se dice, va como siempre: a la cuenta de esa forma
+-- de pago. Es lo mismo que ya hacía el fiado desde la 084.
+--
+-- Las firmas viejas se borran antes de crear las nuevas: con un parámetro
+-- más, `create or replace` crea una segunda función al lado y la llamada de
+-- siempre se vuelve ambigua. Las dos son copias exactas de su versión viva
+-- (091 y 094) con la cuenta agregada.
+
+-- ------------------------------------------------------------
+-- 1. COBRAR UNA INSCRIPCIÓN, EN LA CUENTA QUE SE ELIJA
+-- ------------------------------------------------------------
+drop function if exists public.cobrar_inscripcion(uuid, text, date);
+
+create or replace function public.cobrar_inscripcion(
+  p_paquete uuid,
+  p_metodo  text default 'efectivo',
+  p_fecha   date default null,
+  p_cuenta  uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_p      record;
+  v_alumno text;
+  v_mov    uuid;
+begin
+  select * into v_p from public.paquetes where id = p_paquete for update;
+  if v_p.id is null then
+    raise exception 'Ese paquete no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v_p.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if v_p.movimiento_id is not null then
+    raise exception 'Esa inscripción ya está cobrada.' using errcode = '22023';
+  end if;
+
+  if coalesce(v_p.precio, 0) <= 0 then
+    raise exception 'Esa inscripción no tiene nada que cobrar.' using errcode = '22023';
+  end if;
+
+  -- Decir en qué cuenta entró es administrar la billetera: lo mismo que al
+  -- cobrar un fiado (084). Se revisa antes de anotar nada.
+  if p_cuenta is not null then
+    if not public.es_admin(v_p.empresa_id) then
+      raise exception 'Solo el dueño de la cuenta puede elegir en qué cuenta entra.' using errcode = '42501';
+    end if;
+    if not exists (select 1 from public.cuentas_dinero c
+                   where c.id = p_cuenta and c.empresa_id = v_p.empresa_id and c.activa) then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  -- El fiado no es un pago: sería volver a anotar como deuda lo que ya es
+  -- una deuda, y contarlo como cobrado el día que no se cobró.
+  if coalesce(p_metodo, '') = 'credito' then
+    raise exception 'Para dejarlo pendiente no hace falta cobrar: ya queda por cobrar.' using errcode = '22023';
+  end if;
+
+  select nombre into v_alumno from public.clientes where id = v_p.cliente_id;
+
+  v_mov := public.registrar_venta(
+    p_empresa     => v_p.empresa_id,
+    p_items       => jsonb_build_array(jsonb_build_object(
+                       'nombre', left(v_p.nombre, 80),
+                       'cantidad', 1,
+                       'precio_unitario', v_p.precio,
+                       'costo_unitario', 0)),
+    p_fecha       => coalesce(p_fecha, public.hoy_empresa(v_p.empresa_id)),
+    p_descripcion => left(v_p.nombre, 80),
+    p_metodo_pago => coalesce(p_metodo, 'efectivo'),
+    p_contraparte => coalesce(v_alumno, ''),
+    p_cliente     => v_p.cliente_id
+  );
+
+  -- La cuenta elegida gana sobre la forma de pago (075): «me transfirió al
+  -- Continental» va al Continental aunque las transferencias caigan, por
+  -- defecto, en el Atlas. El disparador de la 074 acepta el cambio porque la
+  -- cuenta es de la misma empresa.
+  if p_cuenta is not null then
+    update public.movimientos set cuenta_id = p_cuenta where id = v_mov;
+  end if;
+
+  update public.paquetes set movimiento_id = v_mov where id = p_paquete;
+
+  return jsonb_build_object('movimiento', v_mov, 'monto', v_p.precio);
+end $fn$;
+
+revoke all on function public.cobrar_inscripcion(uuid, text, date, uuid) from public, anon;
+grant execute on function public.cobrar_inscripcion(uuid, text, date, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. INSCRIBIR, PAGANDO EN LA CUENTA QUE SE ELIJA
+-- ------------------------------------------------------------
+drop function if exists public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text, text);
+
+create or replace function public.inscribir_alumno(
+  p_empresa     uuid,
+  p_cliente     uuid,
+  p_dias        smallint[],
+  p_hora_desde  time,
+  p_hora_hasta  time,
+  p_desde       date,
+  p_hasta       date,
+  p_precio_hora numeric default null,
+  p_total       numeric default null,
+  p_pagado      boolean default false,
+  p_metodo      text default 'efectivo',
+  p_nombre      text default null,
+  p_materia     text default null,
+  p_cuenta      uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_alumno   record;
+  v_zona     text;
+  v_previa   jsonb;
+  v_choque   jsonb;
+  v_base     jsonb;
+  v_id       uuid;
+  v_mov      uuid;
+  v_total    numeric;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select id, nombre, coalesce(telefono, '') as telefono into v_alumno
+  from public.clientes where id = p_cliente and empresa_id = p_empresa;
+  if v_alumno.id is null then
+    raise exception 'Ese alumno no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if p_dias is null or cardinality(p_dias) = 0
+     or exists (select 1 from unnest(p_dias) d where d not between 0 and 6) then
+    raise exception 'Elegí al menos un día de la semana.' using errcode = '22023';
+  end if;
+
+  if p_hora_desde is null or p_hora_hasta is null or p_hora_hasta <= p_hora_desde then
+    raise exception 'La clase tiene que terminar después de empezar.' using errcode = '22023';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then
+    raise exception 'El período tiene que terminar después de empezar.' using errcode = '22023';
+  end if;
+
+  if p_hasta > p_desde + 366 then
+    raise exception 'Se puede inscribir hasta un año de una vez.' using errcode = '22023';
+  end if;
+
+  if p_total is null and p_precio_hora is null then
+    raise exception 'Poné cuánto cobrás: por hora o un precio cerrado.' using errcode = '22023';
+  end if;
+
+  if coalesce(p_total, 0) < 0 or coalesce(p_precio_hora, 0) < 0 then
+    raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  v_previa := public.vista_previa_inscripcion(
+    p_empresa, p_dias, p_hora_desde, p_hora_hasta, p_desde, p_hasta, p_precio_hora, p_total);
+
+  if (v_previa->>'clases')::int = 0 then
+    raise exception 'En ese período no cae ningún día de los que elegiste.' using errcode = '22023';
+  end if;
+
+  v_choque := v_previa->'choques'->0;
+  if v_choque is not null then
+    raise exception 'El % a las % ya tenés a %.',
+      to_char((v_choque->>'fecha')::date, 'DD/MM'), v_choque->>'hora', v_choque->>'alumno'
+      using errcode = '23P01';
+  end if;
+
+  v_total := (v_previa->>'total')::numeric;
+  v_base  := public.profe_y_clase(p_empresa);
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+
+  insert into public.paquetes (
+    empresa_id, cliente_id, nombre, clases, precio, vence_el, creado_por,
+    dias, hora_desde, hora_hasta, desde, precio_hora, materia)
+  values (
+    p_empresa, p_cliente,
+    left(coalesce(nullif(trim(p_nombre), ''), 'Clases'), 80),
+    (v_previa->>'clases')::numeric, v_total, p_hasta, auth.uid(),
+    (select array_agg(distinct d order by d) from unnest(p_dias) d),
+    p_hora_desde, p_hora_hasta, p_desde,
+    case when p_total is null then p_precio_hora end,
+    nullif(left(trim(coalesce(p_materia, '')), 60), ''))
+  returning id into v_id;
+
+  insert into public.turnos_reserva (
+    empresa_id, profesional_id, producto_id, inicia, termina,
+    cliente_nombre, cliente_telefono, cliente_id, paquete_id, estado, origen, creada_por)
+  select
+    p_empresa, (v_base->>'profesional')::uuid, (v_base->>'producto')::uuid,
+    (f.d + p_hora_desde) at time zone v_zona,
+    (f.d + p_hora_hasta) at time zone v_zona,
+    v_alumno.nombre, v_alumno.telefono, p_cliente, v_id, 'confirmada', 'local', auth.uid()
+  from public.fechas_de_horario(p_dias, p_desde, p_hasta) f(d);
+
+  if coalesce(p_pagado, false) and v_total > 0 then
+    v_mov := (public.cobrar_inscripcion(v_id, p_metodo, null, p_cuenta)->>'movimiento')::uuid;
+  end if;
+
+  return jsonb_build_object(
+    'paquete', v_id, 'clases', (v_previa->>'clases')::int, 'total', v_total, 'movimiento', v_mov);
+end $fn$;
+
+revoke all on function public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text, text, uuid) from public, anon;
+grant execute on function public.inscribir_alumno(uuid, uuid, smallint[], time, time, date, date, numeric, numeric, boolean, text, text, text, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  096_la_venta_dice_a_que_cuenta.sql
+-- ############################################################
+
+-- ============================================================
+-- 096 · LA VENTA TAMBIÉN DICE A QUÉ CUENTA ENTRÓ
+-- ============================================================
+--
+-- La 095 lo hizo para el cobro de un alumno. Matías lo pidió para todo
+-- cobro: «al cobrar, si selecciono transferencia, me debería aparecer la
+-- opción de a cuál banco se me va a acreditar». En la pantalla de Cobrar
+-- pasa lo mismo: con Atlas y Continental, toda transferencia caía en el que
+-- reclama «transferencia», aunque la plata haya llegado al otro.
+--
+-- `registrar_venta` suma un parámetro al final, `p_cuenta`. Sin él todo
+-- sigue igual: la captura inteligente, los paquetes y las correcciones
+-- (`reemplazar_venta`, que la llama con nueve argumentos) no cambian.
+--
+-- Es una copia exacta de la 055 —la versión viva; su cuerpo, sin
+-- comentarios, da la misma huella— con la cuenta agregada. La firma vieja
+-- se borra antes: con un parámetro más, `create or replace` crearía una
+-- segunda función al lado y cada llamada de siempre se volvería ambigua.
+
+drop function if exists public.registrar_venta(
+  uuid, jsonb, date, text, text, text, text, origen_captura, numeric, uuid);
+
+create or replace function public.registrar_venta(
+  p_empresa uuid,
+  p_items jsonb,
+  p_fecha date default null,
+  p_descripcion text default '',
+  p_metodo_pago text default 'efectivo',
+  p_contraparte text default '',
+  p_notas text default '',
+  p_origen origen_captura default 'manual',
+  p_descuento numeric default 0,
+  -- A quién se le vende. Solo hace falta cuando la venta es fiada, pero se
+  -- guarda siempre: sirve para el historial del cliente.
+  p_cliente uuid default null,
+  -- En qué cuenta entró (096). Null = la de su forma de pago, como siempre.
+  p_cuenta uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_mov       uuid;
+  v_item      jsonb;
+  v_prod      public.productos%rowtype;
+  v_norm      jsonb := '[]'::jsonb;
+  v_subtotal  numeric(14,2) := 0;
+  v_costo     numeric(14,2) := 0;
+  v_desc      numeric(14,2);
+  v_cant      numeric(14,2);
+  v_precio    numeric(14,2);
+  v_costo_u   numeric(14,2);
+  v_nombre    text;
+  v_pid       uuid;
+  v_fecha     date;
+  v_permitir  boolean;
+  v_stock     numeric(14,2);
+  v_metodo    text;
+  v_cliente   uuid;
+begin
+  ------------------------------------------------ autenticación y pertenencia
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select permitir_stock_negativo into v_permitir from public.empresas where id = p_empresa;
+  if not found then
+    raise exception 'La empresa no existe.' using errcode = '42501';
+  end if;
+
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  ------------------------------------------------ validaciones generales
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'La venta necesita una lista de productos.' using errcode = '22023';
+  end if;
+
+  if jsonb_array_length(p_items) = 0 then
+    raise exception 'La venta necesita al menos un producto.' using errcode = '22023';
+  end if;
+
+  if jsonb_array_length(p_items) > 200 then
+    raise exception 'Una venta no puede tener más de 200 líneas.' using errcode = '22023';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+  if v_fecha < date '2000-01-01' or v_fecha > public.hoy_empresa(p_empresa) + 1 then
+    raise exception 'La fecha de la venta no es válida.' using errcode = '22007';
+  end if;
+
+  v_metodo := lower(coalesce(nullif(trim(p_metodo_pago), ''), 'efectivo'));
+  if v_metodo not in ('efectivo', 'transferencia', 'tarjeta', 'credito', 'otro') then
+    raise exception 'La forma de cobro no es válida.' using errcode = '22023';
+  end if;
+
+  ------------------------------------------------ primera pasada: validar y normalizar
+  for v_item in select * from jsonb_array_elements(p_items) loop
+    if jsonb_typeof(v_item) <> 'object' then
+      raise exception 'Cada línea de la venta tiene que ser un objeto.' using errcode = '22023';
+    end if;
+
+    begin
+      v_cant := (v_item ->> 'cantidad')::numeric;
+    exception when others then
+      raise exception 'La cantidad tiene que ser un número.' using errcode = '22023';
+    end;
+
+    if v_cant is null or v_cant <= 0 then
+      raise exception 'La cantidad tiene que ser mayor a cero.' using errcode = '22023';
+    end if;
+    if v_cant > 1000000 then
+      raise exception 'La cantidad es demasiado grande.' using errcode = '22023';
+    end if;
+
+    v_pid := null;
+    if nullif(trim(coalesce(v_item ->> 'producto_id', '')), '') is not null then
+      begin
+        v_pid := (v_item ->> 'producto_id')::uuid;
+      exception when others then
+        raise exception 'El identificador del producto no es válido.' using errcode = '22023';
+      end;
+    end if;
+
+    if v_pid is not null then
+      -- El producto tiene que existir Y ser de esta empresa.
+      select * into v_prod from public.productos where id = v_pid and empresa_id = p_empresa;
+      if not found then
+        raise exception 'Ese producto no pertenece a esta empresa.' using errcode = '42501';
+      end if;
+
+      v_nombre  := v_prod.nombre;
+      -- El precio SÍ puede ser distinto al del catálogo (rebaja puntual, acuerdo con el cliente).
+      v_precio  := coalesce(nullif(v_item ->> 'precio_unitario', '')::numeric, v_prod.precio);
+      -- El costo NO: siempre el del catálogo. Lo que mande el cliente se descarta.
+      v_costo_u := v_prod.costo;
+    else
+      v_nombre := nullif(trim(coalesce(v_item ->> 'nombre', '')), '');
+      if v_nombre is null then
+        raise exception 'Cada producto suelto necesita un nombre.' using errcode = '22023';
+      end if;
+      v_nombre  := left(v_nombre, 120);
+      v_precio  := coalesce(nullif(v_item ->> 'precio_unitario', '')::numeric, 0);
+      v_costo_u := coalesce(nullif(v_item ->> 'costo_unitario', '')::numeric, 0);
+    end if;
+
+    if v_precio is null or v_precio < 0 then
+      raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+    end if;
+    if v_costo_u is null or v_costo_u < 0 then
+      raise exception 'El costo no puede ser negativo.' using errcode = '22023';
+    end if;
+
+    v_subtotal := v_subtotal + (v_cant * v_precio);
+    v_costo    := v_costo + (v_cant * v_costo_u);
+
+    v_norm := v_norm || jsonb_build_object(
+      'producto_id', v_pid,
+      'nombre', v_nombre,
+      'cantidad', v_cant,
+      'precio_unitario', v_precio,
+      'costo_unitario', v_costo_u,
+      'controla_stock', coalesce(v_pid is not null and v_prod.controla_stock, false)
+    );
+  end loop;
+
+  ------------------------------------------------ descuento
+  v_desc := coalesce(p_descuento, 0);
+  if v_desc < 0 then
+    raise exception 'El descuento no puede ser negativo.' using errcode = '22023';
+  end if;
+  if v_desc > v_subtotal then
+    raise exception 'El descuento no puede ser mayor que el subtotal de la venta.' using errcode = '22023';
+  end if;
+
+  ------------------------------------------------ el cliente
+  -- Se valida ANTES de tocar el stock: si el cliente no es de esta cuenta,
+  -- que la venta entera no llegue a existir.
+  v_cliente := p_cliente;
+  if v_cliente is not null
+     and not exists (select 1 from public.clientes
+                     where id = v_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- Fiar sin saber a quién es anotar en la pared. Se puede vender fiado sin
+  -- cliente en otros sistemas; acá no, porque el resultado sería una deuda
+  -- que nadie puede cobrar y un número que infla los ingresos para siempre.
+  if v_metodo = 'credito' and v_cliente is null then
+    raise exception 'Para vender fiado hay que decir a quién: elegí o creá el cliente.'
+      using errcode = '22023';
+  end if;
+
+  -- Decir a qué cuenta entró es administrar la billetera: el que vende no
+  -- decide dónde queda la plata del dueño (lo mismo que el fiado, 084). Y lo
+  -- fiado no entra en ninguna: todavía no te lo pagaron.
+  if p_cuenta is not null then
+    if not public.es_admin(p_empresa) then
+      raise exception 'Solo el dueño de la cuenta puede elegir en qué cuenta entra.' using errcode = '42501';
+    end if;
+    if v_metodo = 'credito' then
+      raise exception 'Lo fiado no entra en ninguna cuenta hasta que te lo paguen.' using errcode = '22023';
+    end if;
+    if not exists (select 1 from public.cuentas_dinero c
+                   where c.id = p_cuenta and c.empresa_id = p_empresa and c.activa) then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  ------------------------------------------------ cabecera
+  insert into public.movimientos (
+    empresa_id, tipo, estado, fecha, descripcion, categoria,
+    subtotal, descuento, monto, costo_total,
+    metodo_pago, contraparte, notas, origen, creado_por, cliente_id, cuenta_id
+  )
+  values (
+    p_empresa, 'venta', 'activo', v_fecha,
+    left(coalesce(trim(p_descripcion), ''), 200), 'Ventas',
+    v_subtotal, v_desc, v_subtotal - v_desc, v_costo,
+    v_metodo, left(coalesce(trim(p_contraparte), ''), 80), left(coalesce(p_notas, ''), 500),
+    coalesce(p_origen, 'manual'), auth.uid(), v_cliente, p_cuenta
+  )
+  returning id into v_mov;
+
+  ------------------------------------------------ items y stock
+  for v_item in select * from jsonb_elements_ordenados(v_norm) loop
+    v_cant := (v_item ->> 'cantidad')::numeric;
+    v_pid  := nullif(v_item ->> 'producto_id', '')::uuid;
+
+    if v_pid is not null and (v_item ->> 'controla_stock')::boolean then
+      -- Aritmética relativa: dos ventas simultáneas no se pisan.
+      update public.productos
+        set stock = stock - v_cant
+        where id = v_pid
+        returning stock into v_stock;
+
+      if not v_permitir and v_stock < 0 then
+        raise exception 'No hay stock suficiente de %.', v_item ->> 'nombre' using errcode = '23514';
+      end if;
+    end if;
+
+    insert into public.movimiento_items (
+      movimiento_id, empresa_id, producto_id, nombre, cantidad,
+      precio_unitario, costo_unitario, afecto_stock
+    )
+    values (
+      v_mov, p_empresa, v_pid, v_item ->> 'nombre', v_cant,
+      (v_item ->> 'precio_unitario')::numeric,
+      (v_item ->> 'costo_unitario')::numeric,
+      coalesce(v_pid is not null and (v_item ->> 'controla_stock')::boolean, false)
+    );
+  end loop;
+
+  ------------------------------------------------ descripción automática
+  update public.movimientos
+  set descripcion = (
+    select string_agg(nombre || ' x' || trim(to_char(cantidad, 'FM999999990.##')), ', ')
+    from public.movimiento_items where movimiento_id = v_mov
+  )
+  where id = v_mov and coalesce(trim(descripcion), '') = '';
+
+  ------------------------------------------------ si fue fiada, se anota
+  --
+  -- Acá está el arreglo. Hasta ahora «Fiado» era una etiqueta: la venta
+  -- sumaba como ingreso igual que si te hubieran pagado en efectivo, y no
+  -- quedaba escrito quién debía.
+  --
+  -- Va al final, después del stock y de los items: si algo de eso falla, la
+  -- transacción se va entera y no queda una deuda por una venta que no pasó.
+  if v_metodo = 'credito' then
+    insert into public.fiado (
+      empresa_id, cliente_id, tipo, monto, fecha, concepto, venta_id, creado_por
+    )
+    select p_empresa, v_cliente, 'fio', v_subtotal - v_desc, v_fecha,
+           left(coalesce((
+             select string_agg(nombre || ' x' || trim(to_char(cantidad, 'FM999999990.##')), ', ')
+             from public.movimiento_items where movimiento_id = v_mov
+           ), 'Venta fiada'), 200),
+           v_mov, auth.uid();
+  end if;
+
+  return v_mov;
+end $$;
+
+revoke all on function public.registrar_venta(
+  uuid, jsonb, date, text, text, text, text, origen_captura, numeric, uuid, uuid) from public, anon;
+grant execute on function public.registrar_venta(
+  uuid, jsonb, date, text, text, text, text, origen_captura, numeric, uuid, uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  097_personal_trainer.sql
+-- ############################################################
+
+-- ============================================================
+-- 097 · PERSONAL TRAINER
+-- ============================================================
+--
+-- Matías: «ponete en el lugar de un personal trainer: ¿qué necesitaría
+-- para trabajar?». La respuesta, mirándolo de cerca, es casi todo lo que
+-- ya tiene el profe (087-094): clientes que vuelven todas las semanas con
+-- un horario fijo, el mes cobrado por adelantado, y cada sesión que se
+-- marca como dada o no. Un profe de inglés y un trainer resuelven el mismo
+-- problema con distinta ropa.
+--
+-- Así que el trainer no es un motor nuevo: es un rubro más, «entrenamiento»,
+-- que usa el mismo. Lo que decidió Matías para arrancar:
+--   · uno a uno (sin dúos ni grupos todavía);
+--   · la rutina es una nota simple por cliente, como la materia del profe;
+--   · las faltas, como el profe: se decide en cada una si se descuenta.
+--
+-- Lo único nuevo de verdad es que el trainer tiene que ver las lesiones de
+-- cada cliente antes de entrenarlo. Esas notas ya existen (clientes.notas),
+-- así que la agenda del día y el panel ahora las traen junto a cada sesión.
+--
+-- Todo lo demás se engancha solo: el link público se apaga porque
+-- `rubro_de_alumnos()` lo dice, el cierre de caja no aplica porque
+-- `rubro_cierra_el_dia()` solo nombra a comercio y servicios, y el cheque
+-- de `empresas.rubro` lee `rubros_validos()`.
+--
+-- Cada función es copia exacta de su versión viva (087, 089, 094; la huella
+-- del cuerpo coincide) con lo nuevo agregado. Ninguna cambia de firma: se
+-- reemplazan sin crear otra al lado.
+
+
+
+-- ------------------------------------------------------------
+-- 1. EL RUBRO EXISTE
+-- ------------------------------------------------------------
+create or replace function public.rubros_validos()
+returns text[] language sql immutable set search_path = public as $fn$
+  select array['comercio', 'ganaderia', 'agricultura', 'servicios', 'clases', 'entrenamiento'];
+$fn$;
+
+-- ------------------------------------------------------------
+-- 2. SU AGENDA ES DE A UNO, SIN LINK PÚBLICO
+-- ------------------------------------------------------------
+create or replace function public.rubro_de_alumnos(p_rubro text)
+returns boolean language sql immutable set search_path = public as $fn$
+  select coalesce(p_rubro, '') in ('clases', 'entrenamiento');
+$fn$;
+
+-- ------------------------------------------------------------
+-- 3. EN QUÉ GASTA UN TRAINER
+-- ------------------------------------------------------------
+create or replace function public.categorias_de_rubro(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case
+    when coalesce(p_tipo_cuenta, 'emprendedor') = 'personal' then jsonb_build_array(
+      jsonb_build_object('nombre','Comida','pistas','supermercado, almacén, verdulería, carnicería, despensa, panadería'),
+      jsonb_build_object('nombre','Alquiler','pistas','alquiler, expensas, condominio'),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono, cable, gas'),
+      jsonb_build_object('nombre','Transporte','pistas','colectivo, nafta, combustible, pasaje, taxi, uber, peaje'),
+      jsonb_build_object('nombre','Salud','pistas','farmacia, remedios, médico, dentista, seguro médico, análisis'),
+      jsonb_build_object('nombre','Educación','pistas','colegio, cuota, universidad, útiles, curso, libros'),
+      jsonb_build_object('nombre','Ropa','pistas','ropa, calzado, zapatillas, campera'),
+      jsonb_build_object('nombre','Cuidado personal','pistas','peluquería, uñas, barbería, cosmética, gimnasio, perfume'),
+      jsonb_build_object('nombre','Ocio','pistas','salida, restaurante, cine, streaming, viaje, cerveza, cumpleaños'),
+      jsonb_build_object('nombre','Hogar','pistas','limpieza, muebles, arreglos, electrodomésticos, ferretería'),
+      jsonb_build_object('nombre','Cuotas y deudas','pistas','tarjeta, préstamo, cuota, financiera'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'ganaderia' then jsonb_build_array(
+      jsonb_build_object('nombre','Alimentación','pistas','maíz, balanceado, ración, fardos, sal, pasto'),
+      jsonb_build_object('nombre','Sanidad','pistas','vacunas, antiparasitarios, veterinario, remedios'),
+      jsonb_build_object('nombre','Personal','pistas','peón, capataz, jornales, sueldos'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo, pastaje'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de hacienda, camión jaula'),
+      jsonb_build_object('nombre','Mantenimiento','pistas','alambrado, aguadas, maquinaria, herramientas'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'agricultura' then jsonb_build_array(
+      jsonb_build_object('nombre','Semilla','pistas','semilla, plantines'),
+      jsonb_build_object('nombre','Fertilizante','pistas','urea, fosfato, abono'),
+      jsonb_build_object('nombre','Agroquímicos','pistas','herbicida, fungicida, insecticida'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Cosecha','pistas','cosechadora, trilla, secado'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de granos'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo'),
+      jsonb_build_object('nombre','Personal','pistas','jornales, tractorista, peón'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'servicios' then jsonb_build_array(
+      jsonb_build_object('nombre','Materiales','pistas','cemento, arena, cables, pintura, insumos'),
+      jsonb_build_object('nombre','Repuestos','pistas','piezas, filtros, aceite'),
+      jsonb_build_object('nombre','Herramientas','pistas',''),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Personal','pistas','ayudante, jornales, sueldos'),
+      jsonb_build_object('nombre','Transporte','pistas','flete, viaje, delivery'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'clases' then jsonb_build_array(
+      jsonb_build_object('nombre','Internet y plataformas','pistas','internet, wifi, Zoom, Meet, plan del celular, hosting'),
+      jsonb_build_object('nombre','Comisiones','pistas','Preply, Italki, Superprof, lo que se lleva la plataforma, comisión de cobro'),
+      jsonb_build_object('nombre','Material','pistas','libros, licencias, PDF, impresiones, fotocopias, cuadernos'),
+      jsonb_build_object('nombre','Equipo','pistas','notebook, micrófono, cámara, auriculares, tablet, pizarra, luz'),
+      jsonb_build_object('nombre','Publicidad','pistas','anuncios, Instagram, Facebook, volantes'),
+      jsonb_build_object('nombre','Capacitación','pistas','cursos propios, certificaciones, exámenes, membresías'),
+      jsonb_build_object('nombre','Alquiler','pistas','aula, salón, espacio de trabajo'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    -- Lo que gasta un personal trainer (097): el equipo que lleva, el lugar
+    -- donde entrena, y moverse hasta cada cliente.
+    when coalesce(p_rubro, 'comercio') = 'entrenamiento' then jsonb_build_array(
+      jsonb_build_object('nombre','Equipamiento','pistas','pesas, mancuernas, bandas, colchonetas, kettlebell, TRX, soga, conos'),
+      jsonb_build_object('nombre','Gimnasio y espacio','pistas','cuota del gimnasio, alquiler del espacio, box, cancha, derecho de uso'),
+      jsonb_build_object('nombre','Transporte','pistas','nafta, combustible, colectivo, uber, ir a domicilio'),
+      jsonb_build_object('nombre','Ropa deportiva','pistas','ropa, zapatillas, calzas, uniforme'),
+      jsonb_build_object('nombre','Internet y aplicaciones','pistas','internet, plan del celular, app de rutinas, Zoom'),
+      jsonb_build_object('nombre','Publicidad','pistas','anuncios, Instagram, Facebook, TikTok, volantes'),
+      jsonb_build_object('nombre','Capacitación','pistas','cursos, certificaciones, workshops, membresías'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    else jsonb_build_array(
+      jsonb_build_object('nombre','Mercadería','pistas','lo que comprás para revender'),
+      jsonb_build_object('nombre','Transporte','pistas','combustible, flete, delivery'),
+      jsonb_build_object('nombre','Comida','pistas',''),
+      jsonb_build_object('nombre','Publicidad','pistas',''),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono'),
+      jsonb_build_object('nombre','Alquiler','pistas',''),
+      jsonb_build_object('nombre','Sueldos','pistas','empleados, jornales'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+  end;
+$fn$;
+
+-- ------------------------------------------------------------
+-- 4. LA AGENDA DEL DÍA TRAE LAS NOTAS DE CADA CLIENTE
+-- ------------------------------------------------------------
+create or replace function public.agenda_del_dia(
+  p_empresa uuid,
+  p_fecha   date default null
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona  text;
+  v_fecha date;
+  v_res   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas where id = p_empresa;
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',          r.id,
+    'inicia',      r.inicia,
+    'termina',     r.termina,
+    'profesional', p.nombre,
+    'profesional_id', r.profesional_id,
+    'servicio',    pr.nombre,
+    'producto_id', r.producto_id,
+    'cliente',     r.cliente_nombre,
+    'telefono',    r.cliente_telefono,
+    'estado',      r.estado,
+    'origen',      r.origen,
+    'token',       r.token,
+    'avisado',     (r.avisado_at is not null),
+    'paquete_id',  r.paquete_id,
+    'materia',     pq.materia,
+    -- Lo que hay que saber de la persona antes de empezar (097): para un
+    -- trainer, sus lesiones. Null si no hay nada anotado.
+    'notas',       nullif(trim(cl.notas), '')
+  ) order by r.inicia), '[]'::jsonb)
+  into v_res
+  from public.turnos_reserva r
+  join public.turnos_profesional p on p.id = r.profesional_id
+  join public.productos pr on pr.id = r.producto_id
+  left join public.paquetes pq on pq.id = r.paquete_id
+  left join public.clientes cl on cl.id = r.cliente_id and cl.empresa_id = r.empresa_id
+  where r.empresa_id = p_empresa
+    and (r.inicia at time zone v_zona)::date = v_fecha
+    and r.estado <> 'cancelada';
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 5. Y EL PANEL, EN LAS SESIONES DE HOY
+-- ------------------------------------------------------------
+create or replace function public.panel_profe(p_empresa uuid, p_desde date, p_hasta date)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona text;
+  v_hoy  date;
+  v_res  jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+  v_hoy := public.hoy_empresa(p_empresa);
+
+  select jsonb_build_object(
+    'hoy', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', r.id, 'hora', to_char(r.inicia at time zone v_zona, 'HH24:MI'),
+        'alumno', r.cliente_nombre, 'estado', r.estado, 'materia', pq.materia,
+        'notas', nullif(trim(cl.notas), '')) order by r.inicia)
+      from public.turnos_reserva r
+      left join public.paquetes pq on pq.id = r.paquete_id
+      left join public.clientes cl on cl.id = r.cliente_id and cl.empresa_id = r.empresa_id
+      where r.empresa_id = p_empresa and r.estado <> 'cancelada'
+        and (r.inicia at time zone v_zona)::date = v_hoy), '[]'::jsonb),
+    'clases_periodo', (
+      select count(*)::int from public.turnos_reserva r
+      where r.empresa_id = p_empresa and r.estado = 'atendida'
+        and (r.inicia at time zone v_zona)::date between p_desde and p_hasta),
+    'cobrado', coalesce((
+      select sum(m.monto) from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo in ('venta', 'ingreso')
+        and m.fecha between p_desde and p_hasta), 0),
+    'gastado', coalesce((
+      select sum(m.monto) from public.movimientos m
+      where m.empresa_id = p_empresa and m.estado = 'activo' and m.tipo = 'gasto'
+        and m.fecha between p_desde and p_hasta), 0),
+    'por_cobrar', coalesce((
+      select sum(p.precio) from public.paquetes p
+      where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado), 0),
+    'deben', (
+      select count(distinct p.cliente_id)::int from public.paquetes p
+      where p.empresa_id = p_empresa and p.movimiento_id is null and p.precio > 0 and not p.cerrado),
+    'alumnos_activos', (
+      select count(distinct p.cliente_id)::int from public.paquetes p
+      where p.empresa_id = p_empresa and not p.cerrado
+        and (public.estado_paquete(p.id)->>'estado') = 'activo')
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+-- Los permisos, los mismos de siempre (087, 089, 094). `create or replace`
+-- ya los conserva; se escriben igual para que esta migración se lea sola.
+grant execute on function public.rubros_validos() to anon, authenticated;
+grant execute on function public.rubro_de_alumnos(text) to anon, authenticated;
+grant execute on function public.categorias_de_rubro(text, text) to anon, authenticated;
+revoke all on function public.agenda_del_dia(uuid, date) from public, anon;
+grant execute on function public.agenda_del_dia(uuid, date) to authenticated;
+revoke all on function public.panel_profe(uuid, date, date) from public, anon;
+grant execute on function public.panel_profe(uuid, date, date) to authenticated;
+
+
+-- ############################################################
+-- ##  098_rutinas_y_medidas.sql
+-- ############################################################
+
+-- ============================================================
+-- 098 · RUTINAS, MEDIDAS Y PROGRESO DEL PERSONAL TRAINER
+-- ============================================================
+--
+-- La 097 le dio al trainer el motor del profe con una rutina que era una
+-- nota suelta («Qué están trabajando»). Matías lo dio vuelta: «ponete en el
+-- lugar de un personal trainer: ¿qué necesitaría para trabajar?», y la
+-- respuesta es lo que hace todo el día y Orden no tenía: rutinas de verdad
+-- (ejercicio, series, repeticiones, carga, descanso, nota), mandárselas al
+-- cliente, y anotar cómo va.
+--
+-- LO QUE DECIDIÓ MATÍAS, Y QUÉ SIGNIFICA ACÁ
+--
+--   · «Anotar los pesos» es, en esta vuelta, el peso, la altura y las
+--     medidas del cuerpo con fecha, MÁS la carga de cada ejercicio con su
+--     historia: «Sentadilla: de 40 a 50 kg desde el 15/08». Lo que se
+--     levantó serie por serie en cada sesión queda para la fase 2.
+--   · Si la cuenta del trainer vence, el link de rutina de sus clientes
+--     sigue andando 30 días; después dice «Tu entrenador tiene que renovar
+--     su cuenta». Un cliente en el gimnasio no tiene la culpa de un pago
+--     atrasado, pero la prueba gratis tampoco puede servir para alojar
+--     rutinas para siempre.
+--   · Uno a uno, faltas como el profe, se gana al cobrar: eso ya estaba.
+--
+-- CÓMO ESTÁ ARMADO
+--
+-- Una biblioteca de ejercicios por negocio, que se arma sola: el trainer
+-- escribe «Sentadilla» en una rutina y la próxima vez ya está. Todo apunta
+-- a esa biblioteca, así que el «cómo se hace» y el video salen de un solo
+-- lugar, y el historial de cargas se sigue por ejercicio y no por renglón.
+--
+-- Una rutina es una plantilla (sin cliente) o la de un cliente, que está en
+-- preparación (borrador), vigente, o ya pasó (anterior). El cliente tiene UN
+-- link, no uno por rutina: guarda un solo mensaje de WhatsApp y siempre ve
+-- la vigente.
+--
+-- Las medidas del cuerpo son datos de salud: las anota y las ve solo el
+-- dueño o un administrador, con el consentimiento del cliente, y nunca
+-- viajan por el link.
+--
+-- LAS REGLAS DE SIEMPRE
+--
+-- Todas las tablas cuelgan de la empresa con borrado en cascada (así
+-- `borrar_cuenta` se lleva todo) y apuntan a clientes y ejercicios con
+-- claves compuestas (x_id, empresa_id), el candado de la 052: una fila de un
+-- negocio no puede referirse a la de otro ni con un UPDATE a mano. Ninguna
+-- se lee ni se escribe directo: todo pasa por funciones.
+--
+-- Las claves a clientes y ejercicios son NO ACTION y no RESTRICT: NO ACTION
+-- se controla al final de la sentencia, así que el borrado en cascada de una
+-- empresa no depende del orden en que PostgreSQL recorre las tablas, y un
+-- borrado directo de un cliente con historia sigue frenado. Para eso
+-- `eliminar_cliente` ahora archiva a quien tiene rutinas o medidas.
+--
+-- Los tokens son `gen_random_uuid()` y no `gen_random_bytes()`: las pruebas
+-- corren en PGlite, que no tiene pgcrypto (igual que turnos_reserva.token).
+
+-- ------------------------------------------------------------
+-- 0. LA CLAVE DE UN NOMBRE DE EJERCICIO
+--
+--    «Sentadilla búlgara», «SENTADILLA BULGARA» y «sentadilla  búlgara»
+--    son el mismo ejercicio. Sin esto la biblioteca se llena de repetidos
+--    que no se ven como repetidos, y el historial de cargas queda partido.
+--    `translate` y no `unaccent`: PGlite no tiene esa extensión.
+-- ------------------------------------------------------------
+create or replace function public.clave_ejercicio(p text)
+returns text language sql immutable set search_path = public as $fn$
+  select translate(lower(regexp_replace(btrim(coalesce(p, '')), '\s+', ' ', 'g')),
+                   'áàâãäéèêëíìîïóòôõöúùûüñç', 'aaaaaeeeeiiiiooooouuuunc');
+$fn$;
+
+revoke all on function public.clave_ejercicio(text) from public, anon, authenticated;
+
+-- Un id que llega en un JSON puede venir roto: se toma solo si es un uuid.
+-- Un id que no es un uuid es, para quien guarda, un renglón nuevo.
+create or replace function public.uuid_o_null(p text)
+returns uuid language sql immutable set search_path = public as $fn$
+  select case when p ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              then p::uuid end;
+$fn$;
+
+revoke all on function public.uuid_o_null(text) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 1. LA BIBLIOTECA DE EJERCICIOS
+--
+--    Empieza vacía. La lista base de unos cien ejercicios vive en el código
+--    (src/lib/ejercicios-base.ts) y solo se sugiere: un ejercicio entra acá
+--    la primera vez que se usa. No se borra el que está en una rutina: se
+--    apaga, deja de sugerirse y las rutinas que lo tienen lo siguen viendo.
+-- ------------------------------------------------------------
+create table if not exists public.ejercicios (
+  id           uuid primary key default gen_random_uuid(),
+  empresa_id   uuid not null references public.empresas (id) on delete cascade,
+  nombre       text not null check (char_length(trim(nombre)) between 1 and 80),
+  clave        text generated always as (public.clave_ejercicio(nombre)) stored,
+  grupo        text check (grupo in ('piernas', 'gluteos', 'pecho', 'espalda', 'hombros',
+                                     'brazos', 'core', 'cardio', 'movilidad', 'otro')),
+  -- «Cómo se hace». LO VE EL CLIENTE en su link.
+  indicaciones text not null default '' check (char_length(indicaciones) <= 500),
+  -- YouTube, Instagram, TikTok: lo que el trainer ya usa. Solo https.
+  video_url    text check (video_url ~ '^https://\S+$' and char_length(video_url) <= 300),
+  activo       boolean not null default true,
+  created_at   timestamptz not null default now(),
+  constraint ejercicios_id_empresa unique (id, empresa_id)
+);
+
+create unique index if not exists ejercicios_clave_unica on public.ejercicios (empresa_id, clave);
+
+alter table public.ejercicios enable row level security;
+revoke all on public.ejercicios from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. LAS RUTINAS
+--
+--    plantilla → sin cliente, para reusar.
+--    borrador  → «la próxima»: el trainer la arma sin tocar lo que el
+--                cliente ve.
+--    vigente   → la que ve el cliente en su link. Una por cliente.
+--    anterior  → la historia. Las rutinas de un cliente no se borran.
+--
+--    `version` es para dos celulares editando a la vez: el que guarda con
+--    una versión vieja se entera, en vez de pisar al otro sin saberlo.
+-- ------------------------------------------------------------
+create table if not exists public.rutinas (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  cliente_id  uuid,
+  estado      text not null check (estado in ('plantilla', 'borrador', 'vigente', 'anterior')),
+  -- «Fuerza base». LO VE EL CLIENTE.
+  nombre      text not null check (char_length(trim(nombre)) between 1 and 60),
+  -- Las indicaciones generales. LAS VE EL CLIENTE.
+  notas       text not null default '' check (char_length(notas) <= 1000),
+  desde       date,
+  hasta       date,
+  -- «Cambiarla en N semanas»: es solo un aviso para el trainer.
+  semanas     smallint check (semanas between 1 and 52),
+  -- De qué plantilla o rutina salió.
+  origen_id   uuid references public.rutinas (id) on delete set null,
+  version     integer not null default 1,
+  creado_por  uuid references auth.users (id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint rutinas_id_empresa unique (id, empresa_id),
+  -- NO ACTION. Con cliente en null (plantilla) la clave no se controla.
+  constraint rutinas_cliente foreign key (cliente_id, empresa_id)
+    references public.clientes (id, empresa_id),
+  constraint rutinas_plantilla_sin_cliente check ((cliente_id is null) = (estado = 'plantilla')),
+  constraint rutinas_con_fecha check (estado not in ('vigente', 'anterior') or desde is not null),
+  constraint rutinas_fechas check (hasta is null or hasta >= desde)
+);
+
+create unique index if not exists rutinas_una_vigente on public.rutinas (cliente_id) where estado = 'vigente';
+create unique index if not exists rutinas_un_borrador on public.rutinas (cliente_id) where estado = 'borrador';
+create index if not exists rutinas_empresa_idx on public.rutinas (empresa_id, estado);
+create index if not exists rutinas_cliente_idx on public.rutinas (cliente_id);
+
+alter table public.rutinas enable row level security;
+revoke all on public.rutinas from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LOS DÍAS («Día A · Piernas»)
+--
+--    El orden es único pero DIFERIDO: al reordenar, el día 2 pasa a ser el
+--    1 y el 1 el 2, y en el medio los dos son el 1 un instante. Se controla
+--    al terminar la transacción, cuando ya quedó cada uno en su lugar.
+-- ------------------------------------------------------------
+create table if not exists public.rutina_dias (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  rutina_id   uuid not null,
+  orden       smallint not null check (orden between 1 and 10),
+  nombre      text not null check (char_length(trim(nombre)) between 1 and 40),
+  -- Entrada en calor, vuelta a la calma. LO VE EL CLIENTE.
+  notas       text not null default '' check (char_length(notas) <= 500),
+  constraint rutina_dias_id_empresa unique (id, empresa_id),
+  constraint rutina_dias_rutina foreign key (rutina_id, empresa_id)
+    references public.rutinas (id, empresa_id) on delete cascade,
+  constraint rutina_dias_orden unique (rutina_id, orden) deferrable initially deferred
+);
+
+alter table public.rutina_dias enable row level security;
+revoke all on public.rutina_dias from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. LOS EJERCICIOS DE CADA DÍA
+--
+--    Lo que el trainer indica es texto corto, no número: «8-12», «12-10-8»,
+--    «45 s», «al fallo»; «40 kg», «25 lb», «placa 7», «banda roja». La base
+--    NUNCA le agrega una unidad a la carga: en muchos gimnasios los discos
+--    vienen en libras, y leer «25 kg» donde el trainer pensó «25 lb» es el
+--    único error de pantalla que puede lastimar a alguien.
+--
+--    Lo que se mide sí es número (las medidas, más abajo).
+-- ------------------------------------------------------------
+create table if not exists public.rutina_ejercicios (
+  id                uuid primary key default gen_random_uuid(),
+  empresa_id        uuid not null references public.empresas (id) on delete cascade,
+  dia_id            uuid not null,
+  orden             smallint not null check (orden between 1 and 30),
+  ejercicio_id      uuid not null,
+  -- En null para el cardio o lo que va por tiempo.
+  series            smallint check (series between 1 and 20),
+  reps              text not null default '' check (char_length(reps) <= 20),
+  carga             text not null default '' check (char_length(carga) <= 24),
+  descanso_seg      smallint check (descanso_seg between 0 and 900),
+  -- «Codos pegados», «no cargar la rodilla». LA VE EL CLIENTE.
+  nota              text not null default '' check (char_length(nota) <= 200),
+  -- Superserie: el cliente lo ve como 2a / 2b.
+  junto_al_anterior boolean not null default false,
+  constraint rutina_ejercicios_id_empresa unique (id, empresa_id),
+  constraint rutina_ej_dia foreign key (dia_id, empresa_id)
+    references public.rutina_dias (id, empresa_id) on delete cascade,
+  -- NO ACTION: un ejercicio que está en una rutina se apaga, no se borra.
+  constraint rutina_ej_ejercicio foreign key (ejercicio_id, empresa_id)
+    references public.ejercicios (id, empresa_id),
+  constraint rutina_ej_orden unique (dia_id, orden) deferrable initially deferred,
+  constraint rutina_ej_primero_suelto check (orden > 1 or not junto_al_anterior)
+);
+
+create index if not exists rutina_ej_ejercicio_idx on public.rutina_ejercicios (ejercicio_id);
+
+alter table public.rutina_ejercicios enable row level security;
+revoke all on public.rutina_ejercicios from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 5. EL LINK DEL CLIENTE
+--
+--    Uno por persona, no por rutina: siempre muestra la vigente. El token
+--    ES la credencial. Cambiarlo deja al viejo igual que uno inexistente.
+-- ------------------------------------------------------------
+create table if not exists public.rutina_enlaces (
+  cliente_id  uuid primary key,
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  token       uuid not null default gen_random_uuid(),
+  activo      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint rutina_enlaces_cliente foreign key (cliente_id, empresa_id)
+    references public.clientes (id, empresa_id) on delete cascade
+);
+
+create unique index if not exists rutina_enlaces_token on public.rutina_enlaces (token);
+
+alter table public.rutina_enlaces enable row level security;
+revoke all on public.rutina_enlaces from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6. LA FICHA DE ENTRENAMIENTO (mínima; crece en la fase 3)
+--
+--    Por ahora guarda una sola cosa: que el cliente (o su madre, padre o
+--    tutor, si es menor) está de acuerdo con que se guarden sus medidas.
+--    Son datos de salud (Ley 7593/2025 en Paraguay, LGPD en Brasil): sin
+--    ese sí, no se anota ninguna.
+-- ------------------------------------------------------------
+create table if not exists public.fichas_entreno (
+  cliente_id           uuid primary key,
+  empresa_id           uuid not null references public.empresas (id) on delete cascade,
+  consiente_medidas_at timestamptz,
+  consiente_por        uuid references auth.users (id) on delete set null,
+  updated_at           timestamptz not null default now(),
+  constraint fichas_entreno_cliente foreign key (cliente_id, empresa_id)
+    references public.clientes (id, empresa_id) on delete cascade
+);
+
+alter table public.fichas_entreno enable row level security;
+revoke all on public.fichas_entreno from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 7. LAS MEDICIONES
+--
+--    Una fila es «el control del 22/09», como lo piensa el trainer, y no
+--    una fila por valor: así los rangos los controla la base, como en todo
+--    Orden. Los rangos frenan dedazos («8,5» en vez de «85»), no
+--    diagnostican nada, y son los mismos de src/lib/medidas.ts.
+--
+--    No se guarda nada calculado (IMC, cintura/altura): se calcula en
+--    medidas.ts, y así se puede corregir sin migrar.
+--
+--    Los nombres de todos los check empiezan con `mediciones_`: la regla
+--    de src/lib/errores.ts los traduce a «Ese valor está fuera de rango».
+-- ------------------------------------------------------------
+create table if not exists public.mediciones (
+  id             uuid primary key default gen_random_uuid(),
+  empresa_id     uuid not null references public.empresas (id) on delete cascade,
+  cliente_id     uuid not null,
+  fecha          date not null,
+  peso_kg        numeric(4, 1) check (peso_kg between 20 and 300),
+  altura_cm      numeric(4, 1) check (altura_cm between 100 and 230),
+  cintura_cm     numeric(4, 1) check (cintura_cm between 40 and 200),
+  cadera_cm      numeric(4, 1) check (cadera_cm between 50 and 200),
+  pecho_cm       numeric(4, 1) check (pecho_cm between 50 and 180),
+  -- Contraído.
+  brazo_cm       numeric(4, 1) check (brazo_cm between 15 and 75),
+  muslo_cm       numeric(4, 1) check (muslo_cm between 30 and 110),
+  grasa_pct      numeric(3, 1) check (grasa_pct between 3 and 70),
+  -- Una balanza y un plicómetro no se comparan: el % de grasa va siempre
+  -- con su método.
+  grasa_metodo   text check (grasa_metodo in ('balanza', 'plicometro', 'cinta', 'otro')),
+  pantorrilla_cm numeric(4, 1) check (pantorrilla_cm between 20 and 70),
+  cuello_cm      numeric(4, 1) check (cuello_cm between 25 and 65),
+  nota           text not null default '' check (char_length(nota) <= 300),
+  creado_por     uuid references auth.users (id) on delete set null,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  -- NO ACTION.
+  constraint mediciones_cliente foreign key (cliente_id, empresa_id)
+    references public.clientes (id, empresa_id),
+  constraint mediciones_un_control_por_dia unique (cliente_id, fecha),
+  constraint mediciones_con_algo check (num_nonnulls(peso_kg, altura_cm, cintura_cm, cadera_cm,
+    pecho_cm, brazo_cm, muslo_cm, grasa_pct, pantorrilla_cm, cuello_cm) >= 1),
+  constraint mediciones_grasa_con_metodo check ((grasa_pct is null) = (grasa_metodo is null))
+);
+
+create index if not exists mediciones_cliente_idx on public.mediciones (cliente_id, fecha desc);
+
+alter table public.mediciones enable row level security;
+revoke all on public.mediciones from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 8. CÓMO SUBIERON LAS CARGAS
+--
+--    Cada vez que cambia la carga o las repeticiones de un ejercicio de la
+--    rutina VIGENTE, queda una fila. Es lo que el cliente festeja y lo que
+--    lo hace renovar: «Sentadilla: de 40 a 50 kg desde el 15/08».
+-- ------------------------------------------------------------
+create table if not exists public.cargas_historial (
+  id            uuid primary key default gen_random_uuid(),
+  empresa_id    uuid not null references public.empresas (id) on delete cascade,
+  cliente_id    uuid not null,
+  ejercicio_id  uuid not null,
+  rutina_id     uuid references public.rutinas (id) on delete set null,
+  fecha         date not null,
+  carga_antes   text,
+  carga_despues text,
+  reps_antes    text,
+  reps_despues  text,
+  creado_por    uuid references auth.users (id) on delete set null,
+  created_at    timestamptz not null default now(),
+  -- NO ACTION las dos.
+  constraint cargas_historial_cliente foreign key (cliente_id, empresa_id)
+    references public.clientes (id, empresa_id),
+  constraint cargas_historial_ejercicio foreign key (ejercicio_id, empresa_id)
+    references public.ejercicios (id, empresa_id)
+);
+
+create index if not exists cargas_historial_idx on public.cargas_historial (cliente_id, ejercicio_id, fecha);
+
+alter table public.cargas_historial enable row level security;
+revoke all on public.cargas_historial from anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 9. CON LA CUENTA VENCIDA NO SE CARGA (018, 069)
+--
+--    En todas las tablas nuevas MENOS `rutina_enlaces`. Apagar o cambiar un
+--    link que se reenvió a quien no debía es seguridad, no carga: tiene que
+--    poder hacerse justo cuando la cuenta está vencida y Orden cerrado.
+-- ------------------------------------------------------------
+drop trigger if exists cuenta_activa_ejercicios on public.ejercicios;
+create trigger cuenta_activa_ejercicios
+  before insert or update on public.ejercicios
+  for each row execute function public.exigir_cuenta_activa();
+
+drop trigger if exists cuenta_activa_rutinas on public.rutinas;
+create trigger cuenta_activa_rutinas
+  before insert or update on public.rutinas
+  for each row execute function public.exigir_cuenta_activa();
+
+drop trigger if exists cuenta_activa_rutina_dias on public.rutina_dias;
+create trigger cuenta_activa_rutina_dias
+  before insert or update on public.rutina_dias
+  for each row execute function public.exigir_cuenta_activa();
+
+drop trigger if exists cuenta_activa_rutina_ejercicios on public.rutina_ejercicios;
+create trigger cuenta_activa_rutina_ejercicios
+  before insert or update on public.rutina_ejercicios
+  for each row execute function public.exigir_cuenta_activa();
+
+drop trigger if exists cuenta_activa_fichas_entreno on public.fichas_entreno;
+create trigger cuenta_activa_fichas_entreno
+  before insert or update on public.fichas_entreno
+  for each row execute function public.exigir_cuenta_activa();
+
+drop trigger if exists cuenta_activa_mediciones on public.mediciones;
+create trigger cuenta_activa_mediciones
+  before insert or update on public.mediciones
+  for each row execute function public.exigir_cuenta_activa();
+
+drop trigger if exists cuenta_activa_cargas_historial on public.cargas_historial;
+create trigger cuenta_activa_cargas_historial
+  before insert or update on public.cargas_historial
+  for each row execute function public.exigir_cuenta_activa();
+
+-- ============================================================
+-- LAS FUNCIONES
+--
+-- Todas reciben la empresa primero, arrancan preguntando si quien llama es
+-- de esa empresa, y controlan que la fila que tocan sea de ella: un id de
+-- otro negocio es, para esta, un id que no existe.
+--
+-- Los datos de salud (medidas, consentimiento, «Salud y lesiones») son del
+-- dueño o de un administrador. Un vendedor que cobra en el mostrador arma
+-- rutinas si hace falta, pero no ve cuánto pesa nadie.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 10. AYUDANTES (no se llaman desde afuera)
+-- ------------------------------------------------------------
+
+-- ¿Está entrenando? Un cliente activo con un plan que se puede usar, o con
+-- una sesión cerca (un mes para atrás o para adelante), o con una rutina
+-- vigente o en preparación. El que dejó de venir no se archiva —se le
+-- cierra el plan o no renueva—, y sin esto «sin rutina» listaría para
+-- siempre a cada cliente viejo o de prueba.
+create or replace function public.cliente_entrenando(p_cliente uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select coalesce((
+    select c.activo and (
+      exists (
+        select 1 from public.paquetes p
+        where p.cliente_id = c.id and not p.cerrado
+          and (public.estado_paquete(p.id)->>'estado') = 'activo')
+      or exists (
+        select 1 from public.turnos_reserva r
+        where r.cliente_id = c.id and r.empresa_id = c.empresa_id and r.estado <> 'cancelada'
+          and (r.inicia at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date
+              between public.hoy_empresa(c.empresa_id) - 30 and public.hoy_empresa(c.empresa_id) + 30)
+      or exists (
+        select 1 from public.rutinas ru
+        where ru.cliente_id = c.id and ru.estado in ('vigente', 'borrador')))
+    from public.clientes c
+    join public.empresas e on e.id = c.empresa_id
+    where c.id = p_cliente
+  ), false);
+$fn$;
+
+revoke all on function public.cliente_entrenando(uuid) from public, anon, authenticated;
+
+-- Una rutina entera, con cada ejercicio completado desde la biblioteca.
+-- `p_con_notas`: si trae «Salud y lesiones» del cliente, para el aviso en
+-- ámbar. Lo ve todo el equipo (ver rutinas_del_cliente).
+create or replace function public.rutina_json(p_rutina uuid, p_con_notas boolean)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'id',             r.id,
+    'cliente_id',     r.cliente_id,
+    'cliente_nombre', c.nombre,
+    'cliente_notas',  case when p_con_notas and r.cliente_id is not null then c.notas end,
+    'estado',         r.estado,
+    'nombre',         r.nombre,
+    'notas',          r.notas,
+    'desde',          r.desde,
+    'hasta',          r.hasta,
+    'semanas',        r.semanas,
+    'version',        r.version,
+    'updated_at',     r.updated_at,
+    'dias', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',     d.id,
+        'orden',  d.orden,
+        'nombre', d.nombre,
+        'notas',  d.notas,
+        'ejercicios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'id',                re.id,
+            'orden',             re.orden,
+            'ejercicio_id',      re.ejercicio_id,
+            'nombre',            e.nombre,
+            'grupo',             e.grupo,
+            'indicaciones',      e.indicaciones,
+            'video_url',         e.video_url,
+            'series',            re.series,
+            'reps',              re.reps,
+            'carga',             re.carga,
+            'descanso_seg',      re.descanso_seg,
+            'nota',              re.nota,
+            'junto_al_anterior', re.junto_al_anterior
+          ) order by re.orden)
+          from public.rutina_ejercicios re
+          join public.ejercicios e on e.id = re.ejercicio_id
+          where re.dia_id = d.id
+        ), '[]'::jsonb)
+      ) order by d.orden)
+      from public.rutina_dias d
+      where d.rutina_id = r.id
+    ), '[]'::jsonb)
+  )
+  from public.rutinas r
+  left join public.clientes c on c.id = r.cliente_id and c.empresa_id = r.empresa_id
+  where r.id = p_rutina;
+$fn$;
+
+revoke all on function public.rutina_json(uuid, boolean) from public, anon, authenticated;
+
+-- Un ejercicio por su nombre: el que ya está (aunque cambien mayúsculas,
+-- tildes o espacios), y si estaba apagado se prende; si no está, se crea.
+-- `on conflict`: dos celulares guardando a la vez el mismo nombre nuevo
+-- terminan en el mismo ejercicio, no en un error.
+create or replace function public.ejercicio_por_nombre(p_empresa uuid, p_nombre text)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_nombre text;
+  v_id     uuid;
+  v_activo boolean;
+begin
+  v_nombre := btrim(left(btrim(regexp_replace(coalesce(p_nombre, ''), '\s+', ' ', 'g')), 80));
+  if v_nombre = '' then
+    raise exception 'A un ejercicio le falta el nombre.' using errcode = '22023';
+  end if;
+
+  select id, activo into v_id, v_activo
+  from public.ejercicios
+  where empresa_id = p_empresa and clave = public.clave_ejercicio(v_nombre);
+
+  if v_id is null then
+    insert into public.ejercicios (empresa_id, nombre)
+    values (p_empresa, v_nombre)
+    on conflict (empresa_id, clave) do nothing
+    returning id into v_id;
+
+    if v_id is null then
+      select id into v_id from public.ejercicios
+      where empresa_id = p_empresa and clave = public.clave_ejercicio(v_nombre);
+    end if;
+  elsif not v_activo then
+    update public.ejercicios set activo = true where id = v_id;
+  end if;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.ejercicio_por_nombre(uuid, text) from public, anon, authenticated;
+
+-- En qué estado nace una rutina nueva. Sin cliente, plantilla. Con cliente:
+-- vigente si no tiene ninguna, «la próxima» si ya tiene una vigente, y si
+-- ya hay una próxima en preparación, no se arma otra al lado: dos
+-- borradores del mismo cliente terminan con uno pisando al otro.
+--
+-- Primero se pregunta por la vigente y recién después por la próxima: el
+-- que tocó «Terminar» con una próxima ya armada queda sin vigente y con un
+-- borrador. La pantalla le muestra «Sin rutina» (Armar desde cero · Usar
+-- una plantilla · Copiar la de otro cliente), y esos tres botones no
+-- pueden chocar con un borrador que para él no está a la vista: la nueva
+-- nace vigente, como dice el contrato.
+--
+-- El cliente queda bloqueado hasta el final de la transacción: dos toques
+-- casi juntos no pueden crear las dos una vigente.
+create or replace function public.destino_nueva_rutina(p_empresa uuid, p_cliente uuid)
+returns text language plpgsql security definer set search_path = public as $fn$
+begin
+  if p_cliente is null then
+    return 'plantilla';
+  end if;
+
+  perform 1 from public.clientes
+  where id = p_cliente and empresa_id = p_empresa and activo
+  for update;
+  if not found then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  if not exists (select 1 from public.rutinas where cliente_id = p_cliente and estado = 'vigente') then
+    return 'vigente';
+  end if;
+
+  if exists (select 1 from public.rutinas where cliente_id = p_cliente and estado = 'borrador') then
+    raise exception 'Este cliente ya tiene una próxima rutina en preparación: seguí con esa.'
+      using errcode = '22023';
+  end if;
+  return 'borrador';
+end $fn$;
+
+revoke all on function public.destino_nueva_rutina(uuid, uuid) from public, anon, authenticated;
+
+-- El link del cliente: lo crea si no existe y devuelve el token. Se llama
+-- cada vez que una rutina queda vigente, así el botón de WhatsApp es un
+-- link común, sin esperar nada antes de abrir (el Safari del iPhone
+-- bloquea las ventanas que se abren después de un await).
+create or replace function public.asegurar_enlace_rutina(p_empresa uuid, p_cliente uuid)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_token uuid;
+begin
+  insert into public.rutina_enlaces (cliente_id, empresa_id)
+  values (p_cliente, p_empresa)
+  on conflict (cliente_id) do nothing;
+
+  select token into v_token from public.rutina_enlaces
+  where cliente_id = p_cliente and empresa_id = p_empresa;
+  return v_token;
+end $fn$;
+
+revoke all on function public.asegurar_enlace_rutina(uuid, uuid) from public, anon, authenticated;
+
+-- Un texto sin ninguna palabra del nombre de una persona. Lo usa
+-- `copiar_rutina` entre personas distintas: el trainer que tiene dos «Ana»
+-- escribe el nombre entero («Rutina de Ana Ruiz», «Gabi Medina · fuerza»),
+-- y sacar solo la primera palabra dejaría el apellido en el link de otro.
+--
+-- Se saca cada palabra del nombre con dos letras o más que no sea una
+-- partícula («de», «da», «dos»…: sacarlas rompería «Rutina de fuerza»),
+-- entera, sin mayúsculas ni tildes: «ANA» y «Ána» son «Ana», y «Ana» no
+-- rompe «Semana» ni «Mariana».
+--
+-- Las letras se escriben a mano, sin \w ni \m: en PGlite (idioma C) la «é»
+-- no es una letra para las expresiones regulares y en producción (ICU) sí,
+-- y «José» se sacaría en un lado y en el otro no. El espacio duro (U+00A0)
+-- que llega pegando desde WhatsApp o desde los contactos tampoco une dos
+-- palabras: no es una letra.
+create or replace function public.sin_nombre_de_persona(p_texto text, p_persona text)
+returns text language plpgsql immutable set search_path = public as $fn$
+declare
+  c_con    constant text := 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÑÇáàâãäéèêëíìîïóòôõöúùûüñç';
+  c_sin    constant text := 'aaaaaeeeeiiiiooooouuuuncaaaaaeeeeiiiiooooouuuunc';
+  c_letras constant text := '0-9A-Za-zÀ-ÖØ-öø-ɏ';
+  v_nombre text[] := '{}';
+  v_trozo  text;
+  v_res    text := '';
+begin
+  for v_trozo in
+    select m[1] from regexp_matches(coalesce(p_persona, ''), '([' || c_letras || ']+)', 'g') m
+  loop
+    v_trozo := translate(lower(v_trozo), c_con, c_sin);
+    if char_length(v_trozo) >= 2
+       and v_trozo <> all (array['de', 'del', 'la', 'las', 'los', 'da', 'das', 'do', 'dos',
+                                 'di', 'du', 'van', 'von', 'y', 'e']) then
+      v_nombre := v_nombre || v_trozo;
+    end if;
+  end loop;
+
+  -- El texto en pedazos que son palabras o lo que va entre ellas, en orden:
+  -- se deja todo tal cual salvo las palabras del nombre.
+  for v_trozo in
+    select m[1] from regexp_matches(coalesce(p_texto, ''),
+                                    '([' || c_letras || ']+|[^' || c_letras || ']+)', 'g') m
+  loop
+    if not (translate(lower(v_trozo), c_con, c_sin) = any (v_nombre)) then
+      v_res := v_res || v_trozo;
+    end if;
+  end loop;
+  return v_res;
+end $fn$;
+
+revoke all on function public.sin_nombre_de_persona(text, text) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 11. LA BIBLIOTECA
+-- ------------------------------------------------------------
+create or replace function public.ejercicios_de(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_lista jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  -- Los más usados primero: son los que el trainer va a buscar.
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',           e.id,
+    'nombre',       e.nombre,
+    'grupo',        e.grupo,
+    'indicaciones', e.indicaciones,
+    'video_url',    e.video_url,
+    'activo',       e.activo,
+    'usos',         u.usos
+  ) order by u.usos desc, e.clave, e.nombre), '[]'::jsonb)
+  into v_lista
+  from public.ejercicios e
+  cross join lateral (
+    select count(*)::int as usos from public.rutina_ejercicios re where re.ejercicio_id = e.id
+  ) u
+  where e.empresa_id = p_empresa;
+
+  return v_lista;
+end $fn$;
+
+revoke all on function public.ejercicios_de(uuid) from public, anon;
+grant execute on function public.ejercicios_de(uuid) to authenticated;
+
+-- Crear o editar un ejercicio de la biblioteca.
+--
+-- Renombrar uno al nombre de OTRO que ya existe es unirlos: «Sentadila»
+-- pasa a ser «Sentadilla» en todas las rutinas y en el historial de cargas,
+-- y el repetido desaparece. Es la única forma de arreglar un duplicado, y
+-- como cambia rutinas de muchos clientes, es del dueño o de un admin.
+create or replace function public.guardar_ejercicio(
+  p_empresa       uuid,
+  p_nombre        text,
+  p_grupo         text default null,
+  p_indicaciones  text default '',
+  p_video         text default null,
+  p_activo        boolean default true,
+  p_id            uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_nombre text;
+  v_grupo  text;
+  v_ind    text;
+  v_video  text;
+  v_otro   uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_nombre := btrim(left(btrim(regexp_replace(coalesce(p_nombre, ''), '\s+', ' ', 'g')), 80));
+  if v_nombre = '' then
+    raise exception 'A un ejercicio le falta el nombre.' using errcode = '22023';
+  end if;
+
+  v_grupo := nullif(btrim(coalesce(p_grupo, '')), '');
+  if v_grupo is not null and v_grupo not in ('piernas', 'gluteos', 'pecho', 'espalda', 'hombros',
+                                             'brazos', 'core', 'cardio', 'movilidad', 'otro') then
+    raise exception 'Ese grupo de ejercicios no existe.' using errcode = '22023';
+  end if;
+
+  v_ind := left(coalesce(p_indicaciones, ''), 500);
+
+  v_video := nullif(btrim(coalesce(p_video, '')), '');
+  if v_video is not null and v_video !~ '^https://\S+$' then
+    raise exception 'El video tiene que ser un link que empiece con https://.' using errcode = '22023';
+  end if;
+  if char_length(v_video) > 300 then
+    raise exception 'El link del video es demasiado largo.' using errcode = '22023';
+  end if;
+
+  -- Nuevo.
+  if p_id is null then
+    if exists (select 1 from public.ejercicios
+               where empresa_id = p_empresa and clave = public.clave_ejercicio(v_nombre)) then
+      raise exception 'Ya tenés un ejercicio que se llama así.' using errcode = '22023';
+    end if;
+
+    insert into public.ejercicios (empresa_id, nombre, grupo, indicaciones, video_url, activo)
+    values (p_empresa, v_nombre, v_grupo, v_ind, v_video, coalesce(p_activo, true))
+    returning id into v_otro;
+
+    return jsonb_build_object('id', v_otro, 'unido', false);
+  end if;
+
+  -- Editar.
+  perform 1 from public.ejercicios where id = p_id and empresa_id = p_empresa for update;
+  if not found then
+    raise exception 'Ese ejercicio no existe.' using errcode = 'P0002';
+  end if;
+
+  select id into v_otro from public.ejercicios
+  where empresa_id = p_empresa and clave = public.clave_ejercicio(v_nombre) and id <> p_id;
+
+  if v_otro is not null then
+    if not public.es_admin(p_empresa) then
+      raise exception 'Unir dos ejercicios es del dueño o de un administrador.' using errcode = '42501';
+    end if;
+
+    update public.rutina_ejercicios set ejercicio_id = v_otro where ejercicio_id = p_id;
+    update public.cargas_historial  set ejercicio_id = v_otro where ejercicio_id = p_id;
+
+    -- El que queda conserva lo suyo y completa lo que le faltaba con lo que
+    -- traía el otro: unir no puede borrar un video o un «cómo se hace».
+    update public.ejercicios
+    set grupo        = coalesce(grupo, v_grupo),
+        indicaciones = case when indicaciones = '' then v_ind else indicaciones end,
+        video_url    = coalesce(video_url, v_video),
+        activo       = activo or coalesce(p_activo, true)
+    where id = v_otro;
+
+    delete from public.ejercicios where id = p_id;
+
+    return jsonb_build_object('id', v_otro, 'unido', true);
+  end if;
+
+  update public.ejercicios
+  set nombre = v_nombre, grupo = v_grupo, indicaciones = v_ind,
+      video_url = v_video, activo = coalesce(p_activo, true)
+  where id = p_id;
+
+  return jsonb_build_object('id', p_id, 'unido', false);
+end $fn$;
+
+revoke all on function public.guardar_ejercicio(uuid, text, text, text, text, boolean, uuid) from public, anon;
+grant execute on function public.guardar_ejercicio(uuid, text, text, text, text, boolean, uuid) to authenticated;
+
+-- Borrar de verdad solo lo que no se usó: lo escrito mal y nunca usado.
+create or replace function public.borrar_ejercicio(p_empresa uuid, p_id uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(p_empresa) then
+    raise exception 'Borrar un ejercicio es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  perform 1 from public.ejercicios where id = p_id and empresa_id = p_empresa for update;
+  if not found then
+    raise exception 'Ese ejercicio no existe.' using errcode = 'P0002';
+  end if;
+
+  if exists (select 1 from public.rutina_ejercicios where ejercicio_id = p_id)
+     or exists (select 1 from public.cargas_historial where ejercicio_id = p_id) then
+    raise exception 'Ese ejercicio está en rutinas: apagalo en vez de borrarlo.' using errcode = '22023';
+  end if;
+
+  delete from public.ejercicios where id = p_id;
+end $fn$;
+
+revoke all on function public.borrar_ejercicio(uuid, uuid) from public, anon;
+grant execute on function public.borrar_ejercicio(uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 12. LA PANTALLA /rutinas
+--
+--    «Para atender» es lo que el trainer tiene que hacer hoy: el que entrena
+--    y no tiene rutina, el que ya cumplió las semanas que se dijo, y (solo
+--    para quien ve la salud) el que hace más de un mes que no se mide.
+-- ------------------------------------------------------------
+create or replace function public.rutinas_de(p_empresa uuid, p_todos boolean default false)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_admin boolean;
+  v_hoy   date;
+  v_res   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+  v_hoy   := public.hoy_empresa(p_empresa);
+
+  with base as (
+    select c.id as cli, c.nombre as cli_nombre, c.telefono as cli_tel,
+           public.cliente_entrenando(c.id) as entrena,
+           vg.id as vig_id, vg.nombre as vig_nombre, vg.desde as vig_desde,
+           vg.semanas as vig_semanas, vg.updated_at as vig_upd,
+           (select b.id from public.rutinas b
+            where b.cliente_id = c.id and b.estado = 'borrador') as borr_id,
+           en.cliente_id as en_cli, en.token as en_token, en.activo as en_activo,
+           case when v_admin then (select max(m.fecha) from public.mediciones m
+                                   where m.cliente_id = c.id) end as ult_med
+    from public.clientes c
+    left join public.rutinas vg on vg.cliente_id = c.id and vg.estado = 'vigente'
+    left join public.rutina_enlaces en on en.cliente_id = c.id
+    where c.empresa_id = p_empresa and c.activo
+  )
+  select jsonb_build_object(
+    'clientes', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',          b.cli,
+        'nombre',      b.cli_nombre,
+        'telefono',    b.cli_tel,
+        'vigente',     case when b.vig_id is null then null else jsonb_build_object(
+                         'id',         b.vig_id,
+                         'nombre',     b.vig_nombre,
+                         'desde',      b.vig_desde,
+                         'semanas',    b.vig_semanas,
+                         'cambia_el',  case when b.vig_semanas is not null
+                                            then b.vig_desde + b.vig_semanas * 7 end,
+                         'updated_at', b.vig_upd) end,
+        'borrador_id', b.borr_id,
+        'enlace',      case when b.en_cli is null then null
+                            else jsonb_build_object('token', b.en_token, 'activo', b.en_activo) end,
+        'ultima_medicion', b.ult_med,
+        'entrenando',  b.entrena
+      ) order by lower(b.cli_nombre), b.cli_nombre, b.cli)
+      from base b
+      where b.entrena or coalesce(p_todos, false)
+    ), '[]'::jsonb),
+    'para_atender', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'cliente_id', a.cli, 'nombre', a.cli_nombre, 'motivo', a.motivo
+      ) order by lower(a.cli_nombre), a.cli, a.prioridad)
+      from (
+        select b.cli, b.cli_nombre, 'sin_rutina' as motivo, 1 as prioridad
+        from base b where b.entrena and b.vig_id is null
+        union all
+        select b.cli, b.cli_nombre, 'cambiar', 2
+        from base b where b.entrena and b.vig_semanas is not null
+          and b.vig_desde + b.vig_semanas * 7 <= v_hoy
+        union all
+        select b.cli, b.cli_nombre, 'medir', 3
+        from base b where b.entrena and v_admin and b.ult_med is not null
+          and b.ult_med < v_hoy - 30
+      ) a
+    ), '[]'::jsonb),
+    'plantillas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',         p.id,
+        'nombre',     p.nombre,
+        'semanas',    p.semanas,
+        'dias',       (select count(*)::int from public.rutina_dias d where d.rutina_id = p.id),
+        'ejercicios', (select count(*)::int from public.rutina_ejercicios re
+                       join public.rutina_dias d on d.id = re.dia_id where d.rutina_id = p.id),
+        'updated_at', p.updated_at
+      ) order by lower(p.nombre), p.nombre, p.id)
+      from public.rutinas p
+      where p.empresa_id = p_empresa and p.estado = 'plantilla'
+    ), '[]'::jsonb)
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.rutinas_de(uuid, boolean) from public, anon;
+grant execute on function public.rutinas_de(uuid, boolean) to authenticated;
+
+-- ------------------------------------------------------------
+-- 13. LA CARPETA DE UNA PERSONA, Y UNA RUTINA ENTERA
+-- ------------------------------------------------------------
+create or replace function public.rutinas_del_cliente(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_admin boolean;
+  v_cli   public.clientes;
+  v_vig   uuid;
+  v_res   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_cli from public.clientes where id = p_cliente and empresa_id = p_empresa;
+  if v_cli.id is null then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  v_admin := public.es_admin(p_empresa);
+  select id into v_vig from public.rutinas where cliente_id = p_cliente and estado = 'vigente';
+
+  select jsonb_build_object(
+    'cliente', jsonb_build_object(
+      'id',       v_cli.id,
+      'nombre',   v_cli.nombre,
+      'telefono', v_cli.telefono,
+      -- «Salud y lesiones» la ve TODO el equipo, no solo el dueño: un
+      -- trainer que trabaja para otro tiene que saber de la rodilla operada
+      -- antes de entrenar a esa persona. Ya era así en la agenda y en
+      -- Clientes (052, 097). Lo que es solo del dueño son las medidas.
+      'notas',    v_cli.notas),
+    'vigente', case when v_vig is null then null else public.rutina_json(v_vig, true) end,
+    'borrador', (
+      select jsonb_build_object('id', b.id, 'nombre', b.nombre, 'updated_at', b.updated_at)
+      from public.rutinas b where b.cliente_id = p_cliente and b.estado = 'borrador'),
+    'anteriores', coalesce((
+      select jsonb_agg(jsonb_build_object('id', a.id, 'nombre', a.nombre, 'desde', a.desde, 'hasta', a.hasta)
+                       order by a.desde desc, a.created_at desc)
+      from public.rutinas a where a.cliente_id = p_cliente and a.estado = 'anterior'
+    ), '[]'::jsonb),
+    'enlace', (
+      select jsonb_build_object('token', en.token, 'activo', en.activo)
+      from public.rutina_enlaces en where en.cliente_id = p_cliente),
+    'entrenando', public.cliente_entrenando(p_cliente)
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.rutinas_del_cliente(uuid, uuid) from public, anon;
+grant execute on function public.rutinas_del_cliente(uuid, uuid) to authenticated;
+
+-- La usan el editor y la hoja de la agenda. Las lesiones van aparte, en
+-- `cliente_notas`, para el aviso en ámbar del editor: nunca se copian a la
+-- rutina, que es lo que ve el cliente.
+create or replace function public.rutina(p_empresa uuid, p_rutina uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.rutinas where id = p_rutina and empresa_id = p_empresa) then
+    raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+  end if;
+
+  return public.rutina_json(p_rutina, true);
+end $fn$;
+
+revoke all on function public.rutina(uuid, uuid) from public, anon;
+grant execute on function public.rutina(uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 14. GUARDAR UNA RUTINA
+--
+--    Todo de una vez, con una sola llamada: el editor no autoguarda, porque
+--    si no el cliente vería una rutina a medio editar.
+--
+--    Los días y los ejercicios CONSERVAN SU ID: los tildes que el cliente
+--    hizo en su celular están guardados por id, y el historial de cargas
+--    necesita saber que «el mismo renglón» pasó de 40 a 50. Lo que llega
+--    con un id de esta rutina se actualiza, lo nuevo se inserta, y lo que
+--    no llegó se borra.
+-- ------------------------------------------------------------
+create or replace function public.guardar_rutina(
+  p_empresa uuid,
+  p_datos   jsonb,
+  p_id      uuid default null,
+  p_cliente uuid default null,
+  p_version integer default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_hoy      date;
+  v_r        public.rutinas;
+  v_id       uuid;
+  v_estado   text;
+  v_version  integer;
+  v_cliente  uuid;
+  v_nombre   text;
+  v_notas    text;
+  v_semanas  numeric;
+  v_desde    date;
+  v_dias     jsonb;
+  v_dia      jsonb;
+  v_ejs      jsonb;
+  v_ej       jsonb;
+  v_i        integer;
+  v_j        integer;
+  v_num      numeric;
+  v_texto    text;
+  v_dia_id   uuid;
+  v_ren_id   uuid;
+  v_ejer_id  uuid;
+  v_series   smallint;
+  v_desc     smallint;
+  v_reps     text;
+  v_carga    text;
+  v_viejo    public.rutina_ejercicios;
+  v_dias_ant uuid[];
+  v_ejs_ant  uuid[];
+  v_dias_ok  uuid[] := '{}';
+  v_ejs_ok   uuid[] := '{}';
+  v_token    uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_hoy := public.hoy_empresa(p_empresa);
+
+  -- ---- 1. Lo que llega, entero, antes de escribir nada ----
+  v_dias := case when jsonb_typeof(p_datos->'dias') = 'array' then p_datos->'dias' else '[]'::jsonb end;
+  if jsonb_array_length(v_dias) not between 1 and 10 then
+    raise exception 'Una rutina tiene entre 1 y 10 días.' using errcode = '22023';
+  end if;
+
+  v_nombre := btrim(left(btrim(coalesce(p_datos->>'nombre', '')), 60));
+  if v_nombre = '' then
+    raise exception 'Ponele un nombre a la rutina.' using errcode = '22023';
+  end if;
+  v_notas := left(coalesce(p_datos->>'notas', ''), 1000);
+
+  v_semanas := nullif(btrim(coalesce(p_datos->>'semanas', '')), '')::numeric;
+  if v_semanas is not null and (v_semanas <> trunc(v_semanas) or v_semanas not between 1 and 52) then
+    raise exception 'Las semanas van de 1 a 52.' using errcode = '22023';
+  end if;
+  v_desde := nullif(btrim(coalesce(p_datos->>'desde', '')), '')::date;
+
+  for v_dia in select value from jsonb_array_elements(v_dias) loop
+    if btrim(coalesce(v_dia->>'nombre', '')) = '' then
+      raise exception 'Cada día de la rutina necesita un nombre.' using errcode = '22023';
+    end if;
+    v_ejs := case when jsonb_typeof(v_dia->'ejercicios') = 'array' then v_dia->'ejercicios' else '[]'::jsonb end;
+    if jsonb_array_length(v_ejs) > 30 then
+      raise exception 'Un día tiene como máximo 30 ejercicios.' using errcode = '22023';
+    end if;
+
+    for v_ej in select value from jsonb_array_elements(v_ejs) loop
+      if nullif(btrim(coalesce(v_ej->>'ejercicio_id', '')), '') is null
+         and btrim(coalesce(v_ej->>'nombre', '')) = '' then
+        raise exception 'A un ejercicio le falta el nombre.' using errcode = '22023';
+      end if;
+
+      v_num := nullif(btrim(coalesce(v_ej->>'series', '')), '')::numeric;
+      if v_num is not null and (v_num <> trunc(v_num) or v_num not between 1 and 20) then
+        raise exception 'Las series van de 1 a 20.' using errcode = '22023';
+      end if;
+
+      v_num := nullif(btrim(coalesce(v_ej->>'descanso_seg', '')), '')::numeric;
+      if v_num is not null and (v_num <> trunc(v_num) or v_num not between 0 and 900) then
+        raise exception 'El descanso va de 0 a 15 minutos.' using errcode = '22023';
+      end if;
+
+      -- La carga y las repeticiones no se recortan en silencio: «25 lb por
+      -- lado» cortado a la mitad puede decir otra cosa.
+      if char_length(btrim(coalesce(v_ej->>'carga', ''))) > 24 then
+        raise exception 'La carga se escribe corta: hasta 24 letras.' using errcode = '22023';
+      end if;
+      if char_length(btrim(coalesce(v_ej->>'reps', ''))) > 20 then
+        raise exception 'Las repeticiones se escriben cortas: hasta 20 letras.' using errcode = '22023';
+      end if;
+    end loop;
+  end loop;
+
+  -- ---- 2. La rutina ----
+  if p_id is null then
+    v_estado := public.destino_nueva_rutina(p_empresa, p_cliente);
+    v_cliente := case when v_estado = 'plantilla' then null else p_cliente end;
+
+    insert into public.rutinas (empresa_id, cliente_id, estado, nombre, notas, desde, semanas, creado_por)
+    values (p_empresa, v_cliente, v_estado, v_nombre, v_notas,
+            case when v_estado = 'vigente' then coalesce(v_desde, v_hoy) end,
+            v_semanas::smallint, auth.uid())
+    returning id, version into v_id, v_version;
+  else
+    select * into v_r from public.rutinas where id = p_id for update;
+    if v_r.id is null or v_r.empresa_id <> p_empresa then
+      raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+    end if;
+
+    if v_r.estado = 'anterior' then
+      raise exception 'Esa rutina ya terminó: armá la próxima a partir de ella.' using errcode = '22023';
+    end if;
+
+    if p_version is not null and p_version <> v_r.version then
+      raise exception 'Alguien cambió esta rutina mientras la editabas. Recargá para ver la última.'
+        using errcode = '22023';
+    end if;
+
+    v_id := v_r.id;
+    v_estado := v_r.estado;
+    v_cliente := v_r.cliente_id;
+
+    update public.rutinas
+    set nombre = v_nombre,
+        notas = v_notas,
+        semanas = v_semanas::smallint,
+        -- Solo la vigente tiene «desde» (la próxima lo toma al activarse).
+        desde = case when v_estado = 'vigente' then coalesce(v_desde, desde) else desde end,
+        version = version + 1,
+        updated_at = now()
+    where id = v_id
+    returning version into v_version;
+  end if;
+
+  -- ---- 3. Los días y sus ejercicios ----
+  select coalesce(array_agg(d.id), '{}') into v_dias_ant
+  from public.rutina_dias d where d.rutina_id = v_id;
+
+  select coalesce(array_agg(re.id), '{}') into v_ejs_ant
+  from public.rutina_ejercicios re
+  join public.rutina_dias d on d.id = re.dia_id
+  where d.rutina_id = v_id;
+
+  for v_dia, v_i in select value, ordinality::int from jsonb_array_elements(v_dias) with ordinality loop
+    v_dia_id := public.uuid_o_null(v_dia->>'id');
+
+    -- Un id que no es de esta rutina, o que ya se usó arriba, es un día nuevo.
+    if v_dia_id is not null and v_dia_id = any (v_dias_ant) and not (v_dia_id = any (v_dias_ok)) then
+      update public.rutina_dias
+      set orden = v_i,
+          nombre = btrim(left(btrim(v_dia->>'nombre'), 40)),
+          notas = left(coalesce(v_dia->>'notas', ''), 500)
+      where id = v_dia_id;
+    else
+      insert into public.rutina_dias (empresa_id, rutina_id, orden, nombre, notas)
+      values (p_empresa, v_id, v_i, btrim(left(btrim(v_dia->>'nombre'), 40)),
+              left(coalesce(v_dia->>'notas', ''), 500))
+      returning id into v_dia_id;
+    end if;
+    v_dias_ok := v_dias_ok || v_dia_id;
+
+    v_ejs := case when jsonb_typeof(v_dia->'ejercicios') = 'array' then v_dia->'ejercicios' else '[]'::jsonb end;
+
+    for v_ej, v_j in select value, ordinality::int from jsonb_array_elements(v_ejs) with ordinality loop
+      -- El ejercicio de la biblioteca: por id (tiene que ser de esta
+      -- empresa; la clave compuesta lo frenaría igual, pero así se dice
+      -- con palabras) o por nombre.
+      v_texto := nullif(btrim(coalesce(v_ej->>'ejercicio_id', '')), '');
+      if v_texto is not null then
+        v_ejer_id := public.uuid_o_null(v_texto);
+        if v_ejer_id is null
+           or not exists (select 1 from public.ejercicios where id = v_ejer_id and empresa_id = p_empresa) then
+          raise exception 'Ese ejercicio no existe.' using errcode = 'P0002';
+        end if;
+      else
+        v_ejer_id := public.ejercicio_por_nombre(p_empresa, v_ej->>'nombre');
+      end if;
+
+      v_series := nullif(btrim(coalesce(v_ej->>'series', '')), '')::numeric::smallint;
+      v_desc   := nullif(btrim(coalesce(v_ej->>'descanso_seg', '')), '')::numeric::smallint;
+      v_reps   := btrim(coalesce(v_ej->>'reps', ''));
+      v_carga  := btrim(coalesce(v_ej->>'carga', ''));
+
+      v_ren_id := public.uuid_o_null(v_ej->>'id');
+      if v_ren_id is not null and v_ren_id = any (v_ejs_ant) and not (v_ren_id = any (v_ejs_ok)) then
+        select * into v_viejo from public.rutina_ejercicios where id = v_ren_id;
+
+        update public.rutina_ejercicios
+        set dia_id = v_dia_id,
+            orden = v_j,
+            ejercicio_id = v_ejer_id,
+            series = v_series,
+            reps = v_reps,
+            carga = v_carga,
+            descanso_seg = v_desc,
+            nota = left(coalesce(v_ej->>'nota', ''), 200),
+            -- El primero de un día no puede ir «junto al anterior».
+            junto_al_anterior = (v_j > 1 and coalesce((v_ej->>'junto_al_anterior')::boolean, false))
+        where id = v_ren_id;
+
+        -- Subir la carga editando la rutina vigente también es avance. Si
+        -- se cambió el ejercicio por otro, no: «de 40 en sentadilla a 100
+        -- en prensa» no es progreso de nada.
+        if v_estado = 'vigente' and v_viejo.ejercicio_id = v_ejer_id
+           and (v_viejo.carga is distinct from v_carga or v_viejo.reps is distinct from v_reps) then
+          insert into public.cargas_historial (empresa_id, cliente_id, ejercicio_id, rutina_id, fecha,
+                                               carga_antes, carga_despues, reps_antes, reps_despues, creado_por)
+          values (p_empresa, v_cliente, v_ejer_id, v_id, v_hoy,
+                  v_viejo.carga, v_carga, v_viejo.reps, v_reps, auth.uid());
+        end if;
+      else
+        insert into public.rutina_ejercicios (empresa_id, dia_id, orden, ejercicio_id, series, reps, carga,
+                                              descanso_seg, nota, junto_al_anterior)
+        values (p_empresa, v_dia_id, v_j, v_ejer_id, v_series, v_reps, v_carga, v_desc,
+                left(coalesce(v_ej->>'nota', ''), 200),
+                (v_j > 1 and coalesce((v_ej->>'junto_al_anterior')::boolean, false)))
+        returning id into v_ren_id;
+      end if;
+      v_ejs_ok := v_ejs_ok || v_ren_id;
+    end loop;
+  end loop;
+
+  -- Lo que no llegó, se va. Primero los días (sus ejercicios caen en
+  -- cascada, salvo los que ya se mudaron a otro día), después los
+  -- ejercicios que quedaron sueltos en los días que siguen.
+  delete from public.rutina_dias where rutina_id = v_id and not (id = any (v_dias_ok));
+
+  delete from public.rutina_ejercicios re
+  using public.rutina_dias d
+  where d.id = re.dia_id and d.rutina_id = v_id and not (re.id = any (v_ejs_ok));
+
+  -- ---- 4. El link, si quedó vigente ----
+  if v_estado = 'vigente' then
+    v_token := public.asegurar_enlace_rutina(p_empresa, v_cliente);
+  end if;
+
+  return jsonb_build_object('id', v_id, 'estado', v_estado, 'version', v_version, 'token', v_token);
+end $fn$;
+
+revoke all on function public.guardar_rutina(uuid, jsonb, uuid, uuid, integer) from public, anon;
+grant execute on function public.guardar_rutina(uuid, jsonb, uuid, uuid, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 15. COPIAR UNA RUTINA
+--
+--    Una sola función para cuatro botones: «Usar para Ana» (de una
+--    plantilla), «Copiar la de otro cliente», «Armar la próxima» (la
+--    vigente de Ana a un borrador de Ana) y «Guardar como plantilla».
+--
+--    Entre personas distintas no viaja nada de la persona: el nombre del
+--    cliente de origen, palabra por palabra, se saca del nombre de la rutina
+--    («Rutina de Ana Ruiz» no puede aparecer en el link de Pedro, ni como
+--    «Rutina de Ruiz»), y con «Copiar sin las notas» se vacían las notas,
+--    que pueden tener lesiones de la otra persona.
+-- ------------------------------------------------------------
+create or replace function public.copiar_rutina(
+  p_empresa   uuid,
+  p_origen    uuid,
+  p_cliente   uuid default null,
+  p_con_notas boolean default true
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_o         public.rutinas;
+  v_estado    text;
+  v_cliente   uuid;
+  v_mismo     boolean;
+  v_sin_notas boolean;
+  v_pila      text;
+  v_nombre    text;
+  v_id        uuid;
+  v_dia       public.rutina_dias;
+  v_dia_id    uuid;
+  v_token     uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_o from public.rutinas where id = p_origen and empresa_id = p_empresa;
+  if v_o.id is null then
+    raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+  end if;
+
+  v_estado := public.destino_nueva_rutina(p_empresa, p_cliente);
+  v_cliente := case when v_estado = 'plantilla' then null else p_cliente end;
+
+  -- «Armar la próxima» (el mismo cliente) conserva todo.
+  v_mismo := v_o.cliente_id is not null and v_cliente is not null and v_o.cliente_id = v_cliente;
+  v_sin_notas := not v_mismo and not coalesce(p_con_notas, true);
+
+  v_nombre := v_o.nombre;
+  if v_o.cliente_id is not null and not v_mismo then
+    -- El nombre ENTERO de la persona, no solo el de pila: «Rutina de Ana
+    -- Ruiz» sin «Ana» dejaría «Rutina de Ruiz» en el link de Pedro.
+    select nombre into v_pila from public.clientes where id = v_o.cliente_id;
+    v_nombre := public.sin_nombre_de_persona(v_nombre, v_pila);
+    -- Lo que quedó suelto: «Rutina ()», «Rutina ·  · piernas», «· fuerza»,
+    -- y un «de» que se quedó sin la persona antes de un separador.
+    v_nombre := regexp_replace(v_nombre, '\(\s*\)|\[\s*\]', ' ', 'g');
+    -- Los espacios raros van escritos como códigos (E'\u00A0') y no pegados:
+    -- pegados, se volvían espacios comunes al aplicar la migración.
+    v_nombre := regexp_replace(v_nombre, E'[[:space:]\u00A0]+', ' ', 'g');
+    v_nombre := regexp_replace(v_nombre, '\s*([·•|/,:;–—-])(\s*[·•|/,:;–—-])+\s*', ' \1 ', 'g');
+    v_nombre := regexp_replace(v_nombre, '(^|\s)(de|del|da|do|das|dos|para|pra)\s+(?=[·•|/,:;–—-])', '\1', 'gi');
+    v_nombre := btrim(v_nombre, ' ·•|/,:;–—-');
+    -- Vacío, o colgando de una partícula («Fuerza de», «Treino da»): «Rutina».
+    if v_nombre = '' or lower(v_nombre) ~ '(^|\s)(de|del|da|do|das|dos|para|pra)$' then
+      v_nombre := 'Rutina';
+    end if;
+  end if;
+
+  insert into public.rutinas (empresa_id, cliente_id, estado, nombre, notas, desde, semanas, origen_id, creado_por)
+  values (p_empresa, v_cliente, v_estado, v_nombre,
+          case when v_sin_notas then '' else v_o.notas end,
+          case when v_estado = 'vigente' then public.hoy_empresa(p_empresa) end,
+          v_o.semanas, v_o.id, auth.uid())
+  returning id into v_id;
+
+  for v_dia in select * from public.rutina_dias where rutina_id = v_o.id order by orden loop
+    insert into public.rutina_dias (empresa_id, rutina_id, orden, nombre, notas)
+    values (p_empresa, v_id, v_dia.orden, v_dia.nombre, case when v_sin_notas then '' else v_dia.notas end)
+    returning id into v_dia_id;
+
+    insert into public.rutina_ejercicios (empresa_id, dia_id, orden, ejercicio_id, series, reps, carga,
+                                          descanso_seg, nota, junto_al_anterior)
+    select p_empresa, v_dia_id, re.orden, re.ejercicio_id, re.series, re.reps, re.carga,
+           re.descanso_seg, case when v_sin_notas then '' else re.nota end, re.junto_al_anterior
+    from public.rutina_ejercicios re
+    where re.dia_id = v_dia.id
+    order by re.orden;
+  end loop;
+
+  if v_estado = 'vigente' then
+    v_token := public.asegurar_enlace_rutina(p_empresa, v_cliente);
+  end if;
+
+  return jsonb_build_object('id', v_id, 'estado', v_estado, 'token', v_token);
+end $fn$;
+
+revoke all on function public.copiar_rutina(uuid, uuid, uuid, boolean) from public, anon;
+grant execute on function public.copiar_rutina(uuid, uuid, uuid, boolean) to authenticated;
+
+-- ------------------------------------------------------------
+-- 16. ACTIVAR LA PRÓXIMA, TERMINAR, BORRAR
+--
+--    `hasta` nunca queda antes de `desde`: una rutina que se puso a
+--    arrancar el lunes y se termina el viernes anterior termina el día que
+--    arrancaba.
+-- ------------------------------------------------------------
+create or replace function public.activar_rutina(p_empresa uuid, p_rutina uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_r   public.rutinas;
+  v_hoy date;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_r from public.rutinas where id = p_rutina and empresa_id = p_empresa for update;
+  if v_r.id is null then
+    raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+  end if;
+
+  if v_r.estado <> 'borrador' then
+    raise exception 'Solo se puede activar una rutina en preparación.' using errcode = '22023';
+  end if;
+
+  perform 1 from public.clientes where id = v_r.cliente_id for update;
+  v_hoy := public.hoy_empresa(p_empresa);
+
+  -- Primero la vieja pasa a la historia: hay una sola vigente por cliente.
+  update public.rutinas
+  set estado = 'anterior', hasta = greatest(v_hoy, desde), updated_at = now()
+  where cliente_id = v_r.cliente_id and estado = 'vigente';
+
+  update public.rutinas
+  set estado = 'vigente', desde = v_hoy, hasta = null, updated_at = now()
+  where id = p_rutina;
+
+  return jsonb_build_object('id', p_rutina,
+                            'token', public.asegurar_enlace_rutina(p_empresa, v_r.cliente_id));
+end $fn$;
+
+revoke all on function public.activar_rutina(uuid, uuid) from public, anon;
+grant execute on function public.activar_rutina(uuid, uuid) to authenticated;
+
+-- El cliente queda sin rutina y su link dice «Tu entrenador está preparando
+-- tu rutina». El link no se apaga: eso es otro botón.
+create or replace function public.terminar_rutina(p_empresa uuid, p_rutina uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+declare
+  v_r public.rutinas;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_r from public.rutinas where id = p_rutina and empresa_id = p_empresa for update;
+  if v_r.id is null then
+    raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+  end if;
+
+  if v_r.estado <> 'vigente' then
+    raise exception 'Esa rutina no está vigente.' using errcode = '22023';
+  end if;
+
+  update public.rutinas
+  set estado = 'anterior', hasta = greatest(public.hoy_empresa(p_empresa), desde), updated_at = now()
+  where id = p_rutina;
+end $fn$;
+
+revoke all on function public.terminar_rutina(uuid, uuid) from public, anon;
+grant execute on function public.terminar_rutina(uuid, uuid) to authenticated;
+
+-- Se borra lo que nunca vio nadie: una próxima que no se usó (cualquiera
+-- del equipo) o una plantilla (dueño o admin: la usa todo el negocio). Lo
+-- que un cliente ya tuvo es su historia.
+create or replace function public.borrar_rutina(p_empresa uuid, p_rutina uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+declare
+  v_r public.rutinas;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_r from public.rutinas where id = p_rutina and empresa_id = p_empresa for update;
+  if v_r.id is null then
+    raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+  end if;
+
+  if v_r.estado in ('vigente', 'anterior') then
+    raise exception 'Las rutinas de un cliente no se borran: quedan como historia.' using errcode = '22023';
+  end if;
+
+  if v_r.estado = 'plantilla' and not public.es_admin(p_empresa) then
+    raise exception 'Borrar una plantilla es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  delete from public.rutinas where id = p_rutina;
+end $fn$;
+
+revoke all on function public.borrar_rutina(uuid, uuid) from public, anon;
+grant execute on function public.borrar_rutina(uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 17. SUBIR LA CARGA DESDE LA AGENDA
+--
+--    El trainer que entrena en persona sube las cargas en la sesión, con el
+--    celular en la mano: no va a abrir el editor para cambiar un número.
+--    Solo en la vigente, que es la que se está entrenando. Suma una versión:
+--    si alguien tenía el editor abierto, al guardar se entera en vez de
+--    pisar la carga nueva con la vieja.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_carga(
+  p_empresa          uuid,
+  p_rutina_ejercicio uuid,
+  p_carga            text,
+  p_reps             text default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_rid   uuid;
+  v_re    public.rutina_ejercicios;
+  v_r     public.rutinas;
+  v_carga text;
+  v_reps  text;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  -- Los candados en el MISMO orden que `guardar_rutina`: primero la
+  -- rutina, después el renglón. Al revés, un celular que guarda en el
+  -- editor mientras otro sube la carga desde la agenda se quedarían
+  -- esperando uno al otro, y PostgreSQL cortaría a uno con «deadlock
+  -- detected», que nadie entiende. Así el segundo espera, y choca limpio
+  -- con el control de versión.
+  select d.rutina_id into v_rid
+  from public.rutina_ejercicios re
+  join public.rutina_dias d on d.id = re.dia_id
+  where re.id = p_rutina_ejercicio and re.empresa_id = p_empresa;
+  if v_rid is null then
+    raise exception 'Ese ejercicio no existe.' using errcode = 'P0002';
+  end if;
+
+  select * into v_r from public.rutinas where id = v_rid and empresa_id = p_empresa for update;
+
+  select * into v_re from public.rutina_ejercicios
+  where id = p_rutina_ejercicio and empresa_id = p_empresa
+  for update;
+  -- Mientras esperaba, el editor pudo sacarlo de la rutina.
+  if v_re.id is null or v_r.id is null then
+    raise exception 'Ese ejercicio no existe.' using errcode = 'P0002';
+  end if;
+
+  if v_r.estado <> 'vigente' then
+    raise exception 'Solo se cambia la carga de la rutina vigente.' using errcode = '22023';
+  end if;
+
+  v_carga := btrim(coalesce(p_carga, ''));
+  v_reps  := case when p_reps is null then v_re.reps else btrim(p_reps) end;
+
+  if char_length(v_carga) > 24 then
+    raise exception 'La carga se escribe corta: hasta 24 letras.' using errcode = '22023';
+  end if;
+  if char_length(v_reps) > 20 then
+    raise exception 'Las repeticiones se escriben cortas: hasta 20 letras.' using errcode = '22023';
+  end if;
+
+  if v_carga is distinct from v_re.carga or v_reps is distinct from v_re.reps then
+    update public.rutina_ejercicios set carga = v_carga, reps = v_reps where id = v_re.id;
+
+    insert into public.cargas_historial (empresa_id, cliente_id, ejercicio_id, rutina_id, fecha,
+                                         carga_antes, carga_despues, reps_antes, reps_despues, creado_por)
+    values (p_empresa, v_r.cliente_id, v_re.ejercicio_id, v_r.id, public.hoy_empresa(p_empresa),
+            v_re.carga, v_carga, v_re.reps, v_reps, auth.uid());
+
+    update public.rutinas set version = version + 1, updated_at = now() where id = v_r.id;
+  end if;
+
+  return jsonb_build_object('carga', v_carga, 'reps', v_reps);
+end $fn$;
+
+revoke all on function public.cambiar_carga(uuid, uuid, text, text) from public, anon;
+grant execute on function public.cambiar_carga(uuid, uuid, text, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 18. EL LINK DEL CLIENTE
+--
+--    Ninguna de estas escribe en una tabla con el candado de cuenta
+--    vencida: apagar o cambiar un link que se reenvió a quien no debía
+--    tiene que andar siempre.
+-- ------------------------------------------------------------
+create or replace function public.enlace_rutina(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.clientes where id = p_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  perform public.asegurar_enlace_rutina(p_empresa, p_cliente);
+
+  select jsonb_build_object('token', token, 'activo', activo) into v_res
+  from public.rutina_enlaces where cliente_id = p_cliente;
+  return v_res;
+end $fn$;
+
+revoke all on function public.enlace_rutina(uuid, uuid) from public, anon;
+grant execute on function public.enlace_rutina(uuid, uuid) to authenticated;
+
+-- «Cambiar link»: el viejo deja de existir, y quien lo tenga ve lo mismo que
+-- con uno inventado.
+create or replace function public.renovar_enlace_rutina(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.clientes where id = p_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  insert into public.rutina_enlaces (cliente_id, empresa_id, token, activo)
+  values (p_cliente, p_empresa, gen_random_uuid(), true)
+  on conflict (cliente_id) do update
+    set token = excluded.token, activo = true, updated_at = now();
+
+  select jsonb_build_object('token', token, 'activo', activo) into v_res
+  from public.rutina_enlaces where cliente_id = p_cliente;
+  return v_res;
+end $fn$;
+
+revoke all on function public.renovar_enlace_rutina(uuid, uuid) from public, anon;
+grant execute on function public.renovar_enlace_rutina(uuid, uuid) to authenticated;
+
+-- Prender o apagar el link de una persona.
+create or replace function public.activar_enlace_rutina(p_empresa uuid, p_cliente uuid, p_activo boolean)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.clientes where id = p_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  insert into public.rutina_enlaces (cliente_id, empresa_id, activo)
+  values (p_cliente, p_empresa, coalesce(p_activo, true))
+  on conflict (cliente_id) do update
+    set activo = excluded.activo, updated_at = now();
+end $fn$;
+
+revoke all on function public.activar_enlace_rutina(uuid, uuid, boolean) from public, anon;
+grant execute on function public.activar_enlace_rutina(uuid, uuid, boolean) to authenticated;
+
+-- «Apagar mis links de rutina», desde la pantalla del candado: el dueño que
+-- se va, o que no va a renovar, corta todos de una vez. Devuelve cuántos.
+create or replace function public.apagar_enlaces_rutina(p_empresa uuid)
+returns integer language plpgsql security definer set search_path = public as $fn$
+declare
+  v_n integer;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(p_empresa) then
+    raise exception 'Apagar todos los links es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  update public.rutina_enlaces set activo = false, updated_at = now()
+  where empresa_id = p_empresa and activo;
+  get diagnostics v_n = row_count;
+  return v_n;
+end $fn$;
+
+revoke all on function public.apagar_enlaces_rutina(uuid) from public, anon;
+grant execute on function public.apagar_enlaces_rutina(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 19. LO QUE VE EL CLIENTE (pública, sin sesión)
+--
+--    El patrón de `reserva_por_token` (038): el token ES la credencial, así
+--    que se devuelve lo justo. El nombre de pila, el negocio y la rutina
+--    vigente. NUNCA el teléfono, el apellido, «Salud y lesiones», medidas,
+--    paquetes, plata, borradores, rutinas anteriores ni ids (salvo el de
+--    cada renglón, que es con lo que el celular guarda sus tildes).
+--
+--    Un token que no existe, un link apagado o cambiado, un cliente
+--    archivado o un negocio que ya no es de entrenamiento dan EXACTAMENTE
+--    lo mismo: `{"existe": false}`. Distinguirlos le diría a quien prueba
+--    tokens cuál existió.
+--
+--    La cuenta vencida (decisión de Matías): 30 días de gracia; después, en
+--    vez de la rutina, «Tu entrenador tiene que renovar su cuenta».
+-- ------------------------------------------------------------
+create or replace function public.rutina_por_token(p_token uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_en      public.rutina_enlaces;
+  v_cli     public.clientes;
+  v_emp     public.empresas;
+  v_r       public.rutinas;
+  v_nombre  text;
+  v_renovar boolean;
+begin
+  select * into v_en from public.rutina_enlaces where token = p_token;
+  if v_en.cliente_id is null or not v_en.activo then
+    return jsonb_build_object('existe', false);
+  end if;
+
+  select * into v_cli from public.clientes where id = v_en.cliente_id and empresa_id = v_en.empresa_id;
+  if v_cli.id is null or not v_cli.activo then
+    return jsonb_build_object('existe', false);
+  end if;
+
+  select * into v_emp from public.empresas where id = v_en.empresa_id;
+  if v_emp.id is null or v_emp.rubro is distinct from 'entrenamiento' then
+    return jsonb_build_object('existe', false);
+  end if;
+
+  -- El nombre de pila: lo que va hasta el primer espacio de CUALQUIER tipo.
+  -- `guardar_cliente` solo recorta los espacios comunes, y un nombre pegado
+  -- desde WhatsApp o desde los contactos trae espacios duros (U+00A0 y
+  -- parientes), tabuladores o saltos: cortar solo en « » mostraría el
+  -- apellido. Las mismas clases en PGlite (idioma C) y en producción (ICU).
+  -- El espacio duro de WhatsApp (U+00A0) y sus parientes, escritos como
+  -- códigos y no pegados: pegados, se volvían espacios comunes al aplicar la
+  -- migración, y el link mostraba el apellido.
+  v_nombre := coalesce(substring(v_cli.nombre from E'[^[:space:]\u00A0\u2007\u202F\u2060\uFEFF]+'), '');
+
+  v_renovar := not public.puede_cargar(v_emp.id)
+    and coalesce((
+      select s.periodo_fin is null or s.periodo_fin <= now() - interval '30 days'
+      from public.suscripciones s where s.empresa_id = v_emp.id
+    ), true);
+
+  if v_renovar then
+    return jsonb_build_object(
+      'existe', true, 'negocio', v_emp.nombre, 'nombre', v_nombre,
+      'renovar', true, 'actualizada', null, 'rutina', null);
+  end if;
+
+  select * into v_r from public.rutinas
+  where cliente_id = v_cli.id and empresa_id = v_emp.id and estado = 'vigente';
+
+  return jsonb_build_object(
+    'existe',      true,
+    'negocio',     v_emp.nombre,
+    'nombre',      v_nombre,
+    'renovar',     false,
+    'actualizada', v_r.updated_at,
+    'rutina', case when v_r.id is null then null else jsonb_build_object(
+      'nombre', v_r.nombre,
+      'notas',  v_r.notas,
+      'desde',  v_r.desde,
+      'dias', coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'orden',  d.orden,
+          'nombre', d.nombre,
+          'notas',  d.notas,
+          'ejercicios', coalesce((
+            select jsonb_agg(jsonb_build_object(
+              'id',           re.id,
+              'orden',        re.orden,
+              'nombre',       e.nombre,
+              'series',       re.series,
+              'reps',         re.reps,
+              'carga',        re.carga,
+              'descanso_seg', re.descanso_seg,
+              'nota',         re.nota,
+              'junto',        re.junto_al_anterior,
+              'video',        e.video_url,
+              'como',         e.indicaciones
+            ) order by re.orden)
+            from public.rutina_ejercicios re
+            join public.ejercicios e on e.id = re.ejercicio_id
+            where re.dia_id = d.id
+          ), '[]'::jsonb)
+        ) order by d.orden)
+        from public.rutina_dias d
+        where d.rutina_id = v_r.id
+      ), '[]'::jsonb)
+    ) end
+  );
+end $fn$;
+
+revoke all on function public.rutina_por_token(uuid) from public;
+grant execute on function public.rutina_por_token(uuid) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 20. ANOTAR UN CONTROL DE MEDIDAS
+--
+--    Solo el dueño o un admin, y con el sí del cliente (una sola vez: queda
+--    en su ficha con la fecha y quién lo registró).
+--
+--    Si ese día ya hay un control, se COMPLETA en vez de duplicarlo: lo que
+--    llega pisa, lo que no llega queda. Y se devuelve qué cambió de lo que
+--    ya tenía valor, para que la pantalla lo muestre antes de que alguien
+--    pise sin querer el peso de la mañana con el de la tarde.
+--
+--    Los rangos los controlan los check de la tabla. Arriba de 1000 (o de
+--    100 en la grasa) el número ni entra en la columna, y PostgreSQL diría
+--    «numeric field overflow»: se frena antes, con el mismo mensaje.
+-- ------------------------------------------------------------
+create or replace function public.anotar_medicion(
+  p_empresa   uuid,
+  p_cliente   uuid,
+  p_fecha     date,
+  p_datos     jsonb,
+  p_consiente boolean default false,
+  p_id        uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_medidas constant text[] := array['peso_kg', 'altura_cm', 'cintura_cm', 'cadera_cm', 'pecho_cm',
+                                      'brazo_cm', 'muslo_cm', 'grasa_pct', 'pantorrilla_cm', 'cuello_cm'];
+  v_orden   constant text[] := array['peso_kg', 'altura_cm', 'cintura_cm', 'cadera_cm', 'pecho_cm',
+                                      'brazo_cm', 'muslo_cm', 'grasa_pct', 'grasa_metodo',
+                                      'pantorrilla_cm', 'cuello_cm', 'nota'];
+  v_hoy       date;
+  v_fecha     date;
+  v_clave     text;
+  v_valor     jsonb;
+  v_texto     text;
+  v_num       numeric;
+  v_limpio    jsonb := '{}'::jsonb;
+  v_previa    public.mediciones;
+  v_antes     jsonb;
+  v_fila      jsonb;
+  v_fusion    boolean := false;
+  v_cambios   jsonb := '[]'::jsonb;
+  v_consintio timestamptz;
+  v_id        uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(p_empresa) then
+    raise exception 'Las medidas y el progreso son del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.clientes where id = p_cliente and empresa_id = p_empresa) then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- El control que se edita, si es una edición.
+  if p_id is not null then
+    select * into v_previa from public.mediciones
+    where id = p_id and empresa_id = p_empresa and cliente_id = p_cliente
+    for update;
+    if v_previa.id is null then
+      raise exception 'Ese control no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  v_hoy := public.hoy_empresa(p_empresa);
+  -- Editar sin mandar la fecha no la mueve a hoy.
+  v_fecha := coalesce(p_fecha, v_previa.fecha, v_hoy);
+  if v_fecha > v_hoy then
+    raise exception 'La fecha del control no puede ser futura.' using errcode = '22023';
+  end if;
+  if v_fecha < date '2000-01-01' then
+    raise exception 'Esa fecha no es válida.' using errcode = '22023';
+  end if;
+
+  -- Solo las claves conocidas; lo demás se ignora. Un número puede venir
+  -- con coma («72,5»), como lo escribe cualquiera.
+  for v_clave, v_valor in
+    select key, value from jsonb_each(case when jsonb_typeof(p_datos) = 'object' then p_datos else '{}'::jsonb end)
+  loop
+    if v_clave = any (v_medidas) then
+      v_texto := btrim(v_valor #>> '{}');
+      if v_texto is null or v_texto = '' then
+        v_limpio := v_limpio || jsonb_build_object(v_clave, null);
+      elsif v_texto ~ '^-?[0-9]+([.,][0-9]+)?$' then
+        v_num := round(replace(v_texto, ',', '.')::numeric, 1);
+        if abs(v_num) >= 1000 or (v_clave = 'grasa_pct' and abs(v_num) >= 100) then
+          raise exception 'Ese valor está fuera de rango. Revisalo.' using errcode = '23514';
+        end if;
+        v_limpio := v_limpio || jsonb_build_object(v_clave, v_num);
+      else
+        raise exception 'Cada medida tiene que ser un número.' using errcode = '22023';
+      end if;
+    elsif v_clave = 'grasa_metodo' then
+      v_limpio := v_limpio || jsonb_build_object(v_clave, nullif(btrim(coalesce(v_valor #>> '{}', '')), ''));
+    elsif v_clave = 'nota' then
+      v_limpio := v_limpio || jsonb_build_object(v_clave, left(coalesce(v_valor #>> '{}', ''), 300));
+    end if;
+  end loop;
+
+  select consiente_medidas_at into v_consintio from public.fichas_entreno where cliente_id = p_cliente;
+  if v_consintio is null and not coalesce(p_consiente, false) then
+    raise exception 'Antes de anotar medidas, confirmá que el cliente está de acuerdo.' using errcode = '22023';
+  end if;
+
+  if p_id is not null then
+    if v_fecha <> v_previa.fecha
+       and exists (select 1 from public.mediciones
+                   where cliente_id = p_cliente and fecha = v_fecha and id <> p_id) then
+      raise exception 'Ya hay un control ese día: editá ese.' using errcode = '22023';
+    end if;
+  else
+    select * into v_previa from public.mediciones
+    where cliente_id = p_cliente and fecha = v_fecha
+    for update;
+    v_fusion := v_previa.id is not null;
+  end if;
+
+  v_antes := case when v_previa.id is null then '{}'::jsonb else to_jsonb(v_previa) end;
+  v_fila  := v_antes || v_limpio;
+
+  if not exists (select 1 from unnest(v_medidas) k where v_fila->>k is not null) then
+    raise exception 'Anotá al menos una medida.' using errcode = '22023';
+  end if;
+
+  if (v_fila->>'grasa_pct' is null) <> (v_fila->>'grasa_metodo' is null) then
+    raise exception 'La grasa corporal va con su método: balanza, plicómetro, cinta u otro.' using errcode = '22023';
+  end if;
+
+  if v_fusion then
+    select coalesce(jsonb_agg(jsonb_build_object('campo', k, 'antes', v_antes->k, 'despues', v_limpio->k)
+                              order by array_position(v_orden, k)), '[]'::jsonb)
+    into v_cambios
+    from jsonb_object_keys(v_limpio) k
+    where coalesce(v_antes->k, 'null'::jsonb) <> 'null'::jsonb
+      and not (k = 'nota' and v_antes->>k = '')
+      and (v_antes->k) is distinct from (v_limpio->k);
+  end if;
+
+  if v_previa.id is null then
+    insert into public.mediciones (
+      empresa_id, cliente_id, fecha, peso_kg, altura_cm, cintura_cm, cadera_cm, pecho_cm, brazo_cm,
+      muslo_cm, grasa_pct, grasa_metodo, pantorrilla_cm, cuello_cm, nota, creado_por)
+    values (
+      p_empresa, p_cliente, v_fecha,
+      (v_fila->>'peso_kg')::numeric, (v_fila->>'altura_cm')::numeric, (v_fila->>'cintura_cm')::numeric,
+      (v_fila->>'cadera_cm')::numeric, (v_fila->>'pecho_cm')::numeric, (v_fila->>'brazo_cm')::numeric,
+      (v_fila->>'muslo_cm')::numeric, (v_fila->>'grasa_pct')::numeric, v_fila->>'grasa_metodo',
+      (v_fila->>'pantorrilla_cm')::numeric, (v_fila->>'cuello_cm')::numeric,
+      coalesce(v_fila->>'nota', ''), auth.uid())
+    returning id into v_id;
+  else
+    update public.mediciones
+    set fecha          = v_fecha,
+        peso_kg        = (v_fila->>'peso_kg')::numeric,
+        altura_cm      = (v_fila->>'altura_cm')::numeric,
+        cintura_cm     = (v_fila->>'cintura_cm')::numeric,
+        cadera_cm      = (v_fila->>'cadera_cm')::numeric,
+        pecho_cm       = (v_fila->>'pecho_cm')::numeric,
+        brazo_cm       = (v_fila->>'brazo_cm')::numeric,
+        muslo_cm       = (v_fila->>'muslo_cm')::numeric,
+        grasa_pct      = (v_fila->>'grasa_pct')::numeric,
+        grasa_metodo   = v_fila->>'grasa_metodo',
+        pantorrilla_cm = (v_fila->>'pantorrilla_cm')::numeric,
+        cuello_cm      = (v_fila->>'cuello_cm')::numeric,
+        nota           = coalesce(v_fila->>'nota', ''),
+        updated_at     = now()
+    where id = v_previa.id;
+    v_id := v_previa.id;
+  end if;
+
+  -- El sí del cliente, la primera vez. Si ya estaba, se conserva el
+  -- original: lo que importa es desde cuándo y quién lo registró.
+  if coalesce(p_consiente, false) then
+    insert into public.fichas_entreno (cliente_id, empresa_id, consiente_medidas_at, consiente_por, updated_at)
+    values (p_cliente, p_empresa, now(), auth.uid(), now())
+    on conflict (cliente_id) do update
+      set consiente_medidas_at = coalesce(fichas_entreno.consiente_medidas_at, excluded.consiente_medidas_at),
+          consiente_por = case when fichas_entreno.consiente_medidas_at is null
+                               then excluded.consiente_por else fichas_entreno.consiente_por end,
+          updated_at = now();
+  end if;
+
+  return jsonb_build_object('id', v_id, 'fusionada', v_fusion, 'cambios', v_cambios);
+end $fn$;
+
+revoke all on function public.anotar_medicion(uuid, uuid, date, jsonb, boolean, uuid) from public, anon;
+grant execute on function public.anotar_medicion(uuid, uuid, date, jsonb, boolean, uuid) to authenticated;
+
+create or replace function public.borrar_medicion(p_empresa uuid, p_id uuid)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(p_empresa) then
+    raise exception 'Las medidas y el progreso son del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  delete from public.mediciones where id = p_id and empresa_id = p_empresa;
+  if not found then
+    raise exception 'Ese control no existe.' using errcode = 'P0002';
+  end if;
+end $fn$;
+
+revoke all on function public.borrar_medicion(uuid, uuid) from public, anon;
+grant execute on function public.borrar_medicion(uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 21. EL PROGRESO DE UNA PERSONA
+--
+--    Los números, en orden de fecha; los cálculos (IMC, cintura/altura,
+--    diferencias) los hace src/lib/medidas.ts. Y cómo subieron las cargas,
+--    ejercicio por ejercicio.
+-- ------------------------------------------------------------
+create or replace function public.progreso_de(p_empresa uuid, p_cliente uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_cli public.clientes;
+  v_res jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(p_empresa) then
+    raise exception 'Las medidas y el progreso son del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  select * into v_cli from public.clientes where id = p_cliente and empresa_id = p_empresa;
+  if v_cli.id is null then
+    raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  select jsonb_build_object(
+    'cliente', jsonb_build_object('id', v_cli.id, 'nombre', v_cli.nombre, 'telefono', v_cli.telefono),
+    'consiente_medidas_at', (select f.consiente_medidas_at from public.fichas_entreno f
+                             where f.cliente_id = p_cliente),
+    'mediciones', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',             m.id,
+        'fecha',          m.fecha,
+        'peso_kg',        m.peso_kg,
+        'altura_cm',      m.altura_cm,
+        'cintura_cm',     m.cintura_cm,
+        'cadera_cm',      m.cadera_cm,
+        'pecho_cm',       m.pecho_cm,
+        'brazo_cm',       m.brazo_cm,
+        'muslo_cm',       m.muslo_cm,
+        'grasa_pct',      m.grasa_pct,
+        'grasa_metodo',   m.grasa_metodo,
+        'pantorrilla_cm', m.pantorrilla_cm,
+        'cuello_cm',      m.cuello_cm,
+        'nota',           m.nota
+      ) order by m.fecha)
+      from public.mediciones m where m.cliente_id = p_cliente
+    ), '[]'::jsonb),
+    'rutina_vigente', (
+      select jsonb_build_object('nombre', r.nombre, 'desde', r.desde)
+      from public.rutinas r where r.cliente_id = p_cliente and r.estado = 'vigente'),
+    'cargas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'ejercicio_id', g.ejercicio_id,
+        'nombre',       g.nombre,
+        'cambios',      g.cambios
+      ) order by g.clave, g.nombre)
+      from (
+        select e.id as ejercicio_id, e.nombre, e.clave,
+               jsonb_agg(jsonb_build_object(
+                 'fecha',         h.fecha,
+                 'carga_antes',   h.carga_antes,
+                 'carga_despues', h.carga_despues,
+                 'reps_antes',    h.reps_antes,
+                 'reps_despues',  h.reps_despues
+               ) order by h.fecha, h.created_at) as cambios
+        from public.cargas_historial h
+        join public.ejercicios e on e.id = h.ejercicio_id
+        where h.cliente_id = p_cliente
+        group by e.id, e.nombre, e.clave
+      ) g
+    ), '[]'::jsonb)
+  ) into v_res;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.progreso_de(uuid, uuid) from public, anon;
+grant execute on function public.progreso_de(uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 22. LA RUTINA DE CADA SESIÓN DE LA AGENDA
+--
+--    Aparte, y no dentro de `agenda_del_dia` o `panel_profe`: esas ya van
+--    por su quinta copia, y cada copia es una oportunidad de perder algo.
+--    La pantalla llama las dos y junta por id de reserva.
+-- ------------------------------------------------------------
+create or replace function public.rutinas_de_la_agenda(p_empresa uuid, p_fecha date default null)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_zona  text;
+  v_fecha date;
+  v_res   jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select coalesce(zona_horaria, 'America/Asuncion') into v_zona from public.empresas where id = p_empresa;
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
+
+  select coalesce(jsonb_object_agg(r.id::text, jsonb_build_object('rutina_id', ru.id, 'nombre', ru.nombre)),
+                  '{}'::jsonb)
+  into v_res
+  from public.turnos_reserva r
+  join public.rutinas ru on ru.cliente_id = r.cliente_id and ru.empresa_id = r.empresa_id
+                        and ru.estado = 'vigente'
+  where r.empresa_id = p_empresa
+    and r.estado <> 'cancelada'
+    and (r.inicia at time zone v_zona)::date = v_fecha;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.rutinas_de_la_agenda(uuid, date) from public, anon;
+grant execute on function public.rutinas_de_la_agenda(uuid, date) to authenticated;
+
+-- ------------------------------------------------------------
+-- 23. ELIMINAR UN CLIENTE (058), AHORA CON SU HISTORIA DE ENTRENAMIENTO
+--
+--    Copia exacta de la 058 —la versión viva; su cuerpo, sin comentarios,
+--    da la misma huella— con lo marcado (098). Misma firma: se reemplaza
+--    sin crear otra al lado.
+--
+--    Quien tiene rutinas, medidas o cargas anotadas se ARCHIVA. Sin esto el
+--    DELETE chocaría con las claves NO ACTION de esas tablas y la persona
+--    leería el engañoso «Eso hace referencia a algo que ya no existe». El
+--    link y la ficha caen en cascada solo cuando se borra de verdad; al
+--    archivar, el link se apaga y cambia de token (ver abajo por qué).
+-- ------------------------------------------------------------
+create or replace function public.eliminar_cliente(p_cliente uuid)
+returns text language plpgsql security definer set search_path = public as $fn$
+declare
+  v       public.clientes;
+  v_saldo numeric;
+  v_debe  text;
+begin
+  select * into v from public.clientes where id = p_cliente;
+  if v.id is null then
+    raise exception 'Ese cliente ya no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(v.empresa_id) then
+    raise exception 'Eliminar clientes es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  -- El mismo candado que al cobrar (056): mientras se decide, nadie le fía
+  -- ni le cobra a este cliente.
+  perform 1 from public.clientes where id = p_cliente for update;
+
+  v_saldo := public.saldo_fiado(p_cliente);
+  if v_saldo > 0 then
+    -- «80.000» y no «80000.00»: esto lo lee una persona.
+    v_debe := case when v_saldo = trunc(v_saldo)
+                   then replace(to_char(v_saldo, 'FM999,999,999,990'), ',', '.')
+                   else v_saldo::text end;
+    raise exception '% todavía te debe %. Cobrale o borrá esa deuda desde Fiado, y después lo eliminás.',
+      v.nombre, v_debe using errcode = '22023';
+  end if;
+
+  -- Sin nada atado se borra de verdad: no hay nada que conservar.
+  if not exists (select 1 from public.fiado where cliente_id = p_cliente)
+     and not exists (select 1 from public.movimientos where cliente_id = p_cliente)
+     and not exists (select 1 from public.turnos_reserva where cliente_id = p_cliente)
+     -- (098) Sus rutinas, sus medidas y cómo subieron sus cargas son su
+     -- historia: con cualquiera de las tres, se archiva.
+     and not exists (select 1 from public.rutinas where cliente_id = p_cliente)
+     and not exists (select 1 from public.mediciones where cliente_id = p_cliente)
+     and not exists (select 1 from public.cargas_historial where cliente_id = p_cliente) then
+    delete from public.clientes where id = p_cliente;
+    return 'borrado';
+  end if;
+
+  -- Con historia se archiva. La lista y el buscador ya dejan afuera a los
+  -- archivados (052, 053); «lo que te deben» no, así que si alguna vez
+  -- vuelve a deber algo, aparece ahí igual.
+  update public.clientes set activo = false, updated_at = now() where id = p_cliente;
+
+  -- (098) Su link se apaga y cambia de token. Apagado solo por estar
+  -- archivado no alcanza: `guardar_cliente` (052) toma un teléfono repetido
+  -- como la misma persona y reactiva la ficha, y con un teléfono compartido
+  -- (madre e hijo, una pareja) el link que la otra persona tiene en su
+  -- celular volvería a andar, a nombre de otra. Si vuelve la misma persona,
+  -- el trainer prende el link y le manda el nuevo. `rutina_enlaces` no
+  -- tiene el candado de cuenta vencida: esto anda siempre.
+  update public.rutina_enlaces
+  set activo = false, token = gen_random_uuid(), updated_at = now()
+  where cliente_id = p_cliente;
+
+  return 'archivado';
+end $fn$;
+
+revoke all on function public.eliminar_cliente(uuid) from public, anon;
+grant execute on function public.eliminar_cliente(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  099_persona_por_telefono_y_borradores.sql
+-- ############################################################
+
+-- ============================================================
+-- 099 · UNA PERSONA POR TELÉFONO, COPIAS EN PREPARACIÓN, Y LOS DATOS
+--       DE SALUD AL ARCHIVAR
+-- ============================================================
+--
+-- Sale de la revisión de las pantallas del módulo de rutinas (098), que
+-- destapó tres cosas que la base hacía mal, o dejaba hacer.
+--
+-- 1. COPIAR A ALGUIEN SIN RUTINA LA DEJABA VIGENTE AL INSTANTE
+--
+--    «Usar para un cliente» desde una plantilla, «Copiar la de otro
+--    cliente» o «Armar una nueva a partir de esta» desde las anteriores de
+--    otro iban derecho a vigente si la persona no tenía rutina. Y si ya
+--    tenía link —después de «Terminar», por ejemplo—, la veía antes de que
+--    el trainer la revisara, con las notas de la otra persona adentro.
+--    Ahora `copiar_rutina` acepta `p_borrador`: con él, la copia nace en
+--    preparación («Próxima» en su carpeta) y nada llega al link hasta
+--    «Activar la próxima». Sin cliente (una plantilla) no dice nada.
+--    Y cuando al sacarle el nombre de la otra persona no queda nada
+--    («Treino da Ana» → nada), el nombre de respaldo lo manda la pantalla
+--    en su idioma (`p_nombre_vacio`): «Rutina» llegaba al link de un
+--    cliente brasileño.
+--
+-- 2. AGENDAR A «LAURA» CON EL TELÉFONO DE «ANA» LE PISABA LA FICHA A ANA
+--
+--    Desde la 052 el teléfono es la identidad: un número repetido es la
+--    misma persona, y la ficha se renombra y se reactiva. En un almacén o
+--    una barbería está bien y no cambia. Con datos de entrenamiento no:
+--    Laura heredaba las medidas, las lesiones, la rutina, la historia de
+--    cargas y el consentimiento de Ana. Es una mezcla de datos de salud.
+--    Ahora, si el nombre es otro y esa ficha tiene algo de entrenamiento
+--    (rutinas, medidas, ficha o cargas), `guardar_cliente` se frena y dice
+--    de quién es el número. Con el mismo nombre escrito de otra manera, o
+--    sin nada de entrenamiento, todo sigue exactamente igual que hoy.
+--    Si esa ficha está archivada no está en ninguna lista para elegirla:
+--    el número queda libre, como en la rama con id de la 058, y la persona
+--    nueva nace con su propia ficha sin heredar nada; la archivada conserva
+--    sus rutinas y sus cargas por id.
+--
+-- 3. ARCHIVAR DEJABA LAS MEDIDAS Y LAS LESIONES SIN FORMA DE BORRARLAS
+--
+--    Una vez archivado, ninguna pantalla llega a su Progreso ni a su
+--    ficha, así que sus medidas, su consentimiento y «Salud y lesiones»
+--    quedaban guardados para siempre, sin manera de sacarlos (Ley
+--    7593/2025). Ahora `eliminar_cliente`, al archivar, los borra en la
+--    misma transacción. Las rutinas y cómo subieron sus cargas se
+--    conservan: son el trabajo del trainer, no datos de salud, y no se ven
+--    en ningún link (el link ya se apaga y cambia de token al archivar, por
+--    la 098). Si la persona vuelve con el mismo nombre y el mismo teléfono,
+--    vuelve a dar su consentimiento. Es para todos los rubros: en «Notas»
+--    de una barbería también puede ir «es alérgica a…», y la pantalla lo
+--    dice al eliminar («sus notas se borran»).
+--
+-- Cada función es copia exacta de su versión viva —leída de producción con
+-- pg_get_functiondef y cotejada con la 052/058 (guardar_cliente) y la 098
+-- (copiar_rutina, eliminar_cliente)— con lo marcado (099). `copiar_rutina`
+-- cambia de firma, así que la vieja se borra antes: con las dos, la llamada
+-- de cuatro argumentos sería ambigua. Las otras dos conservan la suya y se
+-- reemplazan sin crear otra al lado. `activar_rutina` ya funciona sin una
+-- vigente previa (pasa el borrador a vigente desde hoy y asegura el link):
+-- no se toca, y se comprueba en pruebas/rutinas.test.js.
+--
+-- Los espacios raros de las expresiones regulares van escritos como
+-- códigos (E'\u00A0') y no pegados: pegados, se volvían espacios comunes al
+-- aplicar la migración (098).
+
+-- ------------------------------------------------------------
+-- 1. COPIAR UNA RUTINA, EN PREPARACIÓN SI SE PIDE
+--
+--    La firma vieja se va: si quedara, `copiar_rutina(e, o, c, true)`
+--    coincidiría con las dos y PostgreSQL no sabría cuál llamar.
+-- ------------------------------------------------------------
+drop function if exists public.copiar_rutina(uuid, uuid, uuid, boolean);
+drop function if exists public.copiar_rutina(uuid, uuid, uuid, boolean, boolean);
+
+create or replace function public.copiar_rutina(
+  p_empresa      uuid,
+  p_origen       uuid,
+  p_cliente      uuid default null,
+  p_con_notas    boolean default true,
+  p_borrador     boolean default false,
+  p_nombre_vacio text default 'Rutina'
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_o         public.rutinas;
+  v_estado    text;
+  v_cliente   uuid;
+  v_mismo     boolean;
+  v_sin_notas boolean;
+  v_pila      text;
+  v_nombre    text;
+  v_id        uuid;
+  v_dia       public.rutina_dias;
+  v_dia_id    uuid;
+  v_token     uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_o from public.rutinas where id = p_origen and empresa_id = p_empresa;
+  if v_o.id is null then
+    raise exception 'Esa rutina no existe.' using errcode = 'P0002';
+  end if;
+
+  v_estado := public.destino_nueva_rutina(p_empresa, p_cliente);
+
+  -- (099) Si la persona no tiene rutina, la copia iba derecho a vigente y,
+  -- con el link ya en su celular, la veía antes de que el trainer la
+  -- revisara, con las notas de la otra persona. Con p_borrador nace en
+  -- preparación y se activa desde su carpeta. Una plantilla no tiene link
+  -- ni preparación: ahí p_borrador no dice nada. Y `destino_nueva_rutina`
+  -- no mira si ya hay una en preparación cuando no hay vigente (ahí la
+  -- nueva iba a ser la vigente), así que se mira acá, con el mensaje de
+  -- siempre, antes de chocar con el índice de un borrador por cliente.
+  if coalesce(p_borrador, false) and v_estado = 'vigente' then
+    if exists (select 1 from public.rutinas where cliente_id = p_cliente and estado = 'borrador') then
+      raise exception 'Este cliente ya tiene una próxima rutina en preparación: seguí con esa.'
+        using errcode = '22023';
+    end if;
+    v_estado := 'borrador';
+  end if;
+
+  v_cliente := case when v_estado = 'plantilla' then null else p_cliente end;
+
+  -- «Armar la próxima» (el mismo cliente) conserva todo.
+  v_mismo := v_o.cliente_id is not null and v_cliente is not null and v_o.cliente_id = v_cliente;
+  v_sin_notas := not v_mismo and not coalesce(p_con_notas, true);
+
+  v_nombre := v_o.nombre;
+  if v_o.cliente_id is not null and not v_mismo then
+    -- El nombre ENTERO de la persona, no solo el de pila: «Rutina de Ana
+    -- Ruiz» sin «Ana» dejaría «Rutina de Ruiz» en el link de Pedro.
+    select nombre into v_pila from public.clientes where id = v_o.cliente_id;
+    v_nombre := public.sin_nombre_de_persona(v_nombre, v_pila);
+    -- Lo que quedó suelto: «Rutina ()», «Rutina ·  · piernas», «· fuerza»,
+    -- y un «de» que se quedó sin la persona antes de un separador.
+    v_nombre := regexp_replace(v_nombre, '\(\s*\)|\[\s*\]', ' ', 'g');
+    -- Los espacios raros van escritos como códigos (E'\u00A0') y no pegados:
+    -- pegados, se volvían espacios comunes al aplicar la migración.
+    v_nombre := regexp_replace(v_nombre, E'[[:space:]\u00A0]+', ' ', 'g');
+    v_nombre := regexp_replace(v_nombre, '\s*([·•|/,:;–—-])(\s*[·•|/,:;–—-])+\s*', ' \1 ', 'g');
+    v_nombre := regexp_replace(v_nombre, '(^|\s)(de|del|da|do|das|dos|para|pra)\s+(?=[·•|/,:;–—-])', '\1', 'gi');
+    v_nombre := btrim(v_nombre, ' ·•|/,:;–—-');
+    -- Vacío, o colgando de una partícula («Fuerza de», «Treino da»): el
+    -- nombre de respaldo. (099) Lo manda la pantalla en su idioma («Treino»
+    -- en una cuenta en portugués): «Rutina» llegaba al link de un cliente
+    -- brasileño. En blanco, «Rutina» como siempre; largo de más, se recorta.
+    if v_nombre = '' or lower(v_nombre) ~ '(^|\s)(de|del|da|do|das|dos|para|pra)$' then
+      v_nombre := btrim(left(btrim(coalesce(p_nombre_vacio, '')), 60));
+      if v_nombre = '' then
+        v_nombre := 'Rutina';
+      end if;
+    end if;
+  end if;
+
+  insert into public.rutinas (empresa_id, cliente_id, estado, nombre, notas, desde, semanas, origen_id, creado_por)
+  values (p_empresa, v_cliente, v_estado, v_nombre,
+          case when v_sin_notas then '' else v_o.notas end,
+          case when v_estado = 'vigente' then public.hoy_empresa(p_empresa) end,
+          v_o.semanas, v_o.id, auth.uid())
+  returning id into v_id;
+
+  for v_dia in select * from public.rutina_dias where rutina_id = v_o.id order by orden loop
+    insert into public.rutina_dias (empresa_id, rutina_id, orden, nombre, notas)
+    values (p_empresa, v_id, v_dia.orden, v_dia.nombre, case when v_sin_notas then '' else v_dia.notas end)
+    returning id into v_dia_id;
+
+    insert into public.rutina_ejercicios (empresa_id, dia_id, orden, ejercicio_id, series, reps, carga,
+                                          descanso_seg, nota, junto_al_anterior)
+    select p_empresa, v_dia_id, re.orden, re.ejercicio_id, re.series, re.reps, re.carga,
+           re.descanso_seg, case when v_sin_notas then '' else re.nota end, re.junto_al_anterior
+    from public.rutina_ejercicios re
+    where re.dia_id = v_dia.id
+    order by re.orden;
+  end loop;
+
+  if v_estado = 'vigente' then
+    v_token := public.asegurar_enlace_rutina(p_empresa, v_cliente);
+  end if;
+
+  return jsonb_build_object('id', v_id, 'estado', v_estado, 'token', v_token);
+end $fn$;
+
+revoke all on function public.copiar_rutina(uuid, uuid, uuid, boolean, boolean, text) from public, anon;
+grant execute on function public.copiar_rutina(uuid, uuid, uuid, boolean, boolean, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 2. GUARDAR UN CLIENTE: UN TELÉFONO ES DE UNA PERSONA
+--
+--    Misma firma que en la 052 y la 058: se reemplaza sin tocar a quien
+--    ya la llama. El cuerpo es el de la 058 (la versión viva es esa, sin
+--    los comentarios) con lo marcado (099).
+-- ------------------------------------------------------------
+create or replace function public.guardar_cliente(
+  p_empresa  uuid,
+  p_nombre   text,
+  p_telefono text default '',
+  p_notas    text default '',
+  p_id       uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id     uuid;
+  v_nombre text;
+  v_tel    text;
+  v_norm   text;
+  v_otro   public.clientes;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_nombre := trim(coalesce(p_nombre, ''));
+  if char_length(v_nombre) = 0 then
+    raise exception 'Ponele un nombre, para saber de quién estamos hablando.' using errcode = '22023';
+  end if;
+  v_nombre := left(v_nombre, 80);
+
+  v_tel  := left(trim(coalesce(p_telefono, '')), 40);
+  v_norm := regexp_replace(v_tel, '\D', '', 'g');
+
+  -- Un teléfono de dos dígitos no es un teléfono: es un dedazo. Se guarda
+  -- vacío antes que guardar algo que después va a hacer chocar a dos
+  -- personas distintas en el mismo índice.
+  if v_norm <> '' and char_length(v_norm) < 6 then
+    v_tel := '';
+    v_norm := '';
+  end if;
+
+  if p_id is not null then
+    -- (058) El número nuevo puede ser de otra ficha. Si esa ficha se
+    -- eliminó, el número quedó libre: se le saca a la vieja, que conserva
+    -- su historial por id. Si está activa, se dice de quién es, en vez del
+    -- «ya existe algo con ese nombre» del índice único, que encima hablaba
+    -- del nombre cuando el problema era el teléfono.
+    if v_norm <> '' then
+      select * into v_otro
+      from public.clientes c
+      where c.empresa_id = p_empresa and c.telefono_norm = v_norm and c.id <> p_id;
+
+      if v_otro.id is not null then
+        if v_otro.activo then
+          raise exception 'Ese teléfono ya es de «%». Si son la misma persona, eliminá la ficha que sobra.',
+            v_otro.nombre using errcode = '22023';
+        end if;
+        update public.clientes set telefono = '', updated_at = now() where id = v_otro.id;
+      end if;
+    end if;
+
+    update public.clientes
+    set nombre = v_nombre,
+        telefono = v_tel,
+        notas = left(coalesce(p_notas, ''), 1000),
+        updated_at = now()
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese cliente no es de esta cuenta.' using errcode = 'P0002';
+    end if;
+    return v_id;
+  end if;
+
+  -- Sin id: si el teléfono ya está, es la misma persona.
+  if v_norm <> '' then
+    select c.id into v_id
+    from public.clientes c
+    where c.empresa_id = p_empresa and c.telefono_norm = v_norm;
+
+    if v_id is not null then
+      -- (099) Salvo que sea OTRA persona y la ficha tenga datos de
+      -- entrenamiento. «Laura» con el número de «Ana» renombraba la ficha
+      -- de Ana, y Laura heredaba sus medidas, sus lesiones, su rutina, la
+      -- historia de sus cargas y su consentimiento: una mezcla de datos de
+      -- salud. Se comparan los nombres normalizados —minúsculas, sin
+      -- tildes, espacios colapsados; `clave_ejercicio` (098) hace justo
+      -- eso con cualquier texto— y, si son distintos y la ficha tiene
+      -- rutinas, medidas, ficha de entrenamiento o cargas anotadas, se
+      -- frena y se dice de quién es el número. Con el mismo nombre escrito
+      -- de otra manera («ANA RUIZ», «Ana  Ruiz»), o sin nada de
+      -- entrenamiento (la barbería, el almacén), sigue todo igual que
+      -- siempre: se renombra, se reactiva, se conservan las notas.
+      select * into v_otro from public.clientes where id = v_id;
+      if public.clave_ejercicio(v_otro.nombre) <> public.clave_ejercicio(v_nombre)
+         and (exists (select 1 from public.rutinas where cliente_id = v_id)
+              or exists (select 1 from public.mediciones where cliente_id = v_id)
+              or exists (select 1 from public.fichas_entreno where cliente_id = v_id)
+              or exists (select 1 from public.cargas_historial where cliente_id = v_id)) then
+        if v_otro.activo then
+          raise exception 'Ese teléfono ya es de «%». Si es otra persona, dejá el teléfono vacío o elegila de la lista.',
+            v_otro.nombre using errcode = '22023';
+        end if;
+        -- Archivada, no está en ninguna lista para «elegirla», y el número
+        -- quedó libre, como en la rama con id (058): se le saca a la ficha
+        -- archivada —que conserva sus rutinas y sus cargas por id— y la
+        -- persona nueva nace abajo con su propia ficha, sin heredar nada.
+        update public.clientes set telefono = '', updated_at = now() where id = v_otro.id;
+      else
+        update public.clientes
+        set nombre = v_nombre,
+            notas = case when trim(coalesce(p_notas, '')) = '' then notas
+                         else left(p_notas, 1000) end,
+            activo = true,
+            updated_at = now()
+        where id = v_id;
+        return v_id;
+      end if;
+    end if;
+  end if;
+
+  insert into public.clientes (empresa_id, nombre, telefono, notas, creado_por)
+  values (p_empresa, v_nombre, v_tel, left(coalesce(p_notas, ''), 1000), auth.uid())
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.guardar_cliente(uuid, text, text, text, uuid) from public, anon;
+grant execute on function public.guardar_cliente(uuid, text, text, text, uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 3. ELIMINAR UN CLIENTE: ARCHIVAR SE LLEVA SUS DATOS DE SALUD
+--
+--    Copia exacta de la 098 (la versión viva) con lo marcado (099), en la
+--    rama que archiva. Devuelve lo mismo de siempre: 'borrado' o
+--    'archivado'.
+-- ------------------------------------------------------------
+create or replace function public.eliminar_cliente(p_cliente uuid)
+returns text language plpgsql security definer set search_path = public as $fn$
+declare
+  v       public.clientes;
+  v_saldo numeric;
+  v_debe  text;
+begin
+  select * into v from public.clientes where id = p_cliente;
+  if v.id is null then
+    raise exception 'Ese cliente ya no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_miembro(v.empresa_id) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  if not public.es_admin(v.empresa_id) then
+    raise exception 'Eliminar clientes es del dueño o de un administrador.' using errcode = '42501';
+  end if;
+
+  -- El mismo candado que al cobrar (056): mientras se decide, nadie le fía
+  -- ni le cobra a este cliente.
+  perform 1 from public.clientes where id = p_cliente for update;
+
+  v_saldo := public.saldo_fiado(p_cliente);
+  if v_saldo > 0 then
+    -- «80.000» y no «80000.00»: esto lo lee una persona.
+    v_debe := case when v_saldo = trunc(v_saldo)
+                   then replace(to_char(v_saldo, 'FM999,999,999,990'), ',', '.')
+                   else v_saldo::text end;
+    raise exception '% todavía te debe %. Cobrale o borrá esa deuda desde Fiado, y después lo eliminás.',
+      v.nombre, v_debe using errcode = '22023';
+  end if;
+
+  -- Sin nada atado se borra de verdad: no hay nada que conservar.
+  if not exists (select 1 from public.fiado where cliente_id = p_cliente)
+     and not exists (select 1 from public.movimientos where cliente_id = p_cliente)
+     and not exists (select 1 from public.turnos_reserva where cliente_id = p_cliente)
+     -- (098) Sus rutinas, sus medidas y cómo subieron sus cargas son su
+     -- historia: con cualquiera de las tres, se archiva.
+     and not exists (select 1 from public.rutinas where cliente_id = p_cliente)
+     and not exists (select 1 from public.mediciones where cliente_id = p_cliente)
+     and not exists (select 1 from public.cargas_historial where cliente_id = p_cliente) then
+    delete from public.clientes where id = p_cliente;
+    return 'borrado';
+  end if;
+
+  -- Con historia se archiva. La lista y el buscador ya dejan afuera a los
+  -- archivados (052, 053); «lo que te deben» no, así que si alguna vez
+  -- vuelve a deber algo, aparece ahí igual.
+  update public.clientes set activo = false, updated_at = now() where id = p_cliente;
+
+  -- (099) Archivado, ninguna pantalla llega a su Progreso ni a su ficha,
+  -- así que sus medidas, su consentimiento y «Salud y lesiones» quedaban
+  -- guardados sin forma de borrarlos (Ley 7593/2025). Se van acá, en la
+  -- misma transacción. Las rutinas y cómo subieron sus cargas se quedan:
+  -- son el trabajo del trainer, no datos de salud, y no se ven en ningún
+  -- link. Si la persona vuelve con el mismo nombre y teléfono, vuelve a dar
+  -- su consentimiento. Los candados de cuenta vencida (098) son de insert
+  -- y update, y `clientes` no tiene uno: esto anda siempre, como el link.
+  delete from public.mediciones where cliente_id = p_cliente;
+  delete from public.fichas_entreno where cliente_id = p_cliente;
+  update public.clientes set notas = '' where id = p_cliente;
+
+  -- (098) Su link se apaga y cambia de token. Apagado solo por estar
+  -- archivado no alcanza: `guardar_cliente` (052) toma un teléfono repetido
+  -- como la misma persona y reactiva la ficha, y con un teléfono compartido
+  -- (madre e hijo, una pareja) el link que la otra persona tiene en su
+  -- celular volvería a andar, a nombre de otra. Si vuelve la misma persona,
+  -- el trainer prende el link y le manda el nuevo. `rutina_enlaces` no
+  -- tiene el candado de cuenta vencida: esto anda siempre.
+  update public.rutina_enlaces
+  set activo = false, token = gen_random_uuid(), updated_at = now()
+  where cliente_id = p_cliente;
+
+  return 'archivado';
+end $fn$;
+
+revoke all on function public.eliminar_cliente(uuid) from public, anon;
+grant execute on function public.eliminar_cliente(uuid) to authenticated;
+
+
+-- ############################################################
+-- ##  100_campanas.sql
+-- ############################################################
+
+-- ============================================================
+-- 100 · CAMPAÑAS, COSECHAS Y LIQUIDACIONES: AGRICULTURA, FASE 1
+-- ============================================================
+--
+-- La 044 dejó el lote: algo que se abre, junta plata durante meses y recién
+-- al cerrar dice si ganaste. Para el ganadero alcanzaba. Para el sojero
+-- —el que mira Orden desde la camioneta, entre el silo y la cooperativa—
+-- faltaban tres cosas que la plata sola no cuenta:
+--
+--   · CUÁNTO SEMBRÓ. Sin hectáreas no hay «cuánto me sale la hectárea» ni
+--     «cuántos kilos necesito para cubrir», que son las dos preguntas que
+--     se hace todos los días de la campaña.
+--   · CUÁNTO COSECHÓ. Los kilos entran al silo semanas antes de que haya
+--     un peso. Un ticket de balanza no es una venta: es un camión.
+--   · CÓMO LE PAGARON. La cooperativa liquida en UN papel: bruto por los
+--     kilos, menos secado, menos flete, menos lo que le fió a cosecha, menos
+--     el alquiler en kilos del dueño del campo… y el banco acredita el neto.
+--     Ese papel toca la caja, la campaña y las deudas al mismo tiempo, y
+--     tiene que cuadrar peso por peso o no sirve.
+--
+-- LAS DECISIONES (CONTRATO-100, §1; no se re-discuten)
+--
+--   1. La caja sigue siendo de caja. Un insumo «a cosecha» nace como DEUDA
+--      atada a la campaña, sin gasto. El gasto nace cuando se paga —a mano
+--      o porque el silo lo compensó en la liquidación— con la categoría y la
+--      campaña de la deuda. `billetera()`, `resumen_financiero`, el año y el
+--      Excel no cambian.
+--   2. Una sola moneda de datos por negocio (`empresas.moneda`). Si pagó o
+--      cobró en otra, `monto` va convertido y se guardan `monto_original`,
+--      `moneda_original` y `cambio` (cuántas unidades de la moneda propia
+--      vale 1 de la original). Sin valuación histórica ni dólar de
+--      referencia: la vista de la 051 sigue siendo la forma de mirar todo al
+--      cambio de hoy.
+--   3. Un solo «Resultado»: `cobrado − puesto`, la regla de la 045. El
+--      renglón «si pagás lo que debés a cosecha» es `resultado − a_cosecha`
+--      y se dibuja en la pantalla; acá nunca hay dos números con el mismo
+--      nombre.
+--   4. Nada sin señal. `registrar_cosecha` y `registrar_liquidacion`
+--      aceptan un id (o un `grupo_id`) generado en el celular: el reintento
+--      devuelve lo mismo y no duplica.
+--   5. La liquidación es por socio: un papel puede juntar kilos de dos
+--      campañas. `p_partes` trae una parte por campaña; cada parte es una
+--      fila de `liquidaciones` con el mismo `grupo_id`, en UNA transacción.
+--      Anular es anular el grupo entero.
+--   6. Vínculo por columna: `movimientos.liquidacion_id` y
+--      `pagos_deuda.liquidacion_id`. El historial dice «parte de la
+--      liquidación del 12/04» y no deja editar ni anular suelto.
+--   7. Un pago parcial de una deuda con campaña NO corre `vence_el`: el
+--      «a cosecha» vence cuando vence la cosecha, no un mes después de cada
+--      compensación.
+--   8. Un ingreso «Préstamo» o «Aporte» colgado de una campaña no cuenta en
+--      `cobrado`: es plata prestada, no plata que la campaña dio.
+--   9. `kg_netos` = «kilos que te acreditaron»; `kg_brutos` = «peso de
+--      balanza». Sin tabla de merma.
+--  10. Neto cero sin cuenta está permitido (canje puro: entregué kilos para
+--      pagar el alquiler). Neto negativo se rechaza: la pantalla topa lo
+--      compensado al bruto y lo que falte sigue como deuda.
+--  11. `borrar_lote` no cambia su conteo de anulados (la FK sin `on delete`
+--      frenaría el delete igual); lo que sí frena son cosechas,
+--      liquidaciones y deudas, con un mensaje que se entiende.
+--  12. `registrar_venta` no cambia de firma: desde Vender, la campaña se
+--      asigna después con `asignar_a_lote`.
+--
+-- QUIÉN VE QUÉ (015, 045 y 047, juntas)
+--
+-- La 045 decidió que `puesto`, `cobrado` y `resultado` los ve todo miembro:
+-- son sumas de montos que la 003 ya le deja ver de a uno, y `lotes.test.js`
+-- lo comprueba («el peón que carga el balanceado ve lo mismo»). Esa regla
+-- se mantiene tal cual. Lo que ESTA migración agrega —cuánto se debe a
+-- cosecha y todo lo que se deriva de eso— es de administración, como las
+-- deudas desde la 015: para un miembro que no es admin, `numeros_de_lote`
+-- devuelve null en `a_cosecha`, `costo`, `costo_ha`, `costo_ton`,
+-- `kg_ha_para_cubrir`, `falta_cubrir` y `kg_para_cubrir`; `resumen_lote` le
+-- da `deudas = null` y `estructura = null`, filtra los movimientos con la
+-- regla de la 047 (`v_admin or tipo = 'venta' or creado_por = auth.uid()`)
+-- y en cada liquidación le tapa `descuentos`, `compensado` y
+-- `pagado_con_grano`. Kilos, rendimiento, vendido y precio promedio sí se
+-- ven: las ventas son de todos.
+--
+-- CÓMO ESTÁ ARMADO
+--
+-- `lotes` gana cultivo, campaña, hectáreas y precio esperado; una fila
+-- sigue siendo UNA campaña de un lote físico (comparar zafra contra zafra =
+-- agrupar por nombre). `cosechas` es un ticket por camión, kilos sin plata.
+-- `liquidaciones` es una venta de grano de UNA campaña: apunta a la venta
+-- (por el bruto) y guarda cómo se repartió el papel. Las fórmulas viven en
+-- un solo lugar, `numeros_de_lote`, que llaman `listar_lotes` y
+-- `resumen_lote`.
+--
+-- La venta de una liquidación se inserta DIRECTO y no con
+-- `registrar_venta`: sus items redondean el precio unitario a 2 decimales,
+-- y US$ 0,415 el kilo se volvería 0,42. Se rellenan todas las columnas que
+-- `registrar_venta` rellena; los triggers de la 074 (cuenta) y
+-- `exigir_cuenta_activa` corren solos.
+--
+-- LAS REGLAS DE SIEMPRE
+--
+-- Todo idempotente (`pruebas/migracion.test.js` aplica dos veces). Toda
+-- función `security definer set search_path = public`, primera línea
+-- `es_miembro`/`es_admin`. Claves compuestas `(x_id, empresa_id)` en toda
+-- FK que cruce tablas, el candado de la 044/052: una fila de un negocio no
+-- puede apuntar a la de otro ni con un UPDATE a mano. Nadie escribe lotes,
+-- cosechas, liquidaciones, deudas ni pagos directo. Las funciones
+-- redefinidas son copia exacta de su definición viva en producción
+-- (verificada con `pg_get_functiondef` el 23/09/2026) más lo nuevo; las que
+-- cambian de firma borran la vieja antes (patrón 096).
+
+-- ------------------------------------------------------------
+-- 1. LA CAMPAÑA: QUÉ SE SEMBRÓ, CUÁNTO Y A QUÉ PRECIO SE ESPERA
+--
+--    `unidad`/`cantidad` quedan como están (ganadería: cabezas). Cuando se
+--    abre con hectáreas y sin unidad, `guardar_lote` escribe `unidad = 'ha'`
+--    y `cantidad = hectareas`, así el `por_unidad` de siempre es «por
+--    hectárea» y ganadería no cambia. `precio_esperado` es por TONELADA, en
+--    `empresas.moneda`, sin valor por defecto: envejece en un mes.
+-- ------------------------------------------------------------
+alter table public.lotes
+  add column if not exists cultivo         text not null default '' check (char_length(cultivo) <= 40),
+  add column if not exists campana         text not null default '' check (char_length(campana) <= 40),
+  add column if not exists hectareas       numeric(10,2) check (hectareas is null or (hectareas > 0 and hectareas <= 50000)),
+  add column if not exists precio_esperado numeric(14,2) check (precio_esperado is null or precio_esperado >= 0);
+
+create index if not exists lotes_cultivo_idx on public.lotes (empresa_id, lower(cultivo));
+
+-- La 044 dio `grant select` sobre la tabla entera: las columnas nuevas
+-- entran solas.
+
+-- ------------------------------------------------------------
+-- 2. EL MOVIMIENTO: EN QUÉ MONEDA VINO, CON QUIÉN SE REPARTE, DE QUÉ PAPEL ES
+--
+--    `cambio` son unidades de la moneda propia por 1 de la original;
+--    `monto = round(monto_original × cambio, 2)`. Los tres van juntos o
+--    ninguno. `reparto_id`: un gasto repartido entre campañas por hectáreas
+--    son N inserts con el mismo id, y se anulan juntos. `liquidacion_id`:
+--    la venta o el gasto que nació dentro de una liquidación; su FK se
+--    agrega en 6, después de crear la tabla.
+-- ------------------------------------------------------------
+alter table public.movimientos
+  add column if not exists monto_original  numeric(14,2)  check (monto_original is null or monto_original >= 0),
+  add column if not exists moneda_original text           check (moneda_original is null or moneda_original in ('PYG','USD','BRL','ARS','EUR')),
+  add column if not exists cambio          numeric(24,10) check (cambio is null or cambio > 0),
+  add column if not exists reparto_id      uuid,
+  add column if not exists liquidacion_id  uuid;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'movimiento_original_coherente') then
+    alter table public.movimientos
+      add constraint movimiento_original_coherente check (
+        (monto_original is null) = (moneda_original is null)
+        and (moneda_original is null) = (cambio is null));
+  end if;
+end $$;
+
+-- La clave que permite que `liquidaciones` apunte a la venta con la llave
+-- compuesta. No existía: el único unique de `movimientos` era el `id`.
+create unique index if not exists movimientos_id_empresa_idx on public.movimientos (id, empresa_id);
+create index if not exists movimientos_reparto_idx     on public.movimientos (reparto_id)     where reparto_id is not null;
+create index if not exists movimientos_liquidacion_idx on public.movimientos (liquidacion_id) where liquidacion_id is not null;
+
+-- La 003 revocó el select total y lo devolvió columna por columna: columna
+-- nueva = grant nuevo (como la 044 con `lote_id`).
+grant select (monto_original, moneda_original, cambio, reparto_id, liquidacion_id) on public.movimientos to authenticated;
+
+-- La policy de insert, EXACTA como está viva (032) más `liquidacion_id is
+-- null`: nadie se inventa desde el celular una venta «parte de una
+-- liquidación». `reparto_id`, `monto_original`, `moneda_original` y
+-- `cambio` sí los manda la pantalla en el insert directo.
+drop policy if exists movimientos_insert on public.movimientos;
+create policy movimientos_insert on public.movimientos
+  for insert with check (
+    public.es_miembro(empresa_id)
+    and tipo <> 'venta'
+    and estado = 'activo'
+    and creado_por = auth.uid()
+    and descuento = 0
+    and costo_total = 0
+    and subtotal = monto
+    and anulado_por is null
+    and anulado_at is null
+    and fecha >= date '2000-01-01'
+    and fecha <= (public.hoy_empresa(empresa_id) + 1)
+    and liquidacion_id is null
+  );
+
+-- ------------------------------------------------------------
+-- 3. LA DEUDA «A COSECHA»: QUÉ CAMPAÑA LA PAGA Y QUÉ GASTO NACE AL PAGARLA
+--
+--    `categoria` es la del gasto que nace al pagarla ('' = 'Deudas', como
+--    siempre). `pagos_deuda.liquidacion_id`: el pago que hizo el silo al
+--    compensar; su FK va en 6. La columna de «activa/archivada» de `deudas`
+--    se llama `activa` (015) y se usa igual en todas las consultas nuevas.
+-- ------------------------------------------------------------
+alter table public.deudas
+  add column if not exists lote_id   uuid,
+  add column if not exists categoria text not null default '' check (char_length(categoria) <= 60);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'deudas_lote_fk') then
+    alter table public.deudas
+      add constraint deudas_lote_fk
+      foreign key (lote_id, empresa_id) references public.lotes (id, empresa_id);
+  end if;
+end $$;
+
+create index if not exists deudas_lote_idx on public.deudas (lote_id) where lote_id is not null;
+
+alter table public.pagos_deuda
+  add column if not exists liquidacion_id uuid;
+
+-- `deudas` y `pagos_deuda` tienen `grant select` sobre la tabla entera
+-- (015): las columnas nuevas entran solas.
+
+-- ------------------------------------------------------------
+-- 4. LA COSECHA: UN TICKET DE BALANZA POR CAMIÓN, KILOS SIN PLATA
+--
+--    No se valida el rendimiento en SQL (la caña da 56.000 kg/ha); los
+--    avisos de rango son de pantalla. Se escribe solo por funciones.
+-- ------------------------------------------------------------
+create table if not exists public.cosechas (
+  id         uuid primary key default gen_random_uuid(),
+  empresa_id uuid not null references public.empresas (id) on delete cascade,
+  lote_id    uuid not null,
+  fecha      date not null,
+  -- Kilos que le acreditaron.
+  kg_netos   numeric(12,0) not null check (kg_netos > 0 and kg_netos <= 5000000),
+  -- Peso de balanza (camión − tara).
+  kg_brutos  numeric(12,0) check (kg_brutos is null or kg_brutos >= kg_netos),
+  humedad    numeric(4,1) check (humedad is null or humedad between 5 and 40),
+  destino    text not null default '' check (char_length(destino) <= 80),
+  ticket     text not null default '' check (char_length(ticket) <= 40),
+  notas      text not null default '' check (char_length(notas) <= 300),
+  creado_por uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  constraint cosechas_lote_fk foreign key (lote_id, empresa_id) references public.lotes (id, empresa_id),
+  constraint cosechas_id_empresa unique (id, empresa_id)
+);
+
+create index if not exists cosechas_lote_idx on public.cosechas (lote_id, fecha desc);
+
+alter table public.cosechas enable row level security;
+
+drop policy if exists cosechas_select on public.cosechas;
+create policy cosechas_select on public.cosechas
+  for select to authenticated using (public.es_miembro(empresa_id));
+
+revoke all on public.cosechas from anon, authenticated;
+grant select on public.cosechas to authenticated;
+
+drop trigger if exists cuenta_activa_cosechas on public.cosechas;
+create trigger cuenta_activa_cosechas
+  before insert or update on public.cosechas
+  for each row execute function public.exigir_cuenta_activa();
+
+-- ------------------------------------------------------------
+-- 5. LA LIQUIDACIÓN: UNA VENTA DE GRANO DE UNA CAMPAÑA
+--
+--    Un papel = un `grupo_id` con 1..10 filas. `movimiento_id` es la venta,
+--    por el BRUTO. `descuentos` es la suma de los gastos que creó (secado,
+--    flete, retención…), `compensado` la de los pagos de deudas que el silo
+--    se cobró, `pagado_con_grano` el alquiler en kilos u otro gasto que
+--    pagó el grano, y `neto` lo que acreditó el banco (0 en un canje puro).
+--    `liquidacion_cuadra` no deja guardar un papel que no cierra.
+-- ------------------------------------------------------------
+create table if not exists public.liquidaciones (
+  id               uuid primary key default gen_random_uuid(),
+  empresa_id       uuid not null references public.empresas (id) on delete cascade,
+  -- El papel; lo genera el celular (idempotencia).
+  grupo_id         uuid not null,
+  lote_id          uuid not null,
+  fecha            date not null,
+  movimiento_id    uuid not null,
+  comprador        text not null default '' check (char_length(comprador) <= 80),
+  kg               numeric(12,0) not null check (kg > 0),
+  -- En empresas.moneda, por tonelada.
+  precio_tonelada  numeric(14,4) not null check (precio_tonelada >= 0),
+  -- round(kg × precio_tonelada / 1000, 2)
+  bruto            numeric(14,2) not null check (bruto >= 0),
+  descuentos       numeric(14,2) not null default 0 check (descuentos >= 0),
+  compensado       numeric(14,2) not null default 0 check (compensado >= 0),
+  pagado_con_grano numeric(14,2) not null default 0 check (pagado_con_grano >= 0),
+  neto             numeric(14,2) not null check (neto >= 0),
+  cuenta_id        uuid references public.cuentas_dinero (id) on delete set null,
+  moneda_original  text check (moneda_original is null or moneda_original in ('PYG','USD','BRL','ARS','EUR')),
+  -- Como venía en el papel.
+  precio_original  numeric(14,4) check (precio_original is null or precio_original >= 0),
+  cambio           numeric(24,10) check (cambio is null or cambio > 0),
+  estado           text not null default 'activa' check (estado in ('activa', 'anulada')),
+  anulada_por      uuid references auth.users (id) on delete set null,
+  anulada_at       timestamptz,
+  notas            text not null default '' check (char_length(notas) <= 300),
+  creado_por       uuid references auth.users (id) on delete set null,
+  created_at       timestamptz not null default now(),
+  constraint liquidacion_original_coherente check (
+    (moneda_original is null) = (precio_original is null)
+    and (moneda_original is null) = (cambio is null)),
+  constraint liquidaciones_lote_fk foreign key (lote_id, empresa_id) references public.lotes (id, empresa_id),
+  constraint liquidaciones_mov_fk  foreign key (movimiento_id, empresa_id) references public.movimientos (id, empresa_id),
+  constraint liquidaciones_id_empresa unique (id, empresa_id),
+  constraint liquidacion_cuadra check (abs(bruto - descuentos - compensado - pagado_con_grano - neto) < 0.01),
+  constraint liquidacion_anulada_coherente check ((estado = 'anulada') = (anulada_at is not null))
+);
+
+create index if not exists liquidaciones_lote_idx on public.liquidaciones (lote_id, fecha desc);
+-- ÚNICO por (grupo, campaña): «cada campaña una sola vez en el papel» lo
+-- hace cumplir la base, y de paso frena el doble toque sin señal. Dos
+-- llamadas a `registrar_liquidacion` con el mismo `p_grupo` que llegan al
+-- mismo tiempo pasan las dos el `exists` de la idempotencia; con este
+-- índice la segunda espera a la primera y falla con unique_violation en
+-- vez de insertar el papel dos veces, y el reintento siguiente ya entra por
+-- la rama idempotente. Sirve también para buscar por grupo.
+drop index if exists public.liquidaciones_grupo_idx;
+create unique index if not exists liquidaciones_grupo_lote_idx on public.liquidaciones (grupo_id, lote_id);
+
+alter table public.liquidaciones enable row level security;
+
+drop policy if exists liquidaciones_select on public.liquidaciones;
+create policy liquidaciones_select on public.liquidaciones
+  for select to authenticated using (public.es_miembro(empresa_id));
+
+-- Grant por columnas, como hace la 003 con `movimientos`: la policy deja
+-- leer la fila a todo miembro, pero `descuentos`, `compensado` y
+-- `pagado_con_grano` son de administración (decisión 6) y por PostgREST
+-- no se pueden pedir. `resumen_lote` es definer: las lee y las tapa según
+-- el rol.
+revoke all on public.liquidaciones from anon, authenticated;
+grant select (
+  id, empresa_id, grupo_id, lote_id, fecha, movimiento_id, comprador, kg, precio_tonelada, bruto, neto,
+  cuenta_id, moneda_original, precio_original, cambio, estado, anulada_por, anulada_at, notas, creado_por, created_at
+) on public.liquidaciones to authenticated;
+
+drop trigger if exists cuenta_activa_liquidaciones on public.liquidaciones;
+create trigger cuenta_activa_liquidaciones
+  before insert or update on public.liquidaciones
+  for each row execute function public.exigir_cuenta_activa();
+
+-- ------------------------------------------------------------
+-- 6. LAS LLAVES DE VUELTA: DEL MOVIMIENTO Y DEL PAGO A SU LIQUIDACIÓN
+--
+--    Compuestas y sin `on delete`: una liquidación con plata colgada no se
+--    borra, se anula. Borrar la empresa entera sigue andando: las llaves
+--    son NO ACTION, se controlan al final de la sentencia y para entonces
+--    ya no queda ninguna de las dos puntas.
+-- ------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'movimientos_liquidacion_fk') then
+    alter table public.movimientos
+      add constraint movimientos_liquidacion_fk
+      foreign key (liquidacion_id, empresa_id) references public.liquidaciones (id, empresa_id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'pagos_deuda_liquidacion_fk') then
+    alter table public.pagos_deuda
+      add constraint pagos_deuda_liquidacion_fk
+      foreign key (liquidacion_id, empresa_id) references public.liquidaciones (id, empresa_id);
+  end if;
+end $$;
+
+create index if not exists pagos_deuda_liquidacion_idx on public.pagos_deuda (liquidacion_id) where liquidacion_id is not null;
+
+-- ------------------------------------------------------------
+-- 7. LA COTIZACIÓN CON MÁS DECIMALES
+--
+--    Un negocio en dólares que mira en guaraníes guarda 1/6000: con seis
+--    decimales (051) pierde un 0,2 %. `guardar_vista_moneda` no cambia de
+--    firma; se verificó en producción que ninguna vista ni regla depende
+--    del tipo (la constraint `vista_con_cotizacion` se reevalúa sola).
+-- ------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'empresas' and column_name = 'cotizacion'
+      and numeric_scale is distinct from 10
+  ) then
+    alter table public.empresas alter column cotizacion type numeric(24,10);
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- 8. LOS NÚMEROS DE UNA CAMPAÑA, EN UN SOLO LUGAR
+--
+--    Interna: la llaman `listar_lotes` y `resumen_lote`, que ya miraron el
+--    rol. Todas las claves están siempre; null donde no aplica o donde no
+--    corresponde verlo (ver la cabecera). Montos a 2 decimales, kilos a 0,
+--    kg/ha y precios por tonelada a 2.
+--
+--    `kg_vendidos` cuenta solo liquidaciones activas cuya venta sigue
+--    activa: si alguien anuló la venta desde el historial, los kilos vuelven
+--    al silo solos, igual que la plata.
+-- ------------------------------------------------------------
+create or replace function public.numeros_de_lote(p_lote uuid, p_admin boolean)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_l           public.lotes;
+  v_admin       boolean := coalesce(p_admin, false);
+  v_movs        integer;
+  v_puesto      numeric;
+  v_cobrado     numeric;
+  v_a_cosecha   numeric;
+  v_kg_cos      numeric;
+  v_kg_vend     numeric;
+  v_vendido     numeric;
+  v_resultado   numeric;
+  v_costo       numeric;
+  v_costo_ha    numeric;
+  v_precio_prom numeric;
+  v_precio_ref  numeric;
+  v_falta       numeric;
+begin
+  select * into v_l from public.lotes where id = p_lote;
+
+  select count(*)::int,
+         coalesce(sum(m.monto) filter (where m.tipo = 'gasto'), 0),
+         -- Un préstamo o un aporte colgado de la campaña es plata prestada,
+         -- no plata que la campaña dio (decisión 8). Son los nombres exactos
+         -- que guarda PantallaGastos en sus chips de ingreso.
+         coalesce(sum(m.monto) filter (where m.tipo = 'venta'
+                                          or (m.tipo = 'ingreso' and m.categoria not in ('Préstamo', 'Aporte'))), 0)
+  into v_movs, v_puesto, v_cobrado
+  from public.movimientos m
+  where m.lote_id = p_lote and m.estado = 'activo';
+
+  select coalesce(sum(d.saldo), 0) into v_a_cosecha
+  from public.deudas d
+  where d.lote_id = p_lote and d.activa and d.saldo > 0;
+
+  select coalesce(sum(c.kg_netos), 0) into v_kg_cos
+  from public.cosechas c where c.lote_id = p_lote;
+
+  select coalesce(sum(q.kg), 0), coalesce(sum(q.bruto), 0) into v_kg_vend, v_vendido
+  from public.liquidaciones q
+  join public.movimientos m on m.id = q.movimiento_id
+  where q.lote_id = p_lote and q.estado = 'activa' and m.estado = 'activo';
+
+  v_resultado   := v_cobrado - v_puesto;
+  v_costo       := v_puesto + v_a_cosecha;
+  v_costo_ha    := case when v_l.hectareas > 0 then round(v_costo / v_l.hectareas, 2) end;
+  v_precio_prom := case when v_kg_vend > 0 then round(v_vendido / v_kg_vend * 1000, 2) end;
+  v_precio_ref  := coalesce(v_precio_prom, v_l.precio_esperado);
+  v_falta       := greatest(v_costo - v_cobrado, 0);
+
+  return jsonb_build_object(
+    'movimientos',      v_movs,
+    'puesto',           v_puesto,
+    'cobrado',          v_cobrado,
+    'resultado',        v_resultado,
+    'por_unidad',       case when v_l.cantidad > 0 then round(v_resultado / v_l.cantidad, 2) end,
+    'a_cosecha',        case when v_admin then v_a_cosecha end,
+    'costo',            case when v_admin then v_costo end,
+    'costo_ha',         case when v_admin then v_costo_ha end,
+    'resultado_ha',     case when v_l.hectareas > 0 then round(v_resultado / v_l.hectareas, 2) end,
+    'kg_cosechados',    v_kg_cos,
+    'kg_vendidos',      v_kg_vend,
+    -- Puede ser negativo (vendió más de lo que cargó como cosecha): la
+    -- pantalla lo dice.
+    'kg_sin_vender',    v_kg_cos - v_kg_vend,
+    'vendido',          v_vendido,
+    'precio_promedio',  v_precio_prom,
+    'precio_ref',       v_precio_ref,
+    'rendimiento',      case when v_l.hectareas > 0 and v_kg_cos > 0 then round(v_kg_cos / v_l.hectareas, 2) end,
+    'costo_ton',        case when v_admin and v_kg_cos > 0 then round(v_costo / (v_kg_cos / 1000), 2) end,
+    'kg_ha_para_cubrir', case when v_admin and v_costo_ha is not null and v_precio_ref > 0
+                              then round(v_costo_ha / v_precio_ref * 1000, 2) end,
+    'falta_cubrir',     case when v_admin then v_falta end,
+    'kg_para_cubrir',   case when v_admin and v_precio_ref > 0 then round(v_falta / v_precio_ref * 1000, 0) end
+  );
+end $fn$;
+
+revoke all on function public.numeros_de_lote(uuid, boolean) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 9. ABRIR Y EDITAR, AHORA CON CULTIVO, CAMPAÑA, HECTÁREAS Y PRECIO
+--
+--    Copia exacta de la 044 más las cuatro columnas. Con un parámetro más,
+--    `create or replace` dejaría la vieja al lado y toda llamada sería
+--    ambigua: se borra antes (096).
+-- ------------------------------------------------------------
+drop function if exists public.guardar_lote(uuid, text, text, numeric, text, uuid, date);
+
+create or replace function public.guardar_lote(
+  p_empresa         uuid,
+  p_nombre          text,
+  p_unidad          text default '',
+  p_cantidad        numeric default 0,
+  p_notas           text default '',
+  p_id              uuid default null,
+  p_abierto         date default null,
+  p_cultivo         text default '',
+  p_campana         text default '',
+  p_hectareas       numeric default null,
+  p_precio_esperado numeric default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id       uuid;
+  v_rubro    text;
+  v_unidad   text;
+  v_cantidad numeric;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo administración maneja los lotes.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) = 0 then
+    raise exception 'El lote necesita un nombre.' using errcode = '22023';
+  end if;
+  if coalesce(p_cantidad, 0) < 0 then
+    raise exception 'La cantidad no puede ser negativa.' using errcode = '22023';
+  end if;
+  if p_hectareas is not null and p_hectareas <= 0 then
+    raise exception 'Las hectáreas tienen que ser más que cero.' using errcode = '22023';
+  end if;
+  if p_precio_esperado is not null and p_precio_esperado < 0 then
+    raise exception 'El precio esperado no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  -- Sin hectáreas no hay costo por hectárea ni kilos para cubrir: en
+  -- agricultura son obligatorias. Ganadería y el resto siguen como siempre.
+  select rubro into v_rubro from public.empresas where id = p_empresa;
+  if v_rubro = 'agricultura' and p_hectareas is null then
+    raise exception 'Decinos cuántas hectáreas tiene.' using errcode = '22023';
+  end if;
+
+  -- Con hectáreas y sin unidad, la unidad ES la hectárea: así `por_unidad`
+  -- de siempre es «por hectárea» sin tocar ganadería.
+  v_unidad   := left(trim(coalesce(p_unidad, '')), 20);
+  v_cantidad := coalesce(p_cantidad, 0);
+  if p_hectareas is not null and v_unidad = '' and v_cantidad = 0 then
+    v_unidad   := 'ha';
+    v_cantidad := p_hectareas;
+  end if;
+
+  if p_id is null then
+    insert into public.lotes (empresa_id, nombre, unidad, cantidad, notas, abierto_el, creado_por,
+                              cultivo, campana, hectareas, precio_esperado)
+    values (
+      p_empresa, trim(p_nombre), v_unidad,
+      v_cantidad, left(coalesce(p_notas, ''), 500),
+      coalesce(p_abierto, public.hoy_empresa(p_empresa)), auth.uid(),
+      left(trim(coalesce(p_cultivo, '')), 40), left(trim(coalesce(p_campana, '')), 40),
+      p_hectareas, p_precio_esperado
+    )
+    returning id into v_id;
+  else
+    update public.lotes set
+      nombre          = trim(p_nombre),
+      unidad          = v_unidad,
+      cantidad        = v_cantidad,
+      notas           = left(coalesce(p_notas, ''), 500),
+      abierto_el      = coalesce(p_abierto, abierto_el),
+      cultivo         = left(trim(coalesce(p_cultivo, '')), 40),
+      campana         = left(trim(coalesce(p_campana, '')), 40),
+      hectareas       = p_hectareas,
+      precio_esperado = p_precio_esperado
+    where id = p_id and empresa_id = p_empresa
+    returning id into v_id;
+
+    if v_id is null then
+      raise exception 'Ese lote no existe.' using errcode = 'P0002';
+    end if;
+  end if;
+
+  return v_id;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 10. LA LISTA
+--
+--    Copia exacta de la 045 más las columnas nuevas y los números de
+--    `numeros_de_lote`, que pisan puesto/cobrado/resultado/por_unidad con
+--    los mismos valores (o con el rol mirado, para lo nuevo).
+-- ------------------------------------------------------------
+create or replace function public.listar_lotes(
+  p_empresa           uuid,
+  p_incluir_cerrados  boolean default false
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb; v_hoy date; v_admin boolean;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_hoy   := public.hoy_empresa(p_empresa);
+  v_admin := public.es_admin(p_empresa);
+
+  select coalesce(jsonb_agg(x order by x->>'estado', (x->>'abierto_el') desc), '[]'::jsonb)
+  into v_res
+  from (
+    select jsonb_build_object(
+      'id',         l.id,
+      'nombre',     l.nombre,
+      'unidad',     l.unidad,
+      'cantidad',   l.cantidad,
+      'estado',     l.estado,
+      'abierto_el', l.abierto_el,
+      'cerrado_el', l.cerrado_el,
+      'notas',      l.notas,
+      -- Cuánto lleva en curso, o cuánto duró si ya cerró.
+      'dias',        (coalesce(l.cerrado_el, v_hoy) - l.abierto_el),
+      'movimientos', coalesce(c.movimientos, 0),
+      'puesto',      coalesce(c.puesto, 0),
+      'cobrado',     coalesce(c.cobrado, 0),
+      'resultado',   coalesce(c.cobrado, 0) - coalesce(c.puesto, 0),
+      -- Lo que de verdad mira un ganadero: cuánto por cabeza.
+      'por_unidad',  case
+                       when l.cantidad > 0
+                       then round((coalesce(c.cobrado, 0) - coalesce(c.puesto, 0)) / l.cantidad, 2)
+                       else null
+                     end,
+      'cultivo',         l.cultivo,
+      'campana',         l.campana,
+      'hectareas',       l.hectareas,
+      'precio_esperado', l.precio_esperado
+    ) || public.numeros_de_lote(l.id, v_admin) as x
+    from public.lotes l
+    left join lateral (
+      select
+        count(*)::int as movimientos,
+        sum(m.monto) filter (where m.tipo = 'gasto')              as puesto,
+        sum(m.monto) filter (where m.tipo in ('venta', 'ingreso')) as cobrado
+      from public.movimientos m
+      where m.lote_id = l.id and m.estado = 'activo'
+    ) c on true
+    where l.empresa_id = p_empresa
+      and (coalesce(p_incluir_cerrados, false) or l.estado = 'abierto')
+  ) s;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 11. UNA CAMPAÑA, CON TODO LO QUE TIENE ADENTRO
+--
+--    Copia exacta de la 045 más: los números, las cosechas, las
+--    liquidaciones, las deudas a cosecha y la estructura de costos por
+--    categoría. Los movimientos siguen sin `costo_total` y ahora se filtran
+--    con la regla de la 047 para quien no es admin.
+-- ------------------------------------------------------------
+create or replace function public.resumen_lote(p_empresa uuid, p_lote uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_lote  jsonb; v_movs jsonb; v_hoy date; v_admin boolean;
+  v_cosechas jsonb; v_liqs jsonb; v_deudas jsonb; v_estructura jsonb;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  v_hoy   := public.hoy_empresa(p_empresa);
+  v_admin := public.es_admin(p_empresa);
+
+  select jsonb_build_object(
+    'id', l.id, 'nombre', l.nombre, 'unidad', l.unidad, 'cantidad', l.cantidad,
+    'estado', l.estado, 'abierto_el', l.abierto_el, 'cerrado_el', l.cerrado_el,
+    'notas', l.notas,
+    'dias', (coalesce(l.cerrado_el, v_hoy) - l.abierto_el),
+    'cultivo', l.cultivo, 'campana', l.campana,
+    'hectareas', l.hectareas, 'precio_esperado', l.precio_esperado
+  ) into v_lote
+  from public.lotes l where l.id = p_lote and l.empresa_id = p_empresa;
+
+  if v_lote is null then
+    raise exception 'Ese lote no existe.' using errcode = 'P0002';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',              m.id,
+    'tipo',            m.tipo,
+    'estado',          m.estado,
+    'fecha',           m.fecha,
+    'descripcion',     m.descripcion,
+    'categoria',       m.categoria,
+    'monto',           m.monto,
+    'liquidacion_id',  m.liquidacion_id,
+    'reparto_id',      m.reparto_id,
+    'monto_original',  m.monto_original,
+    'moneda_original', m.moneda_original,
+    'cambio',          m.cambio,
+    'metodo_pago',     m.metodo_pago
+  ) order by m.fecha desc, m.created_at desc), '[]'::jsonb)
+  into v_movs
+  from public.movimientos m
+  where m.lote_id = p_lote and m.empresa_id = p_empresa
+    -- La regla de la 047: las ventas son de todos; lo demás, de su autor y
+    -- del admin.
+    and (v_admin or m.tipo = 'venta' or m.creado_por = auth.uid());
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', c.id, 'fecha', c.fecha, 'kg_netos', c.kg_netos, 'kg_brutos', c.kg_brutos,
+    'humedad', c.humedad, 'destino', c.destino, 'ticket', c.ticket, 'notas', c.notas,
+    'creado_por', c.creado_por
+  ) order by c.fecha desc, c.created_at desc), '[]'::jsonb)
+  into v_cosechas
+  from public.cosechas c
+  where c.lote_id = p_lote and c.empresa_id = p_empresa;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', q.id, 'grupo_id', q.grupo_id, 'fecha', q.fecha, 'comprador', q.comprador,
+    'kg', q.kg, 'precio_tonelada', q.precio_tonelada,
+    'precio_original', q.precio_original, 'moneda_original', q.moneda_original, 'cambio', q.cambio,
+    'bruto', q.bruto,
+    -- Lo que el silo descontó y compensó cuenta cuánto se debía: de
+    -- administración, como las deudas (015).
+    'descuentos',       case when v_admin then q.descuentos end,
+    'compensado',       case when v_admin then q.compensado end,
+    'pagado_con_grano', case when v_admin then q.pagado_con_grano end,
+    'neto', q.neto, 'cuenta_id', q.cuenta_id, 'estado', q.estado,
+    'movimiento_id', q.movimiento_id, 'notas', q.notas
+  ) order by q.fecha desc, q.created_at desc), '[]'::jsonb)
+  into v_liqs
+  from public.liquidaciones q
+  where q.lote_id = p_lote and q.empresa_id = p_empresa;
+
+  if v_admin then
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'id', d.id, 'nombre', d.nombre, 'acreedor', d.acreedor, 'categoria', d.categoria,
+      'saldo', d.saldo, 'vence_el', d.vence_el
+    ) order by d.vence_el nulls last, d.created_at), '[]'::jsonb)
+    into v_deudas
+    from public.deudas d
+    where d.lote_id = p_lote and d.empresa_id = p_empresa and d.activa and d.saldo > 0;
+
+    select coalesce(jsonb_agg(jsonb_build_object('categoria', s.categoria, 'monto', s.monto)
+                              order by s.monto desc, s.categoria), '[]'::jsonb)
+    into v_estructura
+    from (
+      select m.categoria, sum(m.monto) as monto
+      from public.movimientos m
+      where m.lote_id = p_lote and m.empresa_id = p_empresa
+        and m.estado = 'activo' and m.tipo = 'gasto'
+      group by m.categoria
+    ) s;
+  end if;
+
+  return v_lote
+    || public.numeros_de_lote(p_lote, v_admin)
+    || jsonb_build_object(
+         'movimientos',   v_movs,
+         'cosechas',      v_cosechas,
+         'liquidaciones', v_liqs,
+         'deudas',        v_deudas,
+         'estructura',    v_estructura
+       );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 12. BORRAR: SOLO LO QUE NO TIENE HISTORIA
+--
+--    Copia exacta de la 044 más el freno por cosechas, liquidaciones (de
+--    cualquier estado) y deudas (de cualquier estado). El conteo de
+--    movimientos queda como está (decisión 11).
+-- ------------------------------------------------------------
+create or replace function public.borrar_lote(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_cuantos integer;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo administración maneja los lotes.' using errcode = '42501';
+  end if;
+
+  if not exists (select 1 from public.lotes where id = p_id and empresa_id = p_empresa) then
+    raise exception 'Ese lote no existe.' using errcode = 'P0002';
+  end if;
+
+  if exists (select 1 from public.cosechas      where lote_id = p_id)
+     or exists (select 1 from public.liquidaciones where lote_id = p_id)
+     or exists (select 1 from public.deudas        where lote_id = p_id) then
+    raise exception 'Ese lote tiene cosechas, liquidaciones o deudas cargadas. Sacáselas antes de borrarlo.'
+      using errcode = '23503';
+  end if;
+
+  select count(*)::int into v_cuantos
+  from public.movimientos where lote_id = p_id;
+
+  if v_cuantos > 0 then
+    raise exception 'Ese lote tiene % movimientos cargados. Sacáselos antes de borrarlo.', v_cuantos
+      using errcode = '23503';
+  end if;
+
+  delete from public.lotes where id = p_id and empresa_id = p_empresa;
+  return jsonb_build_object('borrado', true);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 13. PONERLE UN MOVIMIENTO, O SACÁRSELO
+--
+--    Copia exacta de la 044 más: lo que nació dentro de una liquidación no
+--    se mueve de campaña suelto, porque dejaría el papel repartido en dos.
+-- ------------------------------------------------------------
+create or replace function public.asignar_a_lote(
+  p_movimiento uuid,
+  p_lote       uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_emp uuid; v_estado text; v_liq uuid;
+begin
+  select empresa_id, estado, liquidacion_id into v_emp, v_estado, v_liq
+  from public.movimientos where id = p_movimiento;
+
+  if v_emp is null then
+    raise exception 'Ese movimiento no existe.' using errcode = 'P0002';
+  end if;
+  if not public.es_miembro(v_emp) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+  if v_estado <> 'activo' then
+    raise exception 'Ese movimiento está anulado.' using errcode = '22023';
+  end if;
+  if v_liq is not null then
+    raise exception 'Ese movimiento es parte de una liquidación: se maneja desde la campaña.' using errcode = '22023';
+  end if;
+
+  -- Que el lote sea de la misma empresa lo garantiza la llave compuesta,
+  -- pero un error de llave foránea no le explica nada a nadie.
+  if p_lote is not null
+     and not exists (select 1 from public.lotes where id = p_lote and empresa_id = v_emp) then
+    raise exception 'Ese lote no es de esta cuenta.' using errcode = '42501';
+  end if;
+
+  update public.movimientos set lote_id = p_lote where id = p_movimiento;
+
+  return jsonb_build_object('lote', p_lote);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 14. CREAR UNA DEUDA, AHORA «A COSECHA» DE UNA CAMPAÑA
+--
+--    Copia exacta de la 015 más `p_lote` y `p_categoria`. La firma de 10
+--    se borra antes (096).
+-- ------------------------------------------------------------
+drop function if exists public.crear_deuda(uuid, text, text, text, numeric, numeric, integer, numeric, date, text);
+
+create or replace function public.crear_deuda(
+  p_empresa         uuid,
+  p_nombre          text,
+  p_tipo            text default 'otro',
+  p_acreedor        text default '',
+  p_monto           numeric default 0,
+  p_saldo           numeric default null,
+  p_cuotas_totales  integer default null,
+  p_monto_cuota     numeric default null,
+  p_vence_el        date default null,
+  p_notas           text default '',
+  -- La campaña que va a pagar esta deuda («a cosecha»).
+  p_lote            uuid default null,
+  -- La categoría del gasto que nace al pagarla; '' = 'Deudas'.
+  p_categoria       text default ''
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id    uuid;
+  v_saldo numeric;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el propietario o un administrador puede cargar deudas.' using errcode = '42501';
+  end if;
+  if p_tipo not in ('tarjeta', 'prestamo', 'proveedor', 'otro') then
+    raise exception 'Tipo de deuda no reconocido.' using errcode = '22023';
+  end if;
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'La deuda tiene que tener un monto.' using errcode = '22023';
+  end if;
+
+  -- Sin saldo explícito se asume que todavía no se pagó nada. Es lo normal
+  -- al cargar una deuda nueva, y evita que alguien la deje en cero sin querer.
+  v_saldo := coalesce(p_saldo, p_monto);
+  if v_saldo > p_monto then
+    raise exception 'El saldo no puede ser mayor que el monto original.' using errcode = '22023';
+  end if;
+
+  -- La llave compuesta ya lo frenaría, pero con un error que nadie entiende.
+  if p_lote is not null
+     and not exists (select 1 from public.lotes where id = p_lote and empresa_id = p_empresa) then
+    raise exception 'Ese lote no es de esta cuenta.' using errcode = '42501';
+  end if;
+
+  insert into public.deudas (
+    empresa_id, tipo, nombre, acreedor, monto_original, saldo,
+    cuotas_totales, monto_cuota, vence_el, notas, creada_por,
+    lote_id, categoria
+  ) values (
+    p_empresa, p_tipo::tipo_deuda, trim(p_nombre), coalesce(trim(p_acreedor), ''),
+    p_monto, v_saldo, p_cuotas_totales, p_monto_cuota, p_vence_el,
+    coalesce(left(p_notas, 500), ''), auth.uid(),
+    p_lote, left(trim(coalesce(p_categoria, '')), 60)
+  )
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 15. REGISTRAR UN PAGO, DICIENDO CON QUÉ CUENTA, DE QUÉ CAMPAÑA Y DE QUÉ PAPEL
+--
+--    Copia exacta de la 082 más `p_cuenta`, `p_lote` y `p_liquidacion`. El
+--    gasto que crea lleva la categoría y la campaña de la deuda, y el
+--    vencimiento de una deuda con campaña no se corre (decisión 7).
+--    `anular_pago_deuda` (082) no cambia: deshace este pago igual que
+--    cualquier otro. La firma de 6 se borra antes (096).
+-- ------------------------------------------------------------
+drop function if exists public.registrar_pago_deuda(uuid, numeric, date, boolean, text, text);
+
+create or replace function public.registrar_pago_deuda(
+  p_deuda       uuid,
+  p_monto       numeric,
+  p_fecha       date default null,
+  p_crear_gasto boolean default true,
+  p_metodo      text default 'efectivo',
+  p_nota        text default '',
+  -- De qué cuenta salió (095/096). Null = la de su forma de pago (074).
+  p_cuenta      uuid default null,
+  -- A qué campaña va el gasto, si la deuda no tiene la suya.
+  p_lote        uuid default null,
+  -- El papel del silo que se cobró esta deuda, si fue así.
+  p_liquidacion uuid default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_deuda      public.deudas;
+  v_fecha      date;
+  v_aplicado   numeric;
+  v_movimiento uuid;
+  v_pago       uuid;
+  v_cuenta     boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  select * into v_deuda from public.deudas where id = p_deuda;
+  if v_deuda.id is null then
+    raise exception 'Esa deuda no existe.' using errcode = 'P0002';
+  end if;
+  if not public.es_admin(v_deuda.empresa_id) then
+    raise exception 'Solo el propietario o un administrador puede registrar pagos.' using errcode = '42501';
+  end if;
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El pago tiene que ser mayor que cero.' using errcode = '22023';
+  end if;
+  if v_deuda.saldo <= 0 then
+    raise exception 'Esa deuda ya está saldada.' using errcode = '22023';
+  end if;
+
+  -- Una cuenta, una campaña o un papel de OTRO negocio no se aceptan: las
+  -- llaves lo frenarían igual, pero sin explicar nada.
+  if p_cuenta is not null
+     and not exists (select 1 from public.cuentas_dinero c
+                     where c.id = p_cuenta and c.empresa_id = v_deuda.empresa_id and c.activa) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+  if p_lote is not null
+     and not exists (select 1 from public.lotes where id = p_lote and empresa_id = v_deuda.empresa_id) then
+    raise exception 'Ese lote no es de esta cuenta.' using errcode = '42501';
+  end if;
+  if p_liquidacion is not null
+     and not exists (select 1 from public.liquidaciones
+                     where id = p_liquidacion and empresa_id = v_deuda.empresa_id) then
+    raise exception 'Esa liquidación no existe.' using errcode = 'P0002';
+  end if;
+
+  v_fecha := coalesce(p_fecha, public.hoy_empresa(v_deuda.empresa_id));
+
+  -- Nunca más de lo que falta.
+  v_aplicado := least(p_monto, v_deuda.saldo);
+
+  -- La misma condición que usa el update de abajo: se decide una vez y se
+  -- guarda, para que deshacerlo no tenga que adivinarla.
+  v_cuenta := v_deuda.cuotas_totales is not null
+              and v_deuda.cuotas_pagadas < v_deuda.cuotas_totales;
+
+  -- El gasto primero: si falla, no queremos haber bajado el saldo. Lleva la
+  -- categoría y la campaña de la deuda: así el insumo «a cosecha» cae como
+  -- Agroquímicos de Norte el día que se paga, y no como «Deudas» suelto.
+  if p_crear_gasto then
+    insert into public.movimientos (
+      empresa_id, tipo, fecha, descripcion, categoria,
+      subtotal, descuento, monto, costo_total, metodo_pago, creado_por,
+      lote_id, cuenta_id, liquidacion_id
+    ) values (
+      v_deuda.empresa_id, 'gasto', v_fecha,
+      'Pago ' || v_deuda.nombre, coalesce(nullif(v_deuda.categoria, ''), 'Deudas'),
+      v_aplicado, 0, v_aplicado, 0, coalesce(p_metodo, 'efectivo'), auth.uid(),
+      coalesce(v_deuda.lote_id, p_lote), p_cuenta, p_liquidacion
+    )
+    returning id into v_movimiento;
+  end if;
+
+  insert into public.pagos_deuda (
+    deuda_id, empresa_id, monto, fecha, movimiento_id, nota, creado_por,
+    vence_antes, cuota_contada, liquidacion_id
+  )
+  values (p_deuda, v_deuda.empresa_id, v_aplicado, v_fecha, v_movimiento,
+          coalesce(left(p_nota, 300), ''), auth.uid(),
+          v_deuda.vence_el, v_cuenta, p_liquidacion)
+  returning id into v_pago;
+
+  update public.deudas
+  set saldo = saldo - v_aplicado,
+      cuotas_pagadas = case when v_cuenta then cuotas_pagadas + 1 else cuotas_pagadas end,
+      vence_el = case
+        when saldo - v_aplicado <= 0 then null
+        -- Una deuda con campaña vence cuando vence la cosecha: un pago
+        -- parcial no la corre (decisión 7).
+        when v_deuda.lote_id is not null then vence_el
+        when vence_el is not null then vence_el + interval '1 month'
+        else null
+      end,
+      updated_at = now()
+  where id = p_deuda;
+
+  return jsonb_build_object(
+    'pago_id', v_pago,
+    'aplicado', v_aplicado,
+    'sobrante', greatest(p_monto - v_aplicado, 0),
+    'saldo', v_deuda.saldo - v_aplicado,
+    'saldada', (v_deuda.saldo - v_aplicado) <= 0,
+    'movimiento_id', v_movimiento
+  );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 16. CARGAR UN TICKET DE BALANZA
+--
+--    Cualquier miembro: el que pesa el camión puede ser el peón. `p_id` lo
+--    genera el celular; un reintento sin señal devuelve el mismo id sin
+--    insertar. Se puede cargar en una campaña cerrada: el resultado se
+--    corrige igual, como manda la 044.
+-- ------------------------------------------------------------
+create or replace function public.registrar_cosecha(
+  p_empresa   uuid,
+  p_lote      uuid,
+  p_fecha     date,
+  p_kg_netos  numeric,
+  p_kg_brutos numeric default null,
+  p_humedad   numeric default null,
+  p_destino   text default '',
+  p_ticket    text default '',
+  p_notas     text default '',
+  p_id        uuid default null
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_lote  public.lotes;
+  v_emp   uuid;
+  v_fecha date;
+  v_hoy   date;
+  v_id    uuid;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  -- El reintento: mismo id, misma empresa, nada que hacer. En otra
+  -- empresa, no existe.
+  if p_id is not null then
+    select empresa_id into v_emp from public.cosechas where id = p_id;
+    if v_emp is not null then
+      if v_emp <> p_empresa then
+        raise exception 'Esa cosecha no existe.' using errcode = 'P0002';
+      end if;
+      return p_id;
+    end if;
+  end if;
+
+  select * into v_lote from public.lotes where id = p_lote and empresa_id = p_empresa;
+  if v_lote.id is null then
+    raise exception 'Ese lote no es de esta cuenta.' using errcode = '42501';
+  end if;
+
+  if coalesce(p_kg_netos, 0) <= 0 then
+    raise exception 'Los kilos tienen que ser más que cero.' using errcode = '22023';
+  end if;
+  if p_kg_brutos is not null and p_kg_brutos < p_kg_netos then
+    raise exception 'Los kilos acreditados no pueden ser más que el peso de balanza.' using errcode = '22023';
+  end if;
+  if p_humedad is not null and (p_humedad < 5 or p_humedad > 40) then
+    raise exception 'La humedad tiene que estar entre 5 y 40.' using errcode = '22023';
+  end if;
+
+  v_hoy   := public.hoy_empresa(p_empresa);
+  v_fecha := coalesce(p_fecha, v_hoy);
+  if v_fecha < v_lote.abierto_el or v_fecha > v_hoy + 1 then
+    raise exception 'Esa fecha no es válida.' using errcode = '22023';
+  end if;
+
+  insert into public.cosechas (
+    id, empresa_id, lote_id, fecha, kg_netos, kg_brutos, humedad, destino, ticket, notas, creado_por
+  ) values (
+    coalesce(p_id, gen_random_uuid()), p_empresa, p_lote, v_fecha,
+    round(p_kg_netos, 0), round(p_kg_brutos, 0), p_humedad,
+    left(trim(coalesce(p_destino, '')), 80), left(trim(coalesce(p_ticket, '')), 40),
+    left(coalesce(p_notas, ''), 300), auth.uid()
+  )
+  returning id into v_id;
+
+  return v_id;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 17. BORRAR UN TICKET
+--
+--    Delete físico: no guarda plata. Lo borra administración o quien lo
+--    cargó (un peón que se equivocó de campaña lo arregla solo).
+-- ------------------------------------------------------------
+create or replace function public.borrar_cosecha(p_empresa uuid, p_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare v_c public.cosechas;
+begin
+  if not public.es_miembro(p_empresa) then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  select * into v_c from public.cosechas where id = p_id and empresa_id = p_empresa;
+  if v_c.id is null then
+    raise exception 'Esa cosecha no existe.' using errcode = 'P0002';
+  end if;
+
+  if not public.es_admin(p_empresa) and v_c.creado_por is distinct from auth.uid() then
+    raise exception 'Solo quien la cargó o administración puede borrar una cosecha.' using errcode = '42501';
+  end if;
+
+  delete from public.cosechas where id = v_c.id;
+
+  return jsonb_build_object('id', v_c.id, 'lote_id', v_c.lote_id);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 18. CARGAR EL PAPEL DE LA COOPERATIVA
+--
+--    UNA transacción para todo el papel. `p_partes` = [{lote_id, kg,
+--    descuentos: [{categoria, monto}], deudas: [{deuda_id, monto}],
+--    grano: [{categoria, monto, descripcion}]}], 1 a 10 partes, lotes
+--    distintos. El prorrateo de descuentos por kilos entre partes lo hace
+--    la pantalla (src/lib/liquidacion.ts): acá cada parte ya viene con lo
+--    suyo.
+--
+--    Por parte: `bruto = round(kg × precio / 1000, 2)`; `neto = bruto −
+--    Σdescuentos − Σdeudas − Σgrano`, y si da negativo el papel no cuadra.
+--    Efecto en la cuenta elegida: +bruto − descuentos − deudas − grano =
+--    +neto, lo que dice el papel. En la campaña: cobrado +bruto, puesto
+--    +descuentos +grano +deudas compensadas, a_cosecha −deudas. Nada cuenta
+--    dos veces.
+--
+--    Idempotente por `p_grupo`: si el papel ya está, devuelve la misma
+--    respuesta reconstruida de las filas y no inserta nada.
+-- ------------------------------------------------------------
+create or replace function public.registrar_liquidacion(
+  p_empresa         uuid,
+  p_grupo           uuid,
+  p_fecha           date,
+  p_comprador       text,
+  p_precio_tonelada numeric,
+  p_partes          jsonb,
+  p_cuenta          uuid default null,
+  p_metodo          text default 'transferencia',
+  p_notas           text default '',
+  p_moneda_original text default null,
+  p_precio_original numeric default null,
+  p_cambio          numeric default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_grupo       uuid;
+  v_hoy         date;
+  v_fecha       date;
+  v_metodo      text;
+  v_comprador   text;
+  v_moneda      text;
+  v_parte       jsonb;
+  v_item        jsonb;
+  v_lote        public.lotes;
+  v_deuda       public.deudas;
+  v_lotes       uuid[] := '{}';
+  v_acumulado   jsonb  := '{}'::jsonb;
+  v_min_abierto date;
+  v_kg          numeric;
+  v_monto       numeric;
+  v_acum        numeric;
+  v_bruto       numeric;
+  v_desc        numeric;
+  v_comp        numeric;
+  v_grano       numeric;
+  v_neto        numeric;
+  v_cat         text;
+  v_venta       uuid;
+  v_liq         uuid;
+  v_res         jsonb;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo administración carga liquidaciones.' using errcode = '42501';
+  end if;
+
+  v_grupo := coalesce(p_grupo, gen_random_uuid());
+
+  -- El reintento sin señal: el papel ya está, se devuelve lo mismo. En otra
+  -- empresa, no existe.
+  if exists (select 1 from public.liquidaciones where grupo_id = v_grupo) then
+    if not exists (select 1 from public.liquidaciones where grupo_id = v_grupo and empresa_id = p_empresa) then
+      raise exception 'Esa liquidación no existe.' using errcode = 'P0002';
+    end if;
+  else
+    ---------------------------------------------- lo general del papel
+    if p_partes is null or jsonb_typeof(p_partes) <> 'array' or jsonb_array_length(p_partes) = 0 then
+      raise exception 'La liquidación necesita al menos una campaña con kilos.' using errcode = '22023';
+    end if;
+    if jsonb_array_length(p_partes) > 10 then
+      raise exception 'Una liquidación no puede tener más de 10 campañas.' using errcode = '22023';
+    end if;
+    if p_precio_tonelada is null or p_precio_tonelada < 0 then
+      raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+    end if;
+
+    -- Los mismos métodos que acepta `registrar_venta` menos 'credito': la
+    -- coop no paga el día que liquida, pero eso no es un fiado (decisión 18
+    -- del contrato: «cargala cuando te acrediten»).
+    v_metodo := lower(coalesce(nullif(trim(p_metodo), ''), 'transferencia'));
+    if v_metodo not in ('efectivo', 'transferencia', 'tarjeta', 'otro') then
+      raise exception 'La forma de cobro no es válida.' using errcode = '22023';
+    end if;
+
+    if p_cuenta is not null
+       and not exists (select 1 from public.cuentas_dinero c
+                       where c.id = p_cuenta and c.empresa_id = p_empresa and c.activa) then
+      raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+    end if;
+
+    -- El precio en la otra moneda: los tres datos juntos o ninguno.
+    if (p_moneda_original is null) <> (p_precio_original is null)
+       or (p_moneda_original is null) <> (p_cambio is null) then
+      raise exception 'Para guardar el precio en otra moneda hacen falta la moneda, el precio y el cambio.'
+        using errcode = '22023';
+    end if;
+    if p_moneda_original is not null then
+      v_moneda := upper(trim(p_moneda_original));
+      if v_moneda not in ('PYG', 'USD', 'ARS', 'BRL', 'EUR') then
+        raise exception 'No conocemos esa moneda.' using errcode = '22023';
+      end if;
+      if p_cambio <= 0 then
+        raise exception 'Poné a cuánto está el cambio: sin eso no se puede convertir nada.'
+          using errcode = '22023';
+      end if;
+      if p_precio_original < 0 then
+        raise exception 'El precio no puede ser negativo.' using errcode = '22023';
+      end if;
+    end if;
+
+    v_comprador := left(coalesce(trim(p_comprador), ''), 80);
+
+    ---------------------------------------------- las campañas, y la fecha
+    for v_parte in select * from jsonb_array_elements(p_partes) loop
+      if jsonb_typeof(v_parte) <> 'object' then
+        raise exception 'La liquidación necesita al menos una campaña con kilos.' using errcode = '22023';
+      end if;
+      select * into v_lote from public.lotes
+      where id = nullif(trim(coalesce(v_parte ->> 'lote_id', '')), '')::uuid and empresa_id = p_empresa;
+      if v_lote.id is null then
+        raise exception 'Ese lote no es de esta cuenta.' using errcode = '42501';
+      end if;
+      if v_lote.id = any (v_lotes) then
+        raise exception 'Cada campaña va una sola vez en la liquidación.' using errcode = '22023';
+      end if;
+      v_lotes := v_lotes || v_lote.id;
+      v_min_abierto := least(coalesce(v_min_abierto, v_lote.abierto_el), v_lote.abierto_el);
+
+      -- Las deudas se validan TODAS acá, antes de escribir nada. Si se
+      -- validaran parte por parte, la parte 2 vería el saldo ya rebajado
+      -- por el pago de la parte 1 y una deuda repartida entre dos campañas
+      -- (3.000 + 1.800 sobre 4.800) se rechazaría aunque cierre. Lo que se
+      -- le descuenta a una deuda en todo el papel no puede pasar su saldo;
+      -- `for update` la deja trabada hasta que el papel entero esté escrito.
+      if jsonb_typeof(v_parte -> 'deudas') = 'array' then
+        for v_item in select * from jsonb_array_elements(v_parte -> 'deudas') loop
+          select * into v_deuda from public.deudas
+          where id = nullif(trim(coalesce(v_item ->> 'deuda_id', '')), '')::uuid
+            and empresa_id = p_empresa and activa
+          for update;
+          if v_deuda.id is null then
+            raise exception 'Esa deuda no existe.' using errcode = 'P0002';
+          end if;
+          v_monto := round(coalesce(nullif(trim(coalesce(v_item ->> 'monto', '')), '')::numeric, 0), 2);
+          if v_monto <= 0 then
+            raise exception 'El pago tiene que ser mayor que cero.' using errcode = '22023';
+          end if;
+          v_acum := coalesce((v_acumulado ->> v_deuda.id::text)::numeric, 0) + v_monto;
+          if v_acum > v_deuda.saldo then
+            raise exception 'Le estás descontando a esa deuda más de lo que debe.' using errcode = '22023';
+          end if;
+          v_acumulado := v_acumulado || jsonb_build_object(v_deuda.id::text, v_acum);
+        end loop;
+      end if;
+    end loop;
+
+    v_hoy   := public.hoy_empresa(p_empresa);
+    v_fecha := coalesce(p_fecha, v_hoy);
+    if v_fecha < v_min_abierto or v_fecha > v_hoy + 1 then
+      raise exception 'Esa fecha no es válida.' using errcode = '22023';
+    end if;
+
+    ---------------------------------------------- parte por parte
+    for v_parte in select * from jsonb_array_elements(p_partes) loop
+      select * into v_lote from public.lotes
+      where id = (v_parte ->> 'lote_id')::uuid and empresa_id = p_empresa;
+
+      v_kg := round(coalesce(nullif(trim(coalesce(v_parte ->> 'kg', '')), '')::numeric, 0), 0);
+      if v_kg <= 0 then
+        raise exception 'Los kilos tienen que ser más que cero.' using errcode = '22023';
+      end if;
+
+      -- Primero se suma y se valida todo lo de la parte; recién después se
+      -- escribe. Si algo no cierra, la transacción entera se va.
+      v_desc := 0;
+      if jsonb_typeof(v_parte -> 'descuentos') = 'array' then
+        if jsonb_array_length(v_parte -> 'descuentos') > 12 then
+          raise exception 'Una liquidación no puede tener más de 12 descuentos por campaña.' using errcode = '22023';
+        end if;
+        for v_item in select * from jsonb_array_elements(v_parte -> 'descuentos') loop
+          v_monto := round(coalesce(nullif(trim(coalesce(v_item ->> 'monto', '')), '')::numeric, 0), 2);
+          if trim(coalesce(v_item ->> 'categoria', '')) = '' or v_monto <= 0 then
+            raise exception 'Cada descuento necesita una categoría y un monto mayor que cero.' using errcode = '22023';
+          end if;
+          v_desc := v_desc + v_monto;
+        end loop;
+      end if;
+
+      -- Las deudas ya se validaron todas juntas, antes de escribir nada (ver
+      -- arriba): acá solo se suma lo que se compensa en esta parte.
+      v_comp := 0;
+      if jsonb_typeof(v_parte -> 'deudas') = 'array' then
+        for v_item in select * from jsonb_array_elements(v_parte -> 'deudas') loop
+          v_comp := v_comp + round((v_item ->> 'monto')::numeric, 2);
+        end loop;
+      end if;
+
+      v_grano := 0;
+      if jsonb_typeof(v_parte -> 'grano') = 'array' then
+        for v_item in select * from jsonb_array_elements(v_parte -> 'grano') loop
+          v_monto := round(coalesce(nullif(trim(coalesce(v_item ->> 'monto', '')), '')::numeric, 0), 2);
+          if trim(coalesce(v_item ->> 'categoria', '')) = '' or v_monto <= 0 then
+            raise exception 'Cada descuento necesita una categoría y un monto mayor que cero.' using errcode = '22023';
+          end if;
+          v_grano := v_grano + v_monto;
+        end loop;
+      end if;
+
+      v_bruto := round(v_kg * p_precio_tonelada / 1000, 2);
+      v_neto  := v_bruto - v_desc - v_comp - v_grano;
+      if v_neto < 0 then
+        raise exception 'La liquidación no cuadra: lo que el silo descontó suma más que el bruto. Bajá lo que compensás de las deudas; lo que falte sigue como deuda.'
+          using errcode = '22023';
+      end if;
+
+      -- La venta, por el bruto. Directo y no con `registrar_venta` (ver la
+      -- cabecera); todas las columnas que ella rellena, más la campaña y la
+      -- moneda original.
+      insert into public.movimientos (
+        empresa_id, tipo, estado, fecha, descripcion, categoria,
+        subtotal, descuento, monto, costo_total,
+        metodo_pago, contraparte, notas, origen, creado_por, cliente_id, cuenta_id,
+        lote_id, monto_original, moneda_original, cambio
+      )
+      values (
+        p_empresa, 'venta', 'activo', v_fecha,
+        left(coalesce(nullif(v_lote.cultivo, ''), 'Granos') || ' · ' || v_kg::text || ' kg · ' || v_comprador, 200),
+        'Granos',
+        v_bruto, 0, v_bruto, 0,
+        v_metodo, v_comprador, '', 'manual', auth.uid(), null, p_cuenta,
+        v_lote.id,
+        case when v_moneda is not null then round(v_kg * p_precio_original / 1000, 2) end,
+        v_moneda, p_cambio
+      )
+      returning id into v_venta;
+
+      insert into public.liquidaciones (
+        empresa_id, grupo_id, lote_id, fecha, movimiento_id, comprador,
+        kg, precio_tonelada, bruto, descuentos, compensado, pagado_con_grano, neto,
+        cuenta_id, moneda_original, precio_original, cambio, notas, creado_por
+      ) values (
+        p_empresa, v_grupo, v_lote.id, v_fecha, v_venta, v_comprador,
+        v_kg, p_precio_tonelada, v_bruto, v_desc, v_comp, v_grano, v_neto,
+        p_cuenta, v_moneda, p_precio_original, p_cambio, left(coalesce(p_notas, ''), 300), auth.uid()
+      )
+      returning id into v_liq;
+
+      update public.movimientos set liquidacion_id = v_liq where id = v_venta;
+
+      -- Lo que el silo descontó: un gasto de la campaña por cada renglón,
+      -- con la misma fecha, cuenta y forma de pago que la venta.
+      if jsonb_typeof(v_parte -> 'descuentos') = 'array' then
+        for v_item in select * from jsonb_array_elements(v_parte -> 'descuentos') loop
+          v_cat   := left(trim(v_item ->> 'categoria'), 60);
+          v_monto := round((v_item ->> 'monto')::numeric, 2);
+          insert into public.movimientos (
+            empresa_id, tipo, estado, fecha, descripcion, categoria,
+            subtotal, descuento, monto, costo_total,
+            metodo_pago, contraparte, notas, origen, creado_por, cuenta_id,
+            lote_id, liquidacion_id
+          ) values (
+            p_empresa, 'gasto', 'activo', v_fecha,
+            left(v_cat || ' · liquidación ' || v_comprador, 200), v_cat,
+            v_monto, 0, v_monto, 0,
+            v_metodo, v_comprador, '', 'manual', auth.uid(), p_cuenta,
+            v_lote.id, v_liq
+          );
+        end loop;
+      end if;
+
+      -- Lo que se cobró de las deudas a cosecha: un pago por deuda, que
+      -- crea su gasto con la categoría y la campaña de la deuda.
+      if jsonb_typeof(v_parte -> 'deudas') = 'array' then
+        for v_item in select * from jsonb_array_elements(v_parte -> 'deudas') loop
+          perform public.registrar_pago_deuda(
+            (v_item ->> 'deuda_id')::uuid,
+            round((v_item ->> 'monto')::numeric, 2),
+            v_fecha, true, v_metodo,
+            'Descontado en la liquidación de ' || v_comprador,
+            p_cuenta, v_lote.id, v_liq
+          );
+        end loop;
+      end if;
+
+      -- Lo que el grano pagó (el alquiler en kilos del dueño del campo).
+      if jsonb_typeof(v_parte -> 'grano') = 'array' then
+        for v_item in select * from jsonb_array_elements(v_parte -> 'grano') loop
+          v_cat   := left(trim(v_item ->> 'categoria'), 60);
+          v_monto := round((v_item ->> 'monto')::numeric, 2);
+          insert into public.movimientos (
+            empresa_id, tipo, estado, fecha, descripcion, categoria,
+            subtotal, descuento, monto, costo_total,
+            metodo_pago, contraparte, notas, origen, creado_por, cuenta_id,
+            lote_id, liquidacion_id
+          ) values (
+            p_empresa, 'gasto', 'activo', v_fecha,
+            left(coalesce(nullif(trim(coalesce(v_item ->> 'descripcion', '')), ''), v_cat), 200), v_cat,
+            v_monto, 0, v_monto, 0,
+            v_metodo, v_comprador, '', 'manual', auth.uid(), p_cuenta,
+            v_lote.id, v_liq
+          );
+        end loop;
+      end if;
+    end loop;
+  end if;
+
+  -- La respuesta sale siempre de las filas: así el reintento devuelve
+  -- exactamente lo mismo que la primera vez.
+  select jsonb_build_object(
+    'grupo_id', v_grupo,
+    'bruto',    coalesce(sum(q.bruto), 0),
+    'neto',     coalesce(sum(q.neto), 0),
+    'liquidaciones', coalesce(jsonb_agg(jsonb_build_object(
+      'id', q.id, 'lote_id', q.lote_id, 'movimiento_id', q.movimiento_id,
+      'kg', q.kg, 'bruto', q.bruto, 'neto', q.neto
+    ) order by q.created_at, q.id), '[]'::jsonb)
+  ) into v_res
+  from public.liquidaciones q
+  where q.grupo_id = v_grupo and q.empresa_id = p_empresa;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 19. ANULAR EL PAPEL ENTERO
+--
+--    Todo o nada: la venta, los gastos que nacieron adentro y los pagos de
+--    deudas que el silo se cobró (con `anular_pago_deuda`, que devuelve el
+--    saldo y anula su gasto). Nada se borra: queda el rastro, y la
+--    billetera vuelve sola porque solo suma lo activo.
+--
+--    Si la venta ya estaba anulada desde el historial, se saltea: el
+--    código 23505 es exactamente el que `anular_movimiento` usa para «ya
+--    estaba anulado», y no se tapa ningún otro error.
+-- ------------------------------------------------------------
+create or replace function public.anular_liquidacion(
+  p_empresa uuid,
+  p_grupo   uuid,
+  p_motivo  text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_q       record;
+  v_g       record;
+  v_p       record;
+  v_total   integer;
+  v_activas integer;
+  v_n       integer := 0;
+  v_motivo  text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo administración carga liquidaciones.' using errcode = '42501';
+  end if;
+
+  select count(*)::int, (count(*) filter (where estado = 'activa'))::int
+  into v_total, v_activas
+  from public.liquidaciones
+  where grupo_id = p_grupo and empresa_id = p_empresa;
+
+  if v_total = 0 then
+    raise exception 'Esa liquidación no existe.' using errcode = 'P0002';
+  end if;
+  if v_activas = 0 then
+    raise exception 'Esa liquidación ya estaba anulada.' using errcode = '22023';
+  end if;
+
+  v_motivo := nullif(trim(coalesce(p_motivo, '')), '');
+
+  for v_q in
+    select * from public.liquidaciones
+    where grupo_id = p_grupo and empresa_id = p_empresa and estado = 'activa'
+    for update
+  loop
+    begin
+      perform public.anular_movimiento(v_q.movimiento_id, v_motivo);
+    exception when unique_violation then
+      null;
+    end;
+
+    -- Los gastos del papel (descuentos y grano). Los de los pagos de
+    -- deudas los anula `anular_pago_deuda`, abajo.
+    for v_g in
+      select m.id from public.movimientos m
+      where m.liquidacion_id = v_q.id and m.tipo = 'gasto' and m.estado = 'activo'
+        and not exists (select 1 from public.pagos_deuda p where p.movimiento_id = m.id)
+    loop
+      perform public.anular_movimiento(v_g.id, v_motivo);
+    end loop;
+
+    -- Un pago anulado se borra (082): el que sigue estando, sigue vivo.
+    for v_p in select p.id from public.pagos_deuda p where p.liquidacion_id = v_q.id loop
+      perform public.anular_pago_deuda(v_p.id);
+    end loop;
+
+    update public.liquidaciones
+    set estado = 'anulada', anulada_por = auth.uid(), anulada_at = now()
+    where id = v_q.id;
+
+    v_n := v_n + 1;
+  end loop;
+
+  return jsonb_build_object('grupo_id', p_grupo, 'anuladas', v_n);
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 20. PERMISOS
+--
+--    Cada firma nueva: nada para public ni anon, ejecutar para quien inició
+--    sesión. `numeros_de_lote` es interna (ver 8). Las que no cambiaron de
+--    firma conservan sus permisos con `create or replace`; se reescriben
+--    igual para que esta migración se lea sola.
+-- ------------------------------------------------------------
+revoke all on function public.guardar_lote(uuid, text, text, numeric, text, uuid, date, text, text, numeric, numeric) from public, anon;
+grant execute on function public.guardar_lote(uuid, text, text, numeric, text, uuid, date, text, text, numeric, numeric) to authenticated;
+
+revoke all on function public.listar_lotes(uuid, boolean) from public, anon;
+grant execute on function public.listar_lotes(uuid, boolean) to authenticated;
+
+revoke all on function public.resumen_lote(uuid, uuid) from public, anon;
+grant execute on function public.resumen_lote(uuid, uuid) to authenticated;
+
+revoke all on function public.borrar_lote(uuid, uuid) from public, anon;
+grant execute on function public.borrar_lote(uuid, uuid) to authenticated;
+
+revoke all on function public.asignar_a_lote(uuid, uuid) from public, anon;
+grant execute on function public.asignar_a_lote(uuid, uuid) to authenticated;
+
+revoke all on function public.crear_deuda(uuid, text, text, text, numeric, numeric, integer, numeric, date, text, uuid, text) from public, anon;
+grant execute on function public.crear_deuda(uuid, text, text, text, numeric, numeric, integer, numeric, date, text, uuid, text) to authenticated;
+
+revoke all on function public.registrar_pago_deuda(uuid, numeric, date, boolean, text, text, uuid, uuid, uuid) from public, anon;
+grant execute on function public.registrar_pago_deuda(uuid, numeric, date, boolean, text, text, uuid, uuid, uuid) to authenticated;
+
+revoke all on function public.registrar_cosecha(uuid, uuid, date, numeric, numeric, numeric, text, text, text, uuid) from public, anon;
+grant execute on function public.registrar_cosecha(uuid, uuid, date, numeric, numeric, numeric, text, text, text, uuid) to authenticated;
+
+revoke all on function public.borrar_cosecha(uuid, uuid) from public, anon;
+grant execute on function public.borrar_cosecha(uuid, uuid) to authenticated;
+
+revoke all on function public.registrar_liquidacion(uuid, uuid, date, text, numeric, jsonb, uuid, text, text, text, numeric, numeric) from public, anon;
+grant execute on function public.registrar_liquidacion(uuid, uuid, date, text, numeric, jsonb, uuid, text, text, text, numeric, numeric) to authenticated;
+
+revoke all on function public.anular_liquidacion(uuid, uuid, text) from public, anon;
+grant execute on function public.anular_liquidacion(uuid, uuid, text) to authenticated;
+
+
+-- ############################################################
+-- ##  101_categorias_agricultura.sql
+-- ############################################################
+
+-- ============================================================
+-- 101 · EN QUÉ GASTA UN AGRICULTOR
+-- ============================================================
+--
+-- La lista de agricultura de la 021 tenía nueve categorías y pistas de una
+-- palabra. Con la 100 la campaña se paga con el papel de la cooperativa, y
+-- ese papel descuenta cosas que no tenían dónde caer: el secado y la
+-- comisión del acopio, la retención de IVA, los intereses del banco que
+-- financió la semilla, el repuesto del tractor. Caían en «Otros», que es
+-- donde se pierde la estructura de costos.
+--
+-- Se conservan los nueve nombres que ya existen (Semilla, Fertilizante,
+-- Agroquímicos, Combustible, Cosecha, Fletes, Arrendamiento, Personal,
+-- Otros) para no dejar huérfano ningún gasto ya cargado, se les suman
+-- pistas, y se agregan cinco: Siembra y pulverización, Secado y acopio,
+-- Maquinaria y repuestos, Intereses y bancos, Retención de IVA. Catorce en
+-- este orden, que es el orden del calendario de la campaña: primero lo que
+-- se pone, después lo que descuenta el silo, al final lo del banco.
+--
+-- Las pistas van en los dos idiomas en la misma lista («urea, cal, abono,
+-- adubo, ureia, calcário»): van al prompt de la captura por voz, y el
+-- sojero de Canindeyú dicta en portugués tan seguido como en español.
+--
+-- Copia EXACTA de la versión viva (097, verificada con `pg_get_functiondef`
+-- el 23/09/2026) tocando SOLO la rama 'agricultura'. Va aparte de la 100
+-- para poder aplicarla sola.
+
+create or replace function public.categorias_de_rubro(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case
+    when coalesce(p_tipo_cuenta, 'emprendedor') = 'personal' then jsonb_build_array(
+      jsonb_build_object('nombre','Comida','pistas','supermercado, almacén, verdulería, carnicería, despensa, panadería'),
+      jsonb_build_object('nombre','Alquiler','pistas','alquiler, expensas, condominio'),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono, cable, gas'),
+      jsonb_build_object('nombre','Transporte','pistas','colectivo, nafta, combustible, pasaje, taxi, uber, peaje'),
+      jsonb_build_object('nombre','Salud','pistas','farmacia, remedios, médico, dentista, seguro médico, análisis'),
+      jsonb_build_object('nombre','Educación','pistas','colegio, cuota, universidad, útiles, curso, libros'),
+      jsonb_build_object('nombre','Ropa','pistas','ropa, calzado, zapatillas, campera'),
+      jsonb_build_object('nombre','Cuidado personal','pistas','peluquería, uñas, barbería, cosmética, gimnasio, perfume'),
+      jsonb_build_object('nombre','Ocio','pistas','salida, restaurante, cine, streaming, viaje, cerveza, cumpleaños'),
+      jsonb_build_object('nombre','Hogar','pistas','limpieza, muebles, arreglos, electrodomésticos, ferretería'),
+      jsonb_build_object('nombre','Cuotas y deudas','pistas','tarjeta, préstamo, cuota, financiera'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'ganaderia' then jsonb_build_array(
+      jsonb_build_object('nombre','Alimentación','pistas','maíz, balanceado, ración, fardos, sal, pasto'),
+      jsonb_build_object('nombre','Sanidad','pistas','vacunas, antiparasitarios, veterinario, remedios'),
+      jsonb_build_object('nombre','Personal','pistas','peón, capataz, jornales, sueldos'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo, pastaje'),
+      jsonb_build_object('nombre','Fletes','pistas','transporte de hacienda, camión jaula'),
+      jsonb_build_object('nombre','Mantenimiento','pistas','alambrado, aguadas, maquinaria, herramientas'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    -- Lo que gasta una campaña agrícola (101), en el orden del calendario:
+    -- lo que se pone, lo que descuenta el silo, lo del banco.
+    when coalesce(p_rubro, 'comercio') = 'agricultura' then jsonb_build_array(
+      jsonb_build_object('nombre','Semilla','pistas','semilla, plantines, bolsa, semente, mudas, saco'),
+      jsonb_build_object('nombre','Fertilizante','pistas','urea, fosfato, cloruro, cal, abono, adubo, ureia, calcário'),
+      jsonb_build_object('nombre','Agroquímicos','pistas','herbicida, fungicida, insecticida, glifosato, veneno, defensivo, inseticida'),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta, diésel, aceite, diesel, óleo'),
+      jsonb_build_object('nombre','Siembra y pulverización','pistas','siembra, pulverizada, pasada, servicio, plantio, pulverização'),
+      jsonb_build_object('nombre','Cosecha','pistas','cosechadora, trilla, colheitadeira'),
+      jsonb_build_object('nombre','Fletes','pistas','flete, camión, transporte, frete, caminhão'),
+      jsonb_build_object('nombre','Secado y acopio','pistas','secado, comisión, acopio, silo, secagem, armazenagem, armazém'),
+      jsonb_build_object('nombre','Arrendamiento','pistas','alquiler de campo, alquiler en kilos, arrendamento, aluguel de terra'),
+      jsonb_build_object('nombre','Personal','pistas','jornal, peón, tractorista, sueldo, diária, peão, tratorista, salário'),
+      jsonb_build_object('nombre','Maquinaria y repuestos','pistas','repuesto, taller, tractor, cubierta, peça, oficina, pneu'),
+      jsonb_build_object('nombre','Intereses y bancos','pistas','interés, banco, comisión bancaria, juros'),
+      jsonb_build_object('nombre','Retención de IVA','pistas','retención, IVA, retenção'),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'servicios' then jsonb_build_array(
+      jsonb_build_object('nombre','Materiales','pistas','cemento, arena, cables, pintura, insumos'),
+      jsonb_build_object('nombre','Repuestos','pistas','piezas, filtros, aceite'),
+      jsonb_build_object('nombre','Herramientas','pistas',''),
+      jsonb_build_object('nombre','Combustible','pistas','gasoil, nafta'),
+      jsonb_build_object('nombre','Personal','pistas','ayudante, jornales, sueldos'),
+      jsonb_build_object('nombre','Transporte','pistas','flete, viaje, delivery'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    when coalesce(p_rubro, 'comercio') = 'clases' then jsonb_build_array(
+      jsonb_build_object('nombre','Internet y plataformas','pistas','internet, wifi, Zoom, Meet, plan del celular, hosting'),
+      jsonb_build_object('nombre','Comisiones','pistas','Preply, Italki, Superprof, lo que se lleva la plataforma, comisión de cobro'),
+      jsonb_build_object('nombre','Material','pistas','libros, licencias, PDF, impresiones, fotocopias, cuadernos'),
+      jsonb_build_object('nombre','Equipo','pistas','notebook, micrófono, cámara, auriculares, tablet, pizarra, luz'),
+      jsonb_build_object('nombre','Publicidad','pistas','anuncios, Instagram, Facebook, volantes'),
+      jsonb_build_object('nombre','Capacitación','pistas','cursos propios, certificaciones, exámenes, membresías'),
+      jsonb_build_object('nombre','Alquiler','pistas','aula, salón, espacio de trabajo'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    -- Lo que gasta un personal trainer (097): el equipo que lleva, el lugar
+    -- donde entrena, y moverse hasta cada cliente.
+    when coalesce(p_rubro, 'comercio') = 'entrenamiento' then jsonb_build_array(
+      jsonb_build_object('nombre','Equipamiento','pistas','pesas, mancuernas, bandas, colchonetas, kettlebell, TRX, soga, conos'),
+      jsonb_build_object('nombre','Gimnasio y espacio','pistas','cuota del gimnasio, alquiler del espacio, box, cancha, derecho de uso'),
+      jsonb_build_object('nombre','Transporte','pistas','nafta, combustible, colectivo, uber, ir a domicilio'),
+      jsonb_build_object('nombre','Ropa deportiva','pistas','ropa, zapatillas, calzas, uniforme'),
+      jsonb_build_object('nombre','Internet y aplicaciones','pistas','internet, plan del celular, app de rutinas, Zoom'),
+      jsonb_build_object('nombre','Publicidad','pistas','anuncios, Instagram, Facebook, TikTok, volantes'),
+      jsonb_build_object('nombre','Capacitación','pistas','cursos, certificaciones, workshops, membresías'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+
+    else jsonb_build_array(
+      jsonb_build_object('nombre','Mercadería','pistas','lo que comprás para revender'),
+      jsonb_build_object('nombre','Transporte','pistas','combustible, flete, delivery'),
+      jsonb_build_object('nombre','Comida','pistas',''),
+      jsonb_build_object('nombre','Publicidad','pistas',''),
+      jsonb_build_object('nombre','Servicios','pistas','luz, agua, internet, teléfono'),
+      jsonb_build_object('nombre','Alquiler','pistas',''),
+      jsonb_build_object('nombre','Sueldos','pistas','empleados, jornales'),
+      jsonb_build_object('nombre','Impuestos','pistas',''),
+      jsonb_build_object('nombre','Otros','pistas',''))
+  end;
+$fn$;
+
+-- Los permisos, los mismos de siempre (021, 097): la lista la lee también
+-- quien todavía no tiene cuenta, al elegir rubro. `create or replace` ya
+-- los conserva; se escriben igual para que esta migración se lea sola.
+grant execute on function public.categorias_de_rubro(text, text) to anon, authenticated;
+
+
+-- ############################################################
+-- ##  102_planes_por_rubro_y_comision.sql
+-- ############################################################
+
+-- ============================================================
+-- 102 · CADA RUBRO CON SUS PLANES, Y LA COMISIÓN SOBRE EL PRECIO DE LISTA
+-- ============================================================
+--
+-- Dos decisiones de Matías del 23/09/2026 (CONTRATO-102, §1 y §3). No se
+-- re-discuten; acá queda el porqué para quien venga después.
+--
+-- 1. CADA RUBRO OFRECE SOLO LOS PLANES QUE LE SIRVEN
+--
+-- Hasta hoy todo negocio veía Básico, Pro y Premium. Pro y Premium venden
+-- GENTE cargando a la vez —vendedores, cajeros, encargados—. Un profe de
+-- inglés o un personal trainer trabajan solos: ofrecerles pagar por
+-- vendedores que nunca van a tener es venderles aire, y lo único que logra
+-- es que el precio que sí les sirve parezca el «barato», el de segunda.
+--
+--     comercio, servicios        básico, pro, premium (negocio)
+--     clases, entrenamiento      básico
+--     agricultura, ganadería     básico, pro  (el dueño y un par de encargados)
+--     cuenta personal            pro, como hoy (su único plan pago)
+--
+-- Lo que NO cambia, y es a propósito: el sistema de planes sigue siendo UNO.
+-- Los mismos precios (`precios`), los mismos topes (`limites_plan`), las
+-- mismas sillas (048). Esta migración no toca un solo precio ni un solo
+-- tope: solo dice cuáles se ofrecen a quién.
+--
+-- La tabla vive dos veces, en `planes_de_rubro()` acá y en `FichaRubro.planes`
+-- de src/lib/rubros.ts, igual que `dias_de_prueba()` y `DIAS_DE_PRUEBA`. Una
+-- prueba compara las dos, rubro por rubro, y falla si se separan.
+--
+-- LA PRUEBA ARRANCA EN UN PLAN QUE SE PUEDE COMPRAR
+--
+-- Desde la 009 toda cuenta nace en prueba de Pro. Con la tabla nueva eso
+-- sería una trampa para el profe: ocho días con tres personas y 600
+-- capturas, y el día nueve le ofrecemos un plan de una persona y 300. Lo
+-- que probó no existe para él. Por eso `plan_de_prueba()`: Pro si su rubro
+-- lo ofrece —el más completo que se vende por igual a casi todos—, y si no,
+-- el más alto de su lista (clases y entrenamiento → básico). La cuenta
+-- personal sigue con lo de hoy: Pro.
+--
+-- `crear_empresa` y `cambiar_rubro` son copia EXACTA de su versión viva
+-- (verificada en producción con pg_get_functiondef) con UNA diferencia cada
+-- una:
+--
+--   · `crear_empresa`: la suscripción de prueba nace en
+--     `plan_de_prueba(v_rubro, v_tipo)` en vez de 'pro'. `empresas.plan`
+--     sigue diciendo 'pro': es el campo viejo de «tiene acceso», y
+--     `cambiar_plan_cuenta` también escribe 'pro' ahí para cualquier plan
+--     pago. El plan de verdad sale de `suscripciones` (plan_efectivo).
+--   · `cambiar_rubro`: si la cuenta está EN PRUEBA, la prueba pasa al plan
+--     de prueba del rubro nuevo. Un comercio que se da cuenta de que es un
+--     profe no puede seguir probando algo que no se le va a vender. Una
+--     suscripción paga NUNCA se toca: el que pagó Pro lo sigue teniendo,
+--     aunque su rubro nuevo no lo ofrezca (la pantalla lo muestra como su
+--     plan actual). No se le cambian las fechas a la prueba: el rubro cambia
+--     qué se prueba, no cuánto dura.
+--
+-- 2. LA COMISIÓN DEL SOCIO: LA MITAD DEL PRECIO DE LISTA DE UN MES
+--
+-- Hasta hoy (060, 063, 068) la comisión era la mitad de LO QUE ENTRÓ en el
+-- primer pago. Dos bordes que Matías no quiere:
+--
+--   · El que pagó con el descuento de la prueba (078) dejaba al socio con la
+--     mitad de un precio rebajado: el socio pagaba un descuento que no dio.
+--   · El que pagó el año entero de una le dejaba al socio la mitad de once
+--     meses. Había que ajustarla a mano, y a mano se olvida.
+--
+-- La regla nueva es un número que el socio puede saber de antemano: la
+-- mitad del precio de lista MENSUAL del plan que se activó, del tipo de
+-- cuenta de la empresa, en la moneda del cobro. Sin sillas extra: el
+-- precio de lista del plan. Si pagó el año, la base igual es UN mes.
+--
+-- LA MONEDA DEL COBRO: `suscripciones.moneda`; si es null, LA DE LA
+-- EMPRESA (`empresas.moneda`); recién después, guaraníes. El contrato
+-- decía «null = guaraníes», pero en producción `suscripciones.moneda` es
+-- null en TODAS las suscripciones: solo la escribe el webhook de la
+-- pasarela (009), que hoy no se usa, y `cambiar_plan_cuenta` (el cobro por
+-- transferencia, el único camino real) nunca la toca. Con «null =
+-- guaraníes» a secas, una cuenta argentina que paga Premium con 60.000 ARS
+-- tomaba de base el precio en guaraníes (250.000); la mitad, 125.000,
+-- quedaba topada en 60.000 y el socio se llevaba EL 100 % de lo que entró.
+-- Un cliente en dólares que paga 32 dejaba 32 en vez de 16. La empresa sí
+-- sabe en qué moneda trabaja: el que factura en pesos paga en pesos. Una
+-- moneda sin precio de lista (ARS hoy) cae en la regla de antes: base =
+-- importe, la mitad de lo que entró.
+--
+-- Lo que NO cambia:
+--
+--   · Cuándo nace: con el primer pago, una sola vez por negocio (el índice
+--     único de `comisiones`), y se cae si el cobro se anula (063).
+--   · La salvaguarda, ahora explícita: nunca más de lo que entró. Un cobro
+--     de prueba de 1.000 no genera una comisión de 55.000.
+--   · Si no hay precio de lista para ese plan en esa moneda, la base es el
+--     importe, como hasta hoy. Mejor una comisión como la de antes que
+--     ninguna.
+--
+-- `base` guarda el precio de lista (lo que se tomó de base); `monto`, lo
+-- calculado. El redondeo sigue la moneda: guaraníes sin decimales, el resto
+-- con dos. `precios.activo` no se mira a propósito: un precio que se dejó
+-- de ofrecer sigue siendo el precio de lista del que ya lo compró.
+--
+-- La regla vive en dos helpers internos —`base_de_comision` y
+-- `monto_de_comision`— porque la comisión nace en DOS lugares:
+-- `cambiar_plan_cuenta` (el cobro, 063) y `asignar_referido` (el código que
+-- se había perdido, 068). Se verificó en producción que no hay otra función
+-- que inserte en `comisiones` (pg_proc, prosrc). Las dos se redefinen como
+-- copia exacta de lo vivo usando los helpers, que nadie de afuera puede
+-- llamar (revocados a public, anon y authenticated). `asignar_referido`
+-- saca el plan del primer pago del mismo renglón de `registro_admin` de
+-- donde ya sacaba el importe (`plan_despues`).
+--
+-- UNA CORRECCIÓN QUE VA DE PASO: `cambiar_plan_cuenta` NO CONOCÍA EL BÁSICO
+--
+-- La 077 creó el plan Básico y el panel de administración lo ofrece, pero
+-- `cambiar_plan_cuenta` (063, viva) seguía aceptando solo gratis, pro y
+-- negocio: activar un Básico por transferencia terminaba en «Plan
+-- desconocido: basico». Con esta migración un profe o un trainer SOLO
+-- pueden comprar Básico, así que dejarlo así era dejarlos sin forma de
+-- pagar. Es la única línea que cambia en esa función además de la comisión.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. QUÉ PLANES SE LE OFRECEN A CADA RUBRO
+--
+--    Espejo de `FichaRubro.planes` en src/lib/rubros.ts, en el mismo orden
+--    (de menor a mayor). Un rubro desconocido o null cae en comercio, igual
+--    que `fichaDe()`. `immutable` y sin leer tablas, como `dias_de_prueba`:
+--    la pantalla de planes la puede preguntar antes de iniciar sesión.
+-- ------------------------------------------------------------
+create or replace function public.planes_de_rubro(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns text[] language sql immutable set search_path = public as $fn$
+  select case
+    -- La cuenta personal ya es de una sola persona y tiene su propio precio.
+    when coalesce(p_tipo_cuenta, 'emprendedor') = 'personal' then array['pro']
+    -- Trabajan solos: pagar por vendedores sería pagar por aire.
+    when p_rubro in ('clases', 'entrenamiento') then array['basico']
+    -- El dueño y un par de encargados; nadie tiene quince en el campo.
+    when p_rubro in ('agricultura', 'ganaderia') then array['basico', 'pro']
+    else array['basico', 'pro', 'negocio']
+  end;
+$fn$;
+
+grant execute on function public.planes_de_rubro(text, text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. EN QUÉ PLAN ARRANCA LA PRUEBA
+--
+--    Pro si el rubro lo ofrece; si no, el más alto de su lista. Nunca un
+--    plan que después no se le pueda vender.
+-- ------------------------------------------------------------
+create or replace function public.plan_de_prueba(
+  p_rubro text,
+  p_tipo_cuenta text default 'emprendedor'
+)
+returns text language sql immutable set search_path = public as $fn$
+  select case
+    when 'pro' = any (l) then 'pro'
+    else l[array_length(l, 1)]
+  end
+  from (select public.planes_de_rubro(p_rubro, p_tipo_cuenta) as l) x;
+$fn$;
+
+grant execute on function public.plan_de_prueba(text, text) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. CREAR LA EMPRESA: LA PRUEBA EN EL PLAN DE SU RUBRO
+--
+--    Copia exacta de la viva (087) con una sola línea cambiada: el plan de
+--    la suscripción de prueba.
+-- ------------------------------------------------------------
+create or replace function public.crear_empresa(
+  p_nombre text,
+  p_moneda text default 'PYG',
+  p_nombre_usuario text default null,
+  p_zona text default 'America/Asuncion',
+  p_tipo_cuenta text default 'emprendedor',
+  p_rubro text default 'comercio',
+  p_como_nos_conocio text default '',
+  p_telefono text default '',
+  p_se_dedica text default ''
+)
+returns uuid language plpgsql security definer set search_path = public as $fn$
+declare
+  v_id uuid;
+  v_codigo text;
+  v_intentos int := 0;
+  v_fin timestamptz;
+  v_tipo text;
+  v_rubro text;
+  v_contacto text;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  if char_length(trim(coalesce(p_nombre, ''))) < 2 then
+    raise exception 'El nombre del negocio es muy corto.' using errcode = '22023';
+  end if;
+
+  v_tipo := case when p_tipo_cuenta = 'personal' then 'personal' else 'emprendedor' end;
+  v_rubro := case
+    when v_tipo = 'personal' then 'comercio'
+    when p_rubro = any (public.rubros_validos()) then p_rubro
+    else 'comercio' end;
+
+  loop
+    v_codigo := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+    exit when not exists (select 1 from public.empresa_accesos where codigo = v_codigo);
+    v_intentos := v_intentos + 1;
+    if v_intentos > 12 then
+      raise exception 'No se pudo generar un código de acceso.' using errcode = '55000';
+    end if;
+  end loop;
+
+  insert into public.empresas (
+    nombre, moneda, creada_por, zona_horaria, tipo_cuenta, rubro, como_nos_conocio)
+  values (trim(p_nombre), coalesce(p_moneda, 'PYG'), auth.uid(),
+          coalesce(nullif(trim(p_zona), ''), 'America/Asuncion'), v_tipo, v_rubro,
+          left(coalesce(p_como_nos_conocio, ''), 80))
+  returning id into v_id;
+
+  v_contacto := nullif(trim(coalesce(p_nombre_usuario, '')), '');
+
+  insert into public.miembros (empresa_id, user_id, nombre, rol)
+  values (v_id, auth.uid(), coalesce(v_contacto, 'Propietario'), 'propietario');
+
+  insert into public.empresa_accesos (empresa_id, codigo) values (v_id, v_codigo);
+
+  if v_contacto is not null
+     or nullif(trim(coalesce(p_telefono, '')), '') is not null
+     or nullif(trim(coalesce(p_se_dedica, '')), '') is not null then
+    insert into public.ficha_cliente (empresa_id, contacto, telefono, se_dedica, updated_at)
+    values (v_id,
+            left(coalesce(v_contacto, ''), 120),
+            left(regexp_replace(coalesce(p_telefono, ''), '[^0-9+]', '', 'g'), 40),
+            left(coalesce(trim(p_se_dedica), ''), 200),
+            now())
+    on conflict (empresa_id) do nothing;
+  end if;
+
+  v_fin := now() + make_interval(days => public.dias_de_prueba(v_tipo));
+  insert into public.suscripciones (empresa_id, plan, estado, periodo_inicio, periodo_fin, prueba_fin)
+  values (v_id, public.plan_de_prueba(v_rubro, v_tipo), 'prueba', now(), v_fin, v_fin);
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas set plan = 'pro' where id = v_id;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  return v_id;
+end $fn$;
+
+revoke all on function public.crear_empresa(text, text, text, text, text, text, text, text, text)
+  from public, anon;
+grant execute on function public.crear_empresa(text, text, text, text, text, text, text, text, text)
+  to authenticated;
+
+-- ------------------------------------------------------------
+-- 4. CAMBIAR DE RUBRO: LA PRUEBA SE MUDA CON ÉL
+--
+--    Copia exacta de la viva (087) más el ajuste de la prueba. Solo
+--    `estado = 'prueba'`: una suscripción paga no se toca nunca.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_rubro(p_empresa uuid, p_rubro text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes text;
+begin
+  if not public.es_admin(p_empresa) then
+    raise exception 'Solo el propietario o un administrador puede cambiar el rubro.'
+      using errcode = '42501';
+  end if;
+
+  if not (p_rubro = any (public.rubros_validos())) then
+    raise exception 'Rubro desconocido: %', p_rubro using errcode = '22023';
+  end if;
+
+  select rubro into v_antes from public.empresas where id = p_empresa;
+  if v_antes is null then
+    raise exception 'Esa empresa no existe.' using errcode = 'P0002';
+  end if;
+
+  update public.empresas set rubro = p_rubro where id = p_empresa;
+
+  -- La prueba se muda con el rubro: nadie prueba un plan que después no se
+  -- le va a ofrecer. Lo pago no se toca nunca.
+  update public.suscripciones s
+  set plan = public.plan_de_prueba(p_rubro, e.tipo_cuenta),
+      updated_at = now()
+  from public.empresas e
+  where s.empresa_id = p_empresa
+    and e.id = p_empresa
+    and s.estado = 'prueba';
+
+  return jsonb_build_object('rubro', p_rubro, 'antes', v_antes);
+end $fn$;
+
+revoke all on function public.cambiar_rubro(uuid, text) from public, anon;
+grant execute on function public.cambiar_rubro(uuid, text) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. LA BASE DE LA COMISIÓN: EL PRECIO DE LISTA DE UN MES
+--
+--    El precio mensual del plan, del tipo de cuenta de la empresa, en la
+--    moneda del cobro: la de la suscripción; si es null, la de la empresa;
+--    si no, guaraníes (ver la cabecera: la de la suscripción hoy es siempre
+--    null). Si no hay precio de lista para esa combinación, el importe: la
+--    regla de antes.
+--
+--    `security definer` porque la llaman funciones que ya lo son y tiene
+--    que leer `suscripciones` sin depender de quién mira; revocada a todos
+--    porque no es una puerta: es una cuenta interna.
+-- ------------------------------------------------------------
+create or replace function public.base_de_comision(
+  p_empresa uuid,
+  p_plan    text,
+  p_importe numeric
+)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select coalesce((
+    select pr.importe
+    from public.empresas e
+    left join public.suscripciones s on s.empresa_id = e.id
+    join public.precios pr
+      on pr.tipo_cuenta = e.tipo_cuenta
+     and pr.plan = p_plan
+     and pr.moneda = coalesce(s.moneda, e.moneda, 'PYG')
+     and pr.periodo = 'mensual'
+    where e.id = p_empresa
+    limit 1
+  ), p_importe);
+$fn$;
+
+-- ------------------------------------------------------------
+-- 6. EL MONTO: EL PORCENTAJE DE LA BASE, NUNCA MÁS DE LO QUE ENTRÓ
+--
+--    Guaraníes sin decimales (como siempre); el resto con dos, porque la
+--    mitad de 19 dólares son 9,50 y no 10. La moneda sale igual que en
+--    `base_de_comision`: la de la suscripción, la de la empresa, guaraníes.
+-- ------------------------------------------------------------
+create or replace function public.monto_de_comision(
+  p_empresa uuid,
+  p_base    numeric,
+  p_pct     numeric,
+  p_importe numeric
+)
+returns numeric language sql stable security definer set search_path = public as $fn$
+  select least(
+    round(p_base * p_pct / 100,
+      case when coalesce((select coalesce(s.moneda, e.moneda)
+                          from public.empresas e
+                          left join public.suscripciones s on s.empresa_id = e.id
+                          where e.id = p_empresa), 'PYG') = 'PYG'
+           then 0 else 2 end),
+    p_importe
+  );
+$fn$;
+
+revoke all on function public.base_de_comision(uuid, text, numeric) from public, anon, authenticated;
+revoke all on function public.monto_de_comision(uuid, numeric, numeric, numeric) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 7. EL COBRO (063): LA COMISIÓN SOBRE EL PRECIO DE LISTA
+--
+--    Copia exacta de la viva. Cambian dos cosas: acepta 'basico' (ver la
+--    cabecera) y la comisión usa los helpers de arriba.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_plan_cuenta(
+  p_empresa    uuid,
+  p_plan       text,
+  p_meses      integer default 1,
+  p_nota       text default '',
+  p_importe    numeric default null,
+  p_vendedores integer default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes    public.suscripciones;
+  v_fin      timestamptz;
+  v_estado   text;
+  v_orden    uuid;
+  v_cliente  text;
+  v_ingreso  uuid;
+  v_aviso    text := null;
+  v_tope     integer;
+  v_personas integer;
+  v_socio    uuid;
+  v_pct      numeric;
+  v_comision boolean := false;
+  v_base     numeric;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  -- 'basico' faltaba desde la 077 (ver la cabecera de la 102).
+  if p_plan not in ('gratis', 'basico', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', p_plan using errcode = '22023';
+  end if;
+
+  if p_vendedores is not null and p_vendedores < -1 then
+    raise exception 'El tope de vendedores no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  select * into v_antes from public.suscripciones where empresa_id = p_empresa;
+  if v_antes.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select nombre into v_cliente from public.empresas where id = p_empresa;
+
+  if p_plan = 'gratis' then
+    v_estado := 'vencida';
+    v_fin := now();
+    -- Cortar el servicio borra el trato: si vuelve, se negocia de nuevo.
+    v_tope := null;
+  else
+    v_estado := 'activa';
+    -- Si todavía le queda tiempo pago, se le suma; si no, arranca hoy.
+    v_fin := greatest(coalesce(v_antes.periodo_fin, now()), now())
+             + make_interval(months => greatest(1, coalesce(p_meses, 1)));
+    v_tope := case
+      when p_vendedores is null then v_antes.tope_vendedores  -- no se toca
+      when p_vendedores = -1    then null                     -- volver al plan
+      else p_vendedores
+    end;
+  end if;
+
+  update public.suscripciones
+  set plan = p_plan,
+      estado = v_estado,
+      periodo_inicio = case when p_plan = 'gratis' then periodo_inicio else now() end,
+      periodo_fin = v_fin,
+      tope_vendedores = v_tope,
+      proveedor_pago = case when p_plan = 'gratis' then proveedor_pago else 'transferencia' end,
+      updated_at = now()
+  where empresa_id = p_empresa;
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas
+  set plan = case when p_plan = 'gratis' then 'gratis' else 'pro' end
+  where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  -- ---- ¿le queda gente afuera del tope nuevo? ----
+  --
+  -- No se echa a nadie: bajar un número en un panel no puede sacarle el
+  -- acceso a una persona que hoy está trabajando. Pero hay que decirlo, o
+  -- el que lo bajó se entera cuando el cliente reclama.
+  if v_tope is not null then
+    select count(*)::int into v_personas from public.miembros where empresa_id = p_empresa;
+    if v_personas > v_tope + 1 then
+      v_aviso := 'Ojo: este negocio ya tiene ' || v_personas || ' personas y le habilitaste '
+              || v_tope || ' vendedores (' || (v_tope + 1) || ' con el dueño). '
+              || 'No se sacó a nadie, pero no va a poder sumar a nadie más.';
+    end if;
+  end if;
+
+  -- ---- el cobro, como ingreso de Orden ----
+  if p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select empresa_id into v_orden from public.ajustes_orden where unica;
+
+    if v_orden is null then
+      v_aviso := coalesce(v_aviso || ' ', '')
+              || 'No hay una empresa de Orden elegida, así que el cobro no se anotó en tus finanzas.';
+    elsif v_orden = p_empresa then
+      v_aviso := coalesce(v_aviso || ' ', '')
+              || 'Esta ES tu empresa, así que no se anotó ningún ingreso.';
+    else
+      begin
+        insert into public.movimientos (
+          empresa_id, tipo, estado, fecha, descripcion, categoria,
+          subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+        ) values (
+          v_orden, 'ingreso', 'activo', public.hoy_empresa(v_orden),
+          'Suscripción ' || coalesce(v_cliente, 'cliente'), 'Suscripciones',
+          p_importe, 0, p_importe, 0, 'transferencia',
+          left(coalesce(v_cliente, ''), 80), auth.uid()
+        )
+        returning id into v_ingreso;
+      exception when others then
+        v_aviso := coalesce(v_aviso || ' ', '')
+                || 'La cuenta se activó, pero el ingreso no se pudo anotar: ' || sqlerrm;
+      end;
+    end if;
+  end if;
+
+  -- ---- la comisión de quien trajo al cliente (060, corregida acá) ----
+  -- Nace cuando se cobra, una sola vez por negocio, y eso lo garantiza el
+  -- índice único de comisiones y no el acordarse.
+  --
+  -- Antes colgaba de que el ingreso se hubiera podido anotar, y eso costó
+  -- una comisión de verdad: la empresa que representaba a Orden estaba
+  -- borrada, el ingreso no se pudo escribir, y el socio se quedó sin nada
+  -- por un problema de contabilidad que no tenía nada que ver con él.
+  --
+  -- La señal de que entró plata no es la fila del libro: es que una
+  -- persona escribió un importe porque vio la transferencia. Eso es lo
+  -- que se mira. El movimiento se guarda si existe, y puede ser null.
+  if p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select r.socio_id into v_socio
+    from public.referidos r
+    join public.socios s on s.id = r.socio_id
+    where r.empresa_id = p_empresa and s.activo;
+
+    if v_socio is not null then
+      select coalesce(a.comision_porcentaje, 50) into v_pct
+      from public.ajustes_orden a where a.unica;
+
+      -- Desde la 102: la mitad del precio de lista de un mes del plan que
+      -- se activó, nunca más de lo que entró.
+      v_base := public.base_de_comision(p_empresa, p_plan, p_importe);
+
+      begin
+        insert into public.comisiones (
+          socio_id, empresa_id, movimiento_id, base, porcentaje, monto
+        ) values (
+          v_socio, p_empresa, v_ingreso, v_base, coalesce(v_pct, 50),
+          public.monto_de_comision(p_empresa, v_base, coalesce(v_pct, 50), p_importe)
+        );
+        v_comision := true;
+      exception when unique_violation then
+        -- Ya cobró por este negocio. Se paga una sola vez: el primer pago.
+        null;
+      end;
+    end if;
+  end if;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'cambiar_plan', jsonb_build_object(
+    'plan_antes', v_antes.plan, 'plan_despues', p_plan,
+    'estado_antes', v_antes.estado, 'estado_despues', v_estado,
+    'vence_antes', v_antes.periodo_fin, 'vence_despues', v_fin,
+    'meses', greatest(1, coalesce(p_meses, 1)),
+    'importe', p_importe,
+    'tope_antes', v_antes.tope_vendedores,
+    'tope_despues', v_tope,
+    'ingreso_id', v_ingreso,
+    'nota', left(coalesce(p_nota, ''), 300)
+  ));
+
+  return jsonb_build_object(
+    'plan', p_plan, 'estado', v_estado, 'periodo_fin', v_fin,
+    'tope_vendedores', v_tope,
+    'personas_permitidas', public.tope_de_miembros(p_empresa),
+    'ingreso_anotado', v_ingreso is not null,
+    'comision_generada', v_comision,
+    'aviso', v_aviso
+  );
+end $fn$;
+
+revoke all on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric, integer) from public, anon;
+grant execute on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 8. EL CÓDIGO QUE SE HABÍA PERDIDO (068): LA MISMA REGLA
+--
+--    Copia exacta de la viva. La comisión del primer pago sale del plan de
+--    ese pago (`plan_despues` del mismo renglón del registro) y de los
+--    helpers de arriba.
+-- ------------------------------------------------------------
+create or replace function public.asignar_referido(
+  p_empresa uuid,
+  p_codigo  text,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_socio      public.socios;
+  v_ya         uuid;
+  v_pagos      integer;
+  v_aviso      text := null;
+  v_rechazo    public.codigos_rechazados;
+  v_por_enlace boolean := false;
+  v_primero    record;
+  v_pct        numeric;
+  v_comision   boolean := false;
+  v_base       numeric;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios
+  where codigo = upper(trim(coalesce(p_codigo, '')));
+
+  if v_socio.id is null then
+    raise exception 'No hay ningún socio con ese código.' using errcode = '22023';
+  end if;
+
+  if not v_socio.activo then
+    raise exception '% está desactivado como socio. Activalo en «Socios» y volvé a anotarlo.',
+      v_socio.nombre using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from public.empresas where id = p_empresa) then
+    raise exception 'Ese negocio no existe.' using errcode = '22023';
+  end if;
+
+  if v_socio.user_id is not null and exists (
+    select 1 from public.miembros m
+    where m.empresa_id = p_empresa and m.user_id = v_socio.user_id
+  ) then
+    raise exception
+      '% trabaja en ese negocio: no se cobra comisión por traerse a uno mismo.',
+      v_socio.nombre using errcode = '22023';
+  end if;
+
+  select socio_id into v_ya from public.referidos where empresa_id = p_empresa;
+
+  if v_ya is not null then
+    if v_ya = v_socio.id then
+      return jsonb_build_object(
+        'ok', true, 'socio', v_socio.nombre,
+        'aviso', 'Ya estaba anotado a nombre de ' || v_socio.nombre || '.'
+      );
+    end if;
+    raise exception
+      'Ese negocio ya está anotado a nombre de %. Se cuenta una sola vez y no se cambia.',
+      coalesce((select nombre from public.socios where id = v_ya), 'otra persona')
+      using errcode = '22023';
+  end if;
+
+  -- ¿Esta cuenta intentó entrar con ESTE código y se lo rechazaron?
+  select * into v_rechazo from public.codigos_rechazados where empresa_id = p_empresa;
+  v_por_enlace := v_rechazo.empresa_id is not null and v_rechazo.codigo = v_socio.codigo;
+
+  -- «Ya pagó» se mide por el importe, no por el asiento (ver arriba).
+  select count(*)::int into v_pagos
+  from public.registro_admin r
+  where r.empresa_id = p_empresa
+    and r.accion = 'cambiar_plan'
+    and coalesce(r.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+    and (r.detalle->>'importe')::numeric > 0;
+
+  insert into public.referidos (empresa_id, socio_id, origen, nota, creado_por)
+  values (
+    p_empresa, v_socio.id,
+    case when v_por_enlace then 'link' else 'a_mano' end,
+    left(coalesce(p_nota, ''), 300), auth.uid()
+  );
+
+  if v_por_enlace and v_pagos > 0 then
+    -- Entró con el enlace antes de pagar: la comisión del primer pago es
+    -- suya, igual que si el código no se hubiera perdido. El primero y no
+    -- el último, por la misma razón que en la 063.
+    select (ra.detalle->>'importe')::numeric as importe,
+           nullif(ra.detalle->>'ingreso_id', '')::uuid as ingreso,
+           ra.detalle->>'plan_despues' as plan,
+           ra.created_at
+    into v_primero
+    from public.registro_admin ra
+    where ra.empresa_id = p_empresa
+      and ra.accion = 'cambiar_plan'
+      and coalesce(ra.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+      and (ra.detalle->>'importe')::numeric > 0
+    order by ra.created_at
+    limit 1;
+
+    select coalesce(a.comision_porcentaje, 50) into v_pct from public.ajustes_orden a where a.unica;
+    v_pct := coalesce(v_pct, 50);
+
+    -- Desde la 102: el precio de lista del plan de ESE primer pago.
+    v_base := public.base_de_comision(p_empresa, v_primero.plan, v_primero.importe);
+
+    begin
+      insert into public.comisiones (
+        socio_id, empresa_id, movimiento_id, base, porcentaje, monto, nota
+      ) values (
+        v_socio.id, p_empresa, v_primero.ingreso, v_base, v_pct,
+        public.monto_de_comision(p_empresa, v_base, v_pct, v_primero.importe),
+        'Entró con el enlace el ' || to_char(v_rechazo.intentado_at at time zone 'America/Asuncion', 'DD/MM/YYYY')
+          || ', pero el código fue rechazado (' || coalesce(nullif(v_rechazo.motivo, ''), 'sin motivo') || ') y se anotó después.'
+      );
+      v_comision := true;
+      v_aviso := 'Entró con este código y se había perdido. Se generó la comisión por su primer pago.';
+    exception when unique_violation then
+      v_aviso := 'Entró con este código y se había perdido. Ya tenía una comisión, así que no se generó otra.';
+    end;
+  elsif v_por_enlace then
+    v_aviso := 'Entró con este código y se había perdido. Cuando pague, la comisión sale sola.';
+  elsif v_pagos > 0 then
+    v_aviso := 'Ojo: este negocio ya pagó ' || v_pagos
+            || (case when v_pagos = 1 then ' vez' else ' veces' end)
+            || ' antes de anotarlo. La comisión no se genera por esos pagos, sino con el próximo cobro. Revisá el monto antes de pagarla.';
+  end if;
+
+  -- Resuelto: el rechazo deja de figurar.
+  delete from public.codigos_rechazados where empresa_id = p_empresa;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'asignar_referido', jsonb_build_object(
+    'socio_id', v_socio.id, 'socio', v_socio.nombre, 'codigo', v_socio.codigo,
+    'pagos_previos', v_pagos, 'por_enlace', v_por_enlace, 'comision_generada', v_comision
+  ));
+
+  return jsonb_build_object(
+    'ok', true, 'socio', v_socio.nombre, 'aviso', v_aviso,
+    'por_enlace', v_por_enlace, 'comision_generada', v_comision
+  );
+end $fn$;
+
+revoke all on function public.asignar_referido(uuid, text, text) from public, anon;
+grant execute on function public.asignar_referido(uuid, text, text) to authenticated;
+
+
+-- ############################################################
+-- ##  103_la_comision_guarda_lo_que_entro.sql
+-- ############################################################
+
+-- ============================================================
+-- 103 · LA COMISIÓN GUARDA LO QUE ENTRÓ
+-- ============================================================
+--
+-- La 102 cambió de dónde sale la comisión del socio: la mitad del precio de
+-- lista de UN mes del plan, y no de lo que entró. Para eso `comisiones.base`
+-- pasó a guardar el precio de lista, y `monto` = least(base × % / 100,
+-- importe). La regla está bien y no se toca. Lo que se perdió en el camino
+-- es otro número: cuánta plata entró de verdad.
+--
+-- HASTA LA 102, `base` ERA LO QUE PAGÓ EL CLIENTE
+--
+-- Desde la 060 `base` era el importe del cobro, y el panel de la
+-- administración (src/components/PanelSocios.tsx) lo usaba así: «pagó
+-- {base}» y, al lado de la comisión, «te queda {base − monto}», lo que le
+-- queda a Orden de ese pago. Con la 102 esas dos líneas empezaron a mentir
+-- sin que nada fallara:
+--
+--     Básico con el descuento de la prueba (078)
+--       entró              90.200
+--       base (la lista)   110.000
+--       comisión           55.000
+--       el panel decía    «pagó 110.000 · te queda 55.000»
+--       la verdad          pagó 90.200 · te quedan 35.200
+--
+-- Con el año pagado de una miente al revés: entran 1.210.000, el panel
+-- dice «pagó 110.000 · te queda 55.000», y a Orden le quedan 1.155.000.
+--
+-- Y la tabla ya no tenía de dónde sacarlo: el importe no se guardaba en
+-- ningún otro lado de `comisiones`, porque hasta la 102 ERA `base`.
+--
+-- UNA COLUMNA MÁS, NO OTRA CUENTA
+--
+-- `importe` guarda lo que entró en el cobro que generó la comisión: el
+-- mismo número que alguien escribió en el panel porque vio la
+-- transferencia (`p_importe`). Quedan tres números, cada uno con su nombre:
+--
+--     importe   lo que entró                    (esta migración)
+--     base      el precio de lista de un mes    (102)
+--     monto     lo que se lleva el socio        (060, 102)
+--
+-- No se recalcula nada: ni la base ni el monto de ninguna comisión cambian.
+--
+-- Nace en los mismos dos lugares que la comisión (la 102 verificó en
+-- producción que no hay un tercero): `cambiar_plan_cuenta` guarda
+-- `p_importe`, y `asignar_referido` el importe del primer pago
+-- (`v_primero.importe`, del mismo renglón del registro del que ya sacaba el
+-- plan y el ingreso). Las dos son copia EXACTA de la versión viva (la de la
+-- 102, verificada en producción con pg_get_functiondef) con esa sola columna
+-- de más en el insert. `listar_comisiones` (066, viva, también verificada)
+-- devuelve `importe` al lado de `base`, y nada más cambia.
+--
+-- LAS QUE YA EXISTEN
+--
+-- En producción hoy hay cero comisiones, pero una migración sirve para
+-- cualquier base. El importe se reconstruye así, del dato más seguro al
+-- menos:
+--
+--   1. El renglón de `registro_admin` de ESE cobro: el 'cambiar_plan' de la
+--      misma empresa cuyo `ingreso_id` es el `movimiento_id` de la
+--      comisión, o el que se escribió en la misma transacción (misma
+--      `created_at`: `cambiar_plan_cuenta` escribe la comisión y el
+--      registro en la misma llamada, y `now()` es el de la transacción).
+--      El registro no se edita nunca: es el número que se escribió.
+--   2. Si la comisión nació en `asignar_referido` (hay un renglón
+--      'asignar_referido' de esa empresa con `comision_generada`), el
+--      primer 'cambiar_plan' con importe > 0: el mismo criterio con el que
+--      esa función eligió el pago (068, 102).
+--   3. El `monto` del ingreso de Orden que la originó (`movimiento_id`).
+--      Va último porque un movimiento se puede editar y el registro no.
+--
+-- El criterio 2 NO se usa para cualquier comisión: una que nació en
+-- `cambiar_plan_cuenta` pudo nacer en el segundo o el tercer pago (el
+-- socio se anotó tarde: grupo 4 de pruebas/comisiones.test.js), y el primer
+-- pago sería otro número. Mejor null que un número equivocado con cara de
+-- cierto.
+--
+-- Lo que no se puede reconstruir queda en null, y el panel cae en `base`,
+-- como hasta hoy. Para una comisión anterior a la 102 eso es exacto (ahí
+-- `base` ERA lo que entró); para una posterior es lo mismo que ya mostraba.
+-- El relleno solo toca las que tienen `importe` null: correrlo dos veces
+-- no cambia nada.
+--
+-- QUIÉN VE ESTO: LOS MISMOS DE HOY
+--
+-- `comisiones` no tiene ningún permiso para anon ni authenticated: la 060
+-- hizo `revoke all` y nunca hubo grants por columna (verificado en
+-- producción con information_schema.column_privileges). La columna nueva
+-- no se abre a nadie; se lee solo por función, y `listar_comisiones` es
+-- solo de la administración (`es_superadmin`).
+--
+-- El socio NO ve cuánto pagó el negocio que trajo, y sigue sin verlo:
+-- `mi_panel_socio` (070, viva) le devuelve el monto de SU comisión y ni
+-- siquiera la base, así que no se toca. `listar_referidos` devuelve `base`,
+-- también solo a la administración, y el panel no la muestra: tampoco se
+-- toca.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LA COLUMNA
+--
+--    Null en las viejas que no se puedan reconstruir (ver la cabecera).
+--    Misma precisión y misma regla que `base` y `monto`: nunca negativa.
+-- ------------------------------------------------------------
+alter table public.comisiones
+  add column if not exists importe numeric(14,2) check (importe >= 0);
+
+comment on column public.comisiones.importe is
+  'Lo que entró en el cobro que generó la comisión (103). base = precio de lista de un mes (102); monto = lo del socio.';
+
+-- ------------------------------------------------------------
+-- 2. EL RELLENO DE LAS QUE YA EXISTEN
+--
+--    En el orden de la cabecera: el registro de ESE cobro, el primer pago
+--    si nació en `asignar_referido`, el ingreso de Orden. Solo las que
+--    tienen `importe` null.
+-- ------------------------------------------------------------
+update public.comisiones c
+set importe = coalesce(
+  -- 1. El renglón del registro de ese mismo cobro.
+  (select (ra.detalle->>'importe')::numeric
+   from public.registro_admin ra
+   where ra.empresa_id = c.empresa_id
+     and ra.accion = 'cambiar_plan'
+     and coalesce(ra.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+     and (ra.detalle->>'importe')::numeric > 0
+     and ((c.movimiento_id is not null
+           and ra.detalle->>'ingreso_id' = c.movimiento_id::text)
+          or ra.created_at = c.created_at)
+   order by ra.created_at
+   limit 1),
+  -- 2. Nació al anotar un código perdido: el primer pago, como en la 068.
+  (select (ra.detalle->>'importe')::numeric
+   from public.registro_admin ra
+   where ra.empresa_id = c.empresa_id
+     and ra.accion = 'cambiar_plan'
+     and coalesce(ra.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+     and (ra.detalle->>'importe')::numeric > 0
+     and exists (
+       select 1 from public.registro_admin rr
+       where rr.empresa_id = c.empresa_id
+         and rr.accion = 'asignar_referido'
+         and rr.detalle->>'comision_generada' = 'true'
+     )
+   order by ra.created_at
+   limit 1),
+  -- 3. El ingreso de Orden que la originó.
+  (select mv.monto from public.movimientos mv where mv.id = c.movimiento_id)
+)
+where c.importe is null;
+
+-- ------------------------------------------------------------
+-- 3. EL COBRO (063, 102): LA COMISIÓN GUARDA LO QUE ENTRÓ
+--
+--    Copia exacta de la viva (102). Cambia solo el insert de la comisión:
+--    una columna más, `importe`, con `p_importe`.
+-- ------------------------------------------------------------
+create or replace function public.cambiar_plan_cuenta(
+  p_empresa    uuid,
+  p_plan       text,
+  p_meses      integer default 1,
+  p_nota       text default '',
+  p_importe    numeric default null,
+  p_vendedores integer default null
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_antes    public.suscripciones;
+  v_fin      timestamptz;
+  v_estado   text;
+  v_orden    uuid;
+  v_cliente  text;
+  v_ingreso  uuid;
+  v_aviso    text := null;
+  v_tope     integer;
+  v_personas integer;
+  v_socio    uuid;
+  v_pct      numeric;
+  v_comision boolean := false;
+  v_base     numeric;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  -- 'basico' faltaba desde la 077 (ver la cabecera de la 102).
+  if p_plan not in ('gratis', 'basico', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', p_plan using errcode = '22023';
+  end if;
+
+  if p_vendedores is not null and p_vendedores < -1 then
+    raise exception 'El tope de vendedores no puede ser negativo.' using errcode = '22023';
+  end if;
+
+  select * into v_antes from public.suscripciones where empresa_id = p_empresa;
+  if v_antes.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select nombre into v_cliente from public.empresas where id = p_empresa;
+
+  if p_plan = 'gratis' then
+    v_estado := 'vencida';
+    v_fin := now();
+    -- Cortar el servicio borra el trato: si vuelve, se negocia de nuevo.
+    v_tope := null;
+  else
+    v_estado := 'activa';
+    -- Si todavía le queda tiempo pago, se le suma; si no, arranca hoy.
+    v_fin := greatest(coalesce(v_antes.periodo_fin, now()), now())
+             + make_interval(months => greatest(1, coalesce(p_meses, 1)));
+    v_tope := case
+      when p_vendedores is null then v_antes.tope_vendedores  -- no se toca
+      when p_vendedores = -1    then null                     -- volver al plan
+      else p_vendedores
+    end;
+  end if;
+
+  update public.suscripciones
+  set plan = p_plan,
+      estado = v_estado,
+      periodo_inicio = case when p_plan = 'gratis' then periodo_inicio else now() end,
+      periodo_fin = v_fin,
+      tope_vendedores = v_tope,
+      proveedor_pago = case when p_plan = 'gratis' then proveedor_pago else 'transferencia' end,
+      updated_at = now()
+  where empresa_id = p_empresa;
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas
+  set plan = case when p_plan = 'gratis' then 'gratis' else 'pro' end
+  where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  -- ---- ¿le queda gente afuera del tope nuevo? ----
+  --
+  -- No se echa a nadie: bajar un número en un panel no puede sacarle el
+  -- acceso a una persona que hoy está trabajando. Pero hay que decirlo, o
+  -- el que lo bajó se entera cuando el cliente reclama.
+  if v_tope is not null then
+    select count(*)::int into v_personas from public.miembros where empresa_id = p_empresa;
+    if v_personas > v_tope + 1 then
+      v_aviso := 'Ojo: este negocio ya tiene ' || v_personas || ' personas y le habilitaste '
+              || v_tope || ' vendedores (' || (v_tope + 1) || ' con el dueño). '
+              || 'No se sacó a nadie, pero no va a poder sumar a nadie más.';
+    end if;
+  end if;
+
+  -- ---- el cobro, como ingreso de Orden ----
+  if p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select empresa_id into v_orden from public.ajustes_orden where unica;
+
+    if v_orden is null then
+      v_aviso := coalesce(v_aviso || ' ', '')
+              || 'No hay una empresa de Orden elegida, así que el cobro no se anotó en tus finanzas.';
+    elsif v_orden = p_empresa then
+      v_aviso := coalesce(v_aviso || ' ', '')
+              || 'Esta ES tu empresa, así que no se anotó ningún ingreso.';
+    else
+      begin
+        insert into public.movimientos (
+          empresa_id, tipo, estado, fecha, descripcion, categoria,
+          subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+        ) values (
+          v_orden, 'ingreso', 'activo', public.hoy_empresa(v_orden),
+          'Suscripción ' || coalesce(v_cliente, 'cliente'), 'Suscripciones',
+          p_importe, 0, p_importe, 0, 'transferencia',
+          left(coalesce(v_cliente, ''), 80), auth.uid()
+        )
+        returning id into v_ingreso;
+      exception when others then
+        v_aviso := coalesce(v_aviso || ' ', '')
+                || 'La cuenta se activó, pero el ingreso no se pudo anotar: ' || sqlerrm;
+      end;
+    end if;
+  end if;
+
+  -- ---- la comisión de quien trajo al cliente (060, corregida acá) ----
+  -- Nace cuando se cobra, una sola vez por negocio, y eso lo garantiza el
+  -- índice único de comisiones y no el acordarse.
+  --
+  -- Antes colgaba de que el ingreso se hubiera podido anotar, y eso costó
+  -- una comisión de verdad: la empresa que representaba a Orden estaba
+  -- borrada, el ingreso no se pudo escribir, y el socio se quedó sin nada
+  -- por un problema de contabilidad que no tenía nada que ver con él.
+  --
+  -- La señal de que entró plata no es la fila del libro: es que una
+  -- persona escribió un importe porque vio la transferencia. Eso es lo
+  -- que se mira. El movimiento se guarda si existe, y puede ser null.
+  if p_plan <> 'gratis' and coalesce(p_importe, 0) > 0 then
+    select r.socio_id into v_socio
+    from public.referidos r
+    join public.socios s on s.id = r.socio_id
+    where r.empresa_id = p_empresa and s.activo;
+
+    if v_socio is not null then
+      select coalesce(a.comision_porcentaje, 50) into v_pct
+      from public.ajustes_orden a where a.unica;
+
+      -- Desde la 102: la mitad del precio de lista de un mes del plan que
+      -- se activó, nunca más de lo que entró.
+      v_base := public.base_de_comision(p_empresa, p_plan, p_importe);
+
+      begin
+        -- Desde la 103: y lo que entró de verdad, que ya no es la base.
+        insert into public.comisiones (
+          socio_id, empresa_id, movimiento_id, base, porcentaje, monto, importe
+        ) values (
+          v_socio, p_empresa, v_ingreso, v_base, coalesce(v_pct, 50),
+          public.monto_de_comision(p_empresa, v_base, coalesce(v_pct, 50), p_importe),
+          p_importe
+        );
+        v_comision := true;
+      exception when unique_violation then
+        -- Ya cobró por este negocio. Se paga una sola vez: el primer pago.
+        null;
+      end;
+    end if;
+  end if;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'cambiar_plan', jsonb_build_object(
+    'plan_antes', v_antes.plan, 'plan_despues', p_plan,
+    'estado_antes', v_antes.estado, 'estado_despues', v_estado,
+    'vence_antes', v_antes.periodo_fin, 'vence_despues', v_fin,
+    'meses', greatest(1, coalesce(p_meses, 1)),
+    'importe', p_importe,
+    'tope_antes', v_antes.tope_vendedores,
+    'tope_despues', v_tope,
+    'ingreso_id', v_ingreso,
+    'nota', left(coalesce(p_nota, ''), 300)
+  ));
+
+  return jsonb_build_object(
+    'plan', p_plan, 'estado', v_estado, 'periodo_fin', v_fin,
+    'tope_vendedores', v_tope,
+    'personas_permitidas', public.tope_de_miembros(p_empresa),
+    'ingreso_anotado', v_ingreso is not null,
+    'comision_generada', v_comision,
+    'aviso', v_aviso
+  );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 4. EL CÓDIGO QUE SE HABÍA PERDIDO (068, 102): LO MISMO
+--
+--    Copia exacta de la viva (102). Cambia solo el insert de la comisión:
+--    `importe` es el del primer pago, del mismo renglón del registro del
+--    que ya salen el plan y el ingreso (`v_primero.importe`).
+-- ------------------------------------------------------------
+create or replace function public.asignar_referido(
+  p_empresa uuid,
+  p_codigo  text,
+  p_nota    text default ''
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_socio      public.socios;
+  v_ya         uuid;
+  v_pagos      integer;
+  v_aviso      text := null;
+  v_rechazo    public.codigos_rechazados;
+  v_por_enlace boolean := false;
+  v_primero    record;
+  v_pct        numeric;
+  v_comision   boolean := false;
+  v_base       numeric;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_socio from public.socios
+  where codigo = upper(trim(coalesce(p_codigo, '')));
+
+  if v_socio.id is null then
+    raise exception 'No hay ningún socio con ese código.' using errcode = '22023';
+  end if;
+
+  if not v_socio.activo then
+    raise exception '% está desactivado como socio. Activalo en «Socios» y volvé a anotarlo.',
+      v_socio.nombre using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from public.empresas where id = p_empresa) then
+    raise exception 'Ese negocio no existe.' using errcode = '22023';
+  end if;
+
+  if v_socio.user_id is not null and exists (
+    select 1 from public.miembros m
+    where m.empresa_id = p_empresa and m.user_id = v_socio.user_id
+  ) then
+    raise exception
+      '% trabaja en ese negocio: no se cobra comisión por traerse a uno mismo.',
+      v_socio.nombre using errcode = '22023';
+  end if;
+
+  select socio_id into v_ya from public.referidos where empresa_id = p_empresa;
+
+  if v_ya is not null then
+    if v_ya = v_socio.id then
+      return jsonb_build_object(
+        'ok', true, 'socio', v_socio.nombre,
+        'aviso', 'Ya estaba anotado a nombre de ' || v_socio.nombre || '.'
+      );
+    end if;
+    raise exception
+      'Ese negocio ya está anotado a nombre de %. Se cuenta una sola vez y no se cambia.',
+      coalesce((select nombre from public.socios where id = v_ya), 'otra persona')
+      using errcode = '22023';
+  end if;
+
+  -- ¿Esta cuenta intentó entrar con ESTE código y se lo rechazaron?
+  select * into v_rechazo from public.codigos_rechazados where empresa_id = p_empresa;
+  v_por_enlace := v_rechazo.empresa_id is not null and v_rechazo.codigo = v_socio.codigo;
+
+  -- «Ya pagó» se mide por el importe, no por el asiento (ver arriba).
+  select count(*)::int into v_pagos
+  from public.registro_admin r
+  where r.empresa_id = p_empresa
+    and r.accion = 'cambiar_plan'
+    and coalesce(r.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+    and (r.detalle->>'importe')::numeric > 0;
+
+  insert into public.referidos (empresa_id, socio_id, origen, nota, creado_por)
+  values (
+    p_empresa, v_socio.id,
+    case when v_por_enlace then 'link' else 'a_mano' end,
+    left(coalesce(p_nota, ''), 300), auth.uid()
+  );
+
+  if v_por_enlace and v_pagos > 0 then
+    -- Entró con el enlace antes de pagar: la comisión del primer pago es
+    -- suya, igual que si el código no se hubiera perdido. El primero y no
+    -- el último, por la misma razón que en la 063.
+    select (ra.detalle->>'importe')::numeric as importe,
+           nullif(ra.detalle->>'ingreso_id', '')::uuid as ingreso,
+           ra.detalle->>'plan_despues' as plan,
+           ra.created_at
+    into v_primero
+    from public.registro_admin ra
+    where ra.empresa_id = p_empresa
+      and ra.accion = 'cambiar_plan'
+      and coalesce(ra.detalle->>'importe', '') ~ '^[0-9]+(\.[0-9]+)?$'
+      and (ra.detalle->>'importe')::numeric > 0
+    order by ra.created_at
+    limit 1;
+
+    select coalesce(a.comision_porcentaje, 50) into v_pct from public.ajustes_orden a where a.unica;
+    v_pct := coalesce(v_pct, 50);
+
+    -- Desde la 102: el precio de lista del plan de ESE primer pago.
+    v_base := public.base_de_comision(p_empresa, v_primero.plan, v_primero.importe);
+
+    begin
+      -- Desde la 103: y lo que entró en ese primer pago.
+      insert into public.comisiones (
+        socio_id, empresa_id, movimiento_id, base, porcentaje, monto, importe, nota
+      ) values (
+        v_socio.id, p_empresa, v_primero.ingreso, v_base, v_pct,
+        public.monto_de_comision(p_empresa, v_base, v_pct, v_primero.importe),
+        v_primero.importe,
+        'Entró con el enlace el ' || to_char(v_rechazo.intentado_at at time zone 'America/Asuncion', 'DD/MM/YYYY')
+          || ', pero el código fue rechazado (' || coalesce(nullif(v_rechazo.motivo, ''), 'sin motivo') || ') y se anotó después.'
+      );
+      v_comision := true;
+      v_aviso := 'Entró con este código y se había perdido. Se generó la comisión por su primer pago.';
+    exception when unique_violation then
+      v_aviso := 'Entró con este código y se había perdido. Ya tenía una comisión, así que no se generó otra.';
+    end;
+  elsif v_por_enlace then
+    v_aviso := 'Entró con este código y se había perdido. Cuando pague, la comisión sale sola.';
+  elsif v_pagos > 0 then
+    v_aviso := 'Ojo: este negocio ya pagó ' || v_pagos
+            || (case when v_pagos = 1 then ' vez' else ' veces' end)
+            || ' antes de anotarlo. La comisión no se genera por esos pagos, sino con el próximo cobro. Revisá el monto antes de pagarla.';
+  end if;
+
+  -- Resuelto: el rechazo deja de figurar.
+  delete from public.codigos_rechazados where empresa_id = p_empresa;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'asignar_referido', jsonb_build_object(
+    'socio_id', v_socio.id, 'socio', v_socio.nombre, 'codigo', v_socio.codigo,
+    'pagos_previos', v_pagos, 'por_enlace', v_por_enlace, 'comision_generada', v_comision
+  ));
+
+  return jsonb_build_object(
+    'ok', true, 'socio', v_socio.nombre, 'aviso', v_aviso,
+    'por_enlace', v_por_enlace, 'comision_generada', v_comision
+  );
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 5. LA LISTA DE LA ADMINISTRACIÓN (066): TAMBIÉN EL IMPORTE
+--
+--    Copia exacta de la viva (066) sumando 'importe' al lado de 'base'. Es
+--    lo que el panel necesita para decir cuánto pagó el cliente y cuánto le
+--    queda a Orden sin confundirlo con el precio de lista.
+-- ------------------------------------------------------------
+create or replace function public.listar_comisiones(
+  p_estado text default null,
+  p_socio  uuid default null,
+  p_limite integer default 200
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_res jsonb;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Esto es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select coalesce(jsonb_agg(x order by x->>'creado' desc), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'id',         c.id,
+      'socio_id',   c.socio_id,
+      'socio',      s.nombre,
+      'telefono',   s.telefono,
+      'cobra_en',   s.cobra_en,
+      'banco',      s.banco,
+      'titular',    s.titular,
+      'cuenta',     s.cuenta,
+      'documento',  s.documento,
+      'empresa_id', c.empresa_id,
+      'negocio',    coalesce(e.nombre, 'Negocio borrado'),
+      'base',       c.base,
+      'importe',    c.importe,
+      'porcentaje', c.porcentaje,
+      'monto',      c.monto,
+      'estado',     c.estado,
+      'creado',     c.created_at,
+      'pagada_at',  c.pagada_at,
+      'solicitada_at', c.solicitada_at,
+      'medio',      c.medio,
+      'nota',       c.nota,
+      'ingreso_anulado', coalesce(mv.estado::text, '') = 'anulado'
+    ) as x
+    from public.comisiones c
+    join public.socios s on s.id = c.socio_id
+    left join public.empresas e on e.id = c.empresa_id
+    left join public.movimientos mv on mv.id = c.movimiento_id
+    where (p_estado is null or trim(p_estado) = '' or c.estado = p_estado)
+      and (p_socio is null or c.socio_id = p_socio)
+    order by c.created_at desc
+    limit greatest(1, least(coalesce(p_limite, 200), 500))
+  ) t;
+
+  return v_res;
+end $fn$;
+
+-- ------------------------------------------------------------
+-- 6. PERMISOS
+--
+--    Las mismas firmas: `create or replace` conserva los permisos, pero se
+--    reescriben igual, como en la 102 y la 066, para que este archivo diga
+--    por sí solo quién puede llamar cada una.
+-- ------------------------------------------------------------
+revoke all on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric, integer) from public, anon;
+grant execute on function public.cambiar_plan_cuenta(uuid, text, integer, text, numeric, integer) to authenticated;
+
+revoke all on function public.asignar_referido(uuid, text, text) from public, anon;
+grant execute on function public.asignar_referido(uuid, text, text) to authenticated;
+
+revoke all on function public.listar_comisiones(text, uuid, integer) from public, anon;
+grant execute on function public.listar_comisiones(text, uuid, integer) to authenticated;

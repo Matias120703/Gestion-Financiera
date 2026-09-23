@@ -87,6 +87,19 @@ export function nombreCultivo(clave: string | null | undefined, idioma: string):
   return idioma === 'pt' ? c.nombre.pt : c.nombre.es;
 }
 
+/**
+ * Categorías de INGRESO que no son de ninguna campaña: plata prestada o
+ * puesta de tu bolsillo no es lo que una campaña dio. La base no las
+ * cuenta en `cobrado` (100, decisión 14) por este nombre EXACTO, así que
+ * las pantallas ni ofrecen colgarlas de una: Gastos y la captura por voz.
+ */
+export const NO_SON_DE_CAMPANA: readonly string[] = ['Préstamo', 'Aporte'];
+
+/** Si un ingreso con esa categoría puede ir a una campaña (un gasto siempre puede). */
+export function ingresoDeCampana(categoria: string | null | undefined): boolean {
+  return !NO_SON_DE_CAMPANA.includes((categoria ?? '').trim());
+}
+
 /** Saca de 60 kg: es la unidad en que habla el brasiguayo y media Alto Paraná. */
 export const KG_POR_SACA = 60;
 

@@ -136,6 +136,7 @@ export const agriculturaEs: Parcial<Textos> = {
       siloDetalle: 'Cargalo desde la campaña, así te calcula el rendimiento y el precio promedio.',
       irAlLote: 'Ir a la campaña',
       deQueLote: '¿De qué campaña es esta venta?',
+      noSeSumo: 'La venta quedó registrada, pero no se pudo sumar a la campaña. Hacelo desde el historial.',
     },
     captura: {
       deQueLoteEs: '¿De qué campaña es?',
@@ -146,6 +147,7 @@ export const agriculturaEs: Parcial<Textos> = {
   },
   panelCampo: {
     enCurso: 'Campañas en curso',
+    verTodos: 'Ver todas',
     vacio: 'Abrí tu primera campaña',
     vacioDetalle: 'Cargale lo que le vas poniendo y acá vas a ver cómo viene: cuánto llevás por hectárea y cuántos kilos necesitás para cubrir.',
     abrir: 'Abrir una campaña',
@@ -155,6 +157,29 @@ export const agriculturaEs: Parcial<Textos> = {
     cerradasEsteAnio: 'Cerradas este año',
     cerradasDetalle: (n: number) => (n === 1 ? '1 campaña cerrada' : `${n} campañas cerradas`),
     esDeCaja: 'Todo es de caja: plata que entró menos plata que salió. Lo que debés a cosecha no está acá hasta que lo pagues.',
+  },
+
+  // EL ENCARGADO (102). En el campo nadie tiene «vendedores»: el que se
+  // suma con el código es el encargado, que carga gastos y cosecha y no ve
+  // costos. Es el mismo rol `vendedor` de la base; cambia cómo se lo llama.
+  // Se pisaron solo los textos que un agricultor ve adentro de la app: la
+  // lista del equipo, la tabla de permisos, lo que dice Ajustes y la
+  // pantalla de planes. La portada y los mensajes para invitar a otros
+  // negocios hablan de los vendedores de OTRO, y quedan como están.
+  roles: {
+    vendedor: 'Encargado',
+  },
+  pantallas: {
+    // Es la columna del rol en la tabla «Quién puede hacer qué» de Ajustes.
+    colVendedor: 'Encargado',
+    estadoCostosOk: 'Un encargado no puede recuperar el costo de compra, el margen ni la ganancia, ni siquiera consultando la base directamente.',
+  },
+  ajustes: {
+    permisosEnLaBase: 'Estos permisos están aplicados en la base de datos, no en los botones. Los costos de compra ni siquiera salen del servidor para un encargado: le llegan vacíos. Aunque alguien abra la consola del navegador y consulte directamente, no puede recuperarlos. El plan de suscripción no lo cambia nadie desde la aplicación: lo define el sistema de pagos.',
+    pasaleElCodigo: 'Pasale este código a tu encargado. Va a poder cargar gastos, ventas y cosechas, pero no cambiar la configuración.',
+  },
+  plan: {
+    soloUnaPersona: 'Vos solo, sin encargados',
   },
 };
 
@@ -184,6 +209,8 @@ export const agriculturaPt: Parcial<Textos> = {
     nombre: 'Nome do talhão',
     nombreEjemplo: 'Talhão 3, Lavoura da estrada',
     abrir: 'Abrir a safra',
+    // «nele» es del lote; la safra es femenina.
+    todaviaSinNada: 'Você ainda não lançou nada nela.',
   },
   campanas: {
     formulario: {
@@ -218,7 +245,7 @@ export const agriculturaPt: Parcial<Textos> = {
       deudas: 'Dívidas na colheita desta safra',
       sinDeudas: 'Esta safra não deve nada na colheita.',
       faltaLote: 'A liquidação precisa de pelo menos uma safra com quilos.',
-      parteDeDetalle: 'Se mexe a partir da safra: não se edita nem se anula solta.',
+      parteDeDetalle: 'Se mexe a partir da safra: não se edita nem se cancela solta.',
       dosLotes: (n: number) => `Um papel com ${n} safras`,
     },
     deudas: {
@@ -264,15 +291,16 @@ export const agriculturaPt: Parcial<Textos> = {
       deLote: (nombre: string) => `Safra: ${nombre}`,
       sinLote: 'Sem safra',
       sacado: 'Tirado da safra.',
-      parteDeLiquidacionDetalle: 'Se mexe a partir da safra: não se edita nem se anula solta. Anule a liquidação inteira.',
+      parteDeLiquidacionDetalle: 'Se mexe a partir da safra: não se edita nem se cancela solta. Cancele a liquidação inteira.',
       repartido: (n: number) => `Dividido em ${n} safras`,
       anularJuntasPregunta: (n: number) =>
-        `Esta despesa está dividida em ${n} safras. As ${n} partes são anuladas juntas. Seguimos?`,
+        `Esta despesa está dividida em ${n} safras. As ${n} partes são canceladas juntas. Seguimos?`,
     },
     vender: {
       siloDetalle: 'Lance a partir da safra, assim calcula a produtividade e o preço médio.',
       irAlLote: 'Ir pra safra',
       deQueLote: 'De qual safra é esta venda?',
+      noSeSumo: 'A venda ficou registrada, mas não deu pra somar à safra. Faça isso pelo histórico.',
     },
     captura: {
       deQueLoteEs: 'De qual safra é?',
@@ -283,6 +311,7 @@ export const agriculturaPt: Parcial<Textos> = {
   },
   panelCampo: {
     enCurso: 'Safras em andamento',
+    verTodos: 'Ver todas',
     vacio: 'Abra sua primeira safra',
     vacioDetalle: 'Lance o que você vai colocando nela e aqui você vê como vai: quanto já foi por hectare e quantas sacas precisa pra cobrir.',
     abrir: 'Abrir uma safra',
@@ -292,5 +321,21 @@ export const agriculturaPt: Parcial<Textos> = {
     cerradasEsteAnio: 'Fechadas este ano',
     cerradasDetalle: (n: number) => (n === 1 ? '1 safra fechada' : `${n} safras fechadas`),
     esDeCaja: 'Tudo é de caixa: dinheiro que entrou menos dinheiro que saiu. O que você deve na colheita não está aqui até você pagar.',
+  },
+
+  // O encarregado (102): ver o comentário em agriculturaEs.
+  roles: {
+    vendedor: 'Encarregado',
+  },
+  pantallas: {
+    colVendedor: 'Encarregado',
+    estadoCostosOk: 'Um encarregado não consegue descobrir o custo de compra, a margem nem o lucro, nem consultando o banco direto.',
+  },
+  ajustes: {
+    permisosEnLaBase: 'Essas permissões estão aplicadas no banco de dados, não nos botões. Os custos de compra nem saem do servidor pra um encarregado: chegam vazios. Mesmo que alguém abra o console do navegador e consulte direto, não consegue recuperar. O plano de assinatura ninguém muda pelo aplicativo: quem define é o sistema de pagamentos.',
+    pasaleElCodigo: 'Passe este código pro seu encarregado. Ele vai poder lançar despesas, vendas e colheitas, mas não mudar a configuração.',
+  },
+  plan: {
+    soloUnaPersona: 'Só você, sem encarregados',
   },
 };

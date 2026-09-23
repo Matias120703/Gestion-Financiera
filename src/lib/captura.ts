@@ -1,4 +1,4 @@
-import type { Producto } from './tipos';
+import type { CapturaInterpretada, DeudaInterpretada, Producto } from './tipos';
 
 /**
  * El prompt y el esquema con los que se interpreta una captura.
@@ -41,11 +41,55 @@ export type FijoConocido = {
  */
 export type DeudorConocido = { id: string; nombre: string; saldo: number };
 
+/**
+ * Una campaña abierta (100): «Norte · Soja · 50 ha». Para reconocer
+ * «gasté dos millones en semilla para el Norte» y saber CUÁL campaña, igual
+ * que las deudas sirven para saber cuál tarjeta. Ganadería usa lo mismo: sus
+ * lotes son campañas sin cultivo.
+ */
+export type CampanaConocida = {
+  id: string;
+  nombre: string;
+  cultivo: string;
+  campana: string;
+  hectareas: number | null;
+};
+
+/** Los tipos en los que tiene sentido decir de qué campaña es la plata. */
+export const TIPOS_CON_CAMPANA = ['gasto', 'ingreso', 'venta', 'deuda'] as const;
+
+/**
+ * Lo que la captura suma cuando la cuenta tiene campañas. Vive acá y no en
+ * `tipos.ts` para que la ruta y la pantalla lo compartan sin tocar el tipo
+ * de siempre: todo es opcional, así una captura sin campañas sigue siendo
+ * exactamente la de antes.
+ */
+export type DeudaDeVoz = DeudaInterpretada & {
+  /** La categoría del gasto que nace al pagarla («Agroquímicos»). '' o null = «Deudas». */
+  categoria?: string | null;
+};
+
+export type CapturaDeVoz = Omit<CapturaInterpretada, 'deuda'> & {
+  deuda?: DeudaDeVoz | null;
+  /** La campaña, si se la reconoció. Siempre un id REAL: el servidor lo sanea. */
+  lote_id?: string | null;
+  /** Cómo llamó a la campaña cuando no se la encontró («el Sur»). */
+  lote_nombrado?: string | null;
+  /**
+   * Nombró una campaña y no se supo cuál: la pantalla pregunta con chips
+   * ANTES de guardar. Guardarlo sin campaña sería perderle el gasto a la
+   * campaña sin que nadie se entere.
+   */
+  lote_dudoso?: boolean;
+  /** Las campañas abiertas, para los chips. Solo si la cuenta tiene campañas. */
+  lotes?: CampanaConocida[];
+};
+
 /** Esquema estricto: obliga al modelo a devolver exactamente esta forma. */
 export const ESQUEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'items', 'deuda', 'turno', 'producto', 'ficha', 'confianza', 'aviso'],
+  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'lote_id', 'lote_nombrado', 'items', 'deuda', 'turno', 'producto', 'ficha', 'confianza', 'aviso'],
   properties: {
     /**
      * `deuda` y `pago_deuda` se agregaron porque, sin ellos, decir «debo
@@ -73,6 +117,14 @@ export const ESQUEMA = {
     contraparte: { type: ['string', 'null'] },
     /** Para `cobro_fiado` (y `fiado`, si ya debía): el id EXACTO de la lista TE DEBEN. */
     cliente_id: { type: ['string', 'null'] },
+    /**
+     * En gasto, ingreso, venta y deuda: el id EXACTO de la lista CAMPAÑAS
+     * ABIERTAS. Sin campañas, o en cualquier otro tipo, null. Se sanea
+     * contra los ids reales igual que `deuda_id`.
+     */
+    lote_id: { type: ['string', 'null'] },
+    /** Cómo nombró una campaña que NO está en la lista. Si no nombró ninguna, null. */
+    lote_nombrado: { type: ['string', 'null'] },
     /**
      * Lo que no es plata: un turno, algo del catálogo, un cliente nuevo. El
      * dueño pidió que la voz sirva «para todo». Cada objeto se completa solo
@@ -140,7 +192,7 @@ export const ESQUEMA = {
     deuda: {
       type: 'object',
       additionalProperties: false,
-      required: ['clase', 'acreedor', 'cuotas', 'monto_cuota', 'vence_el', 'deuda_id'],
+      required: ['clase', 'acreedor', 'cuotas', 'monto_cuota', 'vence_el', 'deuda_id', 'categoria'],
       properties: {
         clase: { type: ['string', 'null'], enum: ['tarjeta', 'prestamo', 'proveedor', 'otro', null] },
         acreedor: { type: ['string', 'null'] },
@@ -149,6 +201,13 @@ export const ESQUEMA = {
         vence_el: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
         /** Para `pago_deuda`: cuál de las deudas ya cargadas se está pagando. */
         deuda_id: { type: ['string', 'null'] },
+        /**
+         * Para `deuda`: qué se compró debiendo («Agroquímicos»), de la lista
+         * de categorías de gasto. Es la categoría del gasto que nace cuando
+         * se paga (100); sin ella nace como «Deudas» y la campaña no sabe
+         * en qué se le fue la plata.
+         */
+        categoria: { type: ['string', 'null'] },
       },
     },
   },
@@ -186,9 +245,16 @@ export function instrucciones(
    * el bloque de turnos ya armado (turno-voz.ts). Viene de afuera porque
    * depende de la agenda y del rubro de cada negocio.
    */
-  extras: { tipos?: string[]; bloqueTurnos?: string; idioma?: string } = {},
+  extras: {
+    tipos?: string[];
+    bloqueTurnos?: string;
+    idioma?: string;
+    /** Las campañas abiertas (100). Solo en una cuenta que tiene «/lotes». */
+    campanas?: CampanaConocida[];
+  } = {},
 ) {
   const tipos = new Set(extras.tipos ?? []);
+  const campanas = extras.campanas ?? [];
   const conTurnos = tipos.has('turno') && !!extras.bloqueTurnos;
 
   // En qué idioma se escribe lo que la persona va a LEER: el aviso y la
@@ -363,6 +429,52 @@ CÓMO USAR ESA LISTA — importante:
    Para un gasto de la lista, usá la categoría que dice la lista.
 ` : '';
 
+  /**
+   * Las campañas abiertas, con su id: «gasté dos millones en semilla para el
+   * Norte» tiene que caer en el Norte, no quedar como texto en la
+   * descripción y obligar a ir después a la campaña a «sumarlo» — cosa que
+   * nadie hace dos veces.
+   *
+   * La regla de la que no nombra nada es tan importante como la otra: una
+   * campaña adivinada carga el costo de la soja en el maíz, y eso no se ve
+   * hasta la liquidación. Si nombra una que no existe, se deja vacío y se
+   * dice cómo la llamó: la pantalla pregunta con chips antes de guardar.
+   *
+   * Sin campañas el bloque no existe (un título con una lista vacía le
+   * sugiere al modelo que hay algo donde no hay nada), pero la regla de
+   * dejar `lote_id` en null sí: la clave va siempre en la respuesta.
+   */
+  const listaCampanas = campanas.slice(0, 40).map((c) => {
+    const nombre = c.campana ? `${c.nombre} (${c.campana})` : c.nombre;
+    const cultivo = c.cultivo || '—';
+    const ha = c.hectareas != null && Number(c.hectareas) > 0 ? `${Number(c.hectareas)} ha` : '—';
+    return `- ${c.id} · ${nombre} · ${cultivo} · ${ha}`;
+  }).join('\n');
+
+  const bloqueCampanas = campanas.length ? `
+CAMPAÑAS ABIERTAS (id · nombre · cultivo · hectáreas):
+${listaCampanas}
+
+CÓMO USAR ESA LISTA — en "gasto", "ingreso", "venta" y "deuda":
+   La persona las puede llamar por el nombre del lote ("el Norte", "la Parcela 3"),
+   por el cultivo ("la soja"), o con palabras del campo en los dos idiomas:
+   lote, campaña, chacra, parcela, zafra, zafriña, talhão, lavoura, safra, safrinha.
+   - Si el usuario nombra una campaña, poné su id en "lote_id", copiado EXACTO de la lista.
+   - Si nombra una que no está, dejá lote_id vacío (null) y escribí en "lote_nombrado" cómo la llamó.
+   - Si nombra solo el cultivo y hay UNA sola campaña abierta de ese cultivo, es esa.
+     Si hay dos o más que coinciden (dos "Norte", dos de soja), lote_id null y en
+     "lote_nombrado" lo que dijo: la persona elige.
+   - Si no nombra ninguna campaña ni ningún cultivo, "lote_id" y "lote_nombrado" van en null.
+     NO adivines: cargarle a una campaña el gasto de otra arruina su costo por hectárea.
+   - El lote y el cultivo NO son la categoría: la categoría es QUÉ se compró o se pagó.
+   - "gasté dos millones en semilla para el Norte"   → gasto, categoría "Semilla", lote_id del Norte
+   - "paguei o frete da soja do talhão 3"            → gasto, categoría "Fletes", lote_id del talhão 3
+   - "cargué gasoil para el Sur" (y no hay ningún Sur) → gasto, lote_id null, lote_nombrado "el Sur"
+   En cualquier otro tipo, "lote_id" y "lote_nombrado" van en null.
+` : `
+"lote_id" y "lote_nombrado" van siempre en null.
+`;
+
   if (esPersonal) {
     return `Sos el asistente de finanzas personales de alguien en Paraguay. Convertís lenguaje cotidiano en un movimiento financiero estructurado.
 
@@ -431,7 +543,7 @@ ${reglaFiado}
    - cuotas y monto_cuota: solo si los dice. Si no, null.
    - vence_el: solo si menciona una fecha concreta. Si no, null.
    - "monto" es el TOTAL de la deuda.
-   - deuda_id: null.
+   - deuda_id: null. "deuda.categoria": null.
    - Si se parece mucho a una deuda que YA está en la lista, avisalo en
      "aviso": cargar dos veces la misma hace parecer que se debe el doble.
 
@@ -450,7 +562,7 @@ ${reglaFiado}
    - Nunca devuelvas separadores de miles ni símbolos: solo el número.
    ${moneda !== 'PYG' ? `- OJO: la moneda es ${moneda}, los montos chicos SÍ pueden ser literales.` : ''}
 
-5. "items" SIEMPRE va vacío: []. Acá no hay productos. Y "turno", "producto" y "ficha" van siempre con todo en null: en una cuenta personal no hay agenda, ni catálogo, ni clientes.
+5. "items" SIEMPRE va vacío: []. Acá no hay productos. Y "turno", "producto" y "ficha" van siempre con todo en null: en una cuenta personal no hay agenda, ni catálogo, ni clientes. "lote_id" y "lote_nombrado" también van siempre en null.
 
    UNA SOLA EXCEPCIÓN: si te piden anotar un turno, una cita o una hora para alguien
    ("tengo un turno mañana a las ocho", "agendame a Juan el viernes"), devolvé tipo
@@ -499,7 +611,7 @@ ${listaDeudas}
 
 TE DEBEN (clientes con plata pendiente, con lo que falta):
 ${listaDeudores}
-${bloqueFijos}
+${bloqueFijos}${bloqueCampanas}
 REGLAS:
 
 1. TIPO
@@ -564,6 +676,11 @@ ${reglaFiado}
    - vence_el: solo si menciona una fecha concreta. Si no, null.
    - "monto" es el TOTAL de la deuda.
    - deuda_id: null (es una deuda nueva).
+   - "deuda.categoria": si lo que se debe es algo que se compró o un servicio que
+     se contrató ("le debo los agroquímicos a Agrofértil", "debo el flete"), la
+     categoría de gasto de la regla 6 que corresponda, escrita EXACTO como está
+     ahí: es la categoría del gasto que va a nacer cuando la pague. Si es plata
+     prestada, una tarjeta o no queda claro qué se compró, null.
    - SI lo que describe se parece mucho a una deuda que YA está en la lista
      (mismo acreedor, misma clase, monto parecido), igual devolvé "deuda",
      pero avisá en "aviso": "Ya tenés cargada <nombre>. Fijate si no es la
@@ -575,7 +692,7 @@ ${reglaFiado}
      coincida con lo que dijo. Si ninguna coincide con claridad, dejalo en
      null y explicá la duda en "aviso".
    - "monto" es lo que pagó.
-   - Los demás campos de "deuda" van en null.
+   - Los demás campos de "deuda" van en null (también "deuda.categoria").
 
    Para "venta", "gasto" e "ingreso", TODO el objeto "deuda" va en null.
 
@@ -622,4 +739,79 @@ ${reglaFiado}
      lista: "Tarjeta Visa", "Préstamo Banco Atlas", "Fiado del mayorista".
      No pongas el monto adentro del nombre.
    - Nunca inventes datos que no estén en el mensaje.${bloqueIdioma}`;
+}
+
+// ---------------------------------------------------------------------
+// EL SANEO DE LA CAMPAÑA
+//
+// Vive acá y no en la ruta para poder probarlo sin servidor
+// (pruebas/prompt.test.js). La regla es la de `deuda_id`: una instrucción
+// se puede ignorar, esto no.
+// ---------------------------------------------------------------------
+
+/** Minúsculas, sin tildes y sin espacios de más: «Talhão 3» = «talhao 3». */
+function normalizar(texto: string): string {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Lo que se dice antes del nombre y no es el nombre: «el Norte», «la
+ * campaña Norte», «do talhão 3». Se saca para comparar, nunca para guardar.
+ */
+const PALABRAS_DE_ANTES = /^(?:(?:el|la|los|las|del|de|do|da|o|a|lote|campana|chacra|parcela|talhao|lavoura|safra)\s+)+/;
+
+function nombreLimpio(texto: string): string {
+  return normalizar(texto).replace(PALABRAS_DE_ANTES, '').trim();
+}
+
+/**
+ * La campaña de una captura, limpia.
+ *
+ * - `lote_id` tiene que ser uno REAL de las campañas abiertas de ESTA
+ *   cuenta, o no vale: un id inventado le cargaría el gasto a una campaña
+ *   que no existe (la base lo rechazaría con un error que no le explica
+ *   nada a nadie) o, peor, a la de otro.
+ * - Si el modelo no dio un id válido pero sí dijo cómo la llamó, y ese
+ *   nombre coincide con UNA sola campaña, es esa: el modelo a veces
+ *   reconoce el nombre y se equivoca al copiar el id.
+ * - Si nombró algo y no se supo cuál (o inventó el id), `lote_dudoso`: la
+ *   pantalla pregunta antes de guardar.
+ * - Fuera de gasto, ingreso, venta y deuda, o sin campañas, todo en null.
+ */
+export function sanearCampana(
+  datos: { lote_id?: unknown; lote_nombrado?: unknown } | null | undefined,
+  tipo: string,
+  campanas: CampanaConocida[],
+): { lote_id: string | null; lote_nombrado: string | null; lote_dudoso: boolean } {
+  const nada = { lote_id: null, lote_nombrado: null, lote_dudoso: false };
+  if (!(TIPOS_CON_CAMPANA as readonly string[]).includes(tipo) || campanas.length === 0) return nada;
+
+  const id = typeof datos?.lote_id === 'string' ? datos.lote_id.trim() : '';
+  if (id && campanas.some((c) => c.id === id)) return { lote_id: id, lote_nombrado: null, lote_dudoso: false };
+
+  const nombrado = typeof datos?.lote_nombrado === 'string' ? datos.lote_nombrado.trim().slice(0, 60) : '';
+  if (nombrado) {
+    const buscado = nombreLimpio(nombrado);
+    const coinciden = buscado
+      ? campanas.filter((c) => nombreLimpio(c.nombre) === buscado)
+      : [];
+    if (coinciden.length === 1) return { lote_id: coinciden[0].id, lote_nombrado: null, lote_dudoso: false };
+  }
+
+  // Un id que no es de la lista también es «nombró algo»: el modelo creyó
+  // reconocer una campaña. Se pregunta en vez de guardarlo sin campaña.
+  if (nombrado || id) return { lote_id: null, lote_nombrado: nombrado || null, lote_dudoso: true };
+  return nada;
+}
+
+/**
+ * La categoría de una deuda nueva, solo si es una de las de gasto de la
+ * cuenta, escrita como está en la lista. Cualquier otra cosa vuelve '' (la
+ * base la guarda como «Deudas» al pagarla): una categoría inventada crearía
+ * un casillero que nadie armó.
+ */
+export function sanearCategoriaDeuda(valor: unknown, categorias: CategoriaSugerida[]): string {
+  if (typeof valor !== 'string' || !valor.trim()) return '';
+  const buscado = normalizar(valor);
+  return categorias.find((c) => normalizar(c.nombre) === buscado)?.nombre.slice(0, 60) ?? '';
 }

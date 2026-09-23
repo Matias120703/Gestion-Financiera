@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { useTextos, useLocale } from '@/i18n/cliente';
-import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useTextos, useLocale, useIdioma } from '@/i18n/cliente';
+import type { Textos } from '@/i18n/diccionarios';
+import { metodoVisible } from '@/i18n/nombres';
+import { categoriaDelRubro } from '@/i18n/textos/gastos-campana';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { type Moneda, dinero, numero, fechaLarga } from '@/lib/formato';
-import type { Movimiento, Rol, TipoMovimiento } from '@/lib/tipos';
+import { type Moneda, dinero, numero, fechaLarga, vistaDe } from '@/lib/formato';
+import type { Lote, Movimiento, Rol, TipoMovimiento } from '@/lib/tipos';
+import { cultivoVisible } from '@/components/campanas/utiles';
 import { Vacio } from '@/components/Piezas';
 import { puedeAnular } from '@/lib/permisos';
 import { mensajeDeError } from '@/lib/errores';
@@ -23,9 +26,239 @@ const FILTROS: { valor: 'todos' | TipoMovimiento; texto: 'filtroTodo' | 'filtroV
   { valor: 'ingreso', texto: 'filtroIngresos' },
 ];
 
+/* ============================================================================
+ * LA CAMPAÑA DE CADA MOVIMIENTO (100)
+ *
+ * Lo que sigue lo usan el historial y la lista de Gastos por igual, y por
+ * eso vive acá y se exporta.
+ *
+ * `pagina_movimientos` (047) no devuelve a qué campaña pertenece cada
+ * movimiento, ni si nació dentro de una liquidación o de un reparto. En vez
+ * de redefinir esa función —que alimenta el historial de todos los rubros—
+ * se piden esas columnas aparte, solo para los ids que ya están en pantalla
+ * y solo en los negocios que tienen lotes. La 044 y la 100 dieron `grant
+ * select` justo de esas columnas, y la política de la 047 ya decide qué
+ * filas ve cada uno.
+ * ========================================================================== */
+
+/**
+ * Lo mínimo de una campaña para ofrecerla en un chip. Sin los números: no
+ * hacen falta y pesan. Lo arma cada página del servidor (una función de
+ * este archivo no se puede llamar desde allá: es un módulo del navegador).
+ */
+export type CampanaParaElegir = Pick<Lote, 'id' | 'nombre' | 'cultivo' | 'campana' | 'hectareas' | 'abierto_el' | 'estado'>;
+
+/**
+ * «Norte · Soja»: con dos campañas del mismo lote abiertas, el cultivo es
+ * lo que las separa. El cultivo se guarda en español («Maíz») y se dice en
+ * el idioma de quien mira («Milho») con `cultivoVisible`, la misma de la
+ * tarjeta de la campaña.
+ */
+export function etiquetaCampana(c: CampanaParaElegir, idioma: string): string {
+  const cultivo = c.cultivo ? cultivoVisible(c.cultivo, idioma) : '';
+  return cultivo ? `${c.nombre} · ${cultivo}` : c.nombre;
+}
+
+export interface VinculoDeCampana {
+  lote_id: string | null;
+  liquidacion_id: string | null;
+  reparto_id: string | null;
+  monto_original: number | null;
+  moneda_original: string | null;
+  cambio: number | null;
+}
+
+/** Una parte de un gasto repartido entre campañas. */
+export interface ParteDeReparto {
+  id: string;
+  estado: string;
+  lote_id: string | null;
+  monto: number;
+  fecha: string;
+  creado_por: string | null;
+}
+
+const COLUMNAS_VINCULO = 'id, lote_id, liquidacion_id, reparto_id, monto_original, moneda_original, cambio';
+
+/**
+ * Los vínculos de campaña de los movimientos que están en pantalla.
+ *
+ * Mientras no llegan, `conocido(id)` da false y la pantalla NO ofrece anular
+ * ese movimiento: un gasto que nació dentro de una liquidación anulado suelto
+ * deja el papel del silo sin cuadrar, y eso no se arregla después. Un botón
+ * que aparece medio segundo tarde es mucho mejor que eso.
+ */
+export function useVinculosDeCampana(ids: string[], activo: boolean) {
+  const [vinculos, setVinculos] = useState<Record<string, VinculoDeCampana>>({});
+  const [repartos, setRepartos] = useState<Record<string, ParteDeReparto[]>>({});
+  const [vuelta, setVuelta] = useState(0);
+  const clave = activo ? ids.join(',') : '';
+
+  useEffect(() => {
+    if (!clave) return;
+    let vivo = true;
+    (async () => {
+      const supabase = clienteNavegador();
+      const lista = clave.split(',');
+      const nuevos: Record<string, VinculoDeCampana> = {};
+      // De a cien: una lista de ids muy larga no entra en la dirección del pedido.
+      for (let i = 0; i < lista.length; i += 100) {
+        const { data, error } = await supabase
+          .from('movimientos').select(COLUMNAS_VINCULO).in('id', lista.slice(i, i + 100));
+        if (error || !vivo) return;
+        for (const f of (data ?? []) as any[]) {
+          nuevos[f.id] = {
+            lote_id: f.lote_id ?? null,
+            liquidacion_id: f.liquidacion_id ?? null,
+            reparto_id: f.reparto_id ?? null,
+            monto_original: f.monto_original === null || f.monto_original === undefined ? null : Number(f.monto_original),
+            moneda_original: f.moneda_original ?? null,
+            cambio: f.cambio === null || f.cambio === undefined ? null : Number(f.cambio),
+          };
+        }
+      }
+      const idsReparto = Array.from(new Set(Object.values(nuevos).map((v) => v.reparto_id).filter((x): x is string => Boolean(x))));
+      const partes: Record<string, ParteDeReparto[]> = {};
+      for (let i = 0; i < idsReparto.length; i += 100) {
+        const { data, error } = await supabase
+          .from('movimientos').select('id, estado, lote_id, monto, fecha, creado_por, reparto_id')
+          .in('reparto_id', idsReparto.slice(i, i + 100));
+        if (error || !vivo) return;
+        for (const f of (data ?? []) as any[]) {
+          (partes[f.reparto_id] ??= []).push({
+            id: f.id, estado: f.estado, lote_id: f.lote_id ?? null, monto: Number(f.monto),
+            fecha: f.fecha, creado_por: f.creado_por ?? null,
+          });
+        }
+      }
+      if (!vivo) return;
+      setVinculos((prev) => ({ ...prev, ...nuevos }));
+      setRepartos((prev) => ({ ...prev, ...partes }));
+    })();
+    return () => { vivo = false; };
+  }, [clave, vuelta]);
+
+  const recargar = useCallback(() => setVuelta((n) => n + 1), []);
+  const conocido = useCallback((id: string) => !activo || id in vinculos, [activo, vinculos]);
+  return { vinculos, repartos, recargar, conocido };
+}
+
+/** «Combustible» de «2/3 · Combustible»: la descripción sin el número de parte. */
+export function sinNumeroDeParte(descripcion: string): string {
+  return descripcion.replace(/^\d+\/\d+ · /, '');
+}
+
+/**
+ * Anula todas las partes activas de un reparto, una por una, con el mismo
+ * camino de siempre (`anular_movimiento`). Si una falla, las anteriores ya
+ * quedaron anuladas: se dice cuántas, y volver a intentar anula las que
+ * faltan (las ya anuladas no se vuelven a mandar).
+ */
+export async function anularPartes(partes: ParteDeReparto[], motivo: string, t: Textos): Promise<number> {
+  const activas = partes.filter((p) => p.estado === 'activo');
+  const supabase = clienteNavegador();
+  let hechas = 0;
+  for (const p of activas) {
+    const { error } = await supabase.rpc('anular_movimiento', { p_movimiento: p.id, p_motivo: motivo || null });
+    if (error) {
+      if (hechas === 0) throw new Error(mensajeDeError(error, t.gastos.noSePudoAnular));
+      throw new Error(t.gastosCampana.historial.anuladasAMedias(hechas, activas.length));
+    }
+    hechas += 1;
+  }
+  return hechas;
+}
+
+/** El dólar como lo dice la persona («6.000») a partir del cambio guardado. */
+export function dolarDeCambio(propia: string, original: string, cambio: number): number {
+  if (propia === 'USD' && original === 'PYG' && cambio > 0) return Math.round((1 / cambio) * 100) / 100;
+  return cambio;
+}
+
+/**
+ * Elegir la campaña de un movimiento que ya está cargado: una hoja desde
+ * abajo en el celular, con un chip por campaña abierta. Un toque y listo.
+ */
+export function HojaCampana({
+  titulo, actual, campanas, nombreActual, onElegir, onCerrar,
+}: {
+  titulo: string;
+  actual: string | null;
+  campanas: CampanaParaElegir[];
+  /** El nombre de la campaña actual, aunque esté cerrada y no sea un chip. */
+  nombreActual: string | null;
+  onElegir: (lote: string | null) => Promise<void>;
+  onCerrar: () => void;
+}) {
+  const t = useTextos();
+  const idioma = useIdioma();
+  const [trabajando, setTrabajando] = useState(false);
+  const [error, setError] = useState('');
+
+  async function elegir(lote: string | null) {
+    if (trabajando) return;
+    setTrabajando(true);
+    setError('');
+    try {
+      await onElegir(lote);
+    } catch (e: any) {
+      setError(e?.message || t.gastosCampana.historial.noSePudo);
+      setTrabajando(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4"
+      onClick={() => !trabajando && onCerrar()}
+    >
+      <div
+        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />
+        <h2 className="text-[18px] font-bold tracking-tight">{t.gastosCampana.historial.asignar}</h2>
+        <p className="mt-1 truncate text-[13.5px] text-tinta/55">{titulo}</p>
+        <p className="mt-2 text-[12.5px] font-semibold text-tinta/45">
+          {nombreActual ? t.gastosCampana.historial.deLote(nombreActual) : t.gastosCampana.historial.sinLote}
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {campanas.map((c) => (
+            <button
+              key={c.id} type="button" disabled={trabajando} onClick={() => elegir(c.id)}
+              aria-pressed={actual === c.id}
+              className={`${actual === c.id ? 'chip-encendido' : 'chip-apagado'} min-h-[44px]`}
+            >
+              {etiquetaCampana(c, idioma)}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+
+        <div className={`mt-5 grid gap-2.5 ${actual ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar} disabled={trabajando}>
+            {t.comun.cerrar}
+          </button>
+          {actual && (
+            <button
+              type="button" disabled={trabajando} onClick={() => elegir(null)}
+              className="boton min-h-[48px] border border-borde bg-superficie text-rojo hover:bg-rojo-claro"
+            >
+              {t.gastosCampana.historial.sacar}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ListaMovimientos({
   movimientos: inicial, cursorInicial, total, desde, hasta,
   moneda, rol, userId, hoy, cargarPagina, empresaId, guardaComprobantes = false,
+  campanas = [], conCampanas = false,
 }: {
   empresaId: string;
   /** Del plan: si el plan no guarda comprobantes, no se ofrece agregarlos. */
@@ -45,16 +278,27 @@ export function ListaMovimientos({
     desde: string, hasta: string, cursor: Cursor | null,
     filtros: { tipo?: TipoMovimiento | null; incluirAnuladas?: boolean; busqueda?: string | null },
   ) => Promise<{ movimientos: Movimiento[]; siguiente: Cursor | null }>;
+  /**
+   * Todas las campañas del negocio, abiertas y cerradas (100): las cerradas
+   * para poder nombrar la de un movimiento viejo; los chips, solo abiertas.
+   */
+  campanas?: CampanaParaElegir[];
+  /** Si el negocio tiene lotes (`ficha.secciones['/lotes']`). */
+  conCampanas?: boolean;
 }) {
   const t = useTextos();
   const locale = useLocale();
+  const idioma = useIdioma();
   const router = useRouter();
   const [filtro, setFiltro] = useState<'todos' | TipoMovimiento>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [abierto, setAbierto] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
   const [verAnuladas, setVerAnuladas] = useState(true);
   const [aAnular, setAAnular] = useState<Movimiento | null>(null);
+  const [aAnularJuntas, setAAnularJuntas] = useState<{ movimiento: Movimiento; partes: ParteDeReparto[] } | null>(null);
+  const [aElegir, setAElegir] = useState<Movimiento | null>(null);
 
   // El historial se pagina contra el servidor: nunca se descarga el periodo
   // entero. Los filtros también viajan al servidor, así no filtramos sobre
@@ -63,6 +307,15 @@ export function ListaMovimientos({
   const [cursor, setCursor] = useState<Cursor | null>(cursorInicial);
   const [cargando, startTransition] = useTransition();
   const primeraVez = useRef(true);
+
+  const ids = useMemo(() => movimientos.map((m) => m.id), [movimientos]);
+  const { vinculos, repartos, recargar, conocido } = useVinculosDeCampana(ids, conCampanas);
+  const abiertas = useMemo(() => campanas.filter((c) => c.estado === 'abierto'), [campanas]);
+  const nombreDe = useMemo(() => {
+    const mapa = new Map(campanas.map((c) => [c.id, etiquetaCampana(c, idioma)]));
+    return (id: string | null | undefined) => (id ? mapa.get(id) ?? null : null);
+  }, [campanas, idioma]);
+  const propia = vistaDe(moneda).propia;
 
   // Cuando cambian los filtros, volvemos a pedir la página 1 al servidor.
   useEffect(() => {
@@ -126,6 +379,11 @@ export function ListaMovimientos({
     return Array.from(mapa.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
   }, [movimientos]);
 
+  function avisar(texto: string) {
+    setAviso(texto);
+    setTimeout(() => setAviso(''), 3400);
+  }
+
   async function anular(id: string, motivo: string) {
     setError('');
     const supabase = clienteNavegador();
@@ -135,6 +393,32 @@ export function ListaMovimientos({
     });
     if (error) throw new Error(mensajeDeError(error, t.gastos.noSePudoAnular));
     setAAnular(null);
+    recargar();
+    router.refresh();
+  }
+
+  /** Las N partes de un gasto repartido, juntas: anular una sola dejaría el gasto a medias. */
+  async function anularJuntas(partes: ParteDeReparto[], motivo: string) {
+    setError('');
+    try {
+      const hechas = await anularPartes(partes, motivo, t);
+      setAAnularJuntas(null);
+      avisar(t.gastosCampana.historial.anuladasJuntas(hechas));
+    } finally {
+      // Aunque falle a medias, lo que ya se anuló tiene que verse.
+      recargar();
+      router.refresh();
+    }
+  }
+
+  async function asignar(m: Movimiento, lote: string | null) {
+    const supabase = clienteNavegador();
+    const { error } = await supabase.rpc('asignar_a_lote', { p_movimiento: m.id, p_lote: lote });
+    if (error) throw new Error(mensajeDeError(error, t.gastosCampana.historial.noSePudo));
+    setAElegir(null);
+    const nombre = nombreDe(lote);
+    avisar(lote && nombre ? t.gastosCampana.historial.asignado(nombre) : t.gastosCampana.historial.sacado);
+    recargar();
     router.refresh();
   }
 
@@ -171,6 +455,11 @@ export function ListaMovimientos({
       </label>
 
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      {aviso && (
+        <p role="status" aria-live="polite" className="rounded-xl bg-verde-claro px-3 py-2.5 text-[13px] font-semibold text-verde-fuerte">
+          {aviso}
+        </p>
+      )}
 
       {porDia.length === 0 ? (
         <div className="tarjeta">
@@ -197,7 +486,15 @@ export function ListaMovimientos({
                     const items = m.movimiento_items ?? [];
                     const ganancia = Number(m.monto) - Number(m.costo_total);
                     const anulado = m.estado === 'anulado';
-                    const sePuedeAnular = puedeAnular({ rol, userId }, m, hoy);
+                    const v = vinculos[m.id];
+                    // Nació dentro de una liquidación: se maneja desde la
+                    // campaña, entera. Suelto no se anula ni se mueve.
+                    const deLiquidacion = Boolean(v?.liquidacion_id);
+                    const partes = v?.reparto_id ? repartos[v.reparto_id] ?? [] : [];
+                    const repartido = partes.length > 1;
+                    const partesActivas = partes.filter((p) => p.estado === 'activo');
+                    const sePuedeAnular = puedeAnular({ rol, userId }, m, hoy) && conocido(m.id) && !deLiquidacion;
+                    const nombreLote = nombreDe(v?.lote_id);
                     return (
                       <li key={m.id} className={anulado ? 'bg-arena/60' : ''}>
                         <div className="flex items-center gap-3 px-4 py-3">
@@ -220,11 +517,12 @@ export function ListaMovimientos({
                               </span>
                               <span className="block truncate text-[12px] text-tinta/45">
                                 {anulado && <span className="font-bold text-rojo">{t.pantallas.anulada} · </span>}
-                                {categoriaVisible(t, m.categoria)} · {metodoVisible(t, m.metodo_pago)}
+                                {categoriaDelRubro(t, m.categoria)} · {metodoVisible(t, m.metodo_pago)}
                                 {m.contraparte ? ` · ${m.contraparte}` : ''}
                                 {items.length > 0 ? ` · ${t.movimientos.productos(items.length)}` : ''}
                                 {Number(m.descuento) > 0 ? ` · ${t.movimientos.descuentoCorto(dinero(Number(m.descuento), moneda, false))}` : ''}
                                 {m.origen !== 'manual' ? ` · ${t.movimientos.porIA}` : ''}
+                                {nombreLote ? ` · ${nombreLote}` : ''}
                               </span>
                             </span>
                             <span className="shrink-0 text-right">
@@ -243,7 +541,10 @@ export function ListaMovimientos({
 
                           {sePuedeAnular && (
                             <button
-                              type="button" onClick={() => setAAnular(m)}
+                              type="button"
+                              onClick={() => (repartido
+                                ? setAAnularJuntas({ movimiento: m, partes })
+                                : setAAnular(m))}
                               aria-label={t.pantallas.anular} title={t.movimientos.anularEste}
                               className="icono-toque shrink-0 text-tinta/25 transition hover:bg-rojo-claro hover:text-rojo"
                             >
@@ -303,6 +604,63 @@ export function ListaMovimientos({
                               </p>
                             )}
 
+                            {/* LA CAMPAÑA (100). De qué campaña es, lo que
+                                se pagó en la otra moneda, y las dos cosas
+                                que no se tocan sueltas: lo que nació en una
+                                liquidación y las partes de un reparto. */}
+                            {conCampanas && v && (
+                              <div className="mt-3 space-y-2.5 border-t border-borde pt-3">
+                                {v.monto_original !== null && v.moneda_original && v.cambio !== null && (
+                                  <p className="text-[12.5px] text-tinta/55">
+                                    {t.gastosCampana.moneda.original(
+                                      dinero(v.monto_original, v.moneda_original),
+                                      numero(dolarDeCambio(propia, v.moneda_original, v.cambio), locale),
+                                    )}
+                                  </p>
+                                )}
+
+                                {deLiquidacion ? (
+                                  <div className="rounded-lg bg-ambar-claro px-3 py-2 text-[12.5px] text-ambar">
+                                    <p className="font-bold">
+                                      {t.gastosCampana.historial.parteDeLiquidacion(m.fecha.slice(8, 10) + '/' + m.fecha.slice(5, 7))}
+                                      {nombreLote ? ` · ${nombreLote}` : ''}
+                                    </p>
+                                    <p className="mt-0.5 leading-snug">{t.gastosCampana.historial.parteDeLiquidacionDetalle}</p>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-[13px] font-semibold text-tinta/65">
+                                      {nombreLote ? t.gastosCampana.historial.deLote(nombreLote) : t.gastosCampana.historial.sinLote}
+                                    </span>
+                                    {!anulado && (abiertas.length > 0 || v.lote_id) && (
+                                      <button
+                                        type="button" onClick={() => setAElegir(m)}
+                                        className="boton-suave min-h-[44px] px-4 text-[13.5px]"
+                                      >
+                                        {t.gastosCampana.historial.accion}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+
+                                {repartido && (
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-[12.5px] font-semibold text-tinta/55">
+                                      {t.gastosCampana.historial.repartido(partes.length)}
+                                    </span>
+                                    {sePuedeAnular && partesActivas.length > 0 && (
+                                      <button
+                                        type="button" onClick={() => setAAnularJuntas({ movimiento: m, partes })}
+                                        className="boton min-h-[44px] border border-borde bg-superficie px-4 text-[13.5px] text-rojo hover:bg-rojo-claro"
+                                      >
+                                        {t.gastosCampana.historial.anularJuntas(partesActivas.length)}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {/* Los comprobantes se piden recién acá, cuando
                                 alguien despliega la fila. Traerlos para las
                                 cien filas de la página sería gastar red para
@@ -346,6 +704,32 @@ export function ListaMovimientos({
           moneda={moneda}
           onCerrar={() => setAAnular(null)}
           onConfirmar={(motivo) => anular(aAnular.id, motivo)}
+        />
+      )}
+
+      {/* El mismo diálogo de siempre, con el gasto entero: la descripción sin
+          «1/3 ·» y la suma de las partes que siguen activas. */}
+      {aAnularJuntas && (
+        <DialogoAnular
+          movimiento={{
+            ...aAnularJuntas.movimiento,
+            descripcion: `${sinNumeroDeParte(aAnularJuntas.movimiento.descripcion)} · ${t.gastosCampana.historial.repartido(aAnularJuntas.partes.length)}`,
+            monto: aAnularJuntas.partes.filter((p) => p.estado === 'activo').reduce((s, p) => s + p.monto, 0),
+          }}
+          moneda={moneda}
+          onCerrar={() => setAAnularJuntas(null)}
+          onConfirmar={(motivo) => anularJuntas(aAnularJuntas.partes, motivo)}
+        />
+      )}
+
+      {aElegir && (
+        <HojaCampana
+          titulo={aElegir.descripcion || t.gastos.sinDescripcion}
+          actual={vinculos[aElegir.id]?.lote_id ?? null}
+          nombreActual={nombreDe(vinculos[aElegir.id]?.lote_id)}
+          campanas={abiertas}
+          onElegir={(lote) => asignar(aElegir, lote)}
+          onCerrar={() => setAElegir(null)}
         />
       )}
     </div>

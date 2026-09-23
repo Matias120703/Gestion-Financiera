@@ -125,7 +125,7 @@ export const es = {
     recomendar: 'Invitaciones',
     // La píldora de arriba, siempre a la vista (como «Gana 50» en Wise).
     ganar: 'Ganá 50%',
-    ganarDetalle: 'Invitá a alguien a Orden y ganá la mitad de su primer pago',
+    ganarDetalle: 'Invitá a alguien a Orden y ganá la mitad del precio de su plan, con su primer pago',
     panelOrden: 'Panel de Orden',
     billetera: 'Billetera',
 
@@ -901,7 +901,7 @@ export const es = {
     ],
     vendedorExtra: (monto: string) => `Cada vendedor arriba de los 2 de Pro suma ${monto} al mes. Escribinos y te pasamos el número exacto.`,
     vendedoresNoPagan: '**Tus vendedores no pagan nada.** La suscripción la paga una sola persona: el dueño del negocio. Ellos entran con su cuenta, cargan lo suyo y listo.',
-    recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás gratis: si traés un negocio, te llevás la mitad de su primer pago.',
+    recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás gratis: si traés un negocio, te llevás la mitad del precio de su plan, con su primer pago.',
     comoFunciona: 'Cómo funciona',
     // La promo de la racha durante la prueba (078).
     descuentoPrueba: (pct: number, negocio: number, personal: number) =>
@@ -925,16 +925,16 @@ export const es = {
     porMes: '/ mes',
 
     unExtra: 'Un extra',
-    recomendarTitulo: 'Traé a alguien a Orden y llevate la mitad de su primer pago',
-    recomendarBajada: 'Puede ser un negocio que todavía anota sus ventas en un cuaderno, o una persona que no sabe en qué se le va el sueldo: las dos cuentas valen igual. Si entra con tu enlace y paga su primer mes, **la mitad de ese pago es tuya** —sea el plan que sea—. Una sola vez por cada cuenta, y sin tope: podés traer uno o veinte.',
+    recomendarTitulo: 'Traé a alguien a Orden y llevate la mitad del precio de su plan, con su primer pago',
+    recomendarBajada: 'Puede ser un negocio que todavía anota sus ventas en un cuaderno, o una persona que no sabe en qué se le va el sueldo: las dos cuentas valen igual. Si entra con tu enlace y paga su primer mes, **te llevás la mitad del precio de su plan** —sea el plan que sea—. Una sola vez por cada cuenta, y sin tope: podés traer uno o veinte.',
     tuEnlaceAdentro: 'Tu enlace está adentro, en «Invitaciones».',
     paso1Titulo: 'Compartís tu enlace',
     paso1: 'Cada cuenta tiene el suyo. Sirve igual para un negocio o para una persona.',
     paso2Titulo: 'Paga su primer mes',
     paso2: 'Mientras prueba gratis no pasa nada. Se cuenta cuando paga de verdad.',
-    paso3Titulo: 'Te transferimos la mitad',
+    paso3Titulo: 'Te transferimos la mitad de su plan',
     paso3: 'A tu banco o tu billetera. Vos ponés los datos una vez.',
-    recomendarLetraChica: 'Lo que esa cuenta pague de ahí en adelante ya no entra: la comisión es por el primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la mitad de lo que esa persona paga, traer un negocio deja más que traer una cuenta personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.',
+    recomendarLetraChica: 'Aunque pague con descuento o pague el año entero, te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra: la comisión nace con su primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la mitad del precio de su plan, traer un negocio deja más que traer una cuenta personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.',
 
     enTuCelular: 'En tu celular',
     instalarTitulo: 'Cómo poner Orden en tu pantalla de inicio',
@@ -1009,6 +1009,8 @@ export const es = {
 
     pedidoIlegible: 'Pedido ilegible.',
     planDesconocido: 'Plan desconocido.',
+    // Cada rubro ofrece solo los planes que le sirven (102).
+    planNoEsDeTuRubro: 'Ese plan no está entre los de tu cuenta. Elegí uno de los que aparecen en «Tu plan».',
     noEncontramosNegocio: 'No encontramos tu negocio.',
     soloAdminContrata: 'Solo el propietario o un administrador puede contratar el plan.',
     noSeLeyeronPrecios: 'No pudimos leer los precios.',
@@ -1299,7 +1301,7 @@ export const es = {
     quieroMiEnlace: 'Quiero mi enlace',
     noTeCompromete: 'No te compromete a nada. Es un enlace tuyo, lo usás si querés.',
     titulo: 'Invitaciones',
-    bajada: 'Pasá tu enlace. Cuando alguien crea su cuenta con él y paga su primer mes, la mitad de ese pago es tuya.',
+    bajada: 'Pasá tu enlace. Cuando alguien crea su cuenta con él y paga su primer mes, te llevás la mitad del precio de su plan.',
     pausado: 'Tu código está pausado: por ahora no suma referidos nuevos. Escribinos y lo vemos.',
     trajiste: 'Trajiste',
     cuentasCreadas: (n: number): string => (n === 1 ? 'cuenta creada con tu enlace' : 'cuentas creadas con tu enlace'),
@@ -1320,8 +1322,8 @@ export const es = {
     entroEl: (fecha: string) => `entró el ${fecha}`,
 
     promesaTitulo: 'Invitá y ganá',
-    promesaBajada: 'Conocés negocios que anotan todo en un cuaderno. Pasales tu enlace: cuando uno crea su cuenta y paga su primer mes, **la mitad de ese pago es tuya**.',
-    promesaUnaVez: '· Se cobra **una sola vez** por cada negocio, sobre su primer pago. Lo que pague después ya no entra.',
+    promesaBajada: 'Conocés negocios que anotan todo en un cuaderno. Pasales tu enlace: cuando uno crea su cuenta y paga su primer mes, **te llevás la mitad del precio de su plan**.',
+    promesaUnaVez: '· Se cobra **una sola vez** por cada negocio, con su primer pago. Aunque pague con descuento o pague el año entero, te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra.',
     promesaDeVerdad: '· Se cobra cuando el negocio **paga de verdad**, no cuando crea la cuenta ni cuando prueba gratis.',
     promesaSinTope: '· Te lo transferimos a donde nos digas. No hay tope: podés traer uno o veinte.',
     promesaNoVale: '· No vale traerte a vos mismo ni al negocio donde trabajás.',
@@ -1420,7 +1422,7 @@ export const es = {
     copiar: 'Copiar',
     mandar: 'Mandar',
     verComoVa: 'Ver cómo va →',
-    conocesAAlguien: '¿Conocés a alguien que todavía anota esto en un cuaderno? Si entra con tu enlace y paga su primer mes, **la mitad de ese pago es tuya**.',
+    conocesAAlguien: '¿Conocés a alguien que todavía anota esto en un cuaderno? Si entra con tu enlace y paga su primer mes, **te llevás la mitad del precio de su plan**.',
     unSegundo: 'Un segundo…',
     mandarMiEnlace: 'Mandar mi enlace',
     ahoraNo: 'Ahora no',
@@ -1897,7 +1899,7 @@ export const es = {
     activarEstePlan: 'Activar este plan',
     suscribirme: 'Suscribirme',
     podesBajar: 'Podés bajar lo que pagás',
-    podesBajarDetalle: 'Traé un negocio con tu enlace y te llevás la mitad de su primer pago. Está en todos los planes, incluso mientras probás.',
+    podesBajarDetalle: 'Traé un negocio con tu enlace y te llevás la mitad del precio de su plan, con su primer pago. Está en todos los planes, incluso mientras probás.',
     ver: 'Ver →',
 
     // El descuento que se gana con la racha durante la prueba (078).
@@ -2108,6 +2110,15 @@ export const es = {
     archivarConfirmar: 'La sacamos de la lista. Los pagos que registraste quedan.',
     verSaldadas: 'Ver también las saldadas',
     soloAdmin: 'Las deudas del negocio las ve y las maneja la administración.',
+  },
+
+  // Cómo se llama cada rol en la lista del equipo. Estaba fijo en
+  // permisos.ts y en portugués se leía en español; en el campo, además, el
+  // vendedor es el encargado (ver textos/agricultura.ts) (102).
+  roles: {
+    propietario: 'Propietario',
+    admin: 'Administrador',
+    vendedor: 'Vendedor',
   },
 
   equipo: {
@@ -2589,7 +2600,7 @@ export const es = {
     },
     socio: {
       entroTitulo: (persona: string) => `${persona} entró con tu enlace`,
-      entroCuerpo: 'Creó su cuenta. Cuando pague su primer mes, la mitad es tuya.',
+      entroCuerpo: 'Creó su cuenta. Cuando pague su primer mes, te llevás la mitad del precio de su plan.',
       comisionTitulo: (persona: string) => `${persona} pagó su primer mes`,
       comisionCuerpo: (monto: string) => `Ganaste ${monto}. Ya está en tu saldo para retirar.`,
     },

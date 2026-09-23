@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { checkoutPagopar, checkoutStripe, pasarelaActiva, type PedidoDeCobro } from '@/lib/pagos';
-import type { Precio } from '@/lib/tipos';
+import type { DatosEmpresa, Precio } from '@/lib/tipos';
+import { fichaDe } from '@/lib/rubros';
 import { textos } from '@/i18n';
 
 export const runtime = 'nodejs';
@@ -51,6 +52,28 @@ export async function POST(request: Request) {
       { error: s.soloAdminContrata },
       { status: 403 },
     );
+  }
+
+  /**
+   * SOLO LOS PLANES DE SU RUBRO (102).
+   *
+   * La pantalla ya muestra solo esos, pero el pedido se puede armar a mano:
+   * un profe no contrata Premium porque escribió `negocio` en la consola.
+   * La única excepción es el plan que YA está pagando —igual que en la
+   * pantalla, nunca se le quita nada a nadie—, así puede renovarlo aunque
+   * su rubro hoy no lo ofrezca. Estar en prueba no cuenta como pagarlo.
+   */
+  const [{ data: empresa }, { data: datos }] = await Promise.all([
+    supabase.from('empresas').select('rubro, tipo_cuenta').eq('id', empresaId).maybeSingle(),
+    supabase.rpc('datos_empresa', { p_empresa: empresaId }),
+  ]);
+  if (!empresa) {
+    return NextResponse.json({ error: s.noEncontramosNegocio }, { status: 400 });
+  }
+  const info = datos as DatosEmpresa | null;
+  const yaLoPaga = info?.suscripcion?.en_prueba === false && info.plan_efectivo === plan;
+  if (!fichaDe(empresa.rubro, empresa.tipo_cuenta).planes.includes(plan) && !yaLoPaga) {
+    return NextResponse.json({ error: s.planNoEsDeTuRubro }, { status: 400 });
   }
 
   // El precio, de la base.
