@@ -1166,6 +1166,12 @@ export const es = {
       `${clases} ${clases === 1 ? 'clase' : 'clases'} · ${horas} ${horas === '1' ? 'hora' : 'horas'} · total`,
     choca: (fecha: string, hora: string, alumno: string) => `El ${fecha} a las ${hora} ya tenés a ${alumno}`,
     yMas: (n: number) => `y ${n} ${n === 1 ? 'choque más' : 'choques más'}`,
+    // La clase en grupo (108): tenis, natación, baile. El choque deja de
+    // frenar cuando el profe dice que van juntos.
+    enGrupo: 'Es una clase en grupo: van juntos',
+    enGrupoDetalle: 'Cada uno queda con su clase a la misma hora, y se cobra aparte.',
+    vaCon: (fecha: string, hora: string, alumno: string) => `El ${fecha} a las ${hora} va con ${alumno}`,
+    yMasJuntos: (n: number) => `y ${n} más`,
     yaPago: '¿Ya te pagó?',
     siAhora: 'Sí, ahora',
     todaviaNo: 'Todavía no',

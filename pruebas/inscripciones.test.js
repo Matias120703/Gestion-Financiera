@@ -16,7 +16,9 @@
  *   · que un horario ya ocupado frene TODA la inscripción, no la mitad;
  *   · que se gane al cobrar: sin pagar no hay venta, y aparece por cobrar;
  *   · que cerrar una inscripción libere el horario;
- *   · y que el cobro entre al banco donde llegó la plata (095).
+ *   · que el cobro entre al banco donde llegó la plata (095);
+ *   · y que una clase en grupo (108) deje a varios alumnos a la misma hora
+ *     solo cuando el profe lo dice.
  */
 const H = require('./ayuda-db.js');
 
@@ -392,6 +394,39 @@ const LMJ = [1, 2, 4];
   // Los miércoles de mayo de 2027 son cuatro: solo los de la primera.
   ok('y esa inscripción rechazada no dejó clases en la agenda', (await db.query(
     'select count(*)::int n from public.turnos_reserva where cliente_id = $1', [kevin])).rows[0].n, 4);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('La clase en grupo (108)');
+  // ═══════════════════════════════════════════════════════════
+  // Matías: «una clase de tenis tiene varios alumnos en el mismo horario».
+  // Los lunes de junio de 2027 son cuatro: 7, 14, 21 y 28.
+  const lucas = await alumno('Lucas Giménez', '0989000005');
+  const sofia = await alumno('Sofía Duarte', '0989000006');
+  const tomas = await alumno('Tomás Ríos', '0989000007');
+  const tenis = (uid, cliente, grupo) => como(uid,
+    'select public.inscribir_alumno($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) j',
+    [P.empresaId, cliente, [1], '17:00', '18:00', '2027-06-01', '2027-06-30', null, 200000,
+      false, 'efectivo', null, 'Tenis', null, grupo]);
+  const alasCinco = async () => (await db.query(
+    `select count(*)::int n from public.turnos_reserva
+     where empresa_id = $1 and (inicia at time zone 'America/Asuncion') = '2027-06-07 17:00'`,
+    [P.empresaId])).rows[0].n;
+
+  ok('Lucas entra solo a los lunes de 17 a 18', (await tenis(P.uid, lucas, false)).ok, true);
+  const previaTenis = await previa([[1], '17:00', '18:00', '2027-06-01', '2027-06-30', null, 200000]);
+  ok('la vista previa sigue avisando con quién coincide', previaTenis.choques.length, 4);
+  rechazado('sin decir que es en grupo, el horario ocupado sigue frenando',
+    await tenis(P.uid, sofia, false), 'ya tenés a Lucas');
+  const sofiaEnGrupo = await tenis(P.uid, sofia, true);
+  ok('diciendo que van juntos, Sofía entra a la misma clase', sofiaEnGrupo.ok, true);
+  ok('con sus cuatro lunes', sofiaEnGrupo.valor.rows[0].j.clases, 4);
+  ok('el lunes 7 a las 17 hay dos alumnos en la agenda', await alasCinco(), 2);
+  ok('cada uno con su propia inscripción, que se cobra aparte', (await db.query(
+    'select count(distinct paquete_id)::int n from public.turnos_reserva where cliente_id = any($1)',
+    [[lucas, sofia]])).rows[0].n, 2);
+  ok('un tercero también se suma al grupo', (await tenis(P.uid, tomas, true)).ok, true);
+  ok('y ya son tres a esa hora', await alasCinco(), 3);
+  rechazado('otra cuenta no puede usar la puerta del grupo', await tenis(Otro.uid, tomas, true), 'pertenecés');
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {

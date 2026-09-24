@@ -116,6 +116,9 @@ export function InscribirAlumno({
   const cuentas = useCuentasParaElegir(empresaId);
   const [cuenta, setCuenta] = useState<string | null>(null);
   const [previa, setPrevia] = useState<Previa | null>(null);
+  // La clase en grupo (108): con quién coincide ya se ve en la vista previa;
+  // si el profe dice que van juntos, el choque deja de frenar.
+  const [enGrupo, setEnGrupo] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
   // Alguien que ya tiene ese teléfono con otro nombre: «¿es la misma persona?».
@@ -158,8 +161,9 @@ export function InscribirAlumno({
   const choques = previa?.choques ?? [];
   const hayPrecio = modo === 'hora' ? precioHora > 0 : total > 0;
   const tieneAlumno = Boolean(clienteId) || alumno.nombre.trim().length > 0;
+  const juntos = enGrupo && choques.length > 0;
   const puede = tieneAlumno && dias.length > 0 && (previa?.clases ?? 0) > 0
-    && choques.length === 0 && hayPrecio && pagado !== null && !ocupado && !mismaPersona;
+    && (choques.length === 0 || juntos) && hayPrecio && pagado !== null && !ocupado && !mismaPersona;
 
   // «Octubre · lun, mar y jue 18:00»: cómo se lee la inscripción en la ficha.
   function nombreDeInscripcion(): string {
@@ -225,6 +229,7 @@ export function InscribirAlumno({
         p_pagado: pagado === true, p_metodo: metodo, p_nombre: nombreDeInscripcion(),
         p_materia: materia.trim() || null,
         p_cuenta: pagado === true ? cuentaDelCobro(cuentas, metodo, cuenta) : null,
+        p_en_grupo: juntos,
       });
       if (e) throw e;
       try { if (modo === 'hora' && precioHora > 0) localStorage.setItem(CLAVE_PRECIO, String(precioHora)); } catch { /* sin almacenamiento, se vuelve a escribir */ }
@@ -351,13 +356,28 @@ export function InscribirAlumno({
             {plata(Number(previa.total))}
           </p>
           {choques.length > 0 && (
-            <div className="mt-2 rounded-lg bg-ambar-claro px-3 py-2">
+            <div className={`mt-2 rounded-lg px-3 py-2 ${juntos ? 'bg-verde-claro' : 'bg-ambar-claro'}`}>
               {choques.slice(0, 3).map((c) => (
-                <p key={`${c.fecha}${c.hora}`} className="text-[12.5px] font-semibold text-ambar">
-                  ⚠ {i.choca(fechaLegible(c.fecha, false, locale), c.hora, c.alumno)}
+                <p key={`${c.fecha}${c.hora}${c.alumno}`}
+                  className={`text-[12.5px] font-semibold ${juntos ? 'text-verde-fuerte' : 'text-ambar'}`}>
+                  {juntos
+                    ? `✓ ${i.vaCon(fechaLegible(c.fecha, false, locale), c.hora, c.alumno)}`
+                    : `⚠ ${i.choca(fechaLegible(c.fecha, false, locale), c.hora, c.alumno)}`}
                 </p>
               ))}
-              {choques.length > 3 && <p className="text-[12px] text-ambar">{i.yMas(choques.length - 3)}</p>}
+              {choques.length > 3 && (
+                <p className={`text-[12px] ${juntos ? 'text-verde-fuerte' : 'text-ambar'}`}>
+                  {juntos ? i.yMasJuntos(choques.length - 3) : i.yMas(choques.length - 3)}
+                </p>
+              )}
+              {/* Tenis, natación, baile: varios a la misma hora (108). Sin
+                  este toque, el horario ocupado sigue frenando, que es lo que
+                  le sirve a un profe particular. */}
+              <button type="button" aria-pressed={enGrupo} onClick={() => setEnGrupo(!enGrupo)}
+                className={`mt-2 ${enGrupo ? 'chip-encendido' : 'chip-apagado'}`}>
+                {enGrupo ? '✓ ' : ''}{i.enGrupo}
+              </button>
+              {juntos && <p className="mt-1.5 text-[12px] text-tinta/60">{i.enGrupoDetalle}</p>}
             </div>
           )}
         </div>
