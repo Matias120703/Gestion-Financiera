@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { clienteDeServicio } from '@/lib/supabase/servicio';
-import { cronAutorizado, enviarEmail } from '@/lib/avisos';
+import { correoConfigurado, cronAutorizado, enviarEmail } from '@/lib/avisos';
 import { asuntoSemanal, htmlSemanal, textoSemanal, type DatosSemana } from '@/lib/correo-semanal';
 import { sitio } from '@/lib/pagos';
 
@@ -18,15 +18,29 @@ export const maxDuration = 300;
  * márgenes, y un vendedor no puede verlos. Mandárselo por correo sería
  * saltarse por la puerta de atrás el permiso por columna que la migración 003
  * puso con tanto cuidado. La función `destinatarios_resumen_semanal()` ya
- * filtra por rol; acá no se afloja eso.
+ * filtra por rol; acá no se afloja eso. Tampoco va a la cuenta personal ni
+ * al campo (109): el correo habla de ventas de la semana, y la primera no
+ * vende y el segundo vende dos o tres veces al año.
  *
  * Idempotente por semana ISO: si el cron se dispara dos veces el lunes, la
  * segunda no manda nada. La garantía es el índice único de `envios`, no un
  * `if` en este archivo.
+ *
+ * Primero los números y DESPUÉS la reserva (109). Hasta la 109 era al revés,
+ * y como los números fallaban siempre (las funciones del resumen piden
+ * sesión y acá no hay), cada lunes quedaba reservado un correo que nunca
+ * salió. Ahora si los números fallan, la semana sigue libre y el próximo
+ * disparo lo intenta de nuevo.
  */
 export async function GET(request: Request) {
   if (!cronAutorizado(request)) {
     return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
+  }
+
+  // Sin Resend no sale nada: mejor no reservar la semana de nadie (107).
+  if (!correoConfigurado()) {
+    console.error('[semanal] falta RESEND_API_KEY o EMAIL_REMITENTE');
+    return NextResponse.json({ error: 'El correo no está configurado.' }, { status: 503 });
   }
 
   const supabase = clienteDeServicio();
@@ -52,6 +66,30 @@ export async function GET(request: Request) {
     const hasta = restarDias(hoy, 1);
     const desde = restarDias(hoy, 7);
 
+    // Los números, como los ve esa persona en /reportes: la función se pone
+    // en sus zapatos y llama a `resumen_financiero`, `serie_financiera_diaria`
+    // y `ranking_productos` tal cual (109).
+    const { data: semana, error: sinNumeros } = await supabase.rpc('resumen_semanal_para', {
+      p_empresa: d.empresa_id,
+      p_user: d.user_id,
+      p_desde: desde,
+      p_hasta: hasta,
+    });
+
+    if (sinNumeros) {
+      console.error('[semanal] resumen', d.empresa_id, sinNumeros.message);
+      fallados += 1;
+      continue;
+    }
+
+    const r: any = semana?.resumen ?? {};
+    const dias: any[] = Array.isArray(semana?.serie) ? semana.serie : [];
+    const top: any[] = Array.isArray(semana?.ranking) ? semana.ranking : [];
+
+    // Una semana sin una sola venta no genera correo. Escribirle a alguien
+    // para decirle "vendiste cero" no ayuda a nadie a volver.
+    if (Number(r.ventas ?? 0) <= 0 && Number(r.gastos ?? 0) <= 0) { salteados += 1; continue; }
+
     const { data: reservado } = await supabase.rpc('reservar_envio', {
       p_tipo: 'semanal',
       p_clave: `semanal:${d.empresa_id}:${d.user_id}:${semanaISO(hasta)}`,
@@ -61,22 +99,6 @@ export async function GET(request: Request) {
     });
 
     if (!reservado) { salteados += 1; continue; }
-
-    const [resumen, serie, ranking] = await Promise.all([
-      supabase.rpc('resumen_financiero', { p_empresa: d.empresa_id, p_desde: desde, p_hasta: hasta }),
-      supabase.rpc('serie_financiera_diaria', { p_empresa: d.empresa_id, p_desde: desde, p_hasta: hasta }),
-      supabase.rpc('ranking_productos', { p_empresa: d.empresa_id, p_desde: desde, p_hasta: hasta, p_limite: 1 }),
-    ]);
-
-    if (resumen.error) { fallados += 1; continue; }
-
-    const r: any = resumen.data ?? {};
-    const dias: any[] = Array.isArray(serie.data) ? serie.data : [];
-    const top: any[] = Array.isArray(ranking.data) ? ranking.data : [];
-
-    // Una semana sin una sola venta no genera correo. Escribirle a alguien
-    // para decirle "vendiste cero" no ayuda a nadie a volver.
-    if (Number(r.ventas ?? 0) <= 0 && Number(r.gastos ?? 0) <= 0) { salteados += 1; continue; }
 
     const mejor = dias.reduce<{ fecha: string; monto: number } | null>((mejorHasta, dia) => {
       const monto = Number(dia?.ventas ?? 0);
@@ -93,9 +115,9 @@ export async function GET(request: Request) {
       hasta,
       ventas: Number(r.ventas ?? 0),
       gastos: Number(r.gastos ?? 0),
-      // La RPC ya devuelve null si quien pregunta no ve rentabilidad. Acá
-      // corre como service_role, así que el filtro por rol lo hizo antes
-      // `destinatarios_resumen_semanal()`.
+      // null si el destinatario no ve rentabilidad: la calcula
+      // `resumen_financiero` con SU sesión (109). Además
+      // `destinatarios_resumen_semanal()` ya deja solo a dueños y admins.
       ganancia: r.ganancia_neta === null || r.ganancia_neta === undefined ? null : Number(r.ganancia_neta),
       cantidadVentas: Number(r.cantidad_ventas ?? 0),
       mejorDia: mejor && mejor.monto > 0 ? mejor : null,

@@ -425,6 +425,11 @@ export const MENSAJES_PT: Record<string, string> = {
   'Para guardar el precio en otra moneda hacen falta la moneda, el precio y el cambio.': 'Pra guardar o preço em outra moeda precisa da moeda, do preço e do câmbio.',
   'Esa liquidación no existe.': 'Essa liquidação não existe.',
   'Esa liquidación ya estaba anulada.': 'Essa liquidação já estava cancelada.',
+
+  // ---- 109 · el correo del lunes ----
+  // Tampoco lo ve nadie (`resumen_semanal_para` es solo de la tarea
+  // programada), pero la regla no tiene excepciones.
+  'Falta para quién es el resumen.': 'Falta dizer pra quem é o resumo.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */

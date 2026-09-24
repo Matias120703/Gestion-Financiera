@@ -25,10 +25,19 @@ create table if not exists auth.users (
   email text unique
 );
 
--- En Supabase auth.uid() sale del JWT. Acá sale de una variable de sesión.
+-- En Supabase auth.uid() sale del JWT: de 'request.jwt.claim.sub' o del
+-- 'sub' de 'request.jwt.claims' (así está definida allá, verificado en
+-- producción el 24/09/2026). Acá, igual, y si no hay ninguno, de una
+-- variable de sesión: 'orden.uid' hace de JWT de quien llama. Los dos
+-- primeros los usa resumen_semanal_para (109) para ponerse en los zapatos
+-- del destinatario; con solo 'orden.uid' esa función no se podría probar.
 create or replace function auth.uid() returns uuid
 language sql stable as $$
-  select nullif(current_setting('orden.uid', true), '')::uuid;
+  select coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'),
+    nullif(current_setting('orden.uid', true), '')
+  )::uuid;
 $$;
 
 do $$ begin create role anon nologin;          exception when duplicate_object then null; end $$;
