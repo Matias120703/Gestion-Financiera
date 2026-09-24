@@ -19,12 +19,16 @@ import type { Idioma } from './idiomas';
 import type { Jerga } from '../lib/rubros';
 import { entrenamientoEs, entrenamientoPt } from './textos/entrenamiento';
 import { agriculturaEs, agriculturaPt } from './textos/agricultura';
+import { ganaderiaEs, ganaderiaPt } from './textos/ganaderia';
 
 const JERGAS: Record<Jerga, Record<Idioma, Parcial<Textos>>> = {
   entrenamiento: { es: entrenamientoEs, pt: entrenamientoPt },
   // El agricultor usa los lotes del ganadero, pero dice «campaña» y
   // «a cosecha» (100).
   agricultura: { es: agriculturaEs, pt: agriculturaPt },
+  // El dueño de los lotes, sin los ejemplos del grano y con su capataz
+  // (fase 0 de ganadería, 24/09).
+  ganaderia: { es: ganaderiaEs, pt: ganaderiaPt },
 };
 
 /** El diccionario con las palabras del oficio encima. Sin jerga, el mismo. */

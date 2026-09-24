@@ -19,8 +19,9 @@ export function PantallaGanaderia({ v }: { v: TextosVitrina }) {
       activa={-1}
       barra={[
         { icono: 'panel', texto: v.barra.panel },
-        { icono: 'vender', texto: v.barra.vender },
+        { icono: 'lotes', texto: v.barra.lotes },
         { icono: 'gastos', texto: v.barra.gastos },
+        { icono: 'vender', texto: v.barra.vender },
       ]}
     >
       <Entra paso={0}>

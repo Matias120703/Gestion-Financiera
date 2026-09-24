@@ -64,6 +64,7 @@ function repartirEn(moneda: string, monto: number, campanas: CampanaParaElegir[]
 export function PantallaGastos({
   empresaId, moneda, movimientos, categoriasUsadas, rol, userId, hoy, hayMas = false, cuentas = [],
   conCampanas = false, campanas = [], loteInicial = null, categoriasRubro = [], dolarDeHoy = null,
+  categoriaPorDefecto = null,
 }: {
   empresaId: string;
   moneda: string;
@@ -86,6 +87,8 @@ export function PantallaGastos({
   categoriasRubro?: string[];
   /** El dólar de la vista en otra moneda (051), como lo dice la persona: guaraníes por dólar. */
   dolarDeHoy?: number | null;
+  /** Con qué categoría arranca, si no es la primera del rubro (el ganadero arranca en «Otros»). */
+  categoriaPorDefecto?: string | null;
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -110,7 +113,9 @@ export function PantallaGastos({
   // mercadería» y desaparecería de la ganancia. Arranca en «Otros» y la
   // compra de mercadería se elige con un toque. En el campo la primera de su
   // lista (Semilla) no cambia nada de eso y se queda como estaba.
-  const categoriaInicial = conGrilla ? (rapidasGasto[0] ?? 'Otros') : 'Otros';
+  const categoriaInicial = conGrilla
+    ? (categoriaPorDefecto && rapidasGasto.includes(categoriaPorDefecto) ? categoriaPorDefecto : (rapidasGasto[0] ?? 'Otros'))
+    : 'Otros';
   const [categoria, setCategoria] = useState(categoriaInicial);
   const [fecha, setFecha] = useState(hoyISO(zona));
   const [metodo, setMetodo] = useState('efectivo');

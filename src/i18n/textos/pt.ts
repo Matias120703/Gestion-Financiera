@@ -13,6 +13,7 @@ import { reportesAlumnosPt } from './reportes-alumnos';
 import { reportesCampoPt } from './reportes-campo';
 import { reportesPersonalPt } from './reportes-personal';
 import { avisoVencimientoPt } from './aviso-vencimiento';
+import { singularPt } from './singular';
 
 /**
  * Português do Brasil. El idioma de los brasileños que viven y trabajan en
@@ -1354,6 +1355,7 @@ export const pt: Textos = {
   },
 
   movimientos: {
+    resultadoEnLotes: 'Lá está o resultado de verdade',
     filtroTodo: 'Tudo',
     filtroVentas: 'Vendas',
     filtroGastos: 'Despesas',
@@ -2322,7 +2324,7 @@ export const pt: Textos = {
     resultado: 'resultado',
     puesto: 'Investido',
     cobrado: 'Recebido',
-    porUnidad: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')}`,
+    porUnidad: (monto: string, unidad: string) => `${monto} por ${singularPt(unidad)}`,
     llevaDias: (n: number) => (n === 1 ? '1 dia' : `${n} dias`),
     duroDias: (n: number) => (n === 1 ? 'durou 1 dia' : `durou ${n} dias`),
     cuantosMovimientos: (n: number) => (n === 1 ? '1 lançamento' : `${n} lançamentos`),

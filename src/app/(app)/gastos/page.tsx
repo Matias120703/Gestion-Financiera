@@ -118,6 +118,10 @@ export default async function PaginaGastos({
         campanas={campanas}
         loteInicial={loteParam}
         categoriasRubro={delRubro.map((c) => c.nombre)}
+        // El agricultor arranca en Semilla a propósito; el ganadero no: su
+        // primera categoría es Alimentación, y un flete o una vacuna guardados
+        // sin tocar quedaban como comida (fase 0 de ganadería, 24/09).
+        categoriaPorDefecto={ctx.empresa.rubro === 'ganaderia' ? 'Otros' : null}
         dolarDeHoy={conCampanas ? dolarDeLaVista(ctx.empresa) : null}
       />
     </div>

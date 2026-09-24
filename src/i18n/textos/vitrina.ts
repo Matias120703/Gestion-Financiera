@@ -90,9 +90,9 @@ const rubrosEs: Record<ClaveVitrina, TextosRubroVitrina> = {
     chip: 'Ganadería',
     titulo: 'Cuánto te dejó cada lote, por cabeza',
     beneficios: [
-      'Cada lote junta lo que pusiste y lo que cobraste: el resultado de verdad',
+      'Cada lote junta lo que pusiste y lo que vendiste: el resultado de verdad',
       'El resultado por cabeza, para comparar una tropa con otra',
-      'El panel te muestra lo que va del año, no el día: tu ciclo es el lote',
+      'El panel te muestra tus lotes en curso, no el día: tu ciclo es el lote',
     ],
   },
   personal: {
@@ -214,8 +214,8 @@ const planesEs: PlanesDeLaVitrina = {
     basico: {
       para: 'Para el que lleva solo su campo',
       puntos: [
-        'Lotes con lo que pusiste, lo que cobraste y el resultado',
-        'Resultado por cabeza y lo que va del año',
+        'Lotes con lo que pusiste, lo que vendiste y el resultado',
+        'El resultado por cabeza de cada lote',
         'Una sola persona: vos',
         'Voz, foto y texto: 300 cargas por mes',
         REPORTES_ES,
@@ -226,7 +226,7 @@ const planesEs: PlanesDeLaVitrina = {
       puntos: [
         'Todo lo del Básico',
         'Vos y hasta 2 personas más, cada una con su cuenta',
-        'Los costos y las deudas los ve solo administración',
+        'Cada uno carga desde su celular, aunque estén en distintos lugares',
         'Voz, foto y texto: 600 cargas por mes',
       ],
     },
@@ -289,7 +289,7 @@ export const vitrinaEs = {
   // ---- la barra de abajo del celular (la de verdad, rubro por rubro) ----
   barra: {
     panel: 'Panel', vender: 'Vender', cobrar: 'Cobrar', gastos: 'Gastos', cierre: 'Cierre',
-    agenda: 'Agenda', alumnos: 'Alumnos', campanas: 'Campañas', deudas: 'Deudas',
+    agenda: 'Agenda', alumnos: 'Alumnos', campanas: 'Campañas', lotes: 'Lotes', deudas: 'Deudas',
     presupuesto: 'Presupuesto', mas: 'Más',
   },
   hoy: 'Hoy',
@@ -394,25 +394,22 @@ export const vitrinaEs = {
       liquidacion: 'Liquidación',
     },
     ganaderia: {
-      resumen: 'Así ve sus lotes un ganadero: Novillos corral 3, 40 cabezas, resultado Gs. 47.200.000, o sea Gs. 1.180.000 por cabeza.',
+      resumen: 'Así ve sus lotes un ganadero: Novillos corral 3, 40 cabezas en 100 días, resultado Gs. 3.699.000, o sea Gs. 92.475 por cabeza.',
       negocio: 'Estancia La Paloma',
       lotes: 'Lotes',
-      explicacion: 'Resultado: lo que cobraste menos lo que pusiste.',
+      explicacion: 'Resultado: lo que vendiste menos lo que pusiste.',
       cerrado: 'Cerrado',
       lista: [
         {
-          nombre: 'Novillos corral 3', detalle: '40 cabezas · duró 96 días',
-          resultado: 'Gs. 47.200.000', porCabeza: 'Gs. 1.180.000 por cabeza',
-          puesto: 'Gs. 152.800.000', cobrado: 'Gs. 200.000.000',
-        },
-        {
-          nombre: 'Vaquillas potrero 2', detalle: '25 cabezas · duró 120 días',
-          resultado: 'Gs. 21.250.000', porCabeza: 'Gs. 850.000 por cabeza',
-          puesto: 'Gs. 98.750.000', cobrado: 'Gs. 120.000.000',
+          // Un encierre creíble a precios de 2026 (Gs 15.000 por cabeza por
+          // día): gana poco por cabeza, y eso es lo que el ganadero sabe.
+          nombre: 'Novillos corral 3', detalle: '40 cabezas · duró 100 días',
+          resultado: 'Gs. 3.699.000', porCabeza: 'Gs. 92.475 por cabeza',
+          puesto: 'Gs. 355.007.000', cobrado: 'Gs. 358.706.000',
         },
       ],
       puesto: 'Puesto',
-      cobrado: 'Cobrado',
+      cobrado: 'Vendido',
     },
     personal: {
       resumen: 'Así ve su presupuesto una persona: te quedan Gs. 1.240.000 hasta el 5, Gs. 41.000 por día, y la cuota de la tarjeta vence el 12.',
@@ -493,9 +490,9 @@ const rubrosPt: Record<ClaveVitrina, TextosRubroVitrina> = {
     chip: 'Pecuária',
     titulo: 'Quanto cada lote deixou, por cabeça',
     beneficios: [
-      'Cada lote junta o que você investiu e o que recebeu: o resultado de verdade',
+      'Cada lote junta o que você investiu e o que vendeu: o resultado de verdade',
       'O resultado por cabeça, pra comparar um lote com outro',
-      'O painel mostra o ano até agora, não o dia: seu ciclo é o lote',
+      'O painel mostra seus lotes em andamento, não o dia: seu ciclo é o lote',
     ],
   },
   personal: {
@@ -617,8 +614,8 @@ const planesPt: PlanesDeLaVitrina = {
     basico: {
       para: 'Para quem cuida sozinho da fazenda',
       puntos: [
-        'Lotes com o que você investiu, o que recebeu e o resultado',
-        'Resultado por cabeça e o ano até agora',
+        'Lotes com o que você investiu, o que vendeu e o resultado',
+        'O resultado por cabeça de cada lote',
         'Uma só pessoa: você',
         'Voz, foto e texto: 300 lançamentos por mês',
         REPORTES_PT,
@@ -629,7 +626,7 @@ const planesPt: PlanesDeLaVitrina = {
       puntos: [
         'Tudo do Básico',
         'Você e até 2 pessoas a mais, cada uma com sua conta',
-        'Custos e dívidas só a administração vê',
+        'Cada um lança do seu celular, mesmo em lugares diferentes',
         'Voz, foto e texto: 600 lançamentos por mês',
       ],
     },
@@ -687,7 +684,7 @@ export const vitrinaPt: TextosVitrina = {
 
   barra: {
     panel: 'Painel', vender: 'Vender', cobrar: 'Receber', gastos: 'Despesas', cierre: 'Fechamento',
-    agenda: 'Agenda', alumnos: 'Alunos', campanas: 'Safras', deudas: 'Dívidas',
+    agenda: 'Agenda', alumnos: 'Alunos', campanas: 'Safras', lotes: 'Lotes', deudas: 'Dívidas',
     presupuesto: 'Orçamento', mas: 'Mais',
   },
   hoy: 'Hoje',
@@ -791,25 +788,20 @@ export const vitrinaPt: TextosVitrina = {
       liquidacion: 'Liquidação',
     },
     ganaderia: {
-      resumen: 'Assim um pecuarista vê seus lotes: Novilhos curral 3, 40 cabeças, resultado Gs. 47.200.000, ou seja Gs. 1.180.000 por cabeça.',
+      resumen: 'Assim um pecuarista vê seus lotes: Novilhos curral 3, 40 cabeças em 100 dias, resultado Gs. 3.699.000, ou seja Gs. 92.475 por cabeça.',
       negocio: 'Estância La Paloma',
       lotes: 'Lotes',
-      explicacion: 'Resultado: o que você recebeu menos o que investiu.',
+      explicacion: 'Resultado: o que você vendeu menos o que investiu.',
       cerrado: 'Fechado',
       lista: [
         {
-          nombre: 'Novilhos curral 3', detalle: '40 cabeças · durou 96 dias',
-          resultado: 'Gs. 47.200.000', porCabeza: 'Gs. 1.180.000 por cabeça',
-          puesto: 'Gs. 152.800.000', cobrado: 'Gs. 200.000.000',
-        },
-        {
-          nombre: 'Novilhas piquete 2', detalle: '25 cabeças · durou 120 dias',
-          resultado: 'Gs. 21.250.000', porCabeza: 'Gs. 850.000 por cabeça',
-          puesto: 'Gs. 98.750.000', cobrado: 'Gs. 120.000.000',
+          nombre: 'Novilhos curral 3', detalle: '40 cabeças · durou 100 dias',
+          resultado: 'Gs. 3.699.000', porCabeza: 'Gs. 92.475 por cabeça',
+          puesto: 'Gs. 355.007.000', cobrado: 'Gs. 358.706.000',
         },
       ],
       puesto: 'Investido',
-      cobrado: 'Recebido',
+      cobrado: 'Vendido',
     },
     personal: {
       resumen: 'Assim uma pessoa vê o orçamento: sobram Gs. 1.240.000 até o dia 5, Gs. 41.000 por dia, e a parcela do cartão vence no dia 12.',

@@ -256,7 +256,10 @@ console.log('\n── 7 · Los números de ejemplo cierran ──');
     ok(`${idioma} personal: el detalle da lo disponible`, entro - resta.reduce((a, b) => a + b, 0), n(per.monto));
     ok(`${idioma} personal: por día, en 30 días (redondeado a mil)`, Math.floor(n(per.monto) / 30 / 1000) * 1000, n(per.porDia));
 
-    for (const [i, cabezas] of [[0, 40], [1, 25]]) {
+    // Un solo lote de muestra desde la fase 0 de ganadería (24/09): el
+    // segundo prometía un resultado que un encierre de 2026 no da.
+    ok(`${idioma} ganadería: un solo lote de muestra`, v.pantallas.ganaderia.lista.length, 1);
+    for (const [i, cabezas] of [[0, 40]]) {
       const l = v.pantallas.ganaderia.lista[i];
       ok(`${idioma} ganadería ${l.nombre}: cobrado − puesto = resultado`, n(l.cobrado) - n(l.puesto), n(l.resultado));
       ok(`${idioma} ganadería ${l.nombre}: resultado por cabeza`, n(l.resultado) / cabezas, n(l.porCabeza));

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
-import { textos } from '@/i18n';
+import { textos, idiomaActual } from '@/i18n';
+import { conJerga } from '@/i18n/jergas';
 import { rangoDesdeParams } from '@/lib/datos';
 import { traerResumen, traerPaginaMovimientos, contarMovimientos, TAMANO_PAGINA } from '@/lib/agregados';
 import { cargarPagina } from './acciones';
@@ -26,12 +27,13 @@ export default async function PaginaMovimientos({
   // igual queda con su propio recibo de cada venta —se lo confirma el
   // sistema al cargarla— pero no con el archivo entero de la empresa.
   if (!ctx.esAdmin) redirect('/panel');
-  const t = await textos();
+  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  const t = conJerga(await textos(), ficha.jerga, await idiomaActual());
   const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
   // Un negocio con lotes (ganadería, agricultura) dice desde acá de qué
   // campaña es cada movimiento (100). Todas, cerradas incluidas: un gasto
   // viejo tiene que poder nombrar la suya aunque ya no sea un chip.
-  const conCampanas = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones['/lotes'];
+  const conCampanas = ficha.secciones['/lotes'];
   // Los totales salen agregados de la base; la lista es solo la primera página.
   const [r, pagina, total, lotes] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
@@ -47,6 +49,15 @@ export default async function PaginaMovimientos({
    */
   const m = ctx.vista;
   const verRent = permisosDe(ctx.miembro.rol).verRentabilidad && r.conCostos;
+  /**
+   * EL CAMPO NO TIENE «GANANCIA NETA» DEL MES (fase 0 de ganadería, 24/09).
+   * El mes que compra 40 terneros aparece con una pérdida enorme, y el mes
+   * que los vende con una ganancia que se hizo en cien días. Su resultado
+   * es el del lote: acá se queda con lo que entró y lo que salió, y el
+   * cuarto número manda a los lotes en curso.
+   */
+  const ciclosLargos = ficha.ciclosLargos;
+  const lotesEnCurso = lotes.filter((l) => l.estado === 'abierto').length;
 
   return (
     <div className="space-y-5">
@@ -56,7 +67,9 @@ export default async function PaginaMovimientos({
         <Indicador titulo={t.pantallas.movimientosValidos} valor={numero(total - r.movimientosAnulados)} detalle={rango.etiqueta.toLowerCase()} />
         <Indicador titulo={t.pantallas.entro} valor={dineroCorto(r.ingresosTotales, m)} tono="bueno" />
         <Indicador titulo={t.pantallas.salio} valor={dineroCorto(r.gastos, m)} tono="malo" />
-        {verRent ? (
+        {ciclosLargos ? (
+          <Indicador titulo={t.lotes.enCurso} valor={numero(lotesEnCurso)} detalle={t.movimientos.resultadoEnLotes} />
+        ) : verRent ? (
           <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
         ) : (
           <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle={t.movimientos.entregadas} />

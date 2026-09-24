@@ -9,8 +9,12 @@ import type { Rubro, TipoCuenta } from './tipos';
  *
  * El agricultor usa los lotes del ganadero (100), pero no dice «lote» ni
  * «ciclo»: dice «campaña», y lo que debe «a cosecha».
+ *
+ * El ganadero es el dueño de los lotes, pero los textos neutros de la 100
+ * quedaron con ejemplos de soja y de silo, y su ayudante se llamaba
+ * «vendedor». Su jerga los pisa con palabras de la hacienda.
  */
-export type Jerga = 'entrenamiento' | 'agricultura';
+export type Jerga = 'entrenamiento' | 'agricultura' | 'ganaderia';
 
 /**
  * Los planes pagos, repetidos acá a propósito (102).
@@ -269,7 +273,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
   ganaderia: {
     clave: 'ganaderia',
     nombre: 'Ganadería',
-    ejemplo: 'Cría, engorde, tambo',
+    ejemplo: 'Cría, invernada, ciclo completo, tambo',
     secciones: {
       ...NUCLEO,
       // Lo suyo: el ciclo del negocio es el novillo, no el día.
@@ -280,20 +284,30 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
       // nada, cuando no había nada que cargar, se desinstala.
       '/cierre': false,
       '/reto': false,
+      // SIN CATÁLOGO, como el agricultor (fase 0 de ganadería, 24/09). El
+      // catálogo es el del almacén («se compra y se revende», «invertido en
+      // stock»): un novillo cargado ahí restaba dos veces el costo, una en el
+      // lote y otra como mercadería, y el lote se veía con margen de 100 %.
+      // La hacienda se vende con «producto suelto» hasta que exista la venta
+      // como viene en el papel (fase 1a).
+      '/productos': false,
     },
-    palabras: { vender: 'Vender', productos: 'Hacienda', ventas: 'Ventas' },
+    // «Fiado» es palabra de mostrador: al ganadero le debe el frigorífico.
+    palabras: { vender: 'Vender', productos: 'Hacienda', ventas: 'Ventas', fiado: 'Te deben' },
     pt: {
       nombre: 'Pecuária',
-      ejemplo: 'Cria, engorda, leite',
-      palabras: { vender: 'Vender', productos: 'Rebanho', ventas: 'Vendas' },
+      ejemplo: 'Cria, recria e engorda, ciclo completo, leite',
+      palabras: { vender: 'Vender', productos: 'Rebanho', ventas: 'Vendas', fiado: 'Te devem' },
     },
     ciclosLargos: true,
     cierraElDia: false,
     paquetes: false,
     agendaDeAlumnos: false,
-    jerga: null,
+    jerga: 'ganaderia',
     notasALaVista: false,
-    barra: null,
+    // Los lotes estaban escondidos en «Más», y son el centro del rubro. Como
+    // el agricultor: mirar cómo va, el lote, un gasto y vender.
+    barra: ['/panel', '/lotes', '/gastos', '/vender'],
     // Como el agricultor: el dueño solo o con un par de peones que cargan.
     planes: ['basico', 'pro'],
   },

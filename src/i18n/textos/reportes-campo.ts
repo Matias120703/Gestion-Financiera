@@ -17,6 +17,8 @@
  * hectárea», «Necesitás … kg/ha») salen de `t.panelCampo.tarjeta`: son las
  * mismas del panel, así el productor lee lo mismo en los dos lugares.
  */
+import { singularEs, singularPt } from './singular';
+
 export const reportesCampoEs = {
   agro: {
     titulo: 'Campañas de estas fechas',
@@ -44,9 +46,9 @@ export const reportesCampoEs = {
   /** «cerró el 15 sep 2026». */
   cerroEl: (fecha: string) => `cerró el ${fecha}`,
   /** Ganadería: «2.500 por cabeza por día». */
-  porUnidadYDia: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')} por día`,
+  porUnidadYDia: (monto: string, unidad: string) => `${monto} por ${singularEs(unidad)} por día`,
   /** «Costo por cabeza», debajo del costo del lote. */
-  costoPorUnidad: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')}`,
+  costoPorUnidad: (monto: string, unidad: string) => `${monto} por ${singularEs(unidad)}`,
   faltaCubrir: (monto: string) => `Falta cubrir ${monto}`,
   aCosecha: (monto: string) => `Debés ${monto} a cosecha`,
   aLaVenta: (monto: string) => `Debés ${monto} a la venta`,
@@ -92,8 +94,8 @@ export const reportesCampoPt: typeof reportesCampoEs = {
   abierta: 'Em andamento',
   cerrada: 'Fechada',
   cerroEl: (fecha: string) => `fechou em ${fecha}`,
-  porUnidadYDia: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')} por dia`,
-  costoPorUnidad: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')}`,
+  porUnidadYDia: (monto: string, unidad: string) => `${monto} por ${singularPt(unidad)} por dia`,
+  costoPorUnidad: (monto: string, unidad: string) => `${monto} por ${singularPt(unidad)}`,
   faltaCubrir: (monto: string) => `Falta cobrir ${monto}`,
   aCosecha: (monto: string) => `Você deve ${monto} na colheita`,
   aLaVenta: (monto: string) => `Você deve ${monto} na venda`,

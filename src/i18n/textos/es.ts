@@ -22,6 +22,7 @@ import { reportesAlumnosEs } from './reportes-alumnos';
 import { reportesCampoEs } from './reportes-campo';
 import { reportesPersonalEs } from './reportes-personal';
 import { avisoVencimientoEs } from './aviso-vencimiento';
+import { singularEs } from './singular';
 
 export const es = {
   comun: {
@@ -1444,6 +1445,8 @@ export const es = {
 
   /** EL HISTORIAL y el diálogo de anular. */
   movimientos: {
+    // En el campo, en vez de la ganancia neta del mes (fase 0 de ganadería).
+    resultadoEnLotes: 'Ahí está el resultado de verdad',
     filtroTodo: 'Todo',
     filtroVentas: 'Ventas',
     filtroGastos: 'Gastos',
@@ -2476,7 +2479,7 @@ export const es = {
     resultado: 'resultado',
     puesto: 'Puesto',
     cobrado: 'Cobrado',
-    porUnidad: (monto: string, unidad: string) => `${monto} por ${unidad.replace(/s$/, '')}`,
+    porUnidad: (monto: string, unidad: string) => `${monto} por ${singularEs(unidad)}`,
     llevaDias: (n: number) => (n === 1 ? 'lleva 1 día' : `lleva ${n} días`),
     duroDias: (n: number) => (n === 1 ? 'duró 1 día' : `duró ${n} días`),
     cuantosMovimientos: (n: number) => (n === 1 ? '1 movimiento' : `${n} movimientos`),

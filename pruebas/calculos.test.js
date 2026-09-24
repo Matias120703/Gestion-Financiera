@@ -278,8 +278,10 @@ const MATRIZ = {
   '/gastos':       [ true,     true,      true,      true,        true  ],
   '/deudas':       [ true,     true,      true,      true,        true  ],
   // Sin catálogo en agricultura (100): el grano se vende por la liquidación,
-  // dentro de la campaña, y la feria vende con «producto suelto».
-  '/productos':    [ true,     true,      true,      false,       false ],
+  // dentro de la campaña, y la feria vende con «producto suelto». Tampoco en
+  // ganadería (fase 0, 24/09): el catálogo del almacén restaba dos veces el
+  // costo de un novillo que ya estaba en su lote.
+  '/productos':    [ true,     true,      false,     false,       false ],
   '/movimientos':  [ true,     true,      true,      true,        true  ],
   '/reportes':     [ true,     true,      true,      true,        true  ],
   '/ajustes':      [ true,     true,      true,      true,        true  ],
@@ -370,8 +372,8 @@ ok('tieneSeccion contesta igual que la ficha',
   const casos = [
     ['comercio dueño',     'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
     ['servicios dueño',    'servicios',   'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
-    ['ganadería dueño',    'ganaderia',   'emprendedor', listaDe('EN_BARRA_INFERIOR:')],
-    // El agricultor tiene barra propia (100): se mide con la de su ficha.
+    // El ganadero y el agricultor tienen barra propia: se miden con la de su ficha.
+    ['ganadería dueño',    'ganaderia',   'emprendedor', fichaDe('ganaderia', 'emprendedor').barra],
     ['agricultura dueño',  'agricultura', 'emprendedor', fichaDe('agricultura', 'emprendedor').barra],
     ['personal',           'comercio',    'personal',    listaDe('EN_BARRA_INFERIOR_PERSONAL:')],
     ['comercio vendedor',  'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR_VENDEDOR:')],
@@ -387,8 +389,11 @@ ok('tieneSeccion contesta igual que la ficha',
   ok('la barra no tiene la misma cantidad de botones en todos los rubros',
     new Set(botones.map(([, n]) => n)).size > 1, true);
 
-  ok('y el ganadero es de los que tienen menos',
-    botones.find(([n]) => n === 'ganadería dueño')[1] < 5, true);
+  // Antes de la fase 0 (24/09) el ganadero tenía menos botones: sin cierre
+  // y con los lotes escondidos en «Más». Ahora tiene los mismos cuatro que el
+  // agricultor, y el que cuenta es que ninguno tenga uno que no existe.
+  ok('y el ganadero tiene los mismos que el agricultor',
+    botones.find(([n]) => n === 'ganadería dueño')[1], botones.find(([n]) => n === 'agricultura dueño')[1]);
 
   // Lo que se rompió: un número fijo de columnas para una cantidad de
   // botones que varía. Mientras las columnas se calculen, no puede volver.
@@ -569,13 +574,17 @@ ok('la barra del trainer: panel, agenda, rutinas y clientes',
 ok('la del profe: panel, agenda, alumnos y gastos',
   fichaDe('clases', 'emprendedor').barra, ['/panel', '/agenda', '/clientes', '/gastos']);
 ok('los demás rubros siguen con la de siempre',
-  ['comercio', 'servicios', 'ganaderia'].map((r) => fichaDe(r, 'emprendedor').barra), [null, null, null]);
+  ['comercio', 'servicios'].map((r) => fichaDe(r, 'emprendedor').barra), [null, null]);
+// El ganadero tenía los lotes escondidos en «Más» (fase 0, 24/09): la misma
+// barra que el agricultor.
+ok('la del ganadero: panel, lotes, gastos y vender',
+  fichaDe('ganaderia', 'emprendedor').barra, ['/panel', '/lotes', '/gastos', '/vender']);
 // Al agricultor (100): mirar cómo va, la campaña (la cosecha y la liquidación
 // viven ahí), cargar un gasto, y vender para el que va a la feria.
 ok('la del agricultor: panel, campañas, gastos y vender',
   fichaDe('agricultura', 'emprendedor').barra, ['/panel', '/lotes', '/gastos', '/vender']);
 ok('y cada sección de una barra propia existe en su rubro',
-  ['clases', 'entrenamiento', 'agricultura'].every((r) => fichaDe(r, 'emprendedor').barra.every((h) => fichaDe(r, 'emprendedor').secciones[h])), true);
+  ['clases', 'entrenamiento', 'agricultura', 'ganaderia'].every((r) => fichaDe(r, 'emprendedor').barra.every((h) => fichaDe(r, 'emprendedor').secciones[h])), true);
 {
   const nav = require('fs').readFileSync('src/components/Navegacion.tsx', 'utf8');
   ok('la barra de abajo usa la del rubro', nav.includes('ficha.barra'), true);
@@ -588,10 +597,10 @@ ok('y a lo que entra, cobrado',
 ok('no cierra el día', fichaDe('entrenamiento', 'emprendedor').cierraElDia, false);
 ok('se llama igual en portugués',
   rubroVisible(fichaDe('entrenamiento', 'emprendedor'), 'pt').nombre, 'Personal trainer');
-ok('el trainer y el agricultor hablan con su propia jerga (097, 100)',
+ok('el trainer, el ganadero y el agricultor hablan con su propia jerga (097, 100, fase 0)',
   ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').jerga !== null),
-  ['entrenamiento', 'agricultura']);
+  ['entrenamiento', 'ganaderia', 'agricultura']);
 ok('y solo el trainer tiene las notas pegadas a cada sesión',
   ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura']
     .filter((r) => fichaDe(r, 'emprendedor').notasALaVista),
