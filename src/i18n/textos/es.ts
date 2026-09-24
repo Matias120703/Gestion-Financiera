@@ -804,10 +804,12 @@ export const es = {
     entrar: 'Entrar',
     idioma: 'Idioma',
 
-    // El titular. Los cuatro verbos son los de los rubros (vender, atender,
-    // enseñar, sembrar) y la pregunta de siempre queda al final: Orden cambia
-    // según lo que hacés, lo que te dice no.
-    titularOficios: 'Vendas, atiendas, enseñes o siembres:',
+    // El titular. Arriba, dónde lo usás (el negocio, las clases, el campo, la
+    // casa) y la pregunta de siempre queda al final: Orden cambia según lo
+    // que hacés, lo que te dice no. Sin verbos a propósito, elegido por
+    // Matías el 24/09: «Vendas, atiendas, enseñes o siembres» se leía
+    // «vendas a tiendas» y el subjuntivo confundía.
+    titularOficios: 'En tu negocio, tus clases, tu campo o tu casa:',
     titular: 'sabé cuánto te quedó',
     titularResaltado: 'de verdad',
     titularCierre: '.',

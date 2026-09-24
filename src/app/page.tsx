@@ -244,9 +244,8 @@ export default async function Portada() {
         </header>
 
         {/* ---------------- El titular ----------------
-            Los verbos de los oficios arriba, chicos, y la pregunta de siempre
-            abajo, grande: Orden cambia según lo que hacés, lo que te
-            responde no. */}
+            Dónde lo usás arriba, chico, y la pregunta de siempre abajo,
+            grande: Orden cambia según lo que hacés, lo que te responde no. */}
         <div className="relative mx-auto max-w-4xl px-4 pb-24 pt-8 text-center sm:px-5 lg:pb-32 lg:pt-14">
           <h1 className="font-titulo font-extrabold tracking-tight">
             <span className="block text-[19px] leading-snug text-white/60 sm:text-[24px] lg:text-[30px]">
