@@ -1,21 +1,53 @@
 import { redirect } from 'next/navigation';
 import { contextoObligatorio } from '@/lib/sesion';
+import { diaDeCobro } from '@/components/reportes/comunes/ciclo';
 import { textos, idiomaActual, FICHA } from '@/i18n';
-import { categoriaVisible, metodoVisible } from '@/i18n/nombres';
-import { ReportePersonal } from '@/components/ReportePersonal';
-import { rangoDesdeParams, traerProductos } from '@/lib/datos';
-import {
-  traerResumen, traerRanking, traerGastosPorCategoria, traerCobrosPorMetodo,
-  traerIngresosPorCategoria,
-} from '@/lib/agregados';
-import { dinero, dineroCorto, porcentaje, numero, fechaLegible, dineroQuizas, porcentajeQuizas } from '@/lib/formato';
-import { SelectorRango } from '@/components/SelectorRango';
-import { Indicador, Vacio, Seccion, Barra } from '@/components/Piezas';
-import { BotonExcel } from '@/components/BotonExcel';
+import { conJerga } from '@/i18n/jergas';
+import { ReportePersonal } from '@/components/reportes/ReportePersonal';
+import { hojasPersonal } from '@/lib/reportes/excel-personal';
+import { traerResumen } from '@/lib/agregados';
+import { hoyISO } from '@/lib/fechas';
 import { permisosDe } from '@/lib/permisos';
+import { fichaDe, type FichaRubro } from '@/lib/rubros';
+import type { HojaDelLibro } from '@/lib/reportes/comun';
+import type { Idioma } from '@/i18n/idiomas';
+import { varianteDeReporte, type VarianteReporte } from '@/lib/reportes/variante';
+import { rangoDeReporte, rangoPrevio, type ClaveRangoReporte } from '@/lib/reportes/rango';
+import { SelectorRangoReporte } from '@/components/reportes/comunes/SelectorRangoReporte';
+import { TarjetaDescarga } from '@/components/reportes/comunes/TarjetaDescarga';
+import type { PropsReporte } from '@/components/reportes/comunes/tipos';
+import { ReporteComercio } from '@/components/reportes/ReporteComercio';
+import { ReporteAlumnos } from '@/components/reportes/ReporteAlumnos';
+import { hojasAlumnos } from '@/lib/reportes/excel-alumnos';
+import { hojasComercio } from '@/lib/reportes/excel-comercio';
+import { ReporteCampo } from '@/components/reportes/ReporteCampo';
+import { hojasCampo } from '@/lib/reportes/excel-campo';
+import { ReporteServicios } from '@/components/reportes/ReporteServicios';
+import { hojasServicios } from '@/lib/reportes/excel-servicios';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * REPORTES: UNO POR FORMA DE TRABAJAR (23/09).
+ *
+ * Hasta acá había dos: el de una persona y el de «un negocio», que era el de
+ * un almacén para todos. Ahora la página decide la variante
+ * (`varianteDeReporte`: comercio, servicios, alumnos, campo o personal) y
+ * hace solo lo que comparten las cinco:
+ *
+ *   · el rango, con «Este ciclo» y «Ciclo pasado» para quien cobra un
+ *     sueldo (va de cobro a cobro, como el resto de su cuenta);
+ *   · el resumen del período y el del período anterior, que alimentan la
+ *     flecha de cada indicador;
+ *   · la tarjeta de descarga, que dice las hojas que de verdad trae el
+ *     archivo de ESA variante;
+ *   · los textos con las palabras del oficio (`conJerga`), así el trainer
+ *     lee «sesión» sin que el reporte pregunte nada.
+ *
+ * Lo demás lo lee y lo muestra el reporte de cada variante (ver
+ * `PropsReporte`), con las piezas comunes (`IndicadorVariacion`,
+ * `GraficoPorDia`) de `src/components/reportes/comunes`.
+ */
 export default async function PaginaReportes({
   searchParams: busqueda,
 }: {
@@ -26,233 +58,120 @@ export default async function PaginaReportes({
   // Reportes trae la ganancia y el detalle financiero del negocio entero:
   // es la vista del dueño en cualquiera de las dos cuentas, personal o no.
   if (!ctx.esAdmin) redirect('/panel');
-  const t = await textos();
-  const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
 
-  /**
-   * UNA CUENTA PERSONAL TIENE SU PROPIO REPORTE.
-   *
-   * Igual que el panel, se corta acá arriba. Lo que hay más abajo —vendido,
-   * ganancia bruta, ganancia neta, ranking de productos, cobros por método,
-   * plata parada en stock— no existe para alguien que cobra un sueldo. Verlo
-   * ahí no es solo ruido: le dice que este sistema no es para él.
-   */
-  if (ctx.empresa.tipo_cuenta === 'personal') {
-    const [rp, origen, destino] = await Promise.all([
-      traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
-      traerIngresosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
-      traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
-    ]);
-    const permisosP = permisosDe(ctx.miembro.rol);
+  const idioma = await idiomaActual();
+  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  const variante = varianteDeReporte(ficha, ctx.empresa.tipo_cuenta);
+  const t = conJerga(await textos(), ficha.jerga, idioma);
+  const locale = FICHA[idioma].locale;
+  const hoy = hoyISO(ctx.zonaHoraria);
 
-    return (
-      <div className="space-y-4">
-        <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
+  // Solo una persona mide por ciclo. Sin día de cobro (o cobrando el 1) el
+  // ciclo es el mes, y se entra por «Este mes»: el reporte de un solo día
+  // no le dice nada a quien cobra una vez por mes.
+  const diaCobro = variante === 'personal' ? await diaDeCobro(ctx.empresa.id) : null;
+  const rango = rangoDeReporte(searchParams, hoy, diaCobro, rangoPorDefecto(variante, diaCobro));
+  const previo = rangoPrevio(rango, diaCobro);
 
-        {permisosP.descargarExcel && (
-          <div className="tarjeta flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-[16px] font-bold tracking-tight">{t.reportePersonal.descarga}</h2>
-              <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
-                {rango.desde === rango.hasta
-                  ? fechaLegible(rango.desde)
-                  : `${fechaLegible(rango.desde)} — ${fechaLegible(rango.hasta)}`}
-                {' · '}{t.reportePersonal.descargaDetalle}
-              </p>
-            </div>
-            <BotonExcel empresaId={ctx.empresa.id} desde={rango.desde} hasta={rango.hasta} />
-          </div>
-        )}
-
-        <ReportePersonal
-          ingresos={rp.ingresosTotales}
-          gastos={rp.gastos}
-          porOrigen={origen}
-          porDestino={destino}
-          moneda={ctx.vista}
-          locale={FICHA[(await idiomaActual())].locale}
-          t={t}
-        />
-      </div>
-    );
-  }
-
-  // Todo agregado en la base: cinco llamadas que devuelven pocas filas cada una.
-  const [r, ranking, categorias, metodos, productos] = await Promise.all([
+  const [resumen, resumenPrevio] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
-    traerRanking(ctx.empresa.id, rango.desde, rango.hasta),
-    traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
-    traerCobrosPorMetodo(ctx.empresa.id, rango.desde, rango.hasta),
-    traerProductos(ctx.empresa.id),
+    traerResumen(ctx.empresa.id, previo.desde, previo.hasta),
   ]);
 
-  /**
-   * Se mira en la moneda de la vista (051): acá solo se informa, no se carga
-   * nada. Las pantallas donde se ESCRIBE un importe siguen recibiendo
-   * `ctx.empresa.moneda` a secas — un formulario en dólares que guardara el
-   * número tal cual estaría guardando dólares como guaraníes.
-   */
-  const m = ctx.vista;
-  const vendidos = new Set(ranking.map((p) => p.producto_id).filter(Boolean) as string[]);
-  const quietos = productos.filter((p) => !vendidos.has(p.id));
-  const plataParada = quietos.reduce((s, p) => s + Number(p.stock) * Number(p.costo ?? 0), 0);
-
   const permisos = permisosDe(ctx.miembro.rol);
-  const verRent = permisos.verRentabilidad && r.conCostos;
+  const props: PropsReporte = {
+    empresaId: ctx.empresa.id,
+    rubro: ctx.empresa.rubro ?? null,
+    tipoCuenta: ctx.empresa.tipo_cuenta,
+    ficha,
+    rango,
+    previo,
+    resumen,
+    resumenPrevio,
+    moneda: ctx.vista,
+    t,
+    idioma,
+    locale,
+    zonaHoraria: ctx.zonaHoraria,
+    hoy,
+    permisos,
+  };
+
+  const hojas = hojasDeLaVariante(variante, ficha, idioma);
 
   return (
     <div className="space-y-5">
-      <SelectorRango clave={rango.clave} desde={rango.desde} hasta={rango.hasta} />
+      <SelectorRangoReporte clave={rango.clave} desde={rango.desde} hasta={rango.hasta} diaCobro={diaCobro} />
 
-      {permisos.descargarExcel ? (
-        <div className="tarjeta flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-[16px] font-bold tracking-tight">{t.pantallas.descargarExcel}</h2>
-            <p className="mt-1 text-[13.5px] leading-relaxed text-tinta/55">
-              {rango.desde === rango.hasta
-                ? fechaLegible(rango.desde, true, FICHA[(await idiomaActual())].locale)
-                : `${fechaLegible(rango.desde, true, FICHA[(await idiomaActual())].locale)} — ${fechaLegible(rango.hasta, true, FICHA[(await idiomaActual())].locale)}`}
-              {' · '}{t.pantallas.cincoHojas}
-            </p>
-          </div>
-          <BotonExcel empresaId={ctx.empresa.id} desde={rango.desde} hasta={rango.hasta} />
-        </div>
-      ) : (
-        <p className="rounded-xl bg-arena px-4 py-3 text-[13px] leading-relaxed text-tinta/60">
-          {t.pantallas.excelSoloAdmin}
-        </p>
+      {permisos.descargarExcel && (
+        <TarjetaDescarga
+          empresaId={ctx.empresa.id} desde={rango.desde} hasta={rango.hasta}
+          hojas={hojas} t={t} locale={locale}
+        />
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {verRent ? (
-          <>
-            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={t.pantallas.ventasN(numero(r.cantidadVentas))} />
-            <Indicador titulo={t.panel.gananciaBruta} valor={dineroCorto(r.gananciaBruta, m)} detalle={t.pantallas.margenCorto(porcentaje(r.margenBruto, 0))} />
-            <Indicador titulo={t.panel.gastos} valor={dineroCorto(r.gastos, m)} tono="malo" />
-            <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} destacado />
-          </>
-        ) : (
-          <>
-            <Indicador titulo={t.panel.vendido} valor={dineroCorto(r.ventas, m)} detalle={t.pantallas.ventasN(numero(r.cantidadVentas))} destacado />
-            <Indicador titulo={t.panel.unidades} valor={numero(r.unidadesVendidas)} detalle={t.pantallas.entregadas} />
-            <Indicador titulo={t.panel.ticketPromedio} valor={dineroCorto(r.ticketPromedio, m)} detalle={t.pantallas.porVenta} />
-            <Indicador titulo={t.pantallas.descuentos} valor={dineroCorto(r.descuentos, m)} detalle={t.pantallas.queDiste} />
-          </>
-        )}
-      </div>
-
-      <Seccion titulo={t.pantallas.rankingCompleto}>
-        {ranking.length === 0 ? (
-          <Vacio titulo={t.pantallas.sinVentasPeriodo} detalle={t.pantallas.sinVentasPeriodoDetalle} />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="tabla min-w-[680px]">
-              <thead>
-                <tr>
-                  <th className="w-10">#</th>
-                  <th>{t.productos.colProducto}</th>
-                  <th className="num">{t.pantallas.colUnidadesLargo}</th>
-                  <th className="num">{t.panel.colVendido}</th>
-                  {verRent && <th className="num">{t.productos.colCosto}</th>}
-                  {verRent && <th className="num">{t.panel.colGanancia}</th>}
-                  {verRent && <th className="num">{t.productos.colMargen}</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {ranking.map((p, i) => (
-                  <tr key={p.producto_id ?? p.nombre}>
-                    <td className={`font-bold ${i < 3 ? 'text-verde-fuerte' : 'text-tinta/30'}`}>{i + 1}</td>
-                    <td>
-                      <span className="block font-semibold">{p.nombre}</span>
-                      <span className="mt-1 block max-w-[140px]"><Barra porcentaje={p.participacion} /></span>
-                    </td>
-                    <td className="num font-semibold tabular-nums">{numero(p.unidades)}</td>
-                    <td className="num tabular-nums">{dinero(p.ingresos, m, false)}</td>
-                    {verRent && <td className="num tabular-nums text-tinta/50">{dineroQuizas(p.costo, m, false)}</td>}
-                    {verRent && (
-                      <td className={`num font-bold tabular-nums ${
-                        p.ganancia === null ? 'text-tinta/30' : p.ganancia >= 0 ? 'text-verde-fuerte' : 'text-rojo'
-                      }`}>
-                        {dineroQuizas(p.ganancia, m, false)}
-                      </td>
-                    )}
-                    {verRent && <td className="num tabular-nums text-tinta/60">{porcentajeQuizas(p.margen, 0)}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Seccion>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Seccion titulo={t.pantallas.comoTePagaron}>
-          {metodos.length === 0 ? (
-            <Vacio titulo={t.pantallas.sinCobros} detalle={t.pantallas.sinCobrosDetalle} />
-          ) : (
-            <div className="space-y-3.5 px-4 pb-4 pt-3">
-              {metodos.map(({ metodo, monto, participacion: p }) => {
-                return (
-                  <div key={metodo}>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                      <span className="text-[14px] font-semibold">{metodoVisible(t, metodo)}</span>
-                      <span className="text-[13.5px] font-bold tabular-nums">{dinero(monto, m, false)}</span>
-                    </div>
-                    <Barra porcentaje={p} />
-                    <p className="mt-1 text-[11.5px] font-semibold text-tinta/40">{porcentaje(p, 0)}</p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Seccion>
-
-        {verRent && (
-        <Seccion titulo={t.pantallas.gastosPorCategoria}>
-          {categorias.length === 0 ? (
-            <Vacio titulo={t.pantallas.sinGastos} detalle={t.pantallas.sinGastosDetalle} />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="tabla">
-                <thead>
-                  <tr><th>{t.productos.categoria}</th><th className="num">{t.venta.total}</th><th className="num">{t.pantallas.colMov}</th><th className="num">%</th></tr>
-                </thead>
-                <tbody>
-                  {categorias.map((c) => (
-                    <tr key={c.nombre}>
-                      <td className="font-semibold">{categoriaVisible(t, c.nombre)}</td>
-                      <td className="num font-semibold tabular-nums text-rojo">{dinero(c.monto, m, false)}</td>
-                      <td className="num tabular-nums text-tinta/50">{c.operaciones}</td>
-                      <td className="num tabular-nums text-tinta/60">{porcentaje(c.participacion, 0)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Seccion>
-        )}
-      </div>
-
-      {quietos.length > 0 && (
-        <Seccion titulo={t.pantallas.sinVender(quietos.length)}>
-          <div className="px-4 pb-4 pt-2">
-            <p className="mb-3 text-[13.5px] leading-relaxed text-tinta/55">
-              {verRent
-                ? t.pantallas.plataParada(dinero(plataParada, m))
-                : t.pantallas.productosQuietos}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {quietos.slice(0, 24).map((p) => (
-                <span key={p.id} className="pastilla bg-arena text-tinta/60">
-                  {p.nombre} · {t.pantallas.unidadesCorto(numero(Number(p.stock)))}
-                </span>
-              ))}
-              {quietos.length > 24 && <span className="pastilla bg-arena text-tinta/40">{t.pantallas.masN(quietos.length - 24)}</span>}
-            </div>
-          </div>
-        </Seccion>
-      )}
+      <ReporteDeLaVariante variante={variante} {...props} />
     </div>
   );
+}
+
+/**
+ * POR DÓNDE SE ENTRA sin rango elegido (24/09).
+ *
+ *   · Personal: «Este ciclo» si cobra un día fijo, si no «Este mes».
+ *   · Alumnos y campo: «Este mes». El profe cobra dos o tres veces por mes,
+ *     así que «Hoy» casi siempre le mostraría Cobrado 0, ninguna clase y ni
+ *     una semana; el agricultor vería la caja de un día y solo las campañas
+ *     abiertas hoy. La primera pantalla parecería vacía o rota.
+ *   · Comercio y servicios: «Hoy», porque venden todos los días y lo primero
+ *     que miran es cómo va la caja.
+ */
+function rangoPorDefecto(variante: VarianteReporte, diaCobro: number | null): ClaveRangoReporte {
+  switch (variante) {
+    case 'personal':
+      return diaCobro ? 'ciclo' : 'mes';
+    case 'alumnos':
+    case 'campo':
+      return 'mes';
+    case 'comercio':
+    case 'servicios':
+      return 'hoy';
+  }
+}
+
+/**
+ * LAS HOJAS DEL ARCHIVO QUE BAJA ESTA CUENTA, para la tarjeta de descarga.
+ * Salen del mismo libro que arma la ruta del Excel (misma variante), y cada
+ * libro tiene una prueba (`pruebas/excel-<variante>.test.js`) que lo arma y
+ * compara sus hojas con estas.
+ */
+function hojasDeLaVariante(variante: VarianteReporte, ficha: FichaRubro, idioma: Idioma): HojaDelLibro[] {
+  switch (variante) {
+    case 'comercio':
+      return hojasComercio(ficha, idioma);
+    case 'alumnos':
+      return hojasAlumnos(ficha, idioma);
+    case 'campo':
+      return hojasCampo(ficha, idioma);
+    case 'personal':
+      return hojasPersonal(ficha, idioma);
+    case 'servicios':
+      return hojasServicios(ficha, idioma);
+  }
+}
+
+/** EL DESPACHO: cada variante con su componente. */
+function ReporteDeLaVariante({ variante, ...props }: PropsReporte & { variante: VarianteReporte }) {
+  switch (variante) {
+    case 'personal':
+      return <ReportePersonal {...props} />;
+    case 'alumnos':
+      return <ReporteAlumnos {...props} />;
+    case 'campo':
+      return <ReporteCampo {...props} />;
+    case 'comercio':
+      return <ReporteComercio {...props} />;
+    case 'servicios':
+      return <ReporteServicios {...props} />;
+  }
 }

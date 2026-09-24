@@ -69,7 +69,27 @@ import type { Movimiento } from './tipos';
  *      · `logradoEnReto()` devuelve `null` si el reto se mide por ganancia.
  *
  *    La interfaz muestra un guion, no un número.
+ *
+ * 8. LA COMPRA DE MERCADERÍA (106, decisión de Matías del 23/09)
+ *    En un período en que las ventas traen costo cargado, los gastos de la
+ *    categoría «Mercadería» NO restan de la ganancia: esa mercadería ya resta
+ *    como costo el día que se vende. Van aparte, en `comprasMercaderia`, con
+ *    `mercaderiaAparte: true`. Sin costo cargado en el período, restan como
+ *    siempre. La bandera es del PERÍODO: la serie diaria usa la misma para
+ *    todos sus días, así su suma da la ganancia neta del resumen.
+ *
+ *    Diferencia conocida con la base: allá el costo de un servicio del
+ *    reparto (la parte del barbero, 034) no enciende la regla, y un pago a
+ *    un profesional a comisión no es gasto (`pagadoAProfesionales`). Una
+ *    lista de movimientos no trae la atribución ni la marca del pago, así
+ *    que acá no se pueden distinguir: este espejo vale para el comercio.
  */
+
+/** ¿Es la categoría «Mercadería»? La misma lista que `es_categoria_mercaderia` (106). */
+export function esCategoriaMercaderia(categoria: string | null | undefined): boolean {
+  const c = (categoria ?? '').trim().toLowerCase();
+  return c === 'mercadería' || c === 'mercaderia' || c === 'mercadoria';
+}
 
 /** Un movimiento cuenta para las finanzas solo si no está anulado. */
 export function esValido(m: Movimiento): boolean {
@@ -99,8 +119,17 @@ export interface Resumen {
   ingresosTotales: number;
   costoMercaderia: number; // lo que costó lo que se vendió (no lo afecta el descuento)
   gananciaBruta: number;   // ventas − costo de mercadería
-  gastos: number;          // gastos operativos
+  gastos: number;          // gastos operativos (sin la mercadería cuando va aparte, sin pagos de comisión)
   gananciaNeta: number;    // ganancia bruta + otros ingresos − gastos
+  /** Gastos de la categoría «Mercadería» del período, vayan o no aparte (106). */
+  comprasMercaderia: number;
+  /** true si en el período hubo costo cargado: entonces `comprasMercaderia` NO está en `gastos`. */
+  mercaderiaAparte: boolean;
+  /**
+   * Lo pagado a profesionales a comisión (106). Ya restó como costo de cada
+   * corte, así que no está en `gastos`. 0 si quien mira no ve costos.
+   */
+  pagadoAProfesionales: number;
   margenBruto: number;     // %
   margenNeto: number;      // %
   cantidadVentas: number;
@@ -125,6 +154,7 @@ export interface Resumen {
 export const RESUMEN_VACIO: Resumen = {
   ventas: 0, ventasBrutas: 0, descuentos: 0, otrosIngresos: 0, ingresosTotales: 0,
   costoMercaderia: 0, gananciaBruta: 0, gastos: 0, gananciaNeta: 0,
+  comprasMercaderia: 0, mercaderiaAparte: false, pagadoAProfesionales: 0,
   margenBruto: 0, margenNeto: 0, cantidadVentas: 0, ticketPromedio: 0,
   unidadesVendidas: 0, ventasAnuladas: 0, montoVentasAnuladas: 0,
   movimientosAnulados: 0, montoMovimientosAnulados: 0, conCostos: true,
@@ -142,6 +172,7 @@ export function tieneCostos(movimientos: Movimiento[]): boolean {
 
 export function resumir(movimientos: Movimiento[]): Resumen {
   let ventas = 0, ventasBrutas = 0, otrosIngresos = 0, costoMercaderia = 0, gastos = 0;
+  let comprasMercaderia = 0;
   let cantidadVentas = 0, unidadesVendidas = 0;
   let ventasAnuladas = 0, montoVentasAnuladas = 0;
   let movimientosAnulados = 0, montoMovimientosAnulados = 0;
@@ -172,8 +203,13 @@ export function resumir(movimientos: Movimiento[]): Resumen {
       otrosIngresos += monto;
     } else {
       gastos += monto;
+      if (esCategoriaMercaderia(m.categoria)) comprasMercaderia += monto;
     }
   }
+
+  // Regla 8: con costo cargado en el período, la compra de mercadería va aparte.
+  const mercaderiaAparte = costoMercaderia > 0;
+  if (mercaderiaAparte) gastos -= comprasMercaderia;
 
   const ingresosTotales = ventas + otrosIngresos;
   const gananciaBruta = conCostos ? ventas - costoMercaderia : 0;
@@ -189,6 +225,9 @@ export function resumir(movimientos: Movimiento[]): Resumen {
     gananciaBruta,
     gastos,
     gananciaNeta,
+    comprasMercaderia,
+    mercaderiaAparte,
+    pagadoAProfesionales: 0,
     margenBruto: conCostos && ventas > 0 ? (gananciaBruta / ventas) * 100 : 0,
     margenNeto: conCostos && ingresosTotales > 0 ? (gananciaNeta / ingresosTotales) * 100 : 0,
     cantidadVentas,
@@ -352,18 +391,37 @@ export function gastosPorCategoria(movimientos: Movimiento[]): FilaCategoria[] {
 export interface FilaDia {
   fecha: string;
   ventas: number;
+  /** Sin la compra de mercadería cuando va aparte ni los pagos de comisión (106). */
   gastos: number;
   otrosIngresos: number;
   /** null si alguna venta de ese día no trajo el costo. Nunca se rellena con cero. */
   ganancia: number | null;
+  /** Gastos de la categoría «Mercadería» de ese día (106). */
+  comprasMercaderia: number;
+  /** La bandera del PERÍODO entero, repetida en cada día (106). */
+  mercaderiaAparte: boolean;
+  /** Pagos a profesionales a comisión de ese día; null si quien mira no ve sueldos (106). */
+  pagadoAProfesionales: number | null;
 }
 
 export function serieDiaria(movimientos: Movimiento[], dias: string[]): FilaDia[] {
   const mapa = new Map<string, FilaDia>(
-    dias.map((d) => [d, { fecha: d, ventas: 0, gastos: 0, otrosIngresos: 0, ganancia: 0 }]),
+    dias.map((d) => [d, {
+      fecha: d, ventas: 0, gastos: 0, otrosIngresos: 0, ganancia: 0,
+      comprasMercaderia: 0, mercaderiaAparte: false, pagadoAProfesionales: 0,
+    }]),
   );
   // Días en los que apareció una venta sin costo: su ganancia es incalculable.
   const sinCosto = new Set<string>();
+
+  // Regla 8: la bandera se decide con el costo de TODO el período, antes de
+  // recorrer los días. Si se decidiera día por día, la suma de la serie no
+  // daría la ganancia neta del resumen.
+  let costoDelPeriodo = 0;
+  for (const m of movimientos) {
+    if (m.tipo === 'venta' && esValido(m) && mapa.has(m.fecha)) costoDelPeriodo += Number(m.costo_total) || 0;
+  }
+  const aparte = costoDelPeriodo > 0;
 
   for (const m of movimientos) {
     if (!esValido(m)) continue;
@@ -382,10 +440,15 @@ export function serieDiaria(movimientos: Movimiento[], dias: string[]): FilaDia[
       fila.otrosIngresos += monto;
       if (fila.ganancia !== null) fila.ganancia += monto;
     } else {
+      const esCompra = esCategoriaMercaderia(m.categoria);
+      if (esCompra) fila.comprasMercaderia += monto;
+      if (esCompra && aparte) continue;
       fila.gastos += monto;
       if (fila.ganancia !== null) fila.ganancia -= monto;
     }
   }
+
+  for (const fila of mapa.values()) fila.mercaderiaAparte = aparte;
 
   for (const fecha of sinCosto) {
     const fila = mapa.get(fecha);

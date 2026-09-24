@@ -15,6 +15,13 @@ import { rutinasComunEs } from './rutinas-comun';
 import { campanasEs } from './campanas';
 import { gastosCampanaEs } from './gastos-campana';
 import { panelCampoEs } from './panel-campo';
+import { reportesComunesEs } from './reportes-comunes';
+import { reportesComercioEs } from './reportes-comercio';
+import { reportesServiciosEs } from './reportes-servicios';
+import { reportesAlumnosEs } from './reportes-alumnos';
+import { reportesCampoEs } from './reportes-campo';
+import { reportesPersonalEs } from './reportes-personal';
+import { avisoVencimientoEs } from './aviso-vencimiento';
 
 export const es = {
   comun: {
@@ -2768,6 +2775,18 @@ export const es = {
   campanas: campanasEs,
   gastosCampana: gastosCampanaEs,
   panelCampo: panelCampoEs,
+
+  // Reportes por rubro (23/09): lo común (rango con ciclo, indicador con
+  // flecha, gráfico por día, descarga) y lo de cada uno de los cinco
+  // reportes, cada cual en su archivo. Y el aviso de que se vence el período
+  // pago (107).
+  reportesComunes: reportesComunesEs,
+  reportesComercio: reportesComercioEs,
+  reportesServicios: reportesServiciosEs,
+  reportesAlumnos: reportesAlumnosEs,
+  reportesCampo: reportesCampoEs,
+  reportesPersonal: reportesPersonalEs,
+  avisoVencimiento: avisoVencimientoEs,
 };
 
 /**

@@ -6,6 +6,13 @@ import { rutinasComunPt } from './rutinas-comun';
 import { campanasPt } from './campanas';
 import { gastosCampanaPt } from './gastos-campana';
 import { panelCampoPt } from './panel-campo';
+import { reportesComunesPt } from './reportes-comunes';
+import { reportesComercioPt } from './reportes-comercio';
+import { reportesServiciosPt } from './reportes-servicios';
+import { reportesAlumnosPt } from './reportes-alumnos';
+import { reportesCampoPt } from './reportes-campo';
+import { reportesPersonalPt } from './reportes-personal';
+import { avisoVencimientoPt } from './aviso-vencimiento';
 
 /**
  * Português do Brasil. El idioma de los brasileños que viven y trabajan en
@@ -2606,4 +2613,12 @@ export const pt: Textos = {
   campanas: campanasPt,
   gastosCampana: gastosCampanaPt,
   panelCampo: panelCampoPt,
+
+  reportesComunes: reportesComunesPt,
+  reportesComercio: reportesComercioPt,
+  reportesServicios: reportesServiciosPt,
+  reportesAlumnos: reportesAlumnosPt,
+  reportesCampo: reportesCampoPt,
+  reportesPersonal: reportesPersonalPt,
+  avisoVencimiento: avisoVencimientoPt,
 };

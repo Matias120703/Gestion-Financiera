@@ -3,7 +3,10 @@ import type {
   AhorroDelPeriodo, FilaCategoria, FilaDia, FilaProducto, Resumen,
 } from './calculos';
 import { exigir, exigirLista, recorrerPaginas } from './lectura';
-import type { Movimiento, TipoMovimiento } from './tipos';
+import type {
+  FiadoDelPeriodo, Movimiento, ProgresoClientes, ReporteAlumnos, ReporteTurnos, TipoMovimiento,
+  VentasDeVendedor,
+} from './tipos';
 
 /**
  * ============================================================
@@ -66,6 +69,10 @@ interface ResumenSql {
   margen_bruto: number | null;
   margen_neto: number | null;
   con_costos: boolean;
+  // 106: la compra de mercadería aparte y los pagos de comisión.
+  compras_mercaderia?: number;
+  mercaderia_aparte?: boolean;
+  pagado_a_profesionales?: number | null;
 }
 
 const num = (v: unknown): number => {
@@ -98,6 +105,12 @@ export function mapearResumen(sql: ResumenSql): Resumen {
     margenBruto: conCostos ? num(sql.margen_bruto) : 0,
     margenNeto: conCostos ? num(sql.margen_neto) : 0,
     conCostos,
+    // 106. Con la mercadería aparte, `gastos` ya viene sin ella: la regla del
+    // período la decidió la base y acá no se recalcula nada.
+    comprasMercaderia: num(sql.compras_mercaderia),
+    mercaderiaAparte: Boolean(sql.mercaderia_aparte),
+    // A quien no ve sueldos le llega null: queda en 0, igual que el costo.
+    pagadoAProfesionales: conCostos ? num(sql.pagado_a_profesionales) : 0,
   };
 }
 
@@ -162,6 +175,10 @@ interface FilaDiaSql {
   gastos: number;
   otros_ingresos: number;
   ganancia: number | null;
+  // 106
+  compras_mercaderia?: number;
+  mercaderia_aparte?: boolean;
+  pagado_a_profesionales?: number | null;
 }
 
 export function mapearSerie(filas: FilaDiaSql[]): FilaDia[] {
@@ -171,6 +188,9 @@ export function mapearSerie(filas: FilaDiaSql[]): FilaDia[] {
     gastos: num(f.gastos),
     otrosIngresos: num(f.otros_ingresos),
     ganancia: quizas(f.ganancia),
+    comprasMercaderia: num(f.compras_mercaderia),
+    mercaderiaAparte: Boolean(f.mercaderia_aparte),
+    pagadoAProfesionales: quizas(f.pagado_a_profesionales),
   }));
 }
 
@@ -361,4 +381,167 @@ export async function contarMovimientos(empresaId: string, desde: string, hasta:
   });
   // Cero movimientos es un dato; no poder contarlos, no.
   return num(exigir(respuesta, 'conteo de movimientos'));
+}
+
+// ------------------------------------------------------------------ reportes por rubro (106)
+//
+// Las lecturas por período que agregó la 106. Cada una devuelve UN jsonb (el
+// patrón de este archivo) y, si falla, lanza: un reporte sin turnos porque no
+// se pudo leer diría «no tuviste turnos». Los montos llegan como texto o
+// número según PostgREST; se normalizan acá para que la pantalla y el Excel
+// reciban números y los null sigan siendo null («no hay dato», no cero).
+
+const lista = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+export function mapearReporteTurnos(j: any): ReporteTurnos {
+  const e = j?.por_estado ?? {};
+  return {
+    total: num(j?.total),
+    por_estado: {
+      pendiente: num(e.pendiente), confirmada: num(e.confirmada), atendida: num(e.atendida),
+      no_vino: num(e.no_vino), cancelada: num(e.cancelada),
+    },
+    por_origen: { local: num(j?.por_origen?.local), publico: num(j?.por_origen?.publico) },
+    por_profesional: lista<any>(j?.por_profesional).map((f) => ({
+      id: String(f.id), nombre: String(f.nombre), total: num(f.total), atendidas: num(f.atendidas),
+      no_vino: num(f.no_vino), canceladas: num(f.canceladas), pendientes: num(f.pendientes),
+    })),
+    por_servicio: lista<any>(j?.por_servicio).map((f) => ({
+      producto_id: String(f.producto_id), nombre: String(f.nombre),
+      total: num(f.total), atendidas: num(f.atendidas),
+    })),
+    clientes: lista<any>(j?.clientes).map((f) => ({
+      cliente_id: String(f.cliente_id), nombre: String(f.nombre),
+      visitas: num(f.visitas), ultima: String(f.ultima),
+    })),
+  };
+}
+
+export async function traerReporteTurnos(empresaId: string, desde: string, hasta: string): Promise<ReporteTurnos> {
+  const respuesta = await clienteServidor().rpc('reporte_turnos', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  return mapearReporteTurnos(exigir(respuesta, 'turnos del período'));
+}
+
+export function mapearReporteAlumnos(j: any): ReporteAlumnos {
+  const p = j?.paquetes ?? {};
+  return {
+    clases_dadas: num(j?.clases_dadas),
+    faltas: num(j?.faltas),
+    por_semana: lista<any>(j?.por_semana).map((f) => ({
+      semana: String(f.semana), dadas: num(f.dadas), faltas: num(f.faltas),
+    })),
+    cobrado: num(j?.cobrado),
+    cobrado_por_clase: quizas(j?.cobrado_por_clase),
+    por_cobrar: num(j?.por_cobrar),
+    fiado_pendiente: num(j?.fiado_pendiente),
+    activos: num(j?.activos),
+    nuevos: num(j?.nuevos),
+    paquetes: {
+      vendidos: num(p.vendidos), terminados: num(p.terminados),
+      vencidos: num(p.vencidos), renovaron: num(p.renovaron),
+    },
+    por_terminar: lista<any>(j?.por_terminar).map((f) => ({
+      paquete: String(f.paquete), cliente_id: String(f.cliente_id), alumno: String(f.alumno),
+      nombre: String(f.nombre), quedan: num(f.quedan), vence_el: f.vence_el ?? null,
+    })),
+    alumnos: lista<any>(j?.alumnos).map((f) => ({
+      cliente_id: String(f.cliente_id), nombre: String(f.nombre),
+      clases: num(f.clases), faltas: num(f.faltas), cobrado: num(f.cobrado),
+      debe: num(f.debe), debe_inscripciones: num(f.debe_inscripciones), debe_fiado: num(f.debe_fiado),
+      paquete: f.paquete ?? null, materia: f.materia ?? null,
+      usadas: quizas(f.usadas), quedan: quizas(f.quedan),
+      vence_el: f.vence_el ?? null, ultima_clase: f.ultima_clase ?? null,
+    })),
+    por_paquete: lista<any>(j?.por_paquete).map((f) => ({
+      nombre: String(f.nombre), vendidos: num(f.vendidos), cobrado: num(f.cobrado),
+    })),
+    por_materia: lista<any>(j?.por_materia).map((f) => ({
+      materia: f.materia ?? null, alumnos: num(f.alumnos), cobrado: num(f.cobrado),
+    })),
+  };
+}
+
+export async function traerReporteAlumnos(empresaId: string, desde: string, hasta: string): Promise<ReporteAlumnos> {
+  const respuesta = await clienteServidor().rpc('reporte_alumnos', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  return mapearReporteAlumnos(exigir(respuesta, 'alumnos del período'));
+}
+
+export function mapearProgresoClientes(j: any): ProgresoClientes {
+  return {
+    medidos: num(j?.medidos),
+    con_peso: num(j?.con_peso),
+    cambio_peso: quizas(j?.cambio_peso),
+    con_cintura: num(j?.con_cintura),
+    cambio_cintura: quizas(j?.cambio_cintura),
+    con_grasa: num(j?.con_grasa),
+    cambio_grasa: quizas(j?.cambio_grasa),
+    sin_medir_30: num(j?.sin_medir_30),
+    sin_rutina: num(j?.sin_rutina),
+    clientes: lista<any>(j?.clientes).map((f) => ({
+      cliente_id: String(f.cliente_id), nombre: String(f.nombre), activo: Boolean(f.activo),
+      mediciones: num(f.mediciones),
+      peso_inicial: quizas(f.peso_inicial), peso_final: quizas(f.peso_final), peso_cambio: quizas(f.peso_cambio),
+      cintura_inicial: quizas(f.cintura_inicial), cintura_final: quizas(f.cintura_final),
+      cintura_cambio: quizas(f.cintura_cambio),
+      grasa_inicial: quizas(f.grasa_inicial), grasa_final: quizas(f.grasa_final), grasa_cambio: quizas(f.grasa_cambio),
+      grasa_metodo: f.grasa_metodo ?? null,
+      ultima_medicion: f.ultima_medicion ?? null,
+      dias_sin_medir: quizas(f.dias_sin_medir),
+      sin_medir_30: Boolean(f.sin_medir_30),
+      rutina_vigente: f.rutina_vigente ?? null,
+    })),
+  };
+}
+
+/** Solo administración (como las medidas): a un vendedor la base lo rechaza. */
+export async function traerProgresoClientes(empresaId: string, desde: string, hasta: string): Promise<ProgresoClientes> {
+  const respuesta = await clienteServidor().rpc('progreso_clientes', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  return mapearProgresoClientes(exigir(respuesta, 'progreso de los clientes'));
+}
+
+export function mapearVentasPorVendedor(filas: any[]): VentasDeVendedor[] {
+  return lista<any>(filas).map((f) => ({
+    user_id: f.user_id ?? null,
+    nombre: f.nombre ?? null,
+    rol: f.rol ?? null,
+    vendido: num(f.vendido),
+    cantidad: num(f.cantidad),
+    ticket_promedio: quizas(f.ticket_promedio),
+    anuladas: num(f.anuladas),
+    monto_anulado: num(f.monto_anulado),
+  }));
+}
+
+/** Solo administración: a un vendedor la base lo rechaza. */
+export async function traerVentasPorVendedor(
+  empresaId: string, desde: string, hasta: string,
+): Promise<VentasDeVendedor[]> {
+  const respuesta = await clienteServidor().rpc('ventas_por_vendedor', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  return mapearVentasPorVendedor(exigirLista<any>(respuesta, 'ventas por vendedor'));
+}
+
+export function mapearFiadoDelPeriodo(j: any): FiadoDelPeriodo {
+  return {
+    otorgado: num(j?.otorgado),
+    cobrado: num(j?.cobrado),
+    clientes: lista<any>(j?.clientes).map((f) => ({
+      cliente_id: String(f.cliente_id), nombre: String(f.nombre),
+      otorgado: num(f.otorgado), cobrado: num(f.cobrado), saldo_hoy: num(f.saldo_hoy),
+    })),
+  };
+}
+
+export async function traerFiadoDelPeriodo(empresaId: string, desde: string, hasta: string): Promise<FiadoDelPeriodo> {
+  const respuesta = await clienteServidor().rpc('fiado_del_periodo', {
+    p_empresa: empresaId, p_desde: desde, p_hasta: hasta,
+  });
+  return mapearFiadoDelPeriodo(exigir(respuesta, 'fiado del período'));
 }

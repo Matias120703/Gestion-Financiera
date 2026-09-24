@@ -104,7 +104,14 @@ export function PantallaGastos({
   const [descripcion, setDescripcion] = useState('');
   /** Lo que se escribió: en la moneda propia, o en la otra si se tocó «Pagué en…». */
   const [monto, setMonto] = useState<number>(0);
-  const [categoria, setCategoria] = useState(rapidasGasto[0] ?? 'Mercadería');
+  // Sin «Mercadería» elegida de antemano (106): desde que la compra de
+  // mercadería no resta de la ganancia cuando hay costo cargado, un gasto de
+  // luz o de flete guardado sin tocar la categoría se iría a «Compraste
+  // mercadería» y desaparecería de la ganancia. Arranca en «Otros» y la
+  // compra de mercadería se elige con un toque. En el campo la primera de su
+  // lista (Semilla) no cambia nada de eso y se queda como estaba.
+  const categoriaInicial = conGrilla ? (rapidasGasto[0] ?? 'Otros') : 'Otros';
+  const [categoria, setCategoria] = useState(categoriaInicial);
   const [fecha, setFecha] = useState(hoyISO(zona));
   const [metodo, setMetodo] = useState('efectivo');
   /** Vacío = la que reciba esa forma de pago, como hasta ahora (074). */
@@ -466,7 +473,7 @@ export function PantallaGastos({
               key={clase} type="button"
               onClick={() => {
                 setTipo(clase);
-                setCategoria(clase === 'gasto' ? rapidasGasto[0] ?? 'Mercadería' : 'Otros ingresos');
+                setCategoria(clase === 'gasto' ? categoriaInicial : 'Otros ingresos');
                 // Lo que entra no se debe ni se reparte.
                 if (clase === 'ingreso') { setRepartir(false); if (metodo === A_COSECHA) setMetodo('efectivo'); }
               }}

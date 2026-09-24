@@ -194,7 +194,11 @@ async function principal() {
     anuladas: DIAS * ANULADAS_POR_DIA,
   };
   esperado.gananciaBruta = esperado.ventas - esperado.costo;
-  esperado.gananciaNeta = esperado.gananciaBruta + esperado.ingresos - esperado.gastos;
+  // 106 (decisión de Matías del 23/09): las ventas traen costo, así que los
+  // gastos de «Mercadería» (los n impares) van aparte y no restan otra vez.
+  esperado.comprasMercaderia = DIAS * Math.ceil(GASTOS_POR_DIA / 2) * GASTO;
+  esperado.gastosOperativos = esperado.gastos - esperado.comprasMercaderia;
+  esperado.gananciaNeta = esperado.gananciaBruta + esperado.ingresos - esperado.gastosOperativos;
 
   ok('movimientos creados', totalCreados, esperado.total);
   ok('son más de 20.000', totalCreados > 20000, true);
@@ -215,7 +219,9 @@ async function principal() {
   casi('ventas', resumenSql.ventas, esperado.ventas);
   casi('costo de mercadería', resumenSql.costo_mercaderia, esperado.costo);
   casi('ganancia bruta', resumenSql.ganancia_bruta, esperado.gananciaBruta);
-  casi('gastos', resumenSql.gastos, esperado.gastos);
+  casi('gastos (sin la mercadería, que va aparte)', resumenSql.gastos, esperado.gastosOperativos);
+  casi('compras de mercadería, aparte', resumenSql.compras_mercaderia, esperado.comprasMercaderia);
+  ok('la mercadería va aparte en el período', resumenSql.mercaderia_aparte, true);
   casi('otros ingresos', resumenSql.otros_ingresos, esperado.ingresos);
   casi('ganancia neta', resumenSql.ganancia_neta, esperado.gananciaNeta);
   casi('cantidad de ventas', resumenSql.cantidad_ventas, esperado.cantidadVentas);

@@ -395,7 +395,10 @@ function FilaPersona({
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px] text-tinta/55">
         <span>{t.reparto.colServicios}: <b className="tabular-nums">{fila.cortes}</b></span>
         <span>{t.reparto.colCobrado}: <b className="tabular-nums">{plata(Number(fila.cobrado))}</b></span>
-        <span>{t.reparto.colLeToca}: <b className="tabular-nums">{plata(Number(fila.le_toca))}</b></span>
+        {/* 106: lo que cobró directo quien alquila la silla ya no está en le_toca
+            (no se le debe nada), pero sigue siendo suyo: se suma para que «Le toca»
+            diga toda su parte, como el reporte de servicios. */}
+        <span>{t.reparto.colLeToca}: <b className="tabular-nums">{plata(Number(fila.le_toca) + Number(fila.cobro_directo ?? 0))}</b></span>
         {Number(fila.pagado) > 0 && (
           <span>{t.reparto.colPagado}: <b className="tabular-nums">{plata(Number(fila.pagado))}</b></span>
         )}
@@ -790,8 +793,9 @@ export function MisServiciosPantalla({
         <p className="mt-1 text-[12.5px] text-tinta/50">{t.reparto.loMioDetalle}</p>
 
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <Cifra titulo={t.reparto.meCorresponde} valor={plata(Number(datos.le_toca))} />
-          <Cifra titulo={t.reparto.yaCobre} valor={plata(Number(datos.pagado))} />
+          {/* 106: si alquila la silla, lo que cobró directo es suyo y ya lo tiene. */}
+          <Cifra titulo={t.reparto.meCorresponde} valor={plata(Number(datos.le_toca) + Number(datos.cobro_directo ?? 0))} />
+          <Cifra titulo={t.reparto.yaCobre} valor={plata(Number(datos.pagado) + Number(datos.cobro_directo ?? 0))} />
           <Cifra
             titulo={t.reparto.meDeben}
             valor={plata(Number(datos.le_deben))}

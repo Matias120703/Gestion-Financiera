@@ -200,6 +200,21 @@ export interface Movimiento {
   actualizado_por: string | null;
   updated_at: string | null;
   movimiento_items?: MovimientoItem[];
+  // ---- Lo que agrega pagina_movimientos (106). Opcionales: otras lecturas
+  // (listar_movimientos, el alta) devuelven la fila sin estos datos. ----
+  cuenta_id?: string | null;
+  cuenta_nombre?: string | null;
+  cliente_id?: string | null;
+  cliente_nombre?: string | null;
+  /** El nombre del miembro que lo cargó; null si ya no está en el negocio. */
+  creado_por_nombre?: string | null;
+  lote_id?: string | null;
+  lote_nombre?: string | null;
+  /** Si se pagó en otra moneda (100): cuál y cuánto. */
+  moneda_original?: string | null;
+  monto_original?: number | null;
+  /** Guaraníes (o la moneda del negocio) por unidad de la moneda original. */
+  cambio?: number | null;
 }
 
 export interface Suscripcion {
@@ -1182,6 +1197,11 @@ export interface FilaLiquidacion {
   pagado: number;
   /** Lo que está en la caja del local pero es de él. */
   le_debe: number;
+  /**
+   * Lo que cobró directo quien alquila la silla (106): es suyo y ya lo tiene,
+   * así que NO está en le_toca ni en le_debe.
+   */
+  cobro_directo: number;
 }
 
 export interface MisServicios {
@@ -1190,6 +1210,8 @@ export interface MisServicios {
   le_toca: number;
   pagado: number;
   le_deben: number;
+  /** Con alquiler de silla: lo que cobró él mismo, que no se le debe (106). */
+  cobro_directo: number;
 }
 
 // ---- La agenda pública: lo único que sale al mundo sin sesión ----
@@ -1441,4 +1463,135 @@ export interface DescuentoRacha {
   porcentaje: number;
   /** Todavía corre la prueba: se puede seguir sumando. */
   vigente: boolean;
+}
+
+// ---- Reportes por rubro: las lecturas por período de la 106 ----
+//
+// Montos en la moneda del negocio. Un null no es un cero: quiere decir «no
+// hay dato» (sin clases no hay cobrado por clase, sin dos mediciones no hay
+// cambio) y la pantalla y el Excel muestran un guion.
+
+export type EstadoTurno = 'pendiente' | 'confirmada' | 'atendida' | 'no_vino' | 'cancelada';
+
+export interface ReporteTurnos {
+  total: number;
+  por_estado: Record<EstadoTurno, number>;
+  por_origen: { local: number; publico: number };
+  por_profesional: {
+    id: string; nombre: string; total: number; atendidas: number;
+    no_vino: number; canceladas: number; pendientes: number;
+  }[];
+  por_servicio: { producto_id: string; nombre: string; total: number; atendidas: number }[];
+  /** Los 20 que más vinieron (turnos atendidos, con cliente de la agenda). */
+  clientes: { cliente_id: string; nombre: string; visitas: number; ultima: string }[];
+}
+
+export interface AlumnoDelReporte {
+  cliente_id: string;
+  nombre: string;
+  clases: number;
+  faltas: number;
+  /** Ventas del alumno en el período (la misma base que el «Cobrado» del resumen). */
+  cobrado: number;
+  /** HOY: inscripciones sin cobrar + saldo de fiado (las dos partes, abajo). */
+  debe: number;
+  /** Inscripciones sin cobrar (la regla de por_cobrar_alumnos). */
+  debe_inscripciones: number;
+  /** Saldo de fiado del alumno (solo si es a favor del negocio). */
+  debe_fiado: number;
+  /** El paquete activo más reciente; null los cuatro si no tiene. */
+  paquete: string | null;
+  materia: string | null;
+  usadas: number | null;
+  quedan: number | null;
+  vence_el: string | null;
+  ultima_clase: string | null;
+}
+
+export interface ReporteAlumnos {
+  clases_dadas: number;
+  faltas: number;
+  por_semana: { semana: string; dadas: number; faltas: number }[];
+  cobrado: number;
+  /** cobrado ÷ clases dadas; null si no se dio ninguna. */
+  cobrado_por_clase: number | null;
+  /** Inscripciones sin cobrar, hoy (la regla de por_cobrar_alumnos). */
+  por_cobrar: number;
+  /**
+   * Saldo de fiado de los alumnos, hoy. Aparte de por_cobrar: la suma de
+   * `alumnos[].debe` es por_cobrar + fiado_pendiente.
+   */
+  fiado_pendiente: number;
+  /** Alumnos con un paquete activo HOY. */
+  activos: number;
+  /** Alumnos cuyo primer paquete se creó en el período. */
+  nuevos: number;
+  paquetes: { vendidos: number; terminados: number; vencidos: number; renovaron: number };
+  por_terminar: {
+    paquete: string; cliente_id: string; alumno: string; nombre: string;
+    quedan: number; vence_el: string | null;
+  }[];
+  alumnos: AlumnoDelReporte[];
+  por_paquete: { nombre: string; vendidos: number; cobrado: number }[];
+  /** Vacío salvo que el profe enseñe dos o más materias. */
+  por_materia: { materia: string | null; alumnos: number; cobrado: number }[];
+}
+
+export interface ProgresoCliente {
+  cliente_id: string;
+  nombre: string;
+  /** Tiene un plan activo hoy. */
+  activo: boolean;
+  mediciones: number;
+  peso_inicial: number | null;
+  peso_final: number | null;
+  peso_cambio: number | null;
+  cintura_inicial: number | null;
+  cintura_final: number | null;
+  cintura_cambio: number | null;
+  grasa_inicial: number | null;
+  grasa_final: number | null;
+  /** Solo si la primera y la última se midieron con el mismo método. */
+  grasa_cambio: number | null;
+  grasa_metodo: string | null;
+  ultima_medicion: string | null;
+  dias_sin_medir: number | null;
+  sin_medir_30: boolean;
+  rutina_vigente: string | null;
+}
+
+export interface ProgresoClientes {
+  medidos: number;
+  con_peso: number;
+  cambio_peso: number | null;
+  con_cintura: number;
+  cambio_cintura: number | null;
+  con_grasa: number;
+  cambio_grasa: number | null;
+  sin_medir_30: number;
+  sin_rutina: number;
+  clientes: ProgresoCliente[];
+}
+
+export interface VentasDeVendedor {
+  user_id: string | null;
+  /** null si ya no está en el negocio o la venta no tiene autor. */
+  nombre: string | null;
+  rol: string | null;
+  vendido: number;
+  cantidad: number;
+  ticket_promedio: number | null;
+  anuladas: number;
+  monto_anulado: number;
+}
+
+export interface FiadoDelPeriodo {
+  otorgado: number;
+  cobrado: number;
+  clientes: {
+    cliente_id: string; nombre: string;
+    otorgado: number; cobrado: number;
+    /** Lo que debe HOY (todo lo fiado menos todo lo cobrado). */
+    saldo_hoy: number;
+  }[];
 }

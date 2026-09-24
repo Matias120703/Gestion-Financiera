@@ -7,6 +7,8 @@ import { decimalesDe, simboloDe, fechaLegible } from './formato';
 import type { Liquidacion, Lote, Movimiento, Producto } from './tipos';
 import { textosExcel, type TextosExcel } from './reporte-textos';
 import { fichaDe } from './rubros';
+import type { Conversor, HojaDelLibro } from './reportes/comun';
+import { varianteDeReporte } from './reportes/variante';
 
 /**
  * Una fila de la hoja «Liquidaciones»: la liquidación de una campaña, con
@@ -26,24 +28,31 @@ export function nombreDeCampana(l: { nombre: string; campana?: string | null }):
   return [l.nombre, (l.campana ?? '').trim()].filter(Boolean).join(' · ');
 }
 
-const VERDE = 'FF17795A';
-const VERDE_SUAVE = 'FFE6F4EE';
-const TINTA = 'FF0D1B16';
-const ROJO = 'FFC0392B';
-const GRIS = 'FFF6F7F5';
-const BORDE = 'FFE3E7E4';
+/*
+ * Los colores, los formatos y las piezas de cada hoja se exportan (23/09):
+ * los cinco libros por rubro (`src/lib/reportes/excel-*.ts`) arman sus hojas
+ * con las mismas piezas, así un Excel de Orden se ve igual venga del reporte
+ * que venga. Ninguno de esos libros se importa desde acá (sería circular):
+ * el despacho por variante vive en la ruta `/api/excel`.
+ */
+export const VERDE = 'FF17795A';
+export const VERDE_SUAVE = 'FFE6F4EE';
+export const TINTA = 'FF0D1B16';
+export const ROJO = 'FFC0392B';
+export const GRIS = 'FFF6F7F5';
+export const BORDE = 'FFE3E7E4';
 
-const bordeFino: Partial<ExcelJS.Borders> = {
+export const bordeFino: Partial<ExcelJS.Borders> = {
   bottom: { style: 'thin', color: { argb: BORDE } },
 };
 
-function formatoMoneda(moneda: string) {
+export function formatoMoneda(moneda: string) {
   const s = simboloDe(moneda);
   return decimalesDe(moneda) === 0 ? `"${s}" #,##0;[Red]-"${s}" #,##0` : `"${s}" #,##0.00;[Red]-"${s}" #,##0.00`;
 }
 
 /** Encabezado con el nombre del negocio, el periodo y la fecha de emisión. */
-function encabezado(hoja: ExcelJS.Worksheet, empresa: string, titulo: string, periodo: string, columnas: number) {
+export function encabezado(hoja: ExcelJS.Worksheet, empresa: string, titulo: string, periodo: string, columnas: number) {
   const ultimaCol = String.fromCharCode(64 + columnas);
 
   hoja.mergeCells(`A1:${ultimaCol}1`);
@@ -72,7 +81,7 @@ function encabezado(hoja: ExcelJS.Worksheet, empresa: string, titulo: string, pe
   hoja.getRow(4).height = 6;
 }
 
-function filaEncabezadoTabla(hoja: ExcelJS.Worksheet, fila: number, titulos: string[]) {
+export function filaEncabezadoTabla(hoja: ExcelJS.Worksheet, fila: number, titulos: string[]) {
   const r = hoja.getRow(fila);
   titulos.forEach((t, i) => {
     const c = r.getCell(i + 1);
@@ -161,15 +170,74 @@ export function construirLibro(datos: DatosReporte): ExcelJS.Workbook {
   return libroDeNegocio(datos);
 }
 
-function libroDeNegocio({
+/**
+ * LAS HOJAS QUE TRAE `construirLibro`, PARA LA TARJETA DE DESCARGA (23/09).
+ *
+ * La tarjeta decía «5 hojas: resumen, productos, movimientos, gastos y día
+ * por día» a todos los negocios, y al campo le llegaba otro archivo. Esta
+ * lista sigue las mismas condiciones que los dos libros de hoy, y una prueba
+ * (reportes-variante.test.js) arma el libro de verdad y compara.
+ *
+ * Es la lista de transición: cuando cada variante tenga su libro
+ * (`src/lib/reportes/excel-*.ts`), la tarjeta usa el `hojas<Variante>` de
+ * ese libro y esta queda sin uso.
+ */
+export function hojasDelLibroDeHoy(
+  empresa: Pick<DatosReporte['empresa'], 'tipo_cuenta' | 'rubro'>,
+  idioma?: string,
+): HojaDelLibro[] {
+  const tx = textosExcel(idioma);
+  if (empresa.tipo_cuenta === 'personal') {
+    return [
+      { nombre: tx.hojaResumen }, { nombre: tx.hojaEnQueSeFue }, { nombre: tx.hojaDeDondeVino },
+      { nombre: tx.hojaAhorro, siHay: true }, { nombre: tx.hojaMovimientos }, { nombre: tx.hojaDiaPorDia },
+    ];
+  }
+  const { cicloLargo, sinCatalogo } = formaDelLibro(empresa);
+  return [
+    { nombre: tx.hojaResumen },
+    ...(cicloLargo ? [{ nombre: tx.hojaCampanas }, { nombre: tx.hojaLiquidaciones, siHay: true }] : []),
+    ...(sinCatalogo ? [] : [{ nombre: tx.hojaProductos }]),
+    { nombre: tx.hojaMovimientos }, { nombre: tx.hojaGastos },
+    ...(cicloLargo || sinCatalogo ? [] : [{ nombre: tx.hojaDiaPorDia }]),
+  ];
+}
+
+/**
+ * QUÉ LLEVA EL LIBRO DE NEGOCIO SEGÚN EL REPORTE QUE LE TOCA (23/09).
+ *
+ * Mientras clases, entrenamiento y campo no tengan su libro propio
+ * (`src/lib/reportes/excel-*.ts`), usan este, pero sin lo que para ellos es
+ * falso: la hoja de productos (paquetes a margen 100 %, o vacía el mes que se
+ * vendió el grano, porque la liquidación entra sin items), la ganancia bruta
+ * y el margen, lo que «no se vendió» y el día por día. Es lo mismo que les
+ * saca la pantalla, así el archivo y Reportes dicen lo mismo.
+ *
+ * `conResultado`: el profe y el trainer ven lo que les quedó (su período es
+ * el mes). El campo no: lo gastado este mes en una campaña que se cosecha en
+ * marzo no es una pérdida del mes; su resultado es el de cada campaña.
+ */
+function formaDelLibro(empresa: Pick<DatosReporte['empresa'], 'tipo_cuenta' | 'rubro'>) {
+  const tipo = empresa.tipo_cuenta ?? 'emprendedor';
+  const ficha = fichaDe(empresa.rubro, tipo);
+  const variante = varianteDeReporte(ficha, tipo);
+  return {
+    cicloLargo: ficha.ciclosLargos,
+    sinCatalogo: variante === 'alumnos' || variante === 'campo',
+    conResultado: variante !== 'campo',
+  };
+}
+
+export function libroDeNegocio({
   empresa, desde, hasta, resumen, ranking, categorias, serie, movimientos, productosBd, idioma,
   campanas, liquidaciones, campanaDeMovimiento,
 }: DatosReporte): ExcelJS.Workbook {
   const tx = textosExcel(idioma);
   const moneda = empresa.moneda;
   // La ficha del rubro decide, no una lista escrita acá: el día que un
-  // rubro nuevo mida por ciclo, el Excel se entera solo (100).
-  const cicloLargo = fichaDe(empresa.rubro, empresa.tipo_cuenta ?? 'emprendedor').ciclosLargos;
+  // rubro nuevo mida por ciclo, el Excel se entera solo (100). Lo que se
+  // les saca a clases y al campo, en `formaDelLibro` (23/09).
+  const { cicloLargo, sinCatalogo, conResultado } = formaDelLibro(empresa);
   const fmt = formatoMoneda(moneda);
   const fmtPorc = '0.0"%"';
   const fmtNum = '#,##0.##';
@@ -240,29 +308,39 @@ function libroDeNegocio({
     f += 1;
 
     bloque(tx.costosYGastos);
-    linea(tx.costoMercaderia, r.costoMercaderia, { color: ROJO });
+    // Sin catálogo no hay costo de mercadería que mostrar: un «0» ahí parece
+    // un dato (el paquete del profe no tiene costo; el costo del campo está
+    // en la campaña, no en la venta).
+    if (!sinCatalogo) linea(tx.costoMercaderia, r.costoMercaderia, { color: ROJO });
     linea(tx.gastosOperativos, r.gastos, { color: ROJO });
-    linea(tx.totalQueSalio, r.costoMercaderia + r.gastos, { fuerte: true, color: ROJO });
+    linea(tx.totalQueSalio, (sinCatalogo ? 0 : r.costoMercaderia) + r.gastos, { fuerte: true, color: ROJO });
     f += 1;
 
-    bloque(tx.resultado);
-    linea(tx.gananciaBruta, r.gananciaBruta, { fuerte: true, nota: tx.margen(r.margenBruto.toFixed(1)) });
-    linea(tx.gananciaNeta, r.gananciaNeta, { fuerte: true, color: r.gananciaNeta >= 0 ? VERDE : ROJO, nota: tx.margen(r.margenNeto.toFixed(1)) });
-    f += 1;
+    if (conResultado) {
+      bloque(tx.resultado);
+      if (!sinCatalogo) linea(tx.gananciaBruta, r.gananciaBruta, { fuerte: true, nota: tx.margen(r.margenBruto.toFixed(1)) });
+      linea(tx.gananciaNeta, r.gananciaNeta, {
+        fuerte: true, color: r.gananciaNeta >= 0 ? VERDE : ROJO,
+        nota: sinCatalogo ? undefined : tx.margen(r.margenNeto.toFixed(1)),
+      });
+      f += 1;
+    }
 
-    bloque(tx.indicadores);
-    linea(tx.ticketPromedio, r.ticketPromedio);
-    linea(tx.unidadesVendidas, r.unidadesVendidas, { formato: fmtNum });
-    linea(tx.productosDistintos, productos.length, { formato: '#,##0' });
-    linea(tx.promedioVentasDia, dias.length ? r.ventas / dias.length : 0);
+    if (!sinCatalogo || r.ventasAnuladas > 0) bloque(tx.indicadores);
+    if (!sinCatalogo) {
+      linea(tx.ticketPromedio, r.ticketPromedio);
+      linea(tx.unidadesVendidas, r.unidadesVendidas, { formato: fmtNum });
+      linea(tx.productosDistintos, productos.length, { formato: '#,##0' });
+      linea(tx.promedioVentasDia, dias.length ? r.ventas / dias.length : 0);
+    }
     if (r.ventasAnuladas > 0) {
       linea(tx.ventasAnuladas, r.ventasAnuladas, { formato: '#,##0', nota: tx.noSumanEnNingunTotal });
       linea(tx.montoVentasAnuladas, r.montoVentasAnuladas, { color: ROJO });
     }
     f += 2;
 
-    // Destacados
-    const mejor = productos[0];
+    // Destacados. «Lo que más dejó» sale del ranking: sin catálogo no dice nada.
+    const mejor = sinCatalogo ? undefined : productos[0];
     const mayorGasto = movimientos.filter((m) => m.tipo === 'gasto').sort((a, b) => Number(b.monto) - Number(a.monto))[0];
 
     h.mergeCells(`B${f}:D${f}`);
@@ -288,7 +366,7 @@ function libroDeNegocio({
       nota(tx.loQueMasDejo(mejor.nombre, mejor.unidades.toLocaleString(tx.locale)) + detalleGanancia);
     }
     if (mayorGasto) nota(tx.gastoMasGrande(mayorGasto.descripcion, plata(Number(mayorGasto.monto))));
-    if (r.gananciaNeta < 0) nota(tx.gastasteMasQueGanaste);
+    if (conResultado && r.gananciaNeta < 0) nota(tx.gastasteMasQueGanaste);
     if (r.descuentos > 0) {
       const pct = r.ventasBrutas > 0 ? (r.descuentos / r.ventasBrutas) * 100 : 0;
       nota(tx.disteDescuentos(plata(r.descuentos), pct.toFixed(1)));
@@ -300,7 +378,12 @@ function libroDeNegocio({
     // problema que mirar—, así que se dice. La versión de esta frase para una
     // cuenta personal está en `libroPersonal`: ahí no hay ventas nunca, y
     // señalarlo sería acusar a alguien de no hacer algo que ni se le ofrece.
-    if (productos.length === 0) {
+    //
+    // Se mira la cantidad de ventas del resumen y no el ranking: la venta de
+    // una liquidación del campo entra sin items (100), así que el ranking
+    // quedaba vacío y el Excel decía «No se registraron ventas» el mismo mes
+    // que el productor vendió la soja (23/09).
+    if (r.cantidadVentas === 0) {
       nota(tx.sinVentas);
     }
   }
@@ -319,9 +402,9 @@ function libroDeNegocio({
   }
 
   // ==========================================================
-  // HOJA 2 · PRODUCTOS
+  // HOJA 2 · PRODUCTOS (no en clases ni en el campo: ver `formaDelLibro`)
   // ==========================================================
-  {
+  if (!sinCatalogo) {
     const h = libro.addWorksheet(tx.hojaProductos, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
@@ -389,9 +472,12 @@ function libroDeNegocio({
       h.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6 + productos.length, column: 10 } };
     }
 
-    // Productos que no se movieron
+    // Productos que no se movieron. Solo lo que tiene stock de verdad
+    // (`controla_stock` y más de cero), igual que la pantalla: un corte de
+    // pelo no se queda «quieto en el estante», y un producto sin stock no
+    // tiene plata parada (23/09).
     const vendidos = new Set(productos.map((p) => p.producto_id).filter(Boolean) as string[]);
-    const quietos = (productosBd ?? []).filter((p: any) => !vendidos.has(p.id));
+    const quietos = (productosBd ?? []).filter((p) => p.controla_stock && Number(p.stock) > 0 && !vendidos.has(p.id));
     if (quietos.length > 0) {
       let f = fTotal + 3;
       h.mergeCells(`B${f}:G${f}`);
@@ -553,7 +639,7 @@ function libroDeNegocio({
   //
   // No se genera en ciclo largo: ver el comentario de `rubro` arriba.
   // ==========================================================
-  if (!cicloLargo) {
+  if (!cicloLargo && !sinCatalogo) {
     const h = libro.addWorksheet(tx.hojaDiaPorDia, {
       views: [{ showGridLines: false, state: 'frozen', ySplit: 6 }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, horizontalCentered: true },
@@ -596,12 +682,12 @@ function libroDeNegocio({
 }
 
 /** Un número que puede faltar: lo que falta queda vacío, nunca en cero. */
-function quizas(v: number | null | undefined): number | null {
+export function quizas(v: number | null | undefined): number | null {
   return v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v);
 }
 
 /** Σ de una columna que puede faltar: si falta en todas las filas, falta en el total. */
-function sumaQuizas<T>(filas: T[], valor: (f: T) => number | null | undefined): number | null {
+export function sumaQuizas<T>(filas: T[], valor: (f: T) => number | null | undefined): number | null {
   const presentes = filas.map((f) => quizas(valor(f))).filter((v): v is number => v !== null);
   return presentes.length === 0 ? null : presentes.reduce((s, v) => s + v, 0);
 }
@@ -616,7 +702,7 @@ function sumaQuizas<T>(filas: T[], valor: (f: T) => number | null | undefined): 
  * promedios no es nada); el precio promedio del total sí se calcula, como
  * lo hace la base: lo vendido sobre los kilos vendidos.
  */
-function hojaCampanas(
+export function hojaCampanas(
   libro: ExcelJS.Workbook, empresaNombre: string, periodo: string, campanas: Lote[], fmt: string, tx: TextosExcel,
 ) {
   const h = libro.addWorksheet(tx.hojaCampanas, {
@@ -712,7 +798,7 @@ function hojaCampanas(
  * Movimientos. Bruto − descuentos − compensado − pagado con grano = neto,
  * fila por fila: es lo que dice el papel de la cooperativa.
  */
-function hojaLiquidaciones(
+export function hojaLiquidaciones(
   libro: ExcelJS.Workbook, empresaNombre: string, periodo: string, filas: FilaLiquidacion[], fmt: string, tx: TextosExcel,
 ) {
   const h = libro.addWorksheet(tx.hojaLiquidaciones, {
@@ -814,7 +900,7 @@ function hojaLiquidaciones(
  *   · cuánto guardó, que no es ni un gasto ni un ingreso;
  *   · el detalle completo, para poder buscar «¿cuándo pagué esto?».
  */
-function libroPersonal({
+export function libroPersonal({
   empresa, desde, hasta, resumen, categorias, ingresos, ahorro, serie, movimientos, idioma,
 }: DatosReporte): ExcelJS.Workbook {
   const tx = textosExcel(idioma);
@@ -1226,7 +1312,7 @@ function libroPersonal({
  * Son idénticas salvo los títulos: escribirlas dos veces garantizaba que el
  * día que se ajuste una, la otra quede distinta.
  */
-function tablaDeCategorias(
+export function tablaDeCategorias(
   h: ExcelJS.Worksheet,
   filas: FilaCategoria[],
   total: number,
@@ -1288,7 +1374,7 @@ export function nombreArchivo(empresa: string, desde: string, hasta: string, mon
  * qué cambio: sin eso, quien abra en seis meses un Excel en dólares de un
  * negocio en guaraníes no tendría cómo saber de dónde salió cada número.
  */
-function textoPeriodo(desde: string, hasta: string, empresa: DatosReporte['empresa'], tx: TextosExcel): string {
+export function textoPeriodo(desde: string, hasta: string, empresa: DatosReporte['empresa'], tx: TextosExcel): string {
   const fecha = (iso: string) => fechaLegible(iso, true, tx.locale);
   const periodo = desde === hasta
     ? tx.periodoUnDia(fecha(desde))
@@ -1319,12 +1405,26 @@ export const RESUMEN_PLATA: (keyof Resumen)[] = [
   'ventas', 'ventasBrutas', 'descuentos', 'otrosIngresos', 'ingresosTotales', 'costoMercaderia',
   'gananciaBruta', 'gastos', 'gananciaNeta', 'ticketPromedio', 'montoVentasAnuladas',
   'montoMovimientosAnulados',
+  // La compra de mercadería aparte y lo pagado a profesionales a comisión (106).
+  'comprasMercaderia', 'pagadoAProfesionales',
 ];
 
 export const RESUMEN_NO_PLATA: (keyof Resumen)[] = [
   'margenBruto', 'margenNeto', 'cantidadVentas', 'unidadesVendidas', 'ventasAnuladas',
-  'movimientosAnulados', 'conCostos',
+  'movimientosAnulados', 'conCostos', 'mercaderiaAparte',
 ];
+
+/**
+ * Un resumen en la moneda de la vista, con la misma lista de campos de plata
+ * que usa `enLaMonedaDeLaVista`. Lo usa la ruta para el resumen del período
+ * anterior, que va aparte (la columna «Antes» de los libros por rubro).
+ */
+export function resumenEnLaMoneda(r: Resumen, c: Conversor): Resumen {
+  if (!c.convierte) return r;
+  const copia = { ...r };
+  for (const campo of RESUMEN_PLATA) (copia as any)[campo] = c.x(r[campo] as number);
+  return copia;
+}
 
 /**
  * EL EXCEL EN LA MONEDA QUE SE ESTÁ MIRANDO (051)
@@ -1381,6 +1481,8 @@ export function enLaMonedaDeLaVista(
     },
     serie: datos.serie.map((d) => ({
       ...d, ventas: x(d.ventas), gastos: x(d.gastos), otrosIngresos: x(d.otrosIngresos), ganancia: xn(d.ganancia),
+      // Pueden no venir (una serie armada antes de la 106): lo que falta sigue faltando.
+      comprasMercaderia: xs(d.comprasMercaderia), pagadoAProfesionales: xn(d.pagadoAProfesionales),
     })),
     movimientos: datos.movimientos.map((m) => ({
       ...m,

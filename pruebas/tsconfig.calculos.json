@@ -1,0 +1,22 @@
+{
+  "//": "Lo que compila `npm run probar:calculos` a .compilado/ (23/09). Las mismas opciones que tenía la línea de comandos; va en un archivo para poder sumar src/lib/reportes/*.ts con un comodín: cada reporte por rubro suma su libro de Excel (excel-<variante>.ts) sin tocar package.json. rootDir fijo en src/lib: si un archivo de acá importara algo de afuera (Next, i18n, Supabase), la compilación falla en vez de correr la salida de lugar.",
+  "compilerOptions": {
+    "outDir": "../.compilado",
+    "rootDir": "../src/lib",
+    "module": "commonjs",
+    "target": "es2020",
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true
+  },
+  "files": [
+    "../src/lib/calculos.ts", "../src/lib/captura.ts", "../src/lib/fechas.ts", "../src/lib/formato.ts",
+    "../src/lib/reporte.ts", "../src/lib/lectura.ts", "../src/lib/telefono.ts", "../src/lib/rubros.ts",
+    "../src/lib/errores.ts", "../src/lib/turno-voz.ts", "../src/lib/acciones.ts", "../src/lib/mensajes-base.ts",
+    "../src/lib/reporte-textos.ts", "../src/lib/frases-del-dia.ts", "../src/lib/referido.ts",
+    "../src/lib/tipos-rutinas.ts", "../src/lib/medidas.ts", "../src/lib/rutina-texto.ts",
+    "../src/lib/ejercicios-base.ts", "../src/lib/agricultura.ts", "../src/lib/liquidacion.ts",
+    "../src/lib/pagos.ts", "../src/lib/invitar-avisos.ts"
+  ],
+  "include": ["../src/lib/reportes/*.ts"]
+}

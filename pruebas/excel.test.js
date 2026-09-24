@@ -453,7 +453,9 @@ const productosBd = [
     && rutaExcel.includes('categoria: categoriaVisible(t, m.categoria)'), true);
   ok('y las formas de pago', rutaExcel.includes('metodo_pago: metodoVisible(t, m.metodo_pago)'), true);
   ok('y le pasa el idioma al libro y al nombre del archivo',
-    /\n\s+idioma,\n\s+\}, vista\)\);/.test(rutaExcel.replace(/\r/g, ''))
+    // Desde el despacho por variante (23/09) el libro de hoy se arma aparte
+    // (`deHoy`) y la ruta elige el libro después.
+    /\n\s+idioma,\n\s+\}, vista\);/.test(rutaExcel.replace(/\r/g, ''))
     && rutaExcel.includes(': undefined, idioma);'), true);
   ok('el nombre del archivo en portugués',
     nombreArchivo('Perfumería Aurora','2026-08-10','2026-08-12','USD','pt'),
@@ -517,7 +519,9 @@ const productosBd = [
 
   const campoLeido = await leerLibro(construirLibro(datosCampo()), 'campo.xlsx');
   ok('las campañas van segundas, después del resumen',
-    campoLeido.worksheets.map((h) => h.name), ['Resumen','Campañas','Liquidaciones','Productos','Movimientos','Gastos']);
+    // Sin «Productos» desde el 23/09: la venta del grano entra sin items y la
+    // hoja salía vacía el mes que se vendió la soja (ver `formaDelLibro`).
+    campoLeido.worksheets.map((h) => h.name), ['Resumen','Campañas','Liquidaciones','Movimientos','Gastos']);
 
   const hc = campoLeido.getWorksheet('Campañas');
   ok('una fila por campaña: el lote', hc.getCell('A7').value, 'Norte');
@@ -607,10 +611,11 @@ const productosBd = [
   // La ruta: lee la ficha, no una lista de rubros escrita a mano.
   const reporteTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'reporte.ts'), 'utf8');
   ok('el Excel pregunta a la ficha si es de ciclo largo',
-    reporteTs.includes("fichaDe(empresa.rubro, empresa.tipo_cuenta ?? 'emprendedor').ciclosLargos")
+    // Desde el 23/09 lo pregunta `formaDelLibro`: la ficha y la variante del reporte.
+    reporteTs.includes('cicloLargo: ficha.ciclosLargos') && reporteTs.includes('varianteDeReporte(ficha, tipo)')
     && !reporteTs.includes("empresa.rubro === 'ganaderia'"), true);
   ok('la ruta trae lo del campo solo en ciclo largo',
-    rutaExcel.includes('fichaDe(empresa.rubro, empresa.tipo_cuenta).ciclosLargos')
+    rutaExcel.includes('varianteDeReporte(ficha, empresa.tipo_cuenta)') && rutaExcel.includes("variante === 'campo'")
     && rutaExcel.includes('await datosDelCampo('), true);
 
   console.log(fallos===0 ? '>>> EXCEL OK' : `>>> ${fallos} FALLAS`);

@@ -127,6 +127,17 @@ export async function avisar(userId: string, aviso: Aviso): Promise<number> {
 }
 
 /**
+ * ¿Hay con qué mandar correos? Sin la clave de Resend o sin remitente,
+ * `enviarEmail` no manda nada. Quien reserva el envío ANTES de mandar
+ * (`reservar_envio`) lo pregunta primero: si no, la reserva quedaría gastada
+ * por un correo que nunca salió, y al configurar la clave ese aviso ya no
+ * se mandaría (107).
+ */
+export function correoConfigurado(): boolean {
+  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_REMITENTE);
+}
+
+/**
  * Manda un email por la API de Resend.
  *
  * Con `fetch` y no con su SDK: es una sola llamada en toda la aplicación, y
