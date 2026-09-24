@@ -14,12 +14,64 @@ import { GUION_TEMA } from '@/lib/tema';
 const fuenteTexto = Inter({ subsets: ['latin'], variable: '--fuente-texto', display: 'swap' });
 const fuenteTitulo = Archivo({ subsets: ['latin'], axes: ['wdth'], variable: '--fuente-titulo', display: 'swap' });
 
-/** El título y la descripción, en el idioma de quien abre la página. */
+/**
+ * La dirección pública del sitio. Sin ella, Next arma la de la foto del
+ * enlace (`/opengraph-image`) con localhost, y WhatsApp no la puede bajar.
+ * Primero la que se configura a mano (`NEXT_PUBLIC_SITIO`, la misma de
+ * `sitio()` en lib/pagos.ts); si no está, la de producción que Vercel pone
+ * sola; en la computadora, localhost. `sitemap.ts` hace la misma cuenta.
+ */
+function urlPublica(): string {
+  const aMano = process.env.NEXT_PUBLIC_SITIO;
+  if (aMano) return aMano.replace(/\/+$/, '');
+  const deVercel = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+  if (deVercel) return `https://${deVercel.replace(/\/+$/, '')}`;
+  return 'http://localhost:3000';
+}
+
+/**
+ * Lo que leen Google y la vista previa de un enlace cuando una página no
+ * dice nada propio. Nombra los rubros: antes decía «ventas y gastos» y un
+ * profe, un trainer o un productor no se reconocía. Vive acá y no en el
+ * diccionario porque solo lo usan estas etiquetas; está en los dos idiomas.
+ */
+const COMPARTIR = {
+  es: {
+    descripcion: 'Orden te dice cuánto te quedó de verdad y se adapta a lo que hacés: comercio, servicios con agenda, clases, personal trainer, agricultura, ganadería o tus finanzas personales. Cargás hablando, con una foto o escribiendo.',
+    locale: 'es_PY',
+    otro: 'pt_BR',
+  },
+  pt: {
+    descripcion: 'O Orden mostra quanto sobrou de verdade e se adapta ao que você faz: comércio, serviços com agenda, aulas, personal trainer, lavoura, pecuária ou suas finanças pessoais. Você lança falando, com uma foto ou escrevendo.',
+    locale: 'pt_BR',
+    otro: 'es_PY',
+  },
+} as const;
+
+/**
+ * El título y la descripción, en el idioma de quien abre la página.
+ *
+ * La foto del enlace NO se declara acá: la pone sola `app/opengraph-image.tsx`
+ * para todas las páginas, y le gana a cualquier `openGraph` de una página
+ * que no traiga `images` propias (la portada define el suyo y la conserva).
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await textos();
+  const c = COMPARTIR[await idiomaActual()];
   return {
+    metadataBase: new URL(urlPublica()),
     title: t.pantallas.metaTitulo,
-    description: t.pantallas.metaDescripcion,
+    description: c.descripcion,
+    openGraph: {
+      type: 'website',
+      siteName: 'Orden',
+      title: t.pantallas.metaTitulo,
+      description: c.descripcion,
+      locale: c.locale,
+      alternateLocale: [c.otro],
+    },
+    // La tarjeta grande: la foto a lo ancho, como en WhatsApp.
+    twitter: { card: 'summary_large_image' },
     manifest: '/manifest.webmanifest',
     applicationName: 'Orden',
     appleWebApp: { capable: true, title: 'Orden', statusBarStyle: 'black-translucent' },

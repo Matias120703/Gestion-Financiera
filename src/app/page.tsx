@@ -2,15 +2,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { clienteServidor } from '@/lib/supabase/servidor';
-import { precio } from '@/lib/formato';
 import { textos, idiomaActual } from '@/i18n';
-import Demos from '@/components/Demos';
 import { Marca } from '@/components/Marca';
 import { BotonTema } from '@/components/BotonTema';
 import { GuiaInstalar } from '@/components/GuiaInstalar';
 import { Rico } from '@/components/Rico';
-import { HAY_DEMOS } from '@/lib/demos';
-import { FICHA } from '@/i18n/idiomas';
+import { ElegiTuRubro } from '@/components/portada/ElegiTuRubro';
+import { SelectorIdiomaPortada } from '@/components/portada/SelectorIdiomaPortada';
+import {
+  claveInicial, planesPorRubroDe, type PrecioVitrina,
+} from '@/components/portada/vitrina-datos';
+import { fichaDe } from '@/lib/rubros';
 import type { Precio } from '@/lib/tipos';
 import { DIAS_DE_PRUEBA, MONEDA_DE_REFERENCIA, monedaDeCobro } from '@/lib/precios';
 
@@ -19,6 +21,10 @@ export const dynamic = 'force-dynamic';
 /** El título y la descripción, en el idioma de quien abre la portada. */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await textos();
+  // El `openGraph` de una página reemplaza ENTERO al del layout (Next no los
+  // mezcla): sin repetir `siteName` y `locale`, en `/` se perdían. Los
+  // mismos valores que usa `COMPARTIR` en layout.tsx.
+  const pt = (await idiomaActual()) === 'pt';
   return {
     title: t.portada.metaTitulo,
     description: t.portada.metaDescripcion,
@@ -26,38 +32,58 @@ export async function generateMetadata(): Promise<Metadata> {
       title: t.portada.metaTitulo,
       description: t.portada.metaDescripcionCorta,
       type: 'website',
+      siteName: 'Orden',
+      locale: pt ? 'pt_BR' : 'es_PY',
+      alternateLocale: [pt ? 'es_PY' : 'pt_BR'],
     },
   };
 }
 
 /**
- * LA PORTADA
+ * Cuántas comprobaciones automáticas hay, para la franja de confianza.
+ *
+ * Se contó el 24/09 corriendo `npm run probar`: 4.953 comprobaciones
+ * pasaron y ninguna falló (las líneas `✓` y `ok` de la salida; hay más que
+ * llamadas a `ok(` en el código porque varias corren dentro de un bucle). Se
+ * redondea PARA ABAJO: el número tiene que quedarse corto, nunca largo. No
+ * se lee en vivo porque las pruebas no viajan con la aplicación.
+ *
+ * Y no dice «antes de cada cambio», como decía: no hay nada que las corra
+ * solas (no hay integración continua). Corren cuando alguien las corre.
+ */
+const DATO_COMPROBACIONES = '4.900+';
+
+/**
+ * LA PORTADA (rehecha el 24/09)
  *
  * Antes, `/` redirigía derecho al panel. Para quien ya tiene cuenta estaba
  * bien; para todos los demás significaba caer en un formulario de login de un
- * producto del que nunca escucharon. Si le mandás el link a un comerciante,
- * esto es lo único que va a leer antes de decidir.
+ * producto del que nunca escucharon. Si le mandás el link a alguien, esto es
+ * lo único que va a leer antes de decidir.
  *
- * Cuatro reglas al escribirla:
+ * LO QUE CAMBIÓ EL 24/09: Orden dejó de ser «el sistema del comercio». Hoy
+ * se arma distinto para un comercio, una barbería, un profe, un personal
+ * trainer, un productor de soja, un ganadero y una persona con sueldo, y la
+ * portada seguía hablando solo de perfumes. Ahora el centro es la vitrina
+ * (`ElegiTuRubro`): tocás tu rubro y el celular, los beneficios y los planes
+ * con sus precios cambian a los tuyos. Es la única parte de cliente; el
+ * resto se arma acá, en el servidor, y sale rápido.
+ *
+ * Las reglas de siempre:
  *
  *   · HABLA DEL PROBLEMA, NO DE LA TECNOLOGÍA. A nadie le importa que use
- *     IA. Le importa no saber cuánto ganó este mes.
- *   · LOS PRECIOS SALEN DE LA BASE. Si cambian en la tabla `precios`, esta
- *     página los muestra actualizados sin desplegar nada. Un precio escrito
- *     a mano acá sería el primero en quedar viejo y mentirle a alguien.
- *   · DOS PÚBLICOS, UN SOLO PRODUCTO. Orden atiende a un comercio y a alguien
- *     que lleva sus finanzas personales. La portada tiene que dejar clarísimo
- *     cuál es cuál ANTES de mostrar un precio: si alguien elige mal, se
- *     encuentra con pantallas que no le sirven y se va pensando que el
- *     producto está mal hecho.
+ *     IA. Le importa no saber cuánto le quedó este mes.
+ *   · LOS PRECIOS SALEN DE LA BASE (`lista_precios`, `promo_de_la_prueba`,
+ *     `precio_por_vendedor`) y los planes de cada rubro de su ficha
+ *     (`fichaDe(rubro).planes`, espejo de `planes_de_rubro()`). Un precio
+ *     escrito a mano acá sería el primero en quedar viejo y mentirle a
+ *     alguien.
+ *   · NADA QUE NO SEA VERDAD. Cada frase se sostiene con lo que Orden hace
+ *     hoy. Si algo deja de ser cierto, se saca.
  *   · QUIEN YA ENTRÓ NO LA VE. Se lo manda derecho al panel.
  *
- * Sobre el orden: el negocio va primero y ocupa más lugar. No es capricho,
- * es que paga el triple y es donde está la demanda probada. La cuenta
- * personal está bien explicada, pero no le pelea el lugar principal.
- *
- * Los textos viven en el diccionario (`portada`), en español y en portugués.
- * Acá solo queda la estructura.
+ * Los textos viven en el diccionario (`portada`, y `vitrina.ts` para la
+ * vitrina), en español y en portugués. Acá solo queda la estructura.
  */
 export default async function Portada() {
   // Con sesión, esta página no aporta nada: al panel.
@@ -68,111 +94,95 @@ export default async function Portada() {
   const t = await textos();
   const p = t.portada;
   const idioma = await idiomaActual();
-  const locale = FICHA[idioma].locale;
 
-  // «8 días» / «8 dias»: el número sale de las constantes, la palabra del idioma.
   const diasNegocio = p.dias(DIAS_DE_PRUEBA.emprendedor);
-  const diasPersonal = p.dias(DIAS_DE_PRUEBA.personal);
 
   /**
-   * En qué moneda se muestran los precios: SIEMPRE EN GUARANÍES (23/09).
+   * Lo que la vitrina necesita de la base, en una sola vuelta: las tres
+   * lecturas salen juntas en vez de una detrás de la otra.
    *
-   * La suscripción se cobra solo en guaraníes (Bancard deja una sola moneda
-   * y Matías eligió guaraníes). Hasta acá había un selector Gs / US$ con
-   * `?moneda=`; se sacó, porque mostrar en grande un precio en dólares que
-   * después se cobra en guaraníes es prometer una cifra que no es la que se
-   * paga. Para quien piensa en dólares queda la referencia chica «≈ US$ 19»
-   * al lado de cada precio: se muestra, no se cobra.
-   *
-   * El selector había nacido por algo que sigue siendo cierto: Orden no es
-   * solo para Paraguay, y a alguien de afuera un importe de seis cifras no
-   * le dice nada. Eso lo resuelve ahora la referencia en dólares, sin
-   * ofrecer una moneda en la que no se cobra. Un enlace viejo con
-   * `?moneda=USD` sigue abriendo la portada, en guaraníes.
+   * Si alguna falla, la portada igual se muestra: mejor una tarjeta sin
+   * precio que un error para alguien que todavía no sabe qué es esto. Los
+   * precios se piden en todas las monedas (`p_moneda` en null): los
+   * guaraníes, que es lo que se cobra (23/09), y los dólares, que van al
+   * lado como referencia chica y no se cobran.
    */
   const moneda = monedaDeCobro();
+  const [{ data: lista }, { data: promo }, { data: porVendedor }] = await Promise.all([
+    supabase.rpc('lista_precios', { p_moneda: null }),
+    supabase.rpc('promo_de_la_prueba'),
+    supabase.rpc('precio_por_vendedor', { p_moneda: moneda }),
+  ]);
 
-  // Si la lectura de precios falla, la portada igual se muestra: mejor una
-  // página sin la tabla de precios que un error para alguien que todavía no
-  // sabe qué es esto. Se piden todas las monedas en una sola lectura
-  // (`p_moneda` en null): los guaraníes, que es lo que se cobra, y los
-  // dólares, que van al lado como referencia.
-  const { data } = await supabase.rpc('lista_precios', { p_moneda: null });
-  const todos = (Array.isArray(data) ? data : []) as Precio[];
-  const precios = todos.filter((x) => x.moneda === moneda);
-  const referencia = todos.filter((x) => x.moneda === MONEDA_DE_REFERENCIA);
-
-  const buscar = (lista: Precio[], tipo: string, plan: string, periodo: string) =>
-    lista.find((x) => x.tipo_cuenta === tipo && x.plan === plan && x.periodo === periodo) ?? null;
-  const precioDe = (tipo: string, plan: string, periodo = 'mensual') => buscar(precios, tipo, plan, periodo);
-
-  const importe = (x: Precio | null) =>
-    x ? precio(Number(x.importe), moneda, locale) : '—';
+  const todos = (Array.isArray(lista) ? lista : []) as Precio[];
+  const aVitrina = (enMoneda: string): PrecioVitrina[] =>
+    todos
+      .filter((x) => x.moneda === enMoneda && (x.tipo_cuenta === 'emprendedor' || x.tipo_cuenta === 'personal'))
+      .map((x) => ({ plan: x.plan, periodo: x.periodo, importe: Number(x.importe), tipo: x.tipo_cuenta }))
+      .filter((x) => Number.isFinite(x.importe));
 
   /**
-   * «≈ US$ 19», de la fila en dólares del MISMO público, plan y período.
-   * Solo si hay precio en guaraníes al lado (una referencia sin el precio
-   * de verdad sería mostrar lo que no se cobra) y si la fila existe.
-   */
-  const enDolares = (x: Precio | null) => {
-    const r = x ? buscar(referencia, x.tipo_cuenta, x.plan, x.periodo) : null;
-    return r ? t.plan.referenciaEnDolares(precio(Number(r.importe), MONEDA_DE_REFERENCIA, locale)) : undefined;
-  };
-
-  const personalMes = precioDe('personal', 'pro');
-  const personalAnio = precioDe('personal', 'pro', 'anual');
-  const basicoMes = precioDe('emprendedor', 'basico');
-  const basicoAnio = precioDe('emprendedor', 'basico', 'anual');
-  const proMes = precioDe('emprendedor', 'pro');
-  const proAnio = precioDe('emprendedor', 'pro', 'anual');
-  const premiumMes = precioDe('emprendedor', 'negocio');
-
-  /**
-   * Los números de la promo de la racha (078) salen de `ajustes_orden`, que
-   * es donde se editan sin desplegar. Si la lectura falla quedan los de por
+   * Los números de las promos (078, 093) salen de `ajustes_orden`, que es
+   * donde se editan sin desplegar. Si la lectura falla quedan los de por
    * defecto: decir un número equivocado sería peor que no decirlo.
    */
-  const { data: promo } = await supabase.rpc('promo_de_la_prueba');
-  const descuentoPct = Math.round(Number((promo as { porcentaje?: number } | null)?.porcentaje ?? 18));
-  const constanciaPct = Math.round(Number((promo as { constancia_porcentaje?: number } | null)?.constancia_porcentaje ?? 5));
-  const constanciaDias = Number((promo as { constancia_dias?: number } | null)?.constancia_dias ?? 30);
-  const rachaNegocio = Number((promo as { negocio?: number } | null)?.negocio ?? 8);
-  const rachaPersonal = Number((promo as { personal?: number } | null)?.personal ?? 5);
+  const leida = (promo ?? null) as {
+    porcentaje?: number; negocio?: number; personal?: number;
+    constancia_porcentaje?: number; constancia_dias?: number;
+  } | null;
+  const promoVitrina = {
+    porcentaje: Math.round(Number(leida?.porcentaje ?? 18)),
+    negocio: Number(leida?.negocio ?? DIAS_DE_PRUEBA.emprendedor),
+    personal: Number(leida?.personal ?? DIAS_DE_PRUEBA.personal),
+    constanciaPorcentaje: Math.round(Number(leida?.constancia_porcentaje ?? 5)),
+    constanciaDias: Number(leida?.constancia_dias ?? 30),
+  };
 
-  const { data: porVendedor } = await supabase.rpc('precio_por_vendedor', { p_moneda: moneda });
-  const vendedorExtra = porVendedor != null
-    ? precio(Number(porVendedor), moneda, locale)
+  const vendedorExtra = porVendedor != null && Number.isFinite(Number(porVendedor))
+    ? Number(porVendedor)
     : null;
 
-  /** «Dos meses gratis» solo se dice si los números lo sostienen. */
-  const mesesGratis = (mes: Precio | null, anio: Precio | null) => {
-    if (!mes || !anio || Number(mes.importe) <= 0) return 0;
-    return Math.max(0, Math.round(12 - Number(anio.importe) / Number(mes.importe)));
-  };
-  const ahorroPersonal = mesesGratis(personalMes, personalAnio);
-  const ahorroPro = mesesGratis(proMes, proAnio);
-  const ahorroBasico = mesesGratis(basicoMes, basicoAnio);
+  const preguntas = p.preguntas({ negocio: DIAS_DE_PRUEBA.emprendedor, personal: DIAS_DE_PRUEBA.personal });
+
+  /**
+   * Las preguntas frecuentes, también para los buscadores (schema.org
+   * FAQPage). Es el mismo texto que se lee en la página, sin las marcas de
+   * negrita y cursiva. El `<` se escapa para que ningún texto pueda cerrar
+   * la etiqueta del guion.
+   */
+  const faqJson = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    inLanguage: idioma,
+    mainEntity: preguntas.map((q) => ({
+      '@type': 'Question',
+      name: q.pregunta,
+      acceptedAnswer: { '@type': 'Answer', text: sinMarcas(q.respuesta) },
+    })),
+  }).replace(/</g, '\\u003c');
 
   return (
     <main className="min-h-screen bg-superficie">
+      {/* Las frases que rotan en «Cómo se carga». CSS puro: sin JavaScript
+          y sin librerías. Cinco frases de 3,5 s (17,5 s la vuelta); cada una
+          ocupa su 20 % del ciclo. Con «reducir movimiento» no rota nada: se
+          ven las cinco, una debajo de la otra. */}
+      <style dangerouslySetInnerHTML={{ __html: CSS_FRASES }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: faqJson }} />
 
       {/* ================================================================
           LA PRIMERA PANTALLA
           ================================================================
 
-          Es lo único que mucha gente va a ver. Va en oscuro y el resto de la
-          página en claro, a propósito:
+          Va en oscuro y el resto en claro, a propósito: el oscuro da el
+          golpe de entrada, y de ahí para abajo vuelve el claro, que es como
+          se ve Orden por dentro. El fondo NO es negro: es el `noche` de la
+          marca, para que las dos mitades se sientan del mismo producto.
 
-            · el oscuro da el golpe de entrada y hace que la captura del
-              producto —que es clara— salte a la vista en vez de fundirse con
-              el fondo, como pasaba antes;
-            · y de ahí para abajo vuelve el claro, que es como se ve Orden por
-              dentro de verdad. Una portada entera en negro sobre una
-              aplicación blanca promete algo que después no aparece.
-
-          El fondo NO es negro: es el mismo verde de la marca bajado hasta el
-          fondo (`noche`), para que las dos mitades se sientan del mismo
-          producto y no de dos sitios distintos pegados. */}
+          Es más corta que antes: el celular ya no está acá sino en la
+          vitrina, que sube como una hoja sobre el final de esta franja.
+          Lo que importa es que el que entra vea los chips de los rubros
+          sin tener que buscarlos. */}
       <section className="relative overflow-hidden bg-noche text-white">
         {/* Los resplandores. Van detrás de todo y no capturan el mouse. */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -198,278 +208,252 @@ export default async function Portada() {
           />
         </div>
 
-        {/* ---------------- Barra ---------------- */}
+        {/* ---------------- Barra ----------------
+            A 375 px entra todo: el ícono, «Instalar», ES · PT, el tema y
+            «Entrar». La palabra «Orden» aparece desde 640 px y «Precios»
+            también (en el celular la vitrina, con sus precios, está apenas
+            abajo). Debajo de 370 px se esconde «Instalar», que sigue en las
+            preguntas y en el pie. */}
         <header className="zona-segura-arriba relative">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-            <div className="flex items-center gap-2.5">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-4 sm:px-5">
+            <Link href="/" className="flex items-center gap-2.5" aria-label="Orden">
               <Marca clase="h-9 w-9" sobreOscuro />
-              {/* En los teléfonos más angostos (menos de 360 px) la palabra se
-                  esconde y queda el ícono: con «Instalar», los colores y
-                  «Entrar», no entraba todo y se pisaban. */}
-              <span className="hidden text-[17px] font-bold tracking-tight min-[360px]:inline">Orden</span>
-            </div>
-            <div className="flex items-center gap-3 sm:gap-5">
-              {/* Visible también en el celular, a diferencia de «Precios»: esta
-                  guía es justamente para quien está mirando desde un teléfono,
-                  y ahí la sección queda al final de una página muy larga. */}
-              <a href="#instalar" className="text-[13.5px] font-semibold text-white/60 transition hover:text-white">
-                {p.instalar}
-              </a>
+              <span className="hidden text-[17px] font-bold tracking-tight sm:inline">Orden</span>
+            </Link>
+            <nav className="flex items-center gap-2 sm:gap-4">
               <a href="#precios" className="hidden text-[13.5px] font-semibold text-white/60 transition hover:text-white sm:block">
                 {p.precios}
               </a>
+              <a
+                href="#instalar"
+                className="hidden py-3 text-[13.5px] font-semibold text-white/60 transition hover:text-white min-[370px]:block"
+              >
+                {p.instalar}
+              </a>
+              <SelectorIdiomaPortada etiqueta={p.idioma} />
               <BotonTema />
               <Link
                 href="/ingresar"
-                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-[13.5px] font-semibold
-                           text-white backdrop-blur transition hover:border-white/30 hover:bg-white/10"
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-[13.5px] font-semibold
+                           text-white backdrop-blur transition hover:border-white/30 hover:bg-white/10 sm:px-4"
               >
                 {p.entrar}
               </Link>
-            </div>
+            </nav>
           </div>
         </header>
 
-        {/* ---------------- El titular y el producto ---------------- */}
-        <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-10 lg:pb-24 lg:pt-16">
-          <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
-            <div>
-              {/* Acá iba una pastilla de «Hecho en Paraguay». Se sacó: lo
-                  primero que se lee tiene que ser la pregunta, no una
-                  credencial. Sin ella el titular arranca más arriba y pega
-                  más fuerte, que es todo lo que tiene que hacer. */}
-              <h1 className="text-[38px] font-titulo font-extrabold leading-[1.05] tracking-tight sm:text-[46px] lg:text-[58px]">
-                {p.titular1}<br />
-                {p.titular2}{' '}
-                <span className="bg-gradient-to-r from-menta to-menta-suave bg-clip-text text-transparent">
-                  {p.titularResaltado}
-                </span>
-                {p.titularCierre}
-              </h1>
+        {/* ---------------- El titular ----------------
+            Los verbos de los oficios arriba, chicos, y la pregunta de siempre
+            abajo, grande: Orden cambia según lo que hacés, lo que te
+            responde no. */}
+        <div className="relative mx-auto max-w-4xl px-4 pb-24 pt-8 text-center sm:px-5 lg:pb-32 lg:pt-14">
+          <h1 className="font-titulo font-extrabold tracking-tight">
+            <span className="block text-[19px] leading-snug text-white/60 sm:text-[24px] lg:text-[30px]">
+              {p.titularOficios}
+            </span>
+            <span className="mt-2 block text-[40px] leading-[1.02] sm:text-[56px] lg:text-[76px]">
+              {p.titular}{' '}
+              <span className="bg-gradient-to-r from-menta to-menta-suave bg-clip-text text-transparent">
+                {p.titularResaltado}
+              </span>
+              {p.titularCierre}
+            </span>
+          </h1>
 
-              <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-white/65 lg:text-[19px]">
-                <Rico texto={p.bajada} negrita="font-semibold text-white" />
-              </p>
-
-              <div className="mt-9 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/crear"
-                  className="rounded-xl bg-menta px-6 py-3.5 text-[15px] font-bold text-noche shadow-lg
-                             shadow-menta/20 transition hover:bg-menta-suave"
-                >
-                  {p.probarGratis(diasNegocio)}
-                </Link>
-                <a
-                  href="#formas"
-                  className="rounded-xl border border-white/15 px-6 py-3.5 text-[15px] font-semibold
-                             text-white/85 transition hover:border-white/35 hover:text-white"
-                >
-                  {p.verComoFunciona}
-                </a>
-              </div>
-
-              <p className="mt-5 text-[13.5px] font-medium text-white/45">
-                {p.garantias}
-              </p>
-            </div>
-
-            {/* El producto. No es una captura ni un dibujo: es la pantalla de
-                verdad, con números de ejemplo, montada dentro de un marco. Lo
-                que se ve acá es literalmente lo que se ve al entrar. */}
-            <div className="relative mx-auto w-full max-w-[320px] lg:max-w-[360px]">
-              <div
-                aria-hidden
-                className="absolute -inset-8 rounded-[3rem] opacity-60 blur-2xl"
-                style={{ background: 'radial-gradient(circle, rgba(61,220,154,.28) 0%, rgba(61,220,154,0) 70%)' }}
-              />
-              <div className="relative rounded-[2.4rem] border border-white/12 bg-white/[.06] p-2.5 shadow-2xl backdrop-blur-sm">
-                <div className="overflow-hidden rounded-[1.9rem] bg-arena">
-                  {/* barra de la app */}
-                  <div className="flex items-center justify-between bg-superficie px-4 py-3">
-                    <span className="flex items-center gap-2">
-                      <Marca clase="h-6 w-6" />
-                      <span className="text-[13px] font-bold tracking-tight text-tinta">{p.demoNegocio}</span>
-                    </span>
-                    <span className="text-[11px] font-semibold text-tinta/40">{t.comun.hoy}</span>
-                  </div>
-
-                  <div className="space-y-2.5 p-3.5">
-                    {/* el número que importa */}
-                    <div className="rounded-2xl border border-borde bg-superficie p-4">
-                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">{p.demoTeQuedoHoy}</p>
-                      <p className="mt-1 text-[27px] font-titulo font-extrabold tracking-tight tabular-nums text-verde-fuerte">
-                        Gs. 2.150.000
-                      </p>
-                      <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-verde-claro px-2 py-0.5
-                                    text-[11px] font-bold text-verde-fuerte">
-                        ↑ 18 % <span className="font-medium text-tinta/45">{p.demoComparado}</span>
-                      </p>
-                      <div className="mt-3 flex gap-4 border-t border-borde pt-2.5">
-                        <span className="text-[11.5px] font-semibold text-tinta/50">
-                          {p.entro} <b className="ml-1 tabular-nums text-tinta">2.600.000</b>
-                        </span>
-                        <span className="text-[11.5px] font-semibold text-tinta/50">
-                          {p.salio} <b className="ml-1 tabular-nums text-rojo">150.000</b>
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* cómo se cargó: hablando */}
-                    <div className="rounded-2xl border border-borde bg-superficie p-3.5">
-                      <p className="text-[10.5px] font-bold uppercase tracking-[.14em] text-tinta/40">{p.demoLoCargasteAsi}</p>
-                      <div className="mt-2 flex items-start gap-2">
-                        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-verde-claro">
-                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-verde-fuerte" fill="none"
-                               stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" />
-                            <path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3" />
-                          </svg>
-                        </span>
-                        <p className="text-[12.5px] leading-snug text-tinta/70">
-                          {p.demoDictado}
-                        </p>
-                      </div>
-                      <p className="mt-2.5 flex items-center gap-1.5 border-t border-borde pt-2 text-[11.5px] font-semibold text-verde-fuerte">
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor"
-                             strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-                          <path d="m5 13 4 4L19 7" />
-                        </svg>
-                        {p.demoCargado}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ---------------- La franja de confianza ----------------
-            Cuatro cosas que son ciertas y se pueden comprobar. No hay
-            cantidad de usuarios ni testimonios: inventar un número en la
-            portada de un sistema de plata es la forma más rápida de perder
-            justamente lo que esta franja viene a dar. */}
-        <div className="relative border-t border-white/10 bg-noche-hondo/60">
-          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-5 lg:grid-cols-4">
-            <Dato valor="1.600+" texto={p.datoPruebas} />
-            <Dato valor="0" texto={p.datoAjenos} />
-            <Dato valor={p.datoSinSenalValor} texto={p.datoSinSenal} />
-            <Dato valor={diasNegocio} texto={p.datoPrueba} />
-          </div>
-        </div>
-      </section>
-
-
-      {/* ---------------- Los dos públicos ---------------- */}
-      <section id="formas" className="border-y border-borde bg-arena scroll-mt-4">
-        <div className="mx-auto max-w-6xl px-5 py-14">
-          <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
-            {p.formasTitulo}
-          </h2>
-          <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
-            {p.formasBajada}
+          <p className="mx-auto mt-6 max-w-2xl text-[16.5px] leading-relaxed text-white/65 lg:text-[19px]">
+            <Rico texto={p.bajada} negrita="font-semibold text-white" />
           </p>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-2">
-            <Forma
-              etiqueta={p.laMasUsada}
-              destacado
-              titulo={p.paraTuNegocio}
-              para={p.paraTuNegocioQuien}
-              detalle={p.paraTuNegocioDetalle}
-              prueba={p.dePrueba(diasNegocio)}
-              sinTarjeta={p.sinTarjeta}
-              boton={p.crearCuentaNegocio}
-              para_link="/crear?para=negocio"
-              puntos={p.puntosNegocio}
-            />
-            <Forma
-              titulo={p.paraVos}
-              para={p.paraVosQuien}
-              detalle={p.paraVosDetalle}
-              prueba={p.dePrueba(diasPersonal)}
-              sinTarjeta={p.sinTarjeta}
-              boton={p.crearCuentaPersonal}
-              para_link="/crear?para=personal"
-              puntos={p.puntosPersonal}
-            />
+          <div className="mt-9 flex flex-col items-stretch justify-center gap-3 min-[420px]:flex-row min-[420px]:items-center">
+            <Link
+              href="/crear"
+              className="rounded-xl bg-menta px-6 py-3.5 text-[15px] font-bold text-noche shadow-lg
+                         shadow-menta/20 transition hover:bg-menta-suave"
+            >
+              {p.probarGratis(diasNegocio)}
+            </Link>
+            <a
+              href="#rubros"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-6 py-3.5
+                         text-[15px] font-semibold text-white/85 transition hover:border-white/35 hover:text-white"
+            >
+              {p.verLoTuyo}
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor"
+                   strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 5v14M6 13l6 6 6-6" />
+              </svg>
+            </a>
           </div>
+
+          <p className="mt-5 text-[13.5px] font-medium text-white/45">{p.garantias}</p>
         </div>
       </section>
 
-      {/* ---------------- Cómo se carga ---------------- */}
-      <section className="mx-auto max-w-6xl px-5 py-14">
-        <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
-          {p.cargarTitulo}
-        </h2>
+      {/* ================================================================
+          LA VITRINA: ELEGÍ TU RUBRO
+          ================================================================
 
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          <Modo
-            titulo={p.modoVoz}
-            detalle={p.modoVozDetalle}
-            icono={<path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" />}
-          />
-          <Modo
-            titulo={p.modoFoto}
-            detalle={p.modoFotoDetalle}
-            icono={<path d="M3.5 8.5h3l1.5-2.5h8L17.5 8.5h3v10h-17z M12 13m-3.2 0a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0" />}
-          />
-          <Modo
-            titulo={p.modoTexto}
-            detalle={p.modoTextoDetalle}
-            icono={<path d="M4 6h16M4 12h16M4 18h10" />}
-          />
-        </div>
+          Sube como una hoja sobre el final de la franja oscura (el margen
+          negativo), con un resplandor verde en el borde: se ve que es la
+          parte que se toca. Es la ÚNICA fuente del rubro elegido: el
+          celular, los tres beneficios, los planes con sus precios y el botón
+          de prueba (que lleva el rubro a /crear) viven todos adentro de
+          `ElegiTuRubro`. Por eso «Precios» apunta acá.
 
-        <p className="mt-6 max-w-2xl text-[14.5px] leading-relaxed text-tinta/60">
-          <Rico texto={p.deudasTambien} />
-        </p>
-      </section>
+          Arranca en comercio en español y en el campo en portugués: los
+          brasileños de Paraguay son sobre todo productores, y tienen que ver
+          su lavoura sin tocar nada.
 
-      {/* ---------------- Cómo se ve por dentro ----------------
-          Toda la sección aparece recién cuando hay al menos un video cargado
-          en src/lib/demos.ts. Un título que promete videos arriba de un hueco
-          vacío deja peor parada a la página que no tener la sección. */}
-      {HAY_DEMOS && (
-        <section className="border-t border-borde">
-          <div className="mx-auto max-w-6xl px-5 py-14">
-            <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
-              {p.demosTitulo}
+          LOS VIDEOS DEL 5/9 SE SACARON DE ACÁ (24/09). Mostraban el diseño
+          de antes del 17/09, solo un comercio y solo en español, y un
+          visitante en portugués veía otro producto. La vitrina los reemplaza.
+          Los archivos siguen en `public/videos` y `src/lib/demos.ts` (con
+          `Demos.tsx`): cuando se regraben, vuelven como una sección después
+          de «Cómo se carga». */}
+      <section
+        id="rubros"
+        aria-labelledby="titulo-rubros"
+        className="relative -mt-10 scroll-mt-4 rounded-t-[2rem] border-t border-borde/60 bg-arena
+                   shadow-[0_-24px_60px_-34px_rgba(72,220,130,.55)] lg:-mt-14 lg:rounded-t-[2.75rem]"
+      >
+        <div className="mx-auto max-w-6xl px-4 pb-14 pt-9 sm:px-5 lg:pt-12">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 id="titulo-rubros" className="text-[25px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[33px]">
+              {p.rubrosTitulo}
             </h2>
-            <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
-              {p.demosBajada}
-            </p>
-            <Demos idioma={idioma} />
+            <p className="mt-2 text-[15px] leading-relaxed text-tinta/60">{p.rubrosBajada}</p>
           </div>
-        </section>
-      )}
 
-      {/* ---------------- Qué te devuelve ---------------- */}
-      <section className="border-y border-borde bg-arena">
-        <div className="mx-auto max-w-6xl px-5 py-14">
-          <div className="grid gap-10 lg:grid-cols-2">
+          {/* El `id="precios"` (a donde lleva «Precios» de la barra) está
+              adentro de la vitrina, en sus planes. */}
+          <div className="mt-8">
+            <ElegiTuRubro
+              idioma={idioma}
+              inicial={claveInicial(idioma)}
+              preciosPYG={aVitrina(moneda)}
+              referenciaUSD={aVitrina(MONEDA_DE_REFERENCIA)}
+              diasPrueba={{ negocio: DIAS_DE_PRUEBA.emprendedor, personal: DIAS_DE_PRUEBA.personal }}
+              promo={promoVitrina}
+              precioPorVendedor={vendedorExtra}
+              planesPorRubro={planesPorRubroDe(fichaDe)}
+            />
+          </div>
+
+          {/* Va pegado a los precios porque cambia la cuenta de cuánto le
+              sale a alguien: la comisión está en todos los planes, también
+              mientras prueba (102: la mitad del precio de lista de un mes). */}
+          <p className="mt-4 rounded-2xl bg-superficie px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
+            <Rico texto={p.recomendarEnPlanes} negrita="text-tinta" />{' '}
+            <a href="#recomendar" className="font-semibold text-verde-fuerte hover:underline">
+              {p.comoFunciona}
+            </a>
+          </p>
+        </div>
+      </section>
+
+      {/* ================================================================
+          CÓMO SE CARGA
+          ================================================================
+
+          A la izquierda las tres formas; a la derecha lo que la gente le
+          dice, rotando entre rubros. Todas las frases son cosas que la
+          captura entiende hoy (ver el comentario de `frases` en es.ts). */}
+      <section aria-labelledby="titulo-cargar" className="border-t border-borde">
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-5">
+          <div className="grid gap-10 lg:grid-cols-[1.05fr_1fr] lg:items-center">
             <div>
-              <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">
-                {p.nocheTitulo}
+              <p className="titulo-seccion">{p.cargarEtiqueta}</p>
+              <h2 id="titulo-cargar" className="mt-1.5 text-[25px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[33px]">
+                {p.cargarTitulo}
               </h2>
-              <p className="mt-4 text-[15.5px] leading-relaxed text-tinta/65">
+              <p className="mt-3 max-w-xl text-[15.5px] leading-relaxed text-tinta/60">{p.cargarBajada}</p>
+
+              <ul className="mt-7 space-y-4">
+                <Modo titulo={p.modoVoz} detalle={p.modoVozDetalle} icono={ICONO_VOZ} />
+                <Modo titulo={p.modoFoto} detalle={p.modoFotoDetalle} icono={ICONO_FOTO} />
+                <Modo titulo={p.modoTexto} detalle={p.modoTextoDetalle} icono={ICONO_TEXTO} />
+              </ul>
+
+              <p className="mt-6 max-w-xl text-[14.5px] leading-relaxed text-tinta/60">
+                <Rico texto={p.deudasTambien} />
+              </p>
+            </div>
+
+            {/* Lo que la gente le dice a Orden, un rubro por vez. */}
+            <div className="tarjeta p-5 sm:p-6">
+              <div className="flex items-center gap-2.5">
+                <span className="relative grid h-9 w-9 place-items-center rounded-full bg-verde text-sobre-verde">
+                  <span aria-hidden className="portada-pulso absolute -inset-1.5 rounded-full bg-verde/25" />
+                  <svg viewBox="0 0 24 24" className="relative h-[18px] w-[18px]" fill="none" stroke="currentColor"
+                       strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    {ICONO_VOZ}
+                  </svg>
+                </span>
+                <p className="text-[13px] font-bold uppercase tracking-[.12em] text-tinta/45">{p.loDijeronAsi}</p>
+              </div>
+
+              {/* La pausa (WCAG 2.2.2): una casilla sin JavaScript que deja las
+                  cinco frases quietas, una debajo de la otra, como con «reducir
+                  movimiento». Va ANTES de la lista porque el CSS la mira con `~`. */}
+              <input type="checkbox" id="frases-quietas" className="portada-quietas sr-only" />
+              <ul className="portada-frases mt-5">
+                {p.frases.map((f, i) => (
+                  <li
+                    key={f.frase}
+                    className="portada-frase"
+                    style={{ animationDelay: `${i * SEGUNDOS_POR_FRASE}s` }}
+                  >
+                    <span className="pastilla bg-verde-claro text-verde-fuerte">{f.rubro}</span>
+                    <p className="mt-2.5 text-[19px] font-semibold leading-snug tracking-tight text-tinta sm:text-[21px]">
+                      {f.frase}
+                    </p>
+                    <p className="mt-2 flex items-center gap-1.5 text-[13px] font-semibold text-verde-fuerte">
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor"
+                           strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <path d="m5 13 4 4L19 7" />
+                      </svg>
+                      {f.queda}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <label
+                htmlFor="frases-quietas"
+                className="portada-boton-quietas chip-apagado mt-4 cursor-pointer gap-2 px-3.5 text-[13px]"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor"
+                     strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
+                </svg>
+                {p.frasesVerTodas}
+              </label>
+            </div>
+          </div>
+
+          {/* ---- El cierre del día: solo comercio y servicios lo tienen
+              (`cierraElDia` en rubros.ts), y la pastilla lo dice. ---- */}
+          <div className="mt-14 grid gap-10 border-t border-borde pt-14 lg:grid-cols-2">
+            <div>
+              <span className="pastilla bg-arena text-tinta/60">{p.nocheEtiqueta}</span>
+              <h3 className="mt-3 text-[22px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[28px]">
+                {p.nocheTitulo}
+              </h3>
+              <p className="mt-3 text-[15px] leading-relaxed text-tinta/65">
                 <Rico texto={p.nocheBajada} />
               </p>
-              <ul className="mt-6 space-y-3">
+              <ul className="mt-5 space-y-3">
                 {p.nochePuntos.map((linea) => (
                   <li key={linea} className="flex items-start gap-2.5 text-[14.5px] leading-relaxed text-tinta/70">
-                    <svg viewBox="0 0 24 24" className="mt-1 h-4 w-4 shrink-0 text-verde-fuerte"
-                         fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m5 13 4 4L19 7" />
-                    </svg>
+                    <Tilde />
                     {linea}
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* Muestra de lo que se ve adentro. No es una captura de pantalla:
-                es la pantalla real, con números de ejemplo. */}
+            {/* Números de ejemplo, fecha verdadera: el 12 de agosto de 2026
+                es miércoles (decía martes). */}
             <div className="tarjeta self-start p-5">
               <p className="titulo-seccion">{p.cierreDelDia}</p>
               <p className="mt-1 text-[19px] font-bold tracking-tight">{p.cierreFecha}</p>
@@ -486,138 +470,75 @@ export default async function Portada() {
         </div>
       </section>
 
-      {/* ---------------- Precios ---------------- */}
-      <section id="precios" className="mx-auto max-w-6xl px-5 py-14 scroll-mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <h2 className="text-[25px] font-titulo font-extrabold tracking-tight lg:text-[33px]">{p.cuantoCuesta}</h2>
-        </div>
-
-        <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-tinta/60">
-          <Rico texto={p.preciosBajada} negrita="text-tinta" />
-        </p>
-
-        {/* Arriba de los precios y no en la letra chica: quien tiene una
-            tarjeta de otro país tiene que saber antes de elegir que se le
-            cobra en guaraníes. Enterarse tarde de cómo se paga es de las
-            cosas que hacen abandonar. */}
-        <p className="mt-3 max-w-2xl rounded-xl bg-arena px-4 py-3 text-[13.5px] leading-relaxed text-tinta/65">
-          {t.plan.cobroEnGuaranies}
-        </p>
-
-        {/* ---- negocio ---- */}
-        <div className="mt-10">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-[18px] font-bold tracking-tight">{p.paraTuNegocio}</h3>
-            <span className="text-[13.5px] font-semibold text-tinta/45">{p.dePrueba(diasNegocio)}</span>
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <Plan
-              nombre="Básico"
-              llamado={p.empezarLos(diasNegocio)}
-              enlace="/crear?para=negocio"
-              precio={importe(basicoMes)}
-              referencia={enDolares(basicoMes)}
-              porMes={p.porMes}
-              para={p.basicoPara}
-              puntos={p.basicoPuntos}
-              nota={ahorroBasico > 0 && basicoAnio ? p.alAnio(importe(basicoAnio), ahorroBasico) : undefined}
-            />
-            <Plan
-              destacado
-              nombre="Pro"
-              llamado={p.empezarLos(diasNegocio)}
-              enlace="/crear?para=negocio"
-              precio={importe(proMes)}
-              referencia={enDolares(proMes)}
-              porMes={p.porMes}
-              para={p.proPara}
-              puntos={p.proPuntos}
-              nota={ahorroPro > 0 && proAnio ? p.alAnio(importe(proAnio), ahorroPro) : undefined}
-            />
-            <Plan
-              nombre="Premium"
-              llamado={p.empezarLos(diasNegocio)}
-              enlace="/crear?para=negocio"
-              precio={importe(premiumMes)}
-              referencia={enDolares(premiumMes)}
-              porMes={p.porMes}
-              desde={p.desde}
-              para={p.premiumPara}
-              /* Acá decía «sin tope de vendedores» y la base cortaba en 15.
-                 Desde la 048 el tope lo escribimos negocio por negocio al
-                 cobrar, así que ahora se puede decir la verdad: los que
-                 pagues. Prometer «sin tope» le reventaba en la cara al que
-                 ya había pagado, que es el peor momento para una sorpresa. */
-              puntos={p.premiumPuntos}
-              nota={vendedorExtra ? p.vendedorExtra(vendedorExtra) : undefined}
-            />
-          </div>
-
-          <p className="mt-4 rounded-xl bg-verde-claro/40 px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
-            <Rico texto={p.vendedoresNoPagan} negrita="text-tinta" />
-          </p>
-
-          {/* El descuento que se gana usando Orden en la prueba (078). Va en
-              los precios porque es parte de la cuenta: quien está mirando
-              cuánto le sale tiene que saber que puede pagar menos. */}
-          <p className="mt-3 rounded-xl bg-verde-claro/40 px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
-            <Rico texto={p.descuentoPrueba(descuentoPct, rachaNegocio, rachaPersonal)} negrita="text-tinta" />
-            {' '}
-            <Rico texto={p.descuentoConstancia(constanciaPct, constanciaDias)} negrita="text-tinta" />
-          </p>
-
-          {/* Se aclara acá, en los precios, porque es donde alguien está
-              haciendo la cuenta de cuánto le sale. Que la comisión esté en
-              todos los planes —y también mientras prueba— cambia esa cuenta. */}
-          <p className="mt-3 rounded-xl bg-arena px-4 py-3 text-[14px] leading-relaxed text-tinta/70">
-            <Rico texto={p.recomendarEnPlanes} negrita="text-tinta" />{' '}
-            <a href="#recomendar" className="font-semibold text-verde-fuerte hover:underline">
-              {p.comoFunciona}
-            </a>
-          </p>
-        </div>
-
-        {/* ---- personal ---- */}
-        <div className="mt-12">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-[18px] font-bold tracking-tight">{p.paraVos}</h3>
-            <span className="text-[13.5px] font-semibold text-tinta/45">{p.dePrueba(diasPersonal)}</span>
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Plan
-              nombre={p.personalNombre}
-              llamado={p.empezarLos(diasPersonal)}
-              enlace="/crear?para=personal"
-              precio={importe(personalMes)}
-              referencia={enDolares(personalMes)}
-              porMes={p.porMes}
-              para={p.personalPara}
-              puntos={p.personalPuntos}
-              nota={ahorroPersonal > 0 && personalAnio ? p.alAnio(importe(personalAnio), ahorroPersonal) : undefined}
-            />
-            <div className="tarjeta flex flex-col justify-center p-5">
-              <h4 className="text-[15px] font-bold tracking-tight">{p.porQueMenosTitulo}</h4>
-              <p className="mt-2 text-[14px] leading-relaxed text-tinta/65">
-                {p.porQueMenos}
-              </p>
-            </div>
+      {/* ---------------- La franja de confianza ----------------
+          Cuatro cosas que son ciertas y se pueden comprobar. No hay cantidad
+          de usuarios ni testimonios: inventar un número en la portada de un
+          sistema de plata es la forma más rápida de perder justamente lo que
+          esta franja viene a dar. Se sacó «abre sin señal»: sin conexión
+          Orden muestra un aviso, no deja trabajar. */}
+      <section aria-labelledby="titulo-confianza" className="bg-noche text-white">
+        <div className="mx-auto max-w-6xl px-4 pb-4 pt-10 sm:px-5">
+          <h2 id="titulo-confianza" className="text-[12px] font-bold uppercase tracking-[.14em] text-white/40">
+            {p.confianzaTitulo}
+          </h2>
+          <div className="grid grid-cols-2 gap-x-4 lg:grid-cols-4">
+            <Dato valor={DATO_COMPROBACIONES} texto={p.datoPruebas} />
+            <Dato valor="0" texto={p.datoAjenos} />
+            <Dato valor={p.datoIdiomasValor} texto={p.datoIdiomas} />
+            <Dato valor={p.datoCostosValor} texto={p.datoCostos} />
           </div>
         </div>
+      </section>
 
-        {/* ---- cómo se paga ---- */}
-        <div className="mt-10 rounded-2xl border border-borde p-5">
-          <h3 className="text-[15px] font-bold tracking-tight">{p.comoSePagaTitulo}</h3>
-          <p className="mt-2 max-w-3xl text-[14px] leading-relaxed text-tinta/65">
-            <Rico texto={p.comoSePaga} />
-          </p>
-        </div>
+      {/* ---------------- Preguntas frecuentes ----------------
+          `<details>` del navegador: se abren con el teclado y los lectores
+          de pantalla los entienden sin una línea de JavaScript. Respuestas
+          cortas y verdaderas; si algo sigue en otra parte, un enlace. */}
+      <section id="preguntas" aria-labelledby="titulo-preguntas" className="scroll-mt-4">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-14 sm:px-5 lg:grid-cols-[0.8fr_1.2fr] lg:gap-12">
+          <div>
+            <p className="titulo-seccion">{p.preguntasEtiqueta}</p>
+            <h2 id="titulo-preguntas" className="mt-1.5 text-[25px] font-titulo font-extrabold leading-tight tracking-tight lg:text-[33px]">
+              {p.preguntasTitulo}
+            </h2>
+          </div>
 
-        <div className="mt-8">
-          <Link href="/crear" className="boton-principal px-6 py-3 text-[15px]">
-            {p.empezarPrueba}
-          </Link>
+          <div className="tarjeta divide-y divide-borde overflow-hidden">
+            {preguntas.map((q) => (
+              <details key={q.pregunta} className="group">
+                <summary
+                  className="flex min-h-[56px] cursor-pointer list-none items-center justify-between gap-4 px-5 py-4
+                             text-[15.5px] font-bold leading-snug tracking-tight transition hover:bg-arena/60
+                             focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2
+                             focus-visible:outline-verde [&::-webkit-details-marker]:hidden"
+                >
+                  {q.pregunta}
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-tinta/40 transition-transform duration-200
+                                                     group-open:rotate-180 motion-reduce:transition-none"
+                       fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </summary>
+                <div className="px-5 pb-5 text-[14.5px] leading-relaxed text-tinta/65">
+                  <Rico texto={q.respuesta} negrita="text-tinta" />
+                  {q.enlace && (
+                    <>
+                      {' '}
+                      {q.enlace.href.startsWith('#') ? (
+                        <a href={q.enlace.href} className="font-semibold text-verde-fuerte hover:underline">
+                          {q.enlace.texto}
+                        </a>
+                      ) : (
+                        <Link href={q.enlace.href} className="font-semibold text-verde-fuerte hover:underline">
+                          {q.enlace.texto}
+                        </Link>
+                      )}
+                    </>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -625,11 +546,9 @@ export default async function Portada() {
           Va DESPUÉS de los precios y no antes: el que todavía no sabe cuánto
           cuesta no puede entender qué significa «la mitad del precio de su
           plan» (102: la comisión es sobre el precio de lista, no sobre lo que
-          pagó con descuento).
-          Y va en la portada, y no escondido adentro, porque para muchos es
-          la razón por la que van a hablar de Orden con otro. */}
+          pagó con descuento). */}
       <section id="recomendar" className="scroll-mt-4 border-t border-borde bg-arena">
-        <div className="mx-auto max-w-6xl px-5 py-14">
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-5">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center">
             <div>
               <p className="titulo-seccion">{p.unExtra}</p>
@@ -666,14 +585,10 @@ export default async function Portada() {
       </section>
 
       {/* ---------------- Instalar en el celular ----------------
-          Estaba solo como un enlace chiquito en el pie, a otra página, y así
-          no lo encontraba nadie. Va como sección propia, con la guía adentro
-          y un acceso arriba al lado de «Precios».
-
           Es el mismo componente que se ve en /instalar y en Ajustes: se
           corrige en un solo lugar. */}
       <section id="instalar" className="scroll-mt-4 border-t border-borde">
-        <div className="mx-auto max-w-6xl px-5 py-14">
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-5">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-start">
             <div>
               <p className="titulo-seccion">{p.enTuCelular}</p>
@@ -701,22 +616,95 @@ export default async function Portada() {
 
       {/* ---------------- Pie ---------------- */}
       <footer className="zona-segura-abajo border-t border-borde">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-8 sm:px-5">
           <div className="flex items-center gap-2">
             <Marca clase="h-7 w-7" />
             <span className="text-[13.5px] font-semibold text-tinta/50">
-              Orden · {new Date().getFullYear()}
+              © Orden {new Date().getFullYear()}
             </span>
           </div>
-          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-[13.5px] font-semibold text-tinta/50">
-            <Link href="/instalar" className="hover:text-tinta">{p.pieInstalar}</Link>
-            <Link href="/privacidad" className="hover:text-tinta">{t.pantallas.privacidad}</Link>
-            <Link href="/terminos" className="hover:text-tinta">{t.pantallas.terminos}</Link>
-            <Link href="/ingresar" className="hover:text-tinta">{t.nav.miCuenta}</Link>
+          <nav className="flex flex-wrap gap-x-5 gap-y-1 text-[13.5px] font-semibold text-tinta/50">
+            <Link href="/terminos" className="py-2 hover:text-tinta">{t.pantallas.terminos}</Link>
+            <Link href="/privacidad" className="py-2 hover:text-tinta">{t.pantallas.privacidad}</Link>
+            <Link href="/instalar" className="py-2 hover:text-tinta">{p.pieInstalar}</Link>
+            <Link href="/ingresar" className="py-2 hover:text-tinta">{t.nav.miCuenta}</Link>
           </nav>
         </div>
       </footer>
     </main>
+  );
+}
+
+/** Cuánto se ve cada frase de «Cómo se carga». La vuelta entera es cinco veces esto. */
+const SEGUNDOS_POR_FRASE = 3.5;
+
+/**
+ * La rotación de las frases. Cada frase entra, se queda y sale dentro de su
+ * 20 % del ciclo (cinco frases): por eso el diccionario tiene cinco y no más.
+ * La caja tiene alto mínimo para la frase más larga en dos líneas: sin eso,
+ * la página saltaría cada 3,5 s.
+ *
+ * Gira sin fin, así que tiene que poder pararse (WCAG 2.2.2, nivel A):
+ * - con el puntero encima, la frase de ese momento se queda;
+ * - la casilla «Ver todas» (#frases-quietas) las deja las cinco quietas, en
+ *   lista, igual que «reducir movimiento». Es CSS puro: la página sigue
+ *   siendo de servidor.
+ * Con «reducir movimiento» la casilla no hace falta y se esconde.
+ *
+ * El pulso del micrófono da tres latidos (4,8 s) y se queda quieto: no
+ * compite para siempre con el texto que se está leyendo.
+ */
+const CSS_FRASES = `
+@keyframes portada-frase {
+  0% { opacity: 0; transform: translateY(8px); }
+  3%, 17% { opacity: 1; transform: none; }
+  20%, 100% { opacity: 0; transform: translateY(-8px); }
+}
+.portada-frases { position: relative; min-height: 9.5rem; }
+.portada-frase {
+  position: absolute; inset: 0; opacity: 0;
+  animation: portada-frase ${SEGUNDOS_POR_FRASE * 5}s ease-in-out infinite both;
+}
+.portada-frases:hover .portada-frase { animation-play-state: paused; }
+.portada-quietas:checked ~ .portada-frases { min-height: 0; display: grid; gap: 1.25rem; }
+.portada-quietas:checked ~ .portada-frases .portada-frase { position: static; opacity: 1; animation: none; }
+.portada-quietas:checked ~ .portada-boton-quietas {
+  border-color: rgb(var(--verde)); background-color: rgb(var(--verde)); color: rgb(var(--sobre-verde));
+}
+.portada-quietas:focus-visible ~ .portada-boton-quietas { outline: 2px solid rgb(var(--verde)); outline-offset: 2px; }
+@keyframes portada-pulso { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: no-preference) {
+  .portada-pulso { animation: portada-pulso 1.6s cubic-bezier(.4, 0, .6, 1) 3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portada-frases { min-height: 0; display: grid; gap: 1.25rem; }
+  .portada-frase { position: static; opacity: 1; animation: none; }
+  .portada-quietas, .portada-boton-quietas { display: none; }
+}
+`;
+
+/** La respuesta sin `**` ni `_`, para los buscadores. Las mismas marcas que entiende `Rico`. */
+function sinMarcas(texto: string): string {
+  return texto.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/_([^_]+)_/g, '$1');
+}
+
+const ICONO_VOZ = (
+  <>
+    <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" />
+    <path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3" />
+  </>
+);
+const ICONO_FOTO = (
+  <path d="M3.5 8.5h3l1.5-2.5h8L17.5 8.5h3v10h-17z M12 13m-3.2 0a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0" />
+);
+const ICONO_TEXTO = <path d="M4 6h16M4 12h16M4 18h10" />;
+
+function Tilde() {
+  return (
+    <svg viewBox="0 0 24 24" className="mt-1 h-4 w-4 shrink-0 text-verde-fuerte" aria-hidden
+         fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 13 4 4L19 7" />
+    </svg>
   );
 }
 
@@ -729,27 +717,28 @@ export default async function Portada() {
  */
 function Dato({ valor, texto }: { valor: string; texto: string }) {
   return (
-    <div className="px-1 py-7 lg:px-5">
-      <p className="text-[24px] font-titulo font-extrabold tracking-tight text-menta lg:text-[28px]">{valor}</p>
-      <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/45">{texto}</p>
+    <div className="py-6 lg:pr-6">
+      <p className="text-[24px] font-titulo font-extrabold tracking-tight text-menta lg:text-[30px]">{valor}</p>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/50">{texto}</p>
     </div>
   );
 }
 
+/** Una de las tres formas de cargar. */
 function Modo({ titulo, detalle, icono }: { titulo: string; detalle: string; icono: React.ReactNode }) {
   return (
-    <div className="tarjeta p-5">
-      <span className="grid h-10 w-10 place-items-center rounded-xl bg-verde-claro text-verde-fuerte">
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor"
+    <li className="flex items-start gap-3.5">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-verde-claro text-verde-fuerte">
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" aria-hidden
              strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
           {icono}
         </svg>
       </span>
-      <h3 className="mt-3.5 text-[16px] font-bold tracking-tight">{titulo}</h3>
-      <p className="mt-1.5 text-[14px] leading-relaxed text-tinta/60">
-        <Rico texto={detalle} />
-      </p>
-    </div>
+      <div>
+        <h3 className="text-[16px] font-bold tracking-tight">{titulo}</h3>
+        <p className="mt-0.5 text-[14px] leading-relaxed text-tinta/60">{detalle}</p>
+      </div>
+    </li>
   );
 }
 
@@ -760,129 +749,6 @@ function Fila({
     <div className="flex items-baseline justify-between gap-4 py-3">
       <span className={`text-[14px] ${grande ? 'font-bold' : 'font-semibold text-tinta/55'}`}>{etiqueta}</span>
       <span className={`tabular-nums font-titulo font-extrabold ${grande ? 'text-[22px]' : 'text-[16px]'} ${tono}`}>{valor}</span>
-    </div>
-  );
-}
-
-/** Una de las dos formas de usar Orden. Es lo que se elige al crear la cuenta. */
-function Forma({
-  titulo, para, detalle, puntos, prueba, sinTarjeta, boton, para_link, etiqueta, destacado = false,
-}: {
-  titulo: string;
-  para: string;
-  detalle: string;
-  puntos: string[];
-  prueba: string;
-  sinTarjeta: string;
-  /** Qué dice el botón. Habla de lo que va a pasar, no «Más información». */
-  boton: string;
-  /** A dónde va, con el tipo de cuenta ya elegido. */
-  para_link: string;
-  etiqueta?: string;
-  destacado?: boolean;
-}) {
-  return (
-    <div className={`tarjeta flex flex-col p-5 ${destacado ? 'border-verde/50 ring-1 ring-verde/20' : ''}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[18px] font-bold tracking-tight">{titulo}</h3>
-          <p className="mt-1 text-[13px] font-semibold text-tinta/50">{para}</p>
-        </div>
-        {etiqueta && <span className="pastilla shrink-0 bg-verde-claro text-verde-fuerte">{etiqueta}</span>}
-      </div>
-
-      <p className="mt-3 text-[14.5px] leading-relaxed text-tinta/65">{detalle}</p>
-
-      <ul className="mt-4 flex-1 space-y-2.5">
-        {puntos.map((punto) => (
-          <li key={punto} className="flex items-start gap-2 text-[14px] leading-snug text-tinta/70">
-            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde-fuerte"
-                 fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-              <path d="m5 13 4 4L19 7" />
-            </svg>
-            {punto}
-          </li>
-        ))}
-      </ul>
-
-      <Link
-        href={para_link}
-        className={`mt-5 block rounded-xl px-4 py-3 text-center text-[14.5px] font-bold transition ${
-          destacado
-            ? 'bg-verde text-sobre-verde hover:brightness-95'
-            : 'border border-verde/40 text-verde-fuerte hover:bg-verde-claro'}`}
-      >
-        {boton}
-      </Link>
-      <p className="mt-2.5 text-center text-[12.5px] font-semibold text-verde-fuerte">
-        {prueba} · {sinTarjeta}
-      </p>
-    </div>
-  );
-}
-
-function Plan({
-  nombre, precio, referencia, para, puntos, nota, llamado, enlace,
-  porMes, desde, destacado = false,
-}: {
-  nombre: string;
-  precio: string;
-  /** «≈ US$ 19», chico al lado del precio. Referencia: no se cobra en dólares. */
-  referencia?: string;
-  para: string;
-  puntos: string[];
-  nota?: string;
-  /** Qué dice el botón. */
-  llamado: string;
-  /** A dónde va, con el tipo de cuenta ya elegido. */
-  enlace: string;
-  /** El «/ mes» ya traducido; sin él, no se muestra. */
-  porMes?: string;
-  /** Para Premium: el precio es el primer escalón, no el final. Es la palabra «desde». */
-  desde?: string;
-  destacado?: boolean;
-}) {
-  return (
-    <div className={`tarjeta flex flex-col p-5 ${destacado ? 'border-verde/50 ring-1 ring-verde/20' : ''}`}>
-      <h3 className="text-[16px] font-bold tracking-tight">{nombre}</h3>
-      <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
-        {desde && <span className="text-[13px] font-semibold text-tinta/45">{desde}</span>}
-        <span className="text-[26px] font-titulo font-extrabold tracking-tight tabular-nums">{precio}</span>
-        {porMes && <span className="text-[13px] font-semibold text-tinta/45">{porMes}</span>}
-        {referencia && (
-          <span className="text-[12.5px] font-semibold tabular-nums text-tinta/40">{referencia}</span>
-        )}
-      </p>
-      <p className="mt-1.5 text-[13px] font-semibold text-tinta/50">{para}</p>
-
-      <ul className="mt-4 flex-1 space-y-2">
-        {puntos.map((punto) => (
-          <li key={punto} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
-            <svg viewBox="0 0 24 24" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde-fuerte"
-                 fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-              <path d="m5 13 4 4L19 7" />
-            </svg>
-            {punto}
-          </li>
-        ))}
-      </ul>
-
-      {nota && (
-        <p className="mt-4 border-t border-borde pt-3 text-[13px] leading-relaxed text-tinta/55">{nota}</p>
-      )}
-
-      {/* El precio y el botón juntos: quien decidió mirando el número no
-          tendría que subir de nuevo hasta arriba para encontrar por dónde
-          empezar. */}
-      <Link
-        href={enlace}
-        className={`mt-4 block rounded-xl px-4 py-2.5 text-center text-[14px] font-bold transition ${
-          destacado
-            ? 'bg-verde text-sobre-verde hover:brightness-95'
-            : 'border border-verde/40 text-verde-fuerte hover:bg-verde-claro'}`}
-      >
-        {llamado}
-      </Link>
     </div>
   );
 }

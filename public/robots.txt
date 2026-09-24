@@ -1,10 +1,51 @@
+# Orden: qué pueden mirar los buscadores.
+#
+# Abierto: la portada, /crear, /ingresar, /instalar, /terminos y /privacidad
+# (las mismas del sitemap). Cerrado: todo lo que pide sesión, más las páginas
+# que son de un cliente y no de Orden (la rutina de cada alumno, el turno de
+# cada reserva). Nada de esto es la seguridad: esas pantallas igual piden
+# sesión o un token; esto solo evita que Google pierda tiempo o las muestre.
+#
+# Si una sección nueva aparece en src/app/(app), sumala acá.
+
 User-agent: *
+Allow: /
+
+# La aplicación, por dentro (src/app/(app) y compañía)
 Disallow: /panel
 Disallow: /vender
 Disallow: /gastos
+Disallow: /deudas
+Disallow: /cierre
 Disallow: /productos
 Disallow: /movimientos
 Disallow: /reto
 Disallow: /reportes
+Disallow: /fiado
+Disallow: /clientes
+Disallow: /billetera
+Disallow: /organizacion
+Disallow: /agenda
+Disallow: /reparto
+Disallow: /lotes
+Disallow: /rutinas
+Disallow: /plan
+Disallow: /recomendar
 Disallow: /ajustes
+Disallow: /admin
+Disallow: /empezar
+
+# Cuentas y accesos
+Disallow: /recuperar
+Disallow: /clave-nueva
+Disallow: /sin-conexion
+
+# De un cliente, no de Orden: la rutina lleva datos de salud
+Disallow: /rutina/
+Disallow: /turno/
+
+# Por dentro del servidor
 Disallow: /api
+
+# Cuando ande orden.com.py, cambiar esta dirección (tiene que ser completa).
+Sitemap: https://gestion-financiera-wheat.vercel.app/sitemap.xml

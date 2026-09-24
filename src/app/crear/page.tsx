@@ -76,9 +76,22 @@ export default function PaginaCrear() {
    * no vale la pena por un parámetro opcional. Si no viene, o viene
    * cualquier otra cosa, queda el valor de siempre.
    */
+  /*
+   * Y `?rubro=` (24/09): la portada deja elegir el rubro antes de llegar
+   * acá —el profe tocó «Clases», vio su pantalla y sus planes— y el botón de
+   * prueba trae ese rubro. Se deja elegido en el formulario, igual se puede
+   * cambiar. Solo si es uno de los que se ofrecen (`LISTA_RUBROS`): un rubro
+   * inventado en la URL, o uno que salió de la lista, queda en el de siempre.
+   */
   useEffect(() => {
-    const para = new URLSearchParams(window.location.search).get('para');
-    if (para === 'personal') cambiar({ tipoCuenta: 'personal' });
+    const parametros = new URLSearchParams(window.location.search);
+    const para = parametros.get('para');
+    if (para === 'personal') {
+      cambiar({ tipoCuenta: 'personal' });
+      return;
+    }
+    const rubro = LISTA_RUBROS.find((r) => r.clave === parametros.get('rubro'));
+    if (rubro) cambiar({ tipoCuenta: 'emprendedor', rubro: rubro.clave });
   }, []);
 
   function seguir(e: React.FormEvent) {

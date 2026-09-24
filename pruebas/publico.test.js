@@ -523,6 +523,11 @@ function aceptado(nombre, resultado) {
       '/iconos/icono-512.png',
       '/manifest.webmanifest',
       '/sw.js',
+      // Los piden Google y la vista previa de WhatsApp, que nunca tienen
+      // sesión: si pasaran por el control, recibirían el login.
+      '/robots.txt',
+      '/sitemap.xml',
+      '/opengraph-image',
     ];
     ok('ningún archivo de la portada pasa por el control de sesión',
       estaticos.filter((r) => pasaPorElMiddleware(r)), []);

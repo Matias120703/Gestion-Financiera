@@ -790,148 +790,138 @@ export const es = {
    * partirlas en pedazos que en otro idioma van en otro orden.
    */
   portada: {
-    metaTitulo: 'Orden · Sabé cuánto ganás de verdad',
-    metaDescripcion: 'Registrá ventas, gastos y deudas hablando, sacando una foto o escribiendo. Orden calcula tu ganancia real todos los días. Para tu negocio o para tus finanzas personales.',
-    metaDescripcionCorta: 'Registrá ventas, gastos y deudas en segundos. Mirá tu ganancia real todos los días.',
+    // Rehecha el 24/09: Orden ya no es solo para un comercio, y la portada
+    // tenía que dejar de hablar como si lo fuera. Lo que cambia por rubro
+    // (pantalla, beneficios, planes y precios) vive en `textos/vitrina.ts`,
+    // junto al componente que lo muestra; acá queda el resto de la página.
+    metaTitulo: 'Orden · Sabé cuánto te quedó de verdad',
+    metaDescripcion: 'Ventas, gastos, turnos, alumnos, campañas o tu sueldo: cargalos hablando, con una foto o escribiendo, y Orden te dice cuánto te quedó de verdad. Para comercios, servicios, profes, personal trainers, el campo, la ganadería y tus finanzas personales.',
+    metaDescripcionCorta: 'Orden se arma para lo que hacés —comercio, servicios, clases, campo o tus finanzas— y te dice cuánto te quedó de verdad.',
     dias: (n: number) => `${n} días`,
 
     instalar: 'Instalar',
     precios: 'Precios',
     entrar: 'Entrar',
+    idioma: 'Idioma',
 
-    titular1: '¿Sabés cuánto',
-    titular2: 'ganaste',
+    // El titular. Los cuatro verbos son los de los rubros (vender, atender,
+    // enseñar, sembrar) y la pregunta de siempre queda al final: Orden cambia
+    // según lo que hacés, lo que te dice no.
+    titularOficios: 'Vendas, atiendas, enseñes o siembres:',
+    titular: 'sabé cuánto te quedó',
     titularResaltado: 'de verdad',
-    titularCierre: '?',
-    bajada: 'No cuánto vendiste: cuánto **te quedó** después de lo que pagaste por la mercadería y de todos los gastos. Orden lo calcula solo, todos los días, y para cargarlo alcanza con contárselo.',
+    titularCierre: '.',
+    bajada: 'Orden se arma distinto para cada oficio: el comercio ve su stock, la barbería su agenda, el profe quién le debe la cuota, el campo su costo por hectárea. Lo que no cambia es la respuesta: cuánto **te quedó** después de pagar todo. Y para cargarlo alcanza con contárselo.',
     probarGratis: (dias: string) => `Probar ${dias} gratis`,
-    verComoFunciona: 'Ver cómo funciona',
-    garantias: 'Sin tarjeta · Cancelás cuando quieras · Tus datos siguen siendo tuyos si te vas',
+    verLoTuyo: 'Mirá cómo se ve lo tuyo',
+    garantias: 'Sin tarjeta · Tus datos no se borran',
 
-    demoNegocio: 'Perfumería Aurora',
-    demoTeQuedoHoy: 'Te quedó hoy',
-    demoComparado: 'que el martes pasado',
-    demoLoCargasteAsi: 'Lo cargaste así',
-    demoDictado: '«Vendí dos perfumes a ciento cincuenta mil cada uno»',
-    demoCargado: 'Cargado · stock descontado',
+    rubrosTitulo: 'Tocá tu rubro y mirá cómo cambia Orden.',
+    rubrosBajada: 'Cada rubro ve sus pantallas, sus palabras y sus planes. Elegí el tuyo: el celular, lo que ganás y los precios cambian con él.',
 
-    datoPruebas: 'comprobaciones automáticas corren antes de cada cambio',
-    datoAjenos: 'datos tuyos que ve otro negocio: lo impide la base, no la pantalla',
-    datoSinSenalValor: 'Sin señal',
-    datoSinSenal: 'se instala como app y abre igual cuando se corta internet',
-    datoPrueba: 'de prueba, sin cargar una tarjeta en ningún lado',
-
-    formasTitulo: 'Dos formas de usar Orden. Elegís al crear la cuenta.',
-    formasBajada: 'Es el mismo sistema, pero no te mostramos pantallas que no vas a usar. Si tenés un negocio vas a ver ventas y productos; si es para vos, no aparecen en ningún lado.',
-    laMasUsada: 'La más usada',
-    paraTuNegocio: 'Para tu negocio',
-    paraTuNegocioQuien: 'Almacén, perfumería, delivery, taller, tienda de ropa',
-    paraTuNegocioDetalle: 'Todo lo que necesitás para saber si el mes cerró bien, y para que tus vendedores carguen sin ver lo que no tienen que ver.',
-    dePrueba: (dias: string) => `${dias} de prueba`,
-    crearCuentaNegocio: 'Crear la cuenta de mi negocio',
-    puntosNegocio: [
-      'Ventas con productos, precios y stock que se descuenta solo',
-      'La ganancia real: se calcula con el costo que tenía el producto el día que lo vendiste',
-      'Vendedores con su propia cuenta — y vos ves quién cargó cada venta',
-      'Tus costos y tus deudas no los ve un vendedor. Lo impide la base de datos, no la pantalla',
-      'Gastos, otros ingresos y deudas del negocio',
-      'Excel de cinco hojas y cierre del día',
-    ],
-    paraVos: 'Para vos',
-    paraVosQuien: 'Sueldo, gastos del día a día, tarjetas y préstamos',
-    paraVosDetalle: 'Lo mismo, sin la parte de comercio. Pensado para saber cuánto te queda y, sobre todo, cuánto debés.',
-    crearCuentaPersonal: 'Crear mi cuenta personal',
-    puntosPersonal: [
-      'Tu sueldo y cualquier ingreso extra',
-      'Los gastos del día a día, cargados hablando',
-      'Tus deudas: tarjeta, préstamo, lo que le debés a alguien',
-      'Cuándo vence cada cuota y cuánto falta para saldarla',
-      'Sin ventas ni productos: esas pantallas no existen para vos',
-      'El mismo Excel y el mismo cierre del día',
-    ],
-    sinTarjeta: 'sin tarjeta',
-
-    cargarTitulo: 'Cargar una venta te tiene que llevar menos que cobrarla.',
+    cargarEtiqueta: 'Cómo se carga',
+    cargarTitulo: 'Cargar te tiene que llevar menos que cobrar.',
+    cargarBajada: 'Un solo botón para todo, en cualquier rubro. Orden lo entiende, lo ordena y te lo muestra para que confirmes antes de guardar.',
     modoVoz: 'Contáselo hablando',
-    modoVozDetalle: '«Vendí dos perfumes a 150 mil cada uno». Lo entiende, lo ordena y te lo muestra para que confirmes.',
+    modoVozDetalle: 'Como se lo contarías a alguien. Sin formularios de veinte campos ni categorías que adivinar.',
     modoFoto: 'Sacale una foto',
-    modoFotoDetalle: 'Al ticket o a la factura. Lee el monto y guarda la foto pegada al movimiento, para cuando la necesites.',
+    modoFotoDetalle: 'Al ticket o a la factura. Lee el monto y la foto queda guardada con el movimiento: el comprobante, para cuando lo necesites.',
     modoTexto: 'O escribilo',
-    modoTextoDetalle: 'Como se lo contarías a alguien. Sin formularios de veinte campos ni categorías que adivinar.',
+    modoTextoDetalle: 'Si estás en un lugar donde no podés hablar, lo escribís igual que lo dirías.',
+    loDijeronAsi: 'Así se lo cuentan',
+    // La casilla que para la rotación y muestra las cinco quietas.
+    frasesVerTodas: 'Ver todas',
+    // Cinco frases, una por vez (la animación de page.tsx cuenta con cinco).
+    // Todas son cosas que la captura entiende hoy: una venta, un gasto
+    // atado a una campaña, un turno (turno-voz.ts), un fiado y un gasto de
+    // la casa.
+    frases: [
+      { rubro: 'Comercio', frase: '«Vendí dos perfumes a 150 mil cada uno»', queda: 'Venta cargada · stock descontado' },
+      { rubro: 'Campo', frase: '«Gasté 2 millones en semilla para el Norte»', queda: 'Gasto de la campaña Norte' },
+      { rubro: 'Servicios', frase: '«Juan, mañana a las tres, corte con Pedro»', queda: 'Turno anotado en la agenda' },
+      { rubro: 'Fiado', frase: '«Luis me debe 180 mil»', queda: 'Anotado en lo que te deben' },
+      { rubro: 'Para vos', frase: '«Pagué la luz, 280 mil»', queda: 'Gasto de la casa' },
+    ],
     deudasTambien: 'Las deudas también. Decí _«debo cinco millones de la tarjeta»_ y queda cargada como deuda — no como plata que entró.',
 
-    demosTitulo: 'Así se ve por dentro.',
-    demosBajada: 'Grabado de la app de verdad, sin retoques. Los videos no tienen audio y no se descargan hasta que los apretás.',
-
+    nocheEtiqueta: 'En comercio y servicios',
     nocheTitulo: 'Y a la noche, en diez segundos, sabés cómo te fue.',
     nocheBajada: 'El cierre del día te muestra cuánto entró, cuánto salió y cuánto te quedó. Comparado con el mismo día de la semana pasada, para que sepas si fue un buen día _para vos_ y no contra un promedio que no significa nada.',
     nochePuntos: [
       'La ganancia se calcula con el costo que tenía el producto el día que lo vendiste, no con el de hoy.',
       'Un vendedor puede cargar ventas sin ver nunca tus costos ni tus márgenes.',
-      'Excel de cinco hojas, listo para imprimir o mandar.',
-      'Se instala como app en el celular y abre aunque te quedes sin señal.',
+      'Reportes y Excel armados para lo tuyo, listos para imprimir o mandar.',
     ],
     cierreDelDia: 'Cierre del día',
-    cierreFecha: 'martes 12 de agosto',
+    // Era «martes 12 de agosto»: en 2026 el 12 de agosto cae miércoles.
+    cierreFecha: 'miércoles 12 de agosto',
     entro: 'Entró',
     salio: 'Salió',
     teQuedo: 'Te quedó',
     cierreMas: '18 % más',
     cierreComparado: 'que el mismo día de la semana pasada',
 
-    cuantoCuesta: 'Cuánto cuesta',
-    // Decía «seguís entrando, viendo todo tu historial y bajando tu Excel».
-    // Dejó de ser cierto el 2026-09-15 con el candado de la cuenta vencida.
-    // Lo que sí sigue siendo cierto es que los datos no se borran.
-    preciosBajada: 'Probás primero y decidís después: no se pide tarjeta para empezar. Y si algún día no querés seguir, **tus datos no se borran**: quedan guardados, intactos, y vuelven a estar ahí el día que reactivás tu plan.',
-    empezarLos: (dias: string) => `Empezar los ${dias}`,
-    // El negocio entero, para el que trabaja solo (077).
-    basicoPara: 'Para el que atiende solo su negocio',
-    basicoPuntos: [
-      'Ventas, gastos, fiado, agenda y reportes',
-      'Una sola persona: vos, sin vendedores',
-      'Voz, foto y texto: 300 cargas por mes',
-      'Excel de cinco hojas y comprobantes guardados',
+    // La franja de confianza. Cuatro cosas que se pueden comprobar.
+    confianzaTitulo: 'Cuatro cosas que se pueden comprobar',
+    // El número va en page.tsx (DATO_COMPROBACIONES), con cómo se contó. No
+    // dice «antes de cada cambio»: no hay nada que las corra solas.
+    datoPruebas: 'comprobaciones automáticas revisan que las cuentas den bien y que nadie vea lo que no le toca',
+    datoAjenos: 'datos tuyos que ve otro negocio: lo impide la base, no la pantalla',
+    datoIdiomasValor: 'ES · PT',
+    datoIdiomas: 'en español y en portugués de Brasil, con las palabras de cada oficio',
+    datoCostosValor: 'Solo vos',
+    datoCostos: 'ves tus costos y tus márgenes: tus vendedores cargan ventas sin verlos',
+
+    preguntasEtiqueta: 'Preguntas frecuentes',
+    preguntasTitulo: 'Lo que casi todos preguntan antes de empezar.',
+    // `enlace` es opcional: la respuesta sigue en otra parte (la guía de
+    // instalar, la política de privacidad).
+    preguntas: (dias: { negocio: number; personal: number }): {
+      pregunta: string; respuesta: string; enlace?: { texto: string; href: string };
+    }[] => [
+      {
+        pregunta: '¿Sirve para mi rubro?',
+        respuesta: 'Orden se arma para **comercio, servicios y oficios, clases y cursos, personal trainer, agricultura y ganadería**, y también para tus finanzas personales. Cada uno ve solo sus pantallas y sus palabras. Si el tuyo no está, elegí el más parecido y probalo gratis: en pocos días sabés si te sirve.',
+      },
+      {
+        pregunta: '¿Qué pasa cuando termina la prueba?',
+        respuesta: `La prueba dura ${dias.negocio} días para un negocio y ${dias.personal} para una cuenta personal, sin tarjeta, y te avisamos antes de que termine. Si no pagás, la cuenta **se pausa**: no se puede usar hasta que actives un plan. **Tus datos no se borran**: quedan guardados y vuelven intactos el día que pagás.`,
+      },
+      {
+        pregunta: '¿Cómo se paga?',
+        respuesta: 'Por transferencia, en guaraníes. Cuando termina la prueba tocás _Suscribirme_, se abre un WhatsApp con nosotros, transferís y te activamos la cuenta. Podés pagar por mes o por año. Nada de cargar una tarjeta en un formulario.',
+      },
+      {
+        pregunta: '¿Mis datos quién los ve y dónde están?',
+        respuesta: 'Solo las personas de tu cuenta, y cada una lo que le toca. Otro negocio no puede ver nada tuyo: **lo impide la base de datos**, no solo la pantalla. Los datos se guardan en servidores en São Paulo, Brasil.',
+        enlace: { texto: 'Leer la política de privacidad', href: '/privacidad' },
+      },
+      {
+        pregunta: '¿Mis vendedores ven mis costos?',
+        respuesta: 'No. Cada vendedor entra con su propia cuenta y carga ventas, pero no ve tus costos, tus márgenes ni las deudas del negocio. Y vos ves quién cargó cada venta. Sumar gente a tu cuenta viene con los planes Pro y Premium.',
+      },
+      {
+        pregunta: '¿Funciona en portugués?',
+        respuesta: 'Sí. Las pantallas, los avisos y los reportes están también en portugués de Brasil, con las palabras de cada oficio: _lavoura_, _safra_, _talhão_. Se cambia arriba de todo en esta página, o adentro, en Ajustes.',
+      },
+      {
+        pregunta: '¿Hay que instalar algo?',
+        respuesta: 'No. Orden se abre en el navegador del celular o de la computadora. Si querés, lo agregás a la pantalla de inicio en cuatro pasos; en iPhone es la forma de que te lleguen los avisos.',
+        enlace: { texto: 'Ver cómo se instala', href: '#instalar' },
+      },
+      {
+        pregunta: '¿Puedo cambiar de rubro?',
+        respuesta: 'Sí, y no perdés nada de lo cargado. Por ahora el cambio lo hacemos nosotros: pedínoslo por WhatsApp. Si estás en la prueba, sigue con los mismos días y pasa al plan de tu rubro nuevo.',
+      },
+      {
+        pregunta: '¿Por qué la cuenta personal cuesta menos?',
+        respuesta: 'Porque no recibís lo mismo. A un negocio, Orden le dice cuánta plata ganó de verdad, y eso se paga solo. A vos te dice cuánto te queda y cuánto debés: te sirve, pero no te genera un guaraní. Cobrarte igual sería no haber entendido a ninguno de los dos.',
+      },
     ],
-    proPara: 'Para el negocio con hasta 2 vendedores',
-    proPuntos: [
-      'Voz, foto y texto: 600 cargas por mes',
-      'Vos y hasta 2 vendedores, cada uno con su cuenta',
-      'Comprobantes guardados y Excel de cinco hojas',
-      'Deudas del negocio con sus vencimientos',
-    ],
-    alAnio: (monto: string, meses: number) => `O ${monto} al año: ${meses} ${meses === 1 ? 'mes' : 'meses'} de regalo.`,
-    premiumPara: 'Para el local con más gente cargando',
-    premiumPuntos: [
-      'Todo lo de Pro, con los vendedores que necesites',
-      'Voz, foto y texto: 3.000 cargas por mes',
-      'Roles: quién ve los costos lo decidís vos',
-      'Pagás por vendedor: sumás uno cuando entra, y listo',
-    ],
-    vendedorExtra: (monto: string) => `Cada vendedor arriba de los 2 de Pro suma ${monto} al mes. Escribinos y te pasamos el número exacto.`,
-    vendedoresNoPagan: '**Tus vendedores no pagan nada.** La suscripción la paga una sola persona: el dueño del negocio. Ellos entran con su cuenta, cargan lo suyo y listo.',
-    recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás gratis: si traés un negocio, te llevás la mitad del precio de su plan, con su primer pago.',
-    comoFunciona: 'Cómo funciona',
-    // La promo de la racha durante la prueba (078).
-    descuentoPrueba: (pct: number, negocio: number, personal: number) =>
-      `**Ganate ${pct}% de descuento en tu primer mes.** Durante la prueba, cargá algo ${negocio} días seguidos si es un negocio —o ${personal} si son tus finanzas— y el primer mes te sale con descuento.`,
-    descuentoConstancia: (pct: number, dias: number) =>
-      `**Y después sigue: con ${dias} días seguidos cargando, pagás ${pct}% menos todos los meses.** Mientras mantengas la racha, mantenés el descuento.`,
-    personalNombre: 'Personal',
-    personalPara: 'Un solo plan, sin versiones ni letra chica',
-    personalPuntos: [
-      'Sueldo, ingresos extra y gastos del día a día',
-      'Tarjetas, préstamos y lo que le debés a alguien',
-      'Voz, foto y texto: 600 cargas por mes',
-      'Avisos de cuándo vence cada cuota',
-    ],
-    porQueMenosTitulo: '¿Por qué cuesta menos?',
-    porQueMenos: 'Porque no recibís lo mismo. A un comercio, Orden le dice cuánta plata ganó de verdad, y eso se paga solo. A vos te dice cuánto debés y cuándo vence la cuota: te sirve, pero no te genera un guaraní. Cobrarte igual sería no haber entendido a ninguno de los dos.',
-    comoSePagaTitulo: 'Cómo se paga',
-    comoSePaga: 'Por transferencia. Cuando se te termina la prueba, tocás _Suscribirme_ y se abre un WhatsApp con nosotros para arreglarlo. Nada de cargar una tarjeta en un formulario: hablás con una persona, transferís y te activamos la cuenta. Si tenés varios vendedores, ahí mismo te pasamos el precio exacto.',
+
     empezarPrueba: 'Empezar la prueba gratis',
-    desde: 'desde',
-    porMes: '/ mes',
+    recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás gratis: si traés a alguien, te llevás la mitad del precio de su plan, con su primer pago.',
+    comoFunciona: 'Cómo funciona',
 
     unExtra: 'Un extra',
     recomendarTitulo: 'Traé a alguien a Orden y llevate la mitad del precio de su plan, con su primer pago',
@@ -1900,7 +1890,7 @@ export const es = {
     capturasMes: (n: number) => `${n} capturas con IA por mes`,
     capturasLibres: 'Voz, foto y texto sin tope',
     conAdjuntos: 'Comprobantes guardados',
-    conExcel: 'Excel de cinco hojas',
+    conExcel: 'Reportes y Excel armados para tu rubro',
     soloVos: 'Tus deudas con sus vencimientos',
     // El Básico es el negocio entero, para uno solo (077).
     soloUnaPersona: 'Vos solo, sin vendedores',

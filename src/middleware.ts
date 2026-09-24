@@ -120,7 +120,13 @@ export async function middleware(request: NextRequest) {
  * extensiones de imagen sí estaban contempladas y las de video no. Va como
  * carpeta y no como extensión para que mañana un .webm no repita el
  * problema. Hay una prueba que lo vigila.
+ *
+ * `robots.txt`, `sitemap.xml` y `opengraph-image` (y `twitter-image`, por si
+ * un día tiene archivo propio) los piden robots que nunca tienen sesión:
+ * Google y la vista previa de WhatsApp. Si pasaran por acá, recibirían el
+ * login en vez del archivo: el enlace compartido saldría sin foto y el
+ * buscador no vería ni el sitemap ni qué carpetas son privadas.
  */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|iconos|videos|manifest.webmanifest|sw.js|sin-conexion|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|iconos|videos|manifest.webmanifest|sw.js|sin-conexion|robots.txt|sitemap.xml|opengraph-image|twitter-image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
 };

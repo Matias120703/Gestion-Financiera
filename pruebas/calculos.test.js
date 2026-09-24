@@ -724,7 +724,8 @@ ok('una cuenta personal no tiene jerga', fichaDe('entrenamiento', 'personal').je
   const anotar = leer('src/components/rutinas/AnotarControl.tsx');
   const progreso = leer('src/components/rutinas/ProgresoCliente.tsx');
   const rutinas = leer('src/components/rutinas/PantallaRutinas.tsx');
-  const priv = leer('src/app/privacidad/page.tsx');
+  // Desde el 24/09 el texto de la privacidad vive en legal.ts (es y pt).
+  const priv = leer('src/i18n/textos/legal.ts');
   const es = leer('src/i18n/textos/es.ts');
   const pt = leer('src/i18n/textos/pt.ts');
   const panelTextos = leer('src/i18n/textos/rutinas-panel.ts');
@@ -782,7 +783,10 @@ ok('una cuenta personal no tiene jerga', fichaDe('entrenamiento', 'personal').je
   ok('la privacidad: al archivar se borran medidas, consentimiento y lesiones',
     /borra sus medidas, su consentimiento y «Salud y lesiones»/.test(priv), true);
   ok('ya no promete «llevarte todo» en el Excel', priv.includes('llevarte todo'), false);
-  ok('y dice que rutinas y medidas no van en el Excel', /no van en el Excel/.test(priv) && /no\s+van en ese Excel/.test(priv), true);
+  // Desde la 106 el Excel del trainer trae la hoja «Progreso» (peso, cintura,
+  // grasa); lo que sigue sin ir es «Salud y lesiones» y el detalle de las rutinas.
+  ok('y dice qué va y qué no va en el Excel',
+    /no van en el Excel/.test(priv) && /hoja «Progreso»/.test(priv) && /aba «Progresso»/.test(priv), true);
   ok('los menores: con el acuerdo de madre, padre o tutor', /entrenás a menores/.test(priv), true);
 
   // El portugués no asume que el cliente es varón, y «Siguiente» no promete
@@ -1647,7 +1651,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
     textosPortada.includes('Las invitaciones están en todos los planes'), true);
   // Desde el candado del 2026-09-15 una cuenta vencida no entra. La portada
   // lo prometía al revés; se mira el texto que se muestra, no el comentario.
-  const lineaPrecios = textosPortada.split(/\r?\n/).find((l) => l.trim().startsWith('preciosBajada:')) ?? '';
+  // Desde el 24/09 lo dice la vitrina de la portada (vitrina.ts).
+  const lineaPrecios = fs.readFileSync('src/i18n/textos/vitrina.ts', 'utf8').split(/\r?\n/)
+    .find((l) => l.trim().startsWith('finDePrueba:')) ?? '';
   ok('la portada ya no promete que se sigue entrando con la cuenta vencida',
     /seguís entrando|bajando tu Excel/.test(lineaPrecios), false);
   ok('y dice que los datos no se borran', lineaPrecios.includes('no se borran'), true);
@@ -1878,7 +1884,8 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el panel muestra cómo va el descuento',
     fs.readFileSync('src/app/(app)/panel/page.tsx', 'utf8').includes('<TarjetaDescuento'), true);
   ok('y la portada lo cuenta antes de registrarse',
-    fs.readFileSync('src/app/page.tsx', 'utf8').includes('p.descuentoPrueba('), true);
+    fs.readFileSync('src/components/portada/ElegiTuRubro.tsx', 'utf8').includes('v.descuento(')
+    && fs.readFileSync('src/app/page.tsx', 'utf8').includes('promo={promoVitrina}'), true);
   ok('los números de la promo salen de la base, no del código',
     fs.readFileSync('src/app/page.tsx', 'utf8').includes("rpc('promo_de_la_prueba')"), true);
 
@@ -1893,7 +1900,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('la administración ve cuánto cobrarle a quien mantiene la racha',
     fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8').includes('Mantiene su racha'), true);
   ok('y la portada cuenta la segunda mitad del trato',
-    fs.readFileSync('src/app/page.tsx', 'utf8').includes('p.descuentoConstancia('), true);
+    fs.readFileSync('src/components/portada/ElegiTuRubro.tsx', 'utf8').includes('v.constancia('), true);
 
   // Apenas pagó es cuando escucha: el aviso de plan activo le dice cómo
   // pagar menos el mes que viene.
@@ -2137,10 +2144,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el selector solo elige el período', [selector.includes("ir('moneda'"), selector.includes('monedas')], [false, false]);
   ok('la referencia en dólares sale de la fila del mismo plan y período',
     [plan.includes('precioDe(referencia, plan, periodo)'),
-      /buscar\(referencia, x\.tipo_cuenta, x\.plan, x\.periodo\)/.test(portada)], [true, true]);
+      fs.readFileSync('src/components/portada/vitrina-datos.ts', 'utf8')
+        .includes("buscar(datos.referenciaUSD, tipo, plan, 'mensual')")], [true, true]);
   ok('y solo si hay precio en guaraníes al lado', /referencia=\{precio && enDolares/.test(plan), true);
   ok('la línea de cómo se cobra, en las dos pantallas',
-    [plan.includes('t.plan.cobroEnGuaranies'), portada.includes('t.plan.cobroEnGuaranies')], [true, true]);
+    [plan.includes('t.plan.cobroEnGuaranies'),
+      fs.readFileSync('src/components/portada/ElegiTuRubro.tsx', 'utf8').includes('v.cobroEnGuaranies')], [true, true]);
   ok('el aviso de «los dólares son de referencia, se arregla por WhatsApp» se fue',
     portada.includes('preciosDolares'), false);
 
