@@ -13,6 +13,7 @@ import { reportesAlumnosPt } from './reportes-alumnos';
 import { reportesCampoPt } from './reportes-campo';
 import { reportesPersonalPt } from './reportes-personal';
 import { avisoVencimientoPt } from './aviso-vencimiento';
+import { planGratisPt } from './plan-gratis';
 import { singularPt } from './singular';
 
 /**
@@ -851,11 +852,11 @@ export const pt: Textos = {
       },
       {
         pregunta: 'O que acontece quando o teste termina?',
-        respuesta: `O teste dura ${dias.negocio} dias pra um negócio e ${dias.personal} pra uma conta pessoal, sem cartão, e a gente avisa antes de terminar. Se você não pagar, a conta **fica pausada**: não dá pra usar até ativar um plano. **Seus dados não são apagados**: ficam guardados e voltam intactos no dia em que você paga.`,
+        respuesta: `O teste dura ${dias.negocio} dias pra um negócio e ${dias.personal} pra uma conta pessoal, sem cartão, e a gente avisa antes de terminar. Se for um negócio e você não pagar, a conta **fica pausada** até ativar um plano. Se for uma conta pessoal, **passa pro plano Grátis**: você continua lançando suas despesas e entradas na mão. Nos dois casos, **seus dados não são apagados**.`,
       },
       {
         pregunta: 'Como se paga?',
-        respuesta: 'Por transferência, em guaranis. Quando o teste termina, você toca em _Assinar_, abre um WhatsApp com a gente, transfere e ativamos a conta. Dá pra pagar por mês ou por ano. Nada de cadastrar cartão num formulário.',
+        respuesta: 'Por transferência, em guaranis. Quando o teste termina, você toca em _Assinar_, abre um WhatsApp com a gente, transfere e ativamos o plano. Dá pra pagar por mês ou por ano. Nada de cadastrar cartão num formulário.',
       },
       {
         pregunta: 'Quem vê meus dados e onde eles ficam?',
@@ -880,13 +881,13 @@ export const pt: Textos = {
         respuesta: 'Pode, e não perde nada do que lançou. Por enquanto a troca é feita por nós: é só pedir pelo WhatsApp. Se você estiver no teste, ele segue com os mesmos dias e passa pro plano do seu ramo novo.',
       },
       {
-        pregunta: 'Por que a conta pessoal custa menos?',
-        respuesta: 'Porque você não recebe a mesma coisa. Pra um negócio, o Orden diz quanto dinheiro ganhou de verdade, e isso se paga sozinho. Pra você, diz quanto sobra e quanto você deve: ajuda, mas não gera um centavo. Cobrar igual seria não ter entendido nenhum dos dois.',
+        pregunta: 'A conta pessoal é paga?',
+        respuesta: 'Tem um plano **Grátis**: você lança suas despesas e entradas na mão e vê seu histórico. Com o **Pro** você lança falando ou com uma foto, e ganha o orçamento de pagamento a pagamento, suas dívidas, o que te devem, suas contas de banco, os relatórios e o Excel. O Pro pessoal custa menos que o de um negócio: pra um negócio, o Orden diz quanto dinheiro ganhou de verdade, e isso se paga sozinho.',
       },
     ],
 
     empezarPrueba: 'Começar o teste grátis',
-    recomendarEnPlanes: '**Os convites estão em todos os planos**, inclusive enquanto você testa grátis: se você trouxer alguém, fica com metade do preço do plano dele, com o primeiro pagamento.',
+    recomendarEnPlanes: '**Os convites estão em todos os planos**, inclusive enquanto você testa e no Grátis da conta pessoal: se você trouxer alguém, fica com metade do preço do plano dele, com o primeiro pagamento.',
     comoFunciona: 'Como funciona',
 
     unExtra: 'Um extra',
@@ -896,10 +897,10 @@ export const pt: Textos = {
     paso1Titulo: 'Você compartilha seu link',
     paso1: 'Cada conta tem o seu. Serve igual pra um negócio ou pra uma pessoa.',
     paso2Titulo: 'Ele paga o primeiro mês',
-    paso2: 'Enquanto testa grátis não acontece nada. Conta quando paga de verdade.',
+    paso2: 'Enquanto testa ou usa o plano Grátis não acontece nada. Conta quando paga de verdade.',
     paso3Titulo: 'Transferimos a metade do plano pra você',
     paso3: 'Pro seu banco ou sua carteira digital. Você coloca os dados uma vez.',
-    recomendarLetraChica: 'Mesmo que pague com desconto ou pague o ano inteiro, você fica com metade do preço de tabela de um mês. O que pagar depois não entra: a comissão nasce com o primeiro pagamento e mais nada. Preferimos dizer aqui e não quando chegar o segundo mês. Como é metade do preço do plano, trazer um negócio rende mais que trazer uma conta pessoal, que custa menos. E não vale trazer você mesmo nem o negócio onde você trabalha.',
+    recomendarLetraChica: 'Mesmo que pague com desconto ou pague o ano inteiro, você fica com metade do preço de tabela de um mês. O que pagar depois não entra: a comissão nasce com o primeiro pagamento e mais nada. Preferimos dizer aqui e não quando chegar o segundo mês. Como é metade do preço do plano, trazer um negócio rende mais que trazer uma conta pessoal, que custa menos. E não vale trazer você mesmo nem o negócio onde você trabalha. Se a conta pessoal que você trouxer ficar no plano Grátis, não tem comissão.',
 
     enTuCelular: 'No seu celular',
     instalarTitulo: 'Como colocar o Orden na tela de início',
@@ -1252,7 +1253,7 @@ export const pt: Textos = {
     promesaTitulo: 'Convide e ganhe',
     promesaBajada: 'Você conhece negócios que anotam tudo num caderno. Passe seu link: quando um deles cria a conta e paga o primeiro mês, **você fica com metade do preço do plano dele**.',
     promesaUnaVez: '· Você recebe **uma vez só** por negócio, com o primeiro pagamento. Mesmo que pague com desconto ou pague o ano inteiro, você fica com metade do preço de tabela de um mês. O que ele pagar depois não entra.',
-    promesaDeVerdad: '· Você recebe quando o negócio **paga de verdade**, não quando cria a conta nem enquanto testa grátis.',
+    promesaDeVerdad: '· Você recebe quando o negócio **paga de verdade**, não quando cria a conta nem enquanto testa. Uma conta pessoal que fica no plano Grátis também não gera comissão.',
     promesaSinTope: '· Transferimos pra onde você disser. Não há limite: você pode trazer um ou vinte.',
     promesaNoVale: '· Não vale trazer você mesmo nem o negócio onde você trabalha.',
 
@@ -1271,7 +1272,7 @@ export const pt: Textos = {
       {
         situacion: 'Para quem não sabe pra onde vai o salário',
         mensaje: (enlace: string) =>
-          `Olha só: eu lanço meus gastos falando no celular e ele me diz quanto sobra até o próximo pagamento. Me ajudou a não chegar apertado no fim do mês. Teste grátis: ${enlace}`,
+          `Olha só: eu anoto meus gastos no celular e vejo quanto sobrou cada mês. Pra uso pessoal tem um plano grátis: ${enlace}`,
       },
       {
         situacion: 'Para uma loja com vendedores',
@@ -1398,7 +1399,7 @@ export const pt: Textos = {
     paraMiNegocio: 'Pro meu negócio',
     paraMiNegocioDetalle: 'Vendas, produtos e estoque. Você pode adicionar vendedores.',
     paraMi: 'Pra mim',
-    paraMiDetalle: 'Salário, despesas e dívidas. Sem vendas nem produtos.',
+    paraMiDetalle: 'Seu salário e suas despesas, grátis. Dívidas e orçamento, com o Pro.',
     diasPrueba: (n: number) => `${n} dias de teste`,
     enQueAndas: 'Com o que você trabalha?',
     rubroDetalle: 'Adapta as categorias e as telas ao seu trabalho. Dá pra mudar depois.',
@@ -2410,14 +2411,14 @@ export const pt: Textos = {
       negocioNada: 'Bom dia. Lance sua primeira venda de hoje: por voz são dez segundos.',
       personalConGastos: (gastos: string) => `Ontem você gastou ${gastos}. Lance o de hoje assim que fizer e saiba sempre quanto sobra.`,
       personalSoloIngresos: (ingresos: string) => `Ontem entraram ${ingresos}. Lance também o que gastar hoje.`,
-      personalNada: 'Bom dia. Lance seus gastos de hoje assim que fizer: por voz são dez segundos.',
+      personalNada: 'Bom dia. Lance seus gastos de hoje assim que fizer, pra não escapar nenhum.',
       rachaLinea: (dias: number) => `🔥 Você está há ${dias} dias seguidos.`,
     },
     tarde: {
       negocio: 'Você ainda não lançou nada hoje. Vendeu algo? Fale por voz e fica anotado.',
-      personal: 'Você ainda não anotou nada hoje. Gastou com algo? Fale por voz e fica anotado.',
+      personal: 'Você ainda não anotou nada hoje. Gastou com algo? Anote agora, que depois esquece.',
       negocioRacha: (dias: number) => `🔥 Você está há ${dias} dias seguidos. Vendeu algo hoje? Fale por voz e não perca a sequência.`,
-      personalRacha: (dias: number) => `🔥 Você está há ${dias} dias seguidos. Gastou com algo hoje? Fale por voz e não perca a sequência.`,
+      personalRacha: (dias: number) => `🔥 Você está há ${dias} dias seguidos. Gastou com algo hoje? Anote e não perca a sequência.`,
     },
     noche: {
       titulo: (nombre: string) => `Seu dia em ${nombre}`,
@@ -2596,6 +2597,8 @@ export const pt: Textos = {
   campanas: campanasPt,
   gastosCampana: gastosCampanaPt,
   panelCampo: panelCampoPt,
+
+  planGratis: planGratisPt,
 
   reportesComunes: reportesComunesPt,
   reportesComercio: reportesComercioPt,

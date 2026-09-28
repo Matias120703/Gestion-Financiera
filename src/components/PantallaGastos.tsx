@@ -64,7 +64,7 @@ function repartirEn(moneda: string, monto: number, campanas: CampanaParaElegir[]
 export function PantallaGastos({
   empresaId, moneda, movimientos, categoriasUsadas, rol, userId, hoy, hayMas = false, cuentas = [],
   conCampanas = false, campanas = [], loteInicial = null, categoriasRubro = [], dolarDeHoy = null,
-  categoriaPorDefecto = null,
+  categoriaPorDefecto = null, rapidasPersonal,
 }: {
   empresaId: string;
   moneda: string;
@@ -89,6 +89,15 @@ export function PantallaGastos({
   dolarDeHoy?: number | null;
   /** Con qué categoría arranca, si no es la primera del rubro (el ganadero arranca en «Otros»). */
   categoriaPorDefecto?: string | null;
+  /**
+   * Las categorías de una PERSONA, para los chips (28/09/2026): Comida,
+   * Alquiler, Salud… y en lo que entra Sueldo, Extra, Changa… Salen de la
+   * base, las mismas con que clasifica la captura, con las propias
+   * mezcladas. Sin esto la cuenta personal veía «Mercadería», «Publicidad»,
+   * «Aporte» y «Préstamo»: le hablaba como a un almacén. Vale con cualquier
+   * plan, y en el Gratis, Gastos es LA pantalla.
+   */
+  rapidasPersonal?: { gasto: string[]; ingreso: string[] };
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -99,9 +108,15 @@ export function PantallaGastos({
   const esAdmin = rol === 'propietario' || rol === 'admin';
 
   // En un negocio con lotes, las categorías del rubro mandan (las 14 del
-  // agricultor, en dos columnas). En el resto, las seis de siempre.
-  const rapidasGasto = conCampanas && categoriasRubro.length > 0 ? categoriasRubro : RAPIDAS_GASTO;
-  const conGrilla = rapidasGasto !== RAPIDAS_GASTO;
+  // agricultor, en dos columnas). En una cuenta personal, las suyas
+  // (28/09/2026). En el resto, las seis de siempre.
+  const rapidasGasto = rapidasPersonal
+    ? rapidasPersonal.gasto
+    : (conCampanas && categoriasRubro.length > 0 ? categoriasRubro : RAPIDAS_GASTO);
+  // La grilla (y arrancar en la primera) es solo del campo. La personal va en
+  // fila y arranca en «Otros», por lo mismo que el negocio: una categoría
+  // elegida de antemano ensucia los números de quien no la toca.
+  const conGrilla = conCampanas && rapidasGasto !== RAPIDAS_GASTO;
 
   const [tipo, setTipo] = useState<'gasto' | 'ingreso'>('gasto');
   const [descripcion, setDescripcion] = useState('');
@@ -163,7 +178,9 @@ export function PantallaGastos({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rapidas = tipo === 'gasto' ? rapidasGasto : RAPIDAS_INGRESO;
+  // Lo que entra arranca en «Otros ingresos» (al tocar «Entró»): en la lista
+  // de una persona es un chip; en la de un negocio queda escrito aparte.
+  const rapidas = tipo === 'gasto' ? rapidasGasto : (rapidasPersonal?.ingreso ?? RAPIDAS_INGRESO);
 
   /**
    * A dónde va a parar la plata si se deja «automática» (083).
@@ -176,7 +193,10 @@ export function PantallaGastos({
    */
   const destino = cuentas.find((c) => (c.metodos ?? []).includes(metodo)) ?? null;
 
-  const categorias = Array.from(new Set([...categoriasUsadas, ...rapidasGasto, ...SUGERIDAS])).filter(Boolean);
+  // A una persona tampoco se le sugiere «Mercadería» ni «Impuestos» al escribir.
+  const categorias = Array.from(new Set([
+    ...categoriasUsadas, ...rapidasGasto, ...(rapidasPersonal ? [] : SUGERIDAS),
+  ])).filter(Boolean);
 
   // ---------------------------------------------------------------- campaña
   const mostrarChip = conCampanas && campanas.length > 0

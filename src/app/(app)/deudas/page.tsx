@@ -16,6 +16,9 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaDeudas() {
   const ctx = await contextoObligatorio();
+  // (110, 28/09/2026) la tarjeta la pone CandadoSeccion en el layout; así no
+  // se leen ni viajan datos del Pro. Para un negocio es siempre false.
+  if (ctx.gratisPersonal) return null;
   const t = await textos();
 
   if (!ctx.esAdmin) {

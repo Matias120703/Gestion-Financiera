@@ -32,6 +32,11 @@ export type { ClaveVitrina, PrecioVitrina } from './vitrina-datos';
  * los que ese rubro puede comprar (ficha del rubro, 102). El botón de la
  * prueba lleva al alta con el rubro ya elegido.
  *
+ * «Para vos» suma, antes del Pro, la tarjeta del plan Gratis (110,
+ * 28/09/2026): no se compra, es a donde pasa la cuenta personal cuando
+ * termina la prueba. Por eso ahí el botón grande dice «Empezar gratis» y el
+ * fin de la prueba lleva un tilde y no el candado.
+ *
  * Es el único pedazo de cliente de la portada: lo demás es del servidor. Sin
  * JavaScript, o antes de hidratar, se ve entero el rubro inicial (comercio
  * en español, el campo en portugués), con sus precios y su botón.
@@ -92,9 +97,16 @@ export function ElegiTuRubro(props: {
   const importe = (n: number | null) => (n === null ? '—' : precio(n, 'PYG', locale));
   const hayEquipo = tarjetas.some((x) => x.plan !== 'basico') && clave !== 'personal';
 
+  // La cuenta personal tiene además el plan Gratis (110, 28/09/2026): al
+  // terminar la prueba pasa ahí, no a la cuenta pausada. Su tarjeta va antes
+  // de la del Pro y no sale de `planesDeLaVitrina`, que son los planes que se
+  // compran (la ficha dice solo 'pro'). Los demás rubros quedan igual.
+  const conGratis = clave === 'personal';
+  const cuantas = tarjetas.length + (conGratis ? 1 : 0);
+
   // Las condiciones ocupan las columnas que dejan libres los planes: con un
-  // solo plan (profe, trainer, personal) van al lado, con tres van abajo.
-  const anchoCondiciones = tarjetas.length === 1 ? 'md:col-span-2' : tarjetas.length === 2 ? 'md:col-span-1' : 'md:col-span-3';
+  // solo plan (profe, trainer) van al lado, con tres van abajo.
+  const anchoCondiciones = cuantas === 1 ? 'md:col-span-2' : cuantas === 2 ? 'md:col-span-1' : 'md:col-span-3';
 
   return (
     <div className="text-tinta">
@@ -160,9 +172,11 @@ export function ElegiTuRubro(props: {
           </ul>
           <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
             <Link href={enlace} className="boton-principal min-h-[48px] px-6 text-[15px]">
-              {v.probar(dias)}
+              {conGratis ? v.empezarGratis : v.probar(dias)}
             </Link>
-            <span className="text-center text-[13px] font-medium text-tinta/60 sm:text-left">{v.garantias}</span>
+            <span className="text-center text-[13px] font-medium text-tinta/60 sm:text-left">
+              {conGratis ? v.garantiasPersonal(dias) : v.garantias}
+            </span>
           </div>
         </div>
       </div>
@@ -171,36 +185,40 @@ export function ElegiTuRubro(props: {
       <div id="precios" className="mt-14 scroll-mt-4">
         <h3 key={`titulo-${clave}`} className="text-[20px] font-bold tracking-tight">{v.cuantoCuesta(rubro.chip)}</h3>
         <div key={`planes-${clave}`} className="mt-4 grid gap-4 md:grid-cols-3">
+          {conGratis && <TarjetaGratis v={v} importe={importe} enlace={enlace} />}
           {tarjetas.map((t, i) => (
             <TarjetaDePlan
               key={t.plan}
               t={t}
               v={v}
-              paso={i}
+              paso={i + (conGratis ? 1 : 0)}
               nombre={clave === 'personal' ? v.nombrePersonal : v.nombresPlan[t.plan]}
               textos={v.planes[clave][t.plan] ?? v.planGenerico[t.plan]}
-              resaltar={tarjetas.length > 1 && t.conEsteProbas}
+              resaltar={cuantas > 1 && t.conEsteProbas}
               importe={importe}
               usd={(n) => precio(n, 'USD', locale)}
               enlace={enlace}
-              llamado={v.probar(dias)}
+              llamado={conGratis ? v.probarPro(dias) : v.probar(dias)}
             />
           ))}
 
           {/* Lo que hay que saber antes de elegir, sin letra chica. */}
           <div
             className={`rounded-3xl border border-dashed border-borde p-5 motion-safe:animate-[aparecer_.4s_ease-out_both] ${anchoCondiciones}`}
-            style={{ animationDelay: `${tarjetas.length * 70}ms` }}
+            style={{ animationDelay: `${cuantas * 70}ms` }}
           >
             <h4 className="text-[15px] font-bold tracking-tight">{v.loQueTenesQueSaber}</h4>
-            <ul className={`mt-3 grid gap-3 ${tarjetas.length >= 3 ? 'md:grid-cols-2' : ''}`}>
+            <ul className={`mt-3 grid gap-3 ${cuantas >= 3 ? 'md:grid-cols-2' : ''}`}>
               <Condicion icono="guaranies">{v.cobroEnGuaranies}</Condicion>
               <Condicion icono="descuento">
                 {v.descuento(Math.round(promo.porcentaje), rachaDelDescuento(clave, promo))}{' '}
                 {v.constancia(Math.round(promo.constanciaPorcentaje), promo.constanciaDias)}
               </Condicion>
               <Condicion icono="pago">{v.comoSePaga}</Condicion>
-              <Condicion icono="candado">{v.finDePrueba}</Condicion>
+              {/* Pasar al plan Gratis no lleva candado: lleva el tilde. */}
+              <Condicion icono={conGratis ? 'tilde' : 'candado'}>
+                {conGratis ? v.finDePruebaPersonal : v.finDePrueba}
+              </Condicion>
               {hayEquipo && <Condicion icono="equipo">{v.equipoNoPaga}</Condicion>}
             </ul>
           </div>
@@ -293,7 +311,52 @@ function TarjetaDePlan({
   );
 }
 
-type IconoCondicion = 'guaranies' | 'descuento' | 'pago' | 'candado' | 'equipo';
+/**
+ * La tarjeta del plan Gratis de la cuenta personal (110, 28/09/2026). Se ve
+ * como las demás, sin la marca de la prueba: la prueba es del Pro. El cero se
+ * pinta con `importe`, igual que los otros precios, y el botón lleva al mismo
+ * alta que el Pro, porque toda cuenta personal nace con sus días de Pro y
+ * después sigue en Gratis.
+ */
+function TarjetaGratis({
+  v, importe, enlace,
+}: {
+  v: TextosVitrina;
+  importe: (n: number | null) => string;
+  enlace: string;
+}) {
+  const g = v.gratisPersonal;
+  return (
+    <div className="tarjeta flex flex-col p-5 motion-safe:animate-[aparecer_.4s_ease-out_both]">
+      <h4 className="text-[16px] font-bold tracking-tight">{g.nombre}</h4>
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
+        <span className="font-titulo text-[27px] font-extrabold tracking-tight tabular-nums">{importe(0)}</span>
+        <span className="text-[13px] font-semibold text-tinta/60">{v.porMes}</span>
+      </p>
+      <p className="mt-1.5 text-[13px] font-semibold text-tinta/60">{g.para}</p>
+
+      <ul className="mt-4 flex-1 space-y-2">
+        {g.puntos.map((punto) => (
+          <li key={punto} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
+            <Tilde className="mt-[3px] h-3.5 w-3.5 shrink-0 text-verde-fuerte" />
+            {punto}
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-4 border-t border-borde pt-3 text-[13px] leading-relaxed text-tinta/60">{g.noIncluye}</p>
+
+      <Link
+        href={enlace}
+        className="mt-4 flex min-h-[44px] items-center justify-center rounded-xl border border-verde/40 px-4 text-center text-[14px] font-bold text-verde-fuerte transition hover:bg-verde-claro"
+      >
+        {g.llamado}
+      </Link>
+    </div>
+  );
+}
+
+type IconoCondicion = 'guaranies' | 'descuento' | 'pago' | 'candado' | 'tilde' | 'equipo';
 
 function Condicion({ icono, children }: { icono: IconoCondicion; children: React.ReactNode }) {
   const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -302,6 +365,7 @@ function Condicion({ icono, children }: { icono: IconoCondicion; children: React
     descuento: <><path d="M4 12.5V5a1 1 0 0 1 1-1h7.5L20 11.5 12.5 19z" /><circle cx="8.5" cy="8.5" r="1.3" /></>,
     pago: <><path d="M4 7h13l-3-3M20 17H7l3 3" /></>,
     candado: <><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></>,
+    tilde: <path d="M5 12.5l4.2 4.2L19 7" />,
     equipo: <><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8" /><circle cx="16.8" cy="9.5" r="2.4" /><path d="M16.6 14.4c2 .2 3.4 1.7 3.9 4.1" /></>,
   };
   return (

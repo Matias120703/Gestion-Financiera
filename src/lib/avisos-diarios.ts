@@ -87,9 +87,11 @@ export async function correrAvisosDiarios(momento: Momento): Promise<{ estado: n
 /**
  * LA PRUEBA SE TERMINA: faltando 3 días, 1 y el último día.
  *
- * Es el aviso que más importa: vencida la prueba, Orden se cierra hasta que
- * se pague (ver CandadoCuenta). Que la persona lo vea venir es la diferencia
- * entre un cliente que paga y uno que se entera cuando ya no puede entrar.
+ * Es el aviso que más importa: vencida la prueba, un negocio se cierra hasta
+ * que se pague (ver CandadoCuenta); la cuenta personal pasa al plan Gratis y
+ * se le cierra lo del Pro (110, 28/09/2026), así que su aviso dice eso y no
+ * «sin cortes». Que la persona lo vea venir es la diferencia entre un
+ * cliente que paga y uno que se entera cuando ya no puede entrar.
  *
  * A la administración le llega un solo aviso con la lista: es el mejor
  * momento para escribirles.
@@ -102,8 +104,9 @@ async function avisarPruebasPorTerminar() {
     return { error: true };
   }
 
+  // `tipo_cuenta` ya viene de la 071 (pruebas_por_terminar).
   const lista = (Array.isArray(data) ? data : []) as {
-    empresa_id: string; nombre: string; fin: string; dias: number;
+    empresa_id: string; nombre: string; tipo_cuenta: string; fin: string; dias: number;
     destinatarios: { user_id: string; idioma: string }[];
   }[];
 
@@ -123,10 +126,11 @@ async function avisarPruebasPorTerminar() {
 
     for (const d of p.destinatarios ?? []) {
       const idioma = esIdioma(d.idioma) ? d.idioma : IDIOMA_POR_DEFECTO;
-      const t = diccionario(idioma).notificaciones;
+      const dic = diccionario(idioma);
+      const t = dic.notificaciones;
       enviados += await avisar(d.user_id, {
         titulo: t.prueba.titulo(p.dias),
-        cuerpo: t.prueba.cuerpo,
+        cuerpo: p.tipo_cuenta === 'personal' ? dic.planGratis.notificaciones.pruebaCuerpo : t.prueba.cuerpo,
         url: '/plan',
         tag: `prueba-${p.empresa_id}`,
         idioma,

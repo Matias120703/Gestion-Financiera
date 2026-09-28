@@ -95,11 +95,13 @@ export async function GET(request: Request) {
       // El texto sirve para los dos —habla de la racha, no de cerrar el día—
       // pero el destino no: una cuenta personal no tiene pantalla de cierre.
       // Mandarla ahí sería un aviso que lleva a una puerta que no existe.
+      // El aviso pide cargar, y la personal carga en Gastos con los dos planes
+      // (28/09/2026): Presupuesto es del Pro y en el Gratis está cerrado.
       const esPersonal = empresa.tipo_cuenta === 'personal';
       const llegaron = await avisar(miembro.user_id, {
         titulo: empresa.nombre,
         cuerpo: t.racha.enRiesgo(empresa.racha),
-        url: esPersonal ? '/organizacion' : '/cierre',
+        url: esPersonal ? '/gastos' : '/cierre',
         tag: `cierre-${empresa.empresa_id}`,
         idioma,
       });

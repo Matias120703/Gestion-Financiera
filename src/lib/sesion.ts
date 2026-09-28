@@ -74,6 +74,13 @@ export interface Contexto {
   planEfectivo: PlanEfectivo;
   /** Qué habilita ese plan. También lo decide la base. */
   limites: LimitesPlan;
+  /**
+   * La cuenta personal en el plan Gratis (28/09/2026): carga a mano, y lo del
+   * Pro con candado por sección. La decide la base (110, `limites_de_empresa`);
+   * nunca se calcula con tipo_cuenta + planEfectivo en la pantalla. Para un
+   * negocio es siempre false: vencido, sigue con el candado total.
+   */
+  gratisPersonal: boolean;
   /** Estado del cobro: prueba, días que faltan, si canceló. */
   suscripcion: EstadoDelPlan;
   capturasIA: { usados: number; tope: number };
@@ -137,6 +144,7 @@ export async function contextoObligatorio(): Promise<Contexto> {
     empresas: lista.map((m) => ({ empresa: m.empresas, rol: m.rol })),
     planEfectivo: info.plan_efectivo ?? 'gratis',
     limites: info.limites,
+    gratisPersonal: info.limites?.gratis_personal === true,
     suscripcion: info.suscripcion,
     capturasIA: info.uso_ia ?? { usados: 0, tope: 0 },
     codigoAcceso: info.codigo_acceso ?? null,

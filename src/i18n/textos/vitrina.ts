@@ -13,6 +13,10 @@
  * (lo vendido menos la mercadería y los gastos da lo que quedó, el costo por
  * hectárea da los kilos para cubrirlo, etc.).
  *
+ * La cuenta personal tiene además el plan Gratis (110, 28/09/2026): su tarjeta
+ * va aparte (`gratisPersonal`), su fin de prueba también
+ * (`finDePruebaPersonal`), y lo que es del Pro dice «Con Pro».
+ *
  * El archivo no importa nada más que tipos: la prueba (pruebas/vitrina.test.js)
  * lo compila suelto y revisa que cada rubro tenga sus tres beneficios y los
  * textos de sus planes en los dos idiomas.
@@ -97,11 +101,14 @@ const rubrosEs: Record<ClaveVitrina, TextosRubroVitrina> = {
   },
   personal: {
     chip: 'Para vos',
+    // El titular vende el Pro; lo gratis va donde tranquiliza: el primer
+    // beneficio y la garantía del botón (110, 28/09/2026).
     titulo: 'Cuánto podés gastar por día hasta tu próximo cobro',
     beneficios: [
-      'Tu presupuesto va de cobro a cobro, no del 1 al 30',
-      'Gastos fijos, metas de ahorro y lo que te deben, cada cosa en su lugar',
-      'Tarjetas y préstamos: ves qué cuota vence y cuánto debés en total',
+      'Gratis: anotás tus gastos e ingresos a mano y ves todo tu historial',
+      // Sin pronombre: cada beneficio se lee solo (como el pt y plan.proCargas).
+      'Con Pro, cargás hablando o con una foto, y tu presupuesto va de cobro a cobro',
+      'Con Pro, tarjetas, préstamos y lo que te deben: qué cuota vence y cuánto debés',
     ],
   },
 };
@@ -232,12 +239,15 @@ const planesEs: PlanesDeLaVitrina = {
     },
   },
   personal: {
+    // Ya no es «un solo plan» (110, 28/09/2026): al lado va la tarjeta
+    // Gratis, que no está acá porque no se compra (ver `gratisPersonal`).
     pro: {
-      para: 'Un solo plan, sin versiones',
+      para: 'Para ordenar todo, no solo anotar',
       puntos: [
         'Presupuesto de cobro a cobro y cuánto podés gastar por día',
         'Gastos fijos, ahorros y metas con fecha',
         'Tarjetas, préstamos y qué cuota vence esta semana',
+        'Lo que te deben y tus cuentas de banco',
         'Voz, foto y texto: 600 cargas por mes',
         REPORTES_ES,
       ],
@@ -255,11 +265,36 @@ export const vitrinaEs = {
 
   probar: (dias: number) => `Probar ${dias} días gratis`,
   garantias: 'Sin tarjeta · Tus datos no se borran',
+  // La cuenta personal (110, 28/09/2026): arranca con días de Pro y después
+  // sigue en el plan Gratis, así que el botón grande dice «Empezar gratis».
+  empezarGratis: 'Empezar gratis',
+  probarPro: (dias: number) => `Probar el Pro ${dias} días`,
+  garantiasPersonal: (dias: number) => `Sin tarjeta · ${dias} días con todo el Pro · Después seguís gratis`,
 
   // ---- los planes ----
   cuantoCuesta: (rubro: string) => `Cuánto cuesta · ${rubro}`,
   nombresPlan: { basico: 'Básico', pro: 'Pro', negocio: 'Premium' } as Record<PlanVitrina, string>,
-  nombrePersonal: 'Personal',
+  // El plan pago de la personal se llama «Pro», como en /plan y en los
+  // correos (110, 28/09/2026). Antes, «Personal».
+  nombrePersonal: 'Pro',
+  /**
+   * La tarjeta Gratis de la cuenta personal. Va aparte y no en `planes`: no
+   * es un plan que se compra (la ficha y `planes_de_rubro` dicen solo 'pro',
+   * y la prueba de la vitrina exige que `planes` tenga solo esos). El precio
+   * no va escrito: la pantalla pinta el cero con el mismo formato que los
+   * demás.
+   */
+  gratisPersonal: {
+    nombre: 'Gratis',
+    para: 'Para anotar tus gastos e ingresos',
+    puntos: [
+      'Gastos e ingresos, cargados a mano',
+      'Todo tu historial, para ver lo que cargaste',
+      'Invitaciones: ganás cuando alguien que trajiste paga su primer mes',
+    ],
+    noIncluye: 'La voz, la foto, el presupuesto, las deudas, lo que te deben, la billetera, los reportes y el Excel son del Pro.',
+    llamado: 'Empezar gratis',
+  },
   porMes: '/ mes',
   desde: 'desde',
   referencia: (monto: string) => `≈ ${monto}`,
@@ -284,6 +319,9 @@ export const vitrinaEs = {
     `Después, con ${dias} días seguidos cargando, pagás ${pct} % menos en cada renovación.`,
   comoSePaga: 'Hoy se paga por transferencia: al terminar la prueba tocás «Suscribirme», se abre un WhatsApp con nosotros, transferís y activamos tu plan.',
   finDePrueba: 'Si no pagás, la cuenta se pausa y no se puede usar hasta que actives el plan. Tus datos no se borran: vuelven intactos cuando pagás.',
+  // La personal no se pausa: pasa al plan Gratis (110, 28/09/2026). Va en
+  // su propia clave: `finDePrueba` es la del negocio y la lee una prueba.
+  finDePruebaPersonal: 'Si no pagás, la cuenta pasa al plan Gratis: seguís anotando tus gastos e ingresos a mano. Tus datos no se borran.',
   equipoNoPaga: 'Las personas que sumás no pagan nada: la suscripción la paga solo el dueño.',
 
   // ---- la barra de abajo del celular (la de verdad, rubro por rubro) ----
@@ -412,9 +450,10 @@ export const vitrinaEs = {
       cobrado: 'Vendido',
     },
     personal: {
-      resumen: 'Así ve su presupuesto una persona: te quedan Gs. 1.240.000 hasta el 5, Gs. 41.000 por día, y la cuota de la tarjeta vence el 12.',
+      // El presupuesto es del Pro (110, 28/09/2026): la mini pantalla lo dice.
+      resumen: 'Con Pro, así ve su presupuesto una persona: te quedan Gs. 1.240.000 hasta el 5, Gs. 41.000 por día, y la cuota de la tarjeta vence el 12.',
       negocio: 'Mis finanzas',
-      titulo: 'Presupuesto y ahorro',
+      titulo: 'Presupuesto y ahorro · Pro',
       disponible: 'Disponible',
       monto: 'Gs. 1.240.000',
       hasta: 'hasta el 5, tu próxima fecha de cobro',
@@ -499,9 +538,9 @@ const rubrosPt: Record<ClaveVitrina, TextosRubroVitrina> = {
     chip: 'Pra você',
     titulo: 'Quanto você pode gastar por dia até o próximo pagamento',
     beneficios: [
-      'Seu orçamento vai de pagamento a pagamento, não do dia 1 ao 30',
-      'Gastos fixos, metas de reserva e o que te devem, cada coisa no seu lugar',
-      'Cartões e empréstimos: você vê qual parcela vence e quanto deve no total',
+      'Grátis: você lança suas despesas e entradas na mão e vê todo o seu histórico',
+      'Com o Pro, você lança falando ou com uma foto, e o orçamento vai de pagamento a pagamento',
+      'Com o Pro, cartões, empréstimos e o que te devem: qual parcela vence e quanto você deve',
     ],
   },
 };
@@ -633,11 +672,12 @@ const planesPt: PlanesDeLaVitrina = {
   },
   personal: {
     pro: {
-      para: 'Um plano só, sem versões',
+      para: 'Pra organizar tudo, não só anotar',
       puntos: [
         'Orçamento de pagamento a pagamento e quanto dá pra gastar por dia',
         'Gastos fixos, reservas e metas com data',
         'Cartões, empréstimos e qual parcela vence esta semana',
+        'O que te devem e suas contas de banco',
         'Voz, foto e texto: 600 lançamentos por mês',
         REPORTES_PT,
       ],
@@ -654,10 +694,24 @@ export const vitrinaPt: TextosVitrina = {
 
   probar: (dias: number) => `Testar ${dias} dias grátis`,
   garantias: 'Sem cartão · Seus dados não são apagados',
+  empezarGratis: 'Começar grátis',
+  probarPro: (dias: number) => `Testar o Pro por ${dias} dias`,
+  garantiasPersonal: (dias: number) => `Sem cartão · ${dias} dias com todo o Pro · Depois continua grátis`,
 
   cuantoCuesta: (rubro: string) => `Quanto custa · ${rubro}`,
   nombresPlan: { basico: 'Básico', pro: 'Pro', negocio: 'Premium' },
-  nombrePersonal: 'Pessoal',
+  nombrePersonal: 'Pro',
+  gratisPersonal: {
+    nombre: 'Grátis',
+    para: 'Pra anotar suas despesas e entradas',
+    puntos: [
+      'Despesas e entradas, lançadas na mão',
+      'Todo o seu histórico, pra ver o que você lançou',
+      'Convites: você ganha quando alguém que você trouxe paga o primeiro mês',
+    ],
+    noIncluye: 'A voz, a foto, o orçamento, as dívidas, o que te devem, a carteira, os relatórios e o Excel são do Pro.',
+    llamado: 'Começar grátis',
+  },
   porMes: '/ mês',
   desde: 'a partir de',
   referencia: (monto: string) => `≈ ${monto}`,
@@ -680,6 +734,7 @@ export const vitrinaPt: TextosVitrina = {
     `Depois, com ${dias} dias seguidos lançando, você paga ${pct} % menos em cada renovação.`,
   comoSePaga: 'Hoje se paga por transferência: no fim do teste você toca em «Assinar», abre um WhatsApp com a gente, transfere e ativamos seu plano.',
   finDePrueba: 'Se você não pagar, a conta fica pausada e não dá pra usar até ativar o plano. Seus dados não são apagados: voltam intactos quando você paga.',
+  finDePruebaPersonal: 'Se você não pagar, a conta passa pro plano Grátis: você continua lançando suas despesas e entradas na mão. Seus dados não são apagados.',
   equipoNoPaga: 'As pessoas que você adiciona não pagam nada: a assinatura é paga só pelo dono.',
 
   barra: {
@@ -804,9 +859,9 @@ export const vitrinaPt: TextosVitrina = {
       cobrado: 'Vendido',
     },
     personal: {
-      resumen: 'Assim uma pessoa vê o orçamento: sobram Gs. 1.240.000 até o dia 5, Gs. 41.000 por dia, e a parcela do cartão vence no dia 12.',
+      resumen: 'Com o Pro, assim uma pessoa vê o orçamento: sobram Gs. 1.240.000 até o dia 5, Gs. 41.000 por dia, e a parcela do cartão vence no dia 12.',
       negocio: 'Minhas finanças',
-      titulo: 'Orçamento e reserva',
+      titulo: 'Orçamento e reserva · Pro',
       disponible: 'Disponível',
       monto: 'Gs. 1.240.000',
       hasta: 'até o dia 5, seu próximo pagamento',

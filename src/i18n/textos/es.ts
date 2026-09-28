@@ -22,6 +22,7 @@ import { reportesAlumnosEs } from './reportes-alumnos';
 import { reportesCampoEs } from './reportes-campo';
 import { reportesPersonalEs } from './reportes-personal';
 import { avisoVencimientoEs } from './aviso-vencimiento';
+import { planGratisEs } from './plan-gratis';
 import { singularEs } from './singular';
 
 export const es = {
@@ -888,11 +889,13 @@ export const es = {
       },
       {
         pregunta: '¿Qué pasa cuando termina la prueba?',
-        respuesta: `La prueba dura ${dias.negocio} días para un negocio y ${dias.personal} para una cuenta personal, sin tarjeta, y te avisamos antes de que termine. Si no pagás, la cuenta **se pausa**: no se puede usar hasta que actives un plan. **Tus datos no se borran**: quedan guardados y vuelven intactos el día que pagás.`,
+        // Desde la 110 (28/09/2026) la cuenta personal no se pausa: pasa al
+        // plan Gratis. El negocio sigue igual.
+        respuesta: `La prueba dura ${dias.negocio} días para un negocio y ${dias.personal} para una cuenta personal, sin tarjeta, y te avisamos antes de que termine. Si es un negocio y no pagás, la cuenta **se pausa** hasta que actives un plan. Si es una cuenta personal, **pasa al plan Gratis**: seguís anotando tus gastos e ingresos a mano. En los dos casos, **tus datos no se borran**.`,
       },
       {
         pregunta: '¿Cómo se paga?',
-        respuesta: 'Por transferencia, en guaraníes. Cuando termina la prueba tocás _Suscribirme_, se abre un WhatsApp con nosotros, transferís y te activamos la cuenta. Podés pagar por mes o por año. Nada de cargar una tarjeta en un formulario.',
+        respuesta: 'Por transferencia, en guaraníes. Cuando termina la prueba tocás _Suscribirme_, se abre un WhatsApp con nosotros, transferís y te activamos el plan. Podés pagar por mes o por año. Nada de cargar una tarjeta en un formulario.',
       },
       {
         pregunta: '¿Mis datos quién los ve y dónde están?',
@@ -917,13 +920,15 @@ export const es = {
         respuesta: 'Sí, y no perdés nada de lo cargado. Por ahora el cambio lo hacemos nosotros: pedínoslo por WhatsApp. Si estás en la prueba, sigue con los mismos días y pasa al plan de tu rubro nuevo.',
       },
       {
-        pregunta: '¿Por qué la cuenta personal cuesta menos?',
-        respuesta: 'Porque no recibís lo mismo. A un negocio, Orden le dice cuánta plata ganó de verdad, y eso se paga solo. A vos te dice cuánto te queda y cuánto debés: te sirve, pero no te genera un guaraní. Cobrarte igual sería no haber entendido a ninguno de los dos.',
+        // Desde la 110 (28/09/2026) la personal tiene Gratis: la pregunta ya
+        // no es por qué cuesta menos sino si se paga.
+        pregunta: '¿La cuenta personal se paga?',
+        respuesta: 'Tiene un plan **Gratis**: anotás tus gastos e ingresos a mano y ves tu historial. Con el **Pro** los cargás hablando o con una foto, y suma el presupuesto de cobro a cobro, tus deudas, lo que te deben, tus cuentas de banco, los reportes y el Excel. El Pro personal cuesta menos que el de un negocio: a un negocio, Orden le dice cuánta plata ganó de verdad, y eso se paga solo.',
       },
     ],
 
     empezarPrueba: 'Empezar la prueba gratis',
-    recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás gratis: si traés a alguien, te llevás la mitad del precio de su plan, con su primer pago.',
+    recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás y en el Gratis de la cuenta personal: si traés a alguien, te llevás la mitad del precio de su plan, con su primer pago.',
     comoFunciona: 'Cómo funciona',
 
     unExtra: 'Un extra',
@@ -933,10 +938,10 @@ export const es = {
     paso1Titulo: 'Compartís tu enlace',
     paso1: 'Cada cuenta tiene el suyo. Sirve igual para un negocio o para una persona.',
     paso2Titulo: 'Paga su primer mes',
-    paso2: 'Mientras prueba gratis no pasa nada. Se cuenta cuando paga de verdad.',
+    paso2: 'Mientras prueba o usa el plan Gratis no pasa nada. Se cuenta cuando paga de verdad.',
     paso3Titulo: 'Te transferimos la mitad de su plan',
     paso3: 'A tu banco o tu billetera. Vos ponés los datos una vez.',
-    recomendarLetraChica: 'Aunque pague con descuento o pague el año entero, te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra: la comisión nace con su primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la mitad del precio de su plan, traer un negocio deja más que traer una cuenta personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás.',
+    recomendarLetraChica: 'Aunque pague con descuento o pague el año entero, te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra: la comisión nace con su primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la mitad del precio de su plan, traer un negocio deja más que traer una cuenta personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás. Si la cuenta personal que traés se queda en el plan Gratis, no hay comisión.',
 
     enTuCelular: 'En tu celular',
     instalarTitulo: 'Cómo poner Orden en tu pantalla de inicio',
@@ -1332,7 +1337,9 @@ export const es = {
     promesaTitulo: 'Invitá y ganá',
     promesaBajada: 'Conocés negocios que anotan todo en un cuaderno. Pasales tu enlace: cuando uno crea su cuenta y paga su primer mes, **te llevás la mitad del precio de su plan**.',
     promesaUnaVez: '· Se cobra **una sola vez** por cada negocio, con su primer pago. Aunque pague con descuento o pague el año entero, te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra.',
-    promesaDeVerdad: '· Se cobra cuando el negocio **paga de verdad**, no cuando crea la cuenta ni cuando prueba gratis.',
+    // Un negocio no tiene Gratis: al vencer se pausa. Gratis es solo de la
+    // cuenta personal (110, 28/09/2026), y se nombra aparte.
+    promesaDeVerdad: '· Se cobra cuando el negocio **paga de verdad**, no cuando crea la cuenta ni mientras prueba. Una cuenta personal que se queda en el plan Gratis tampoco genera comisión.',
     promesaSinTope: '· Te lo transferimos a donde nos digas. No hay tope: podés traer uno o veinte.',
     promesaNoVale: '· No vale traerte a vos mismo ni al negocio donde trabajás.',
 
@@ -1355,8 +1362,11 @@ export const es = {
       },
       {
         situacion: 'A alguien que no sabe en qué se le va el sueldo',
+        // Sin la voz ni el presupuesto (110, 28/09/2026): lo puede mandar
+        // alguien que está en el plan Gratis, y a quien lo recibe le toca
+        // Gratis después de la prueba.
         mensaje: (enlace: string) =>
-          `Mirá esto: cargo mis gastos hablándole al celular y me dice cuánto me queda hasta el próximo cobro. Me sirvió para no llegar raspando a fin de mes. Probalo gratis: ${enlace}`,
+          `Mirá esto: anoto mis gastos en el celular y veo cuánto me quedó cada mes. Para uso personal tiene un plan gratis: ${enlace}`,
       },
       {
         situacion: 'A un local con vendedores',
@@ -1491,7 +1501,9 @@ export const es = {
     paraMiNegocio: 'Para mi negocio',
     paraMiNegocioDetalle: 'Ventas, productos y stock. Podés sumar vendedores.',
     paraMi: 'Para mí',
-    paraMiDetalle: 'Sueldo, gastos y deudas. Sin ventas ni productos.',
+    // Lo gratis y lo del Pro, antes de elegir (110, 28/09/2026): prometer
+    // «deudas» al lado de «después gratis» era la sorpresa del día 6.
+    paraMiDetalle: 'Tu sueldo y tus gastos, gratis. Deudas y presupuesto, con Pro.',
     diasPrueba: (n: number) => `${n} días de prueba`,
     enQueAndas: '¿En qué andás?',
     rubroDetalle: 'Adapta las categorías y las pantallas a tu trabajo. Se puede cambiar después.',
@@ -2570,16 +2582,18 @@ export const es = {
       negocioNada: 'Buen día. Anotá tu primera venta de hoy: por voz son diez segundos.',
       personalConGastos: (gastos: string) => `Ayer gastaste ${gastos}. Anotá lo de hoy apenas lo hagas y sabé siempre cuánto te queda.`,
       personalSoloIngresos: (ingresos: string) => `Ayer entraron ${ingresos}. Anotá también lo que gastás hoy.`,
-      personalNada: 'Buen día. Anotá tus gastos de hoy apenas los hagas: por voz son diez segundos.',
+      // Las tres frases personales no nombran la voz (110, 28/09/2026): le
+      // llegan también a quien está en el plan Gratis, que anota a mano.
+      personalNada: 'Buen día. Anotá tus gastos de hoy apenas los hagas, así no se te escapa ninguno.',
       // Racha contada hasta ayer: viene de la noche anterior (074).
       rachaLinea: (dias: number) => `🔥 Llevás ${dias} días seguidos.`,
     },
     tarde: {
       negocio: 'Todavía no cargaste nada hoy. ¿Vendiste algo? Decilo por voz y queda anotado.',
-      personal: 'Todavía no anotaste nada hoy. ¿Gastaste en algo? Decilo por voz y queda anotado.',
+      personal: 'Todavía no anotaste nada hoy. ¿Gastaste en algo? Anotalo ahora, que después se olvida.',
       // Con una racha en juego, el empujón es más fuerte que el genérico.
       negocioRacha: (dias: number) => `🔥 Llevás ${dias} días seguidos. ¿Vendiste algo hoy? Decilo por voz y no la cortés.`,
-      personalRacha: (dias: number) => `🔥 Llevás ${dias} días seguidos. ¿Gastaste en algo hoy? Decilo por voz y no la cortés.`,
+      personalRacha: (dias: number) => `🔥 Llevás ${dias} días seguidos. ¿Gastaste en algo hoy? Anotalo y no la cortés.`,
     },
     noche: {
       titulo: (nombre: string) => `Tu día en ${nombre}`,
@@ -2776,6 +2790,11 @@ export const es = {
   campanas: campanasEs,
   gastosCampana: gastosCampanaEs,
   panelCampo: panelCampoEs,
+
+  // La cuenta personal en el plan Gratis (110, 28/09/2026): el candado de
+  // cada sección del Pro, el micrófono sin IA, su panel, /plan, la franja y
+  // lo que contestan las rutas. Los negocios siguen con sus textos.
+  planGratis: planGratisEs,
 
   // Reportes por rubro (23/09): lo común (rango con ciclo, indicador con
   // flecha, gráfico por día, descarga) y lo de cada uno de los cinco

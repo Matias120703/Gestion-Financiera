@@ -19,7 +19,7 @@ import { useTextos } from '@/i18n/cliente';
  * el camino de la pasarela. Nunca un botón que no lleva a ningún lado.
  */
 export function BotonSuscribirme({
-  whatsapp, empresa, plan, precio, periodo, etiqueta,
+  whatsapp, empresa, plan, precio, periodo, etiqueta, esPersonal = false,
 }: {
   /** Solo dígitos, con código de país. Sin esto no se dibuja nada. */
   whatsapp: string | null;
@@ -29,12 +29,19 @@ export function BotonSuscribirme({
   precio: string;
   periodo: 'mensual' | 'anual';
   etiqueta?: string;
+  /**
+   * La cuenta personal (28/09/2026): su mensaje dice «Cuenta:» y no
+   * «Negocio: Mis finanzas». Una persona no tiene negocio.
+   */
+  esPersonal?: boolean;
 }) {
   const t = useTextos();
   if (!whatsapp) return null;
 
   const cada = periodo === 'anual' ? t.plan.alAnio : t.plan.alMes;
-  const mensaje = t.plan.mensajeSuscribirme(empresa, plan, precio, cada);
+  const mensaje = (esPersonal ? t.planGratis.plan.mensajeSuscribirme : t.plan.mensajeSuscribirme)(
+    empresa, plan, precio, cada,
+  );
 
   return (
     <a

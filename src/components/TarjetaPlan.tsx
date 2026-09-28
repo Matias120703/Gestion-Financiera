@@ -13,7 +13,7 @@ import type { Textos } from '@/i18n';
  * funciona una vez y quema al cliente.
  */
 export function TarjetaPlan({
-  plan, suscripcion, uso, t,
+  plan, suscripcion, uso, t, esPersonal = false, gratisPersonal = false,
 }: {
   plan: PlanEfectivo;
   suscripcion: EstadoDelPlan;
@@ -21,6 +21,10 @@ export function TarjetaPlan({
   moneda: string;
   locale: string;
   t: Textos;
+  /** La cuenta personal: al terminar la prueba pasa al plan Gratis (110). */
+  esPersonal?: boolean;
+  /** Ya está en el plan Gratis personal: no está vencida, anda (110). */
+  gratisPersonal?: boolean;
 }) {
   const nombre = plan === 'negocio' ? t.plan.negocio : plan === 'pro' ? t.plan.pro : t.plan.gratis;
   const porVencer = suscripcion.en_prueba && suscripcion.dias_restantes <= 3;
@@ -40,10 +44,15 @@ export function TarjetaPlan({
       </div>
 
       {suscripcion.en_prueba && (
-        <p className="text-[13px] leading-relaxed text-tinta/55">{t.plan.pruebaVence}</p>
+        <p className="text-[13px] leading-relaxed text-tinta/55">
+          {esPersonal ? t.planGratis.plan.pruebaVence : t.plan.pruebaVence}
+        </p>
       )}
 
-      {!suscripcion.en_prueba && plan === 'gratis' && suscripcion.ya_uso_prueba && (
+      {/* La personal en Gratis (110) no está vencida: sigue anotando a mano. */}
+      {gratisPersonal ? (
+        <p className="text-[13px] leading-relaxed text-tinta/55">{t.planGratis.plan.gratisDetalle}</p>
+      ) : !suscripcion.en_prueba && plan === 'gratis' && suscripcion.ya_uso_prueba && (
         <p className="text-[13px] leading-relaxed text-tinta/55">{t.plan.vencidaDetalle}</p>
       )}
 
@@ -58,7 +67,7 @@ export function TarjetaPlan({
       )}
 
       <Link href="/plan" className="boton-suave inline-flex">
-        {plan === 'gratis' ? t.plan.elegir : t.plan.gestionar}
+        {gratisPersonal ? t.planGratis.plan.verPro : (plan === 'gratis' ? t.plan.elegir : t.plan.gestionar)}
       </Link>
 
       <p className="text-[12px] leading-relaxed text-tinta/40">

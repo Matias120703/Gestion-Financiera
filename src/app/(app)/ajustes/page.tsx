@@ -213,6 +213,8 @@ export default async function PaginaAjustes({
               moneda={ctx.empresa.moneda}
               locale={FICHA[ctx.idioma].locale}
               t={t}
+              esPersonal={ctx.empresa.tipo_cuenta === 'personal'}
+              gratisPersonal={ctx.gratisPersonal}
             />
           </div>
         );
@@ -251,7 +253,9 @@ export default async function PaginaAjustes({
             <Estado
               activo={Boolean(process.env.OPENAI_API_KEY)}
               titulo={t.pantallas.estadoCaptura}
-              detalleOk={t.pantallas.estadoCapturaOk}
+              // En Gratis (110, 28/09/2026) la captura con IA es del Pro: no
+              // se le promete «contale al sistema lo que pasó».
+              detalleOk={ctx.gratisPersonal ? t.planGratis.ajustes.estadoCaptura : t.pantallas.estadoCapturaOk}
               detalleMal={t.pantallas.estadoCapturaMal}
             />
             {/* Lo que se garantiza no es lo mismo según a quién se le habla.

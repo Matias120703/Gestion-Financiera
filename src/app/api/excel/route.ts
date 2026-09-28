@@ -78,10 +78,28 @@ export async function GET(request: Request) {
 
   // Cuenta vencida: nada, ni el Excel. Se confirma contra la base y no
   // contra el layout, porque esta ruta se puede llamar directo.
-  const { data: puedeCargar } = await supabase.rpc('puede_cargar', { p_empresa: empresa.id });
-  if (!puedeCargar) {
+  //
+  // El Excel lo decide la base (110, 28/09/2026) con su propia pregunta y no
+  // con `puede_cargar`: la cuenta personal en el plan Gratis SÍ carga, pero
+  // el Excel es del Pro. Lo pago se pregunta con `limites_de_empresa`. Para
+  // un negocio da lo mismo que antes: vencido, no baja nada.
+  //
+  // Si la pregunta falla (la función todavía no está en la base, un corte),
+  // no se sabe: se dice eso, como /api/capturar con el cupo. Leer la falla
+  // como «no puede» le decía «tu cuenta venció» a quien está pagando. El
+  // 403 es solo para un «no» de la base.
+  const { data: puedeBajar, error: errorPlan } = await supabase.rpc('puede_bajar_excel', { p_empresa: empresa.id });
+  if (errorPlan || typeof puedeBajar !== 'boolean') {
+    console.error('[excel] plan', errorPlan?.message ?? 'sin respuesta');
+    return NextResponse.json({ error: s.noSeVerificoPlan }, { status: 503 });
+  }
+  if (!puedeBajar) {
     return NextResponse.json(
-      { error: s.excelVencida },
+      {
+        error: empresa.tipo_cuenta === 'personal'
+          ? (await textos()).planGratis.servidor.excelEsDePro
+          : s.excelVencida,
+      },
       { status: 403 },
     );
   }

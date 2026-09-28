@@ -46,7 +46,9 @@ export default function DatosDelNegocio({
             onClick={() => alCambiar({ tipoCuenta: 'personal' })}
             titulo={t.pantallas.paraMi}
             detalle={t.pantallas.paraMiDetalle}
-            prueba={t.pantallas.diasPrueba(DIAS_DE_PRUEBA.personal)}
+            // La personal prueba el Pro y después sigue gratis (110,
+            // 28/09/2026): la pastilla lo dice desde el primer día.
+            prueba={t.planGratis.registro.diasPrueba(DIAS_DE_PRUEBA.personal)}
           />
         </div>
       </div>

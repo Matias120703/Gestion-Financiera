@@ -579,6 +579,25 @@ export const PERSONAL: FichaRubro = {
 };
 
 /**
+ * Espejo de la 110 (28/09/2026): lo que la cuenta personal en Gratis ve con
+ * candado. La autoridad es la base.
+ *
+ * Va aparte y no como `false` en `PERSONAL.secciones` porque una sección en
+ * false desaparece (ver arriba): acá se ven, con la pastilla «Pro», y al
+ * entrar CandadoSeccion explica qué hacen. Así la persona sabe que existen
+ * antes de que le pidan plata.
+ */
+export const SECCIONES_DEL_PRO_PERSONAL: Seccion[] = ['/deudas', '/fiado', '/billetera', '/organizacion', '/reportes'];
+
+/**
+ * Qué secciones se tapan. Para un negocio la lista viene siempre vacía: su
+ * cuenta vencida sigue con el candado total (CandadoCuenta), sin cambios.
+ */
+export function seccionesCerradas(gratisPersonal: boolean): Seccion[] {
+  return gratisPersonal ? SECCIONES_DEL_PRO_PERSONAL : [];
+}
+
+/**
  * Qué puerta le toca a esta cuenta.
  *
  * El tipo de cuenta es OBLIGATORIO y va primero en importancia: manda sobre

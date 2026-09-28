@@ -430,6 +430,12 @@ export const MENSAJES_PT: Record<string, string> = {
   // Tampoco lo ve nadie (`resumen_semanal_para` es solo de la tarea
   // programada), pero la regla no tiene excepciones.
   'Falta para quién es el resumen.': 'Falta dizer pra quem é o resumo.',
+
+  // ---- 110 · la cuenta personal en Gratis ----
+  // El primero lo ve la personal en Gratis si pide algo del Pro por API; el
+  // segundo, quien quiere cambiar su tipo de cuenta sin ser administración.
+  'Eso es del plan Pro. En el plan Gratis anotás tus gastos e ingresos a mano.': 'Isso é do plano Pro. No plano Grátis você lança suas despesas e entradas na mão.',
+  'El tipo de cuenta solo lo cambia la administración de Orden.': 'O tipo de conta só pode ser mudado pela administração do Orden.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */

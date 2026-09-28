@@ -100,11 +100,18 @@ export interface LimitesPlan {
   excel: boolean;
   avisos: boolean;
   /**
-   * Si es false, la cuenta está vencida: se ve todo y se baja el Excel, pero
-   * no se carga nada nuevo. Lo aplica PostgreSQL con triggers, no la
-   * pantalla — acá solo sirve para avisar antes del choque. Ver migración 018.
+   * false = cuenta de un negocio vencida: CandadoCuenta la tapa y la base
+   * rechaza todo (018/069). La personal nunca queda en false desde la 110
+   * (28/09/2026): vencida, pasa al plan Gratis y sigue cargando a mano.
    */
   escritura: boolean;
+  /**
+   * La cuenta personal en el plan Gratis (110, 28/09/2026, `limites_de_empresa`):
+   * carga gastos e ingresos a mano; lo del Pro queda guardado y cerrado. Para
+   * un negocio es siempre false. Es la única señal que usa la pantalla: nunca
+   * se deduce de tipo_cuenta + plan.
+   */
+  gratis_personal: boolean;
 }
 
 export interface EstadoDelPlan {
@@ -641,9 +648,12 @@ export interface ResumenPanel {
   comercios: number;
   en_prueba: number;
   pagando: number;
+  /** Desde la 110 (28/09/2026) solo cuenta negocios: la personal pasa a Gratis. */
   vencidas: number;
   vencen_semana: number;
   ia_mes: number;
+  /** Cuentas personales en el plan Gratis (110). */
+  gratis_personales: number;
 }
 
 /** Una acción del panel, para el historial de una cuenta. */

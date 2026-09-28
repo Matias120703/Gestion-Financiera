@@ -3,8 +3,9 @@ import { contextoObligatorio, type Contexto } from '@/lib/sesion';
 import { rangoDesdeParams, traerProductos, traerRetoActivo } from '@/lib/datos';
 import {
   traerResumen, traerRanking, traerSerieDiaria, traerGastosPorCategoria, traerCobrosPorMetodo,
+  traerPaginaMovimientos,
 } from '@/lib/agregados';
-import { rangoAnterior, diasDelRango, diffDias, hoyISO } from '@/lib/fechas';
+import { rangoAnterior, diasDelRango, diffDias, hoyISO, resolverRango } from '@/lib/fechas';
 import { variacion } from '@/lib/calculos';
 import { dinero, dineroCorto, porcentaje, numero, fechaLegible, dineroQuizas } from '@/lib/formato';
 import { SelectorRango } from '@/components/SelectorRango';
@@ -15,6 +16,8 @@ import { conJerga } from '@/i18n/jergas';
 import { categoriaVisible } from '@/i18n/nombres';
 import { traerResumenPersonal } from '@/lib/personal';
 import { PanelPersonal } from '@/components/PanelPersonal';
+import { PanelPersonalGratis } from '@/components/PanelPersonalGratis';
+import { TarjetaPasatePro } from '@/components/TarjetaPasatePro';
 import { traerRacha, traerDescuentoRacha } from '@/lib/habito';
 import { TarjetaRacha, TarjetaDescuento } from '@/components/Racha';
 import { AvisoComision, type Novedad } from '@/components/AvisoComision';
@@ -126,6 +129,60 @@ async function ContenidoPanel({
           <div className="tarjeta">
             <Vacio titulo={t.organizacion.titulo} detalle={t.deudas.soloAdmin} />
           </div>
+        </div>
+      );
+    }
+
+    /**
+     * EL PLAN GRATIS PERSONAL TIENE SU PROPIO PANEL (110, 28/09/2026).
+     *
+     * Lo del panel del Pro —billetera, ahorros, deudas, presupuesto— es del
+     * Pro, así que acá ni se pide: ni `resumen_personal`, ni las deudas, ni
+     * la billetera. Queda lo que hace en Gratis: anotar y mirar el mes.
+     */
+    if (ctx.gratisPersonal) {
+      const hoy = hoyISO(ctx.zonaHoraria);
+      // El mes del 1 a hoy y no el ciclo de cobro a cobro: ese se configura
+      // en Presupuesto, que es del Pro.
+      const mes = resolverRango('mes', hoy);
+      const todo = resolverRango('siempre', hoy);
+      const [resumenMes, ultimas, descuentoPersonal, rachaPersonal] = await Promise.all([
+        traerResumen(ctx.empresa.id, mes.desde, mes.hasta),
+        // Lo último que anotó, sin lo anulado: esto no es el historial, es un
+        // «¿quedó anotado?» de un vistazo.
+        traerPaginaMovimientos(ctx.empresa.id, todo.desde, todo.hasta, { tamano: 5, incluirAnuladas: false }),
+        traerDescuentoRacha(ctx.empresa.id),
+        traerRacha(ctx.empresa.id),
+      ]);
+
+      return (
+        <div className="space-y-4">
+          <Bienvenida nombre={ctx.miembro.nombre} zona={ctx.zonaHoraria} t={t} />
+          {/* La racha es gratis y empuja el hábito: lleva a Gastos. */}
+          <TarjetaRacha racha={rachaPersonal} t={t} destino="/gastos" />
+          {/* El descuento que ya ganó se respeta; en Gratis no se gana uno
+              nuevo. No alcanza con el filtro de la tarjeta: a un Pro pagado
+              que venció por fecha la base le sigue dando la fase de
+              constancia «vigente», y le prometería un 5 % que no existe. */}
+          {descuentoPersonal?.logrado && <TarjetaDescuento descuento={descuentoPersonal} t={t} />}
+          <Atajos
+            etiqueta={t.billetera.atajos}
+            ficha={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones}
+            items={[
+              { href: '/gastos', texto: t.panel.cargarGasto },
+              { href: '/movimientos', texto: t.nav.historial },
+            ]}
+          />
+          <AvisoComision novedad={await novedadComision} />
+          <PanelPersonalGratis
+            resumen={resumenMes}
+            ultimas={ultimas.movimientos}
+            moneda={ctx.vista}
+            locale={FICHA[(await idiomaActual())].locale}
+            t={t}
+          />
+          {/* Una sola vez y abajo de todo: arriba sería un cartel. */}
+          <TarjetaPasatePro />
         </div>
       );
     }

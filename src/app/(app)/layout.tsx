@@ -4,12 +4,13 @@ import { BotonCaptura } from '@/components/CapturaInteligente';
 import { AvisoCuenta } from '@/components/AvisoCuenta';
 import { AvisoMonedaVista } from '@/components/AvisoMonedaVista';
 import { CandadoCuenta } from '@/components/CandadoCuenta';
+import { CandadoSeccion } from '@/components/CandadoSeccion';
 import { ProveedorZona } from '@/lib/zona';
 import { Intro } from '@/components/Intro';
 import { BarraDeCarga } from '@/components/BarraDeCarga';
 import { textos } from '@/i18n';
 import { ProveedorJerga } from '@/i18n/cliente';
-import { fichaDe } from '@/lib/rubros';
+import { fichaDe, seccionesCerradas } from '@/lib/rubros';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,10 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   // el candado (098): siguen andando un tiempo, y todo lo demás está tapado.
   // Es del dueño o de un administrador, como lo exige la base.
   const apagarLinks = bloqueada && ctx.esAdmin && ficha.secciones['/rutinas'];
+  // La cuenta personal en Gratis (110, 28/09/2026) no tiene candado total:
+  // carga a mano, y lo del Pro se tapa por sección. Para un negocio la lista
+  // viene vacía, así que para él nada cambia.
+  const cerradas = seccionesCerradas(ctx.gratisPersonal);
 
   return (
     // La zona envuelve TODO el layout y no solo `children`: el botón de
@@ -38,7 +43,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         Ver components/BarraDeCarga.tsx. */}
     <BarraDeCarga />
     <div className="flex min-h-screen">
-      <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} />
+      <NavLateral empresa={ctx.empresa} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} gratisPersonal={ctx.gratisPersonal} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <BarraSuperior
@@ -59,6 +64,10 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
               puedeCargar={ctx.limites?.escritura ?? true}
               enPrueba={ctx.suscripcion?.en_prueba ?? false}
               diasRestantes={ctx.suscripcion?.dias_restantes ?? 99}
+              esPersonal={ctx.empresa.tipo_cuenta === 'personal'}
+              gratisPersonal={ctx.gratisPersonal}
+              finDelPlan={ctx.suscripcion?.periodo_fin ?? null}
+              terminoLaPrueba={ctx.suscripcion?.estado === 'prueba'}
             />
             {/* Mientras haya una vista de moneda encendida hay que decirlo en
                 todas las pantallas, no solo en Ajustes. Alguien que ve
@@ -67,23 +76,28 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
                 cuenta vencida: no es asunto de una pantalla, es del sistema. */}
             <AvisoMonedaVista vista={ctx.vista} />
             <CandadoCuenta bloqueada={bloqueada} empresaId={ctx.empresa.id} apagarLinks={apagarLinks}>
-              {children}
+              {/* Adentro del candado total: a un negocio vencido lo tapa
+                  aquel, y para él este no tiene nada que tapar. */}
+              <CandadoSeccion cerradas={cerradas}>{children}</CandadoSeccion>
             </CandadoCuenta>
           </div>
         </main>
 
         {/* Con la cuenta vencida no se ofrece ni el micrófono: activar el
             plan es la única acción, y mostrar un botón que igual va a
-            rechazar la carga es prometer algo que no se cumple. */}
+            rechazar la carga es prometer algo que no se cumple.
+            En el plan Gratis personal (110, 28/09/2026) se queda, sin IA:
+            abre «Anotar a mano» y las opciones del Pro con candado. */}
         {!bloqueada && (
           <BotonCaptura
             empresaId={ctx.empresa.id}
             moneda={ctx.empresa.moneda}
             guardaComprobantes={ctx.limites?.adjuntos ?? false}
             tipoCuenta={ctx.empresa.tipo_cuenta}
+            conIA={(ctx.capturasIA?.tope ?? 0) > 0}
           />
         )}
-        <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} />
+        <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} gratisPersonal={ctx.gratisPersonal} />
       </div>
     </div>
     </ProveedorJerga>

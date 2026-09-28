@@ -94,13 +94,20 @@ export async function POST(request: Request) {
   /**
    * El precio, de la base, Y DE SU TIPO DE CUENTA.
    *
-   * `precios` tiene dos listas: la personal (un solo plan, el Pro de 60.000)
-   * y la de emprendedor (Básico 110.000, Pro 190.000, Premium 250.000).
+   * `precios` tiene dos listas: la personal (un solo plan PAGO, el Pro de
+   * 60.000; desde la 110 la personal tiene además el Gratis, que no se cobra
+   * y no pasa por acá) y la de emprendedor (Básico 110.000, Pro 190.000,
+   * Premium 250.000).
    * Antes se pedía solo por moneda y se tomaba la primera fila con ese plan;
    * como la lista viene ordenada por tipo, «emprendedor» salía antes que
    * «personal» y una cuenta personal que pagaba su Pro con tarjeta pagaba
    * el de 190.000. La pantalla de planes ya filtraba por tipo; el checkout
    * ahora cobra lo mismo que la pantalla muestra.
+   *
+   * Cobrar según `tipo_cuenta` es seguro porque desde la 110 (28/09/2026) el
+   * tipo lo cambia solo la administración (`proteger_empresa`): antes un
+   * negocio podía pasarse a personal con un UPDATE, pagar el Pro de 60.000 y
+   * volver.
    */
   const { data: precios, error: errorPrecios } = await supabase.rpc('lista_precios', {
     p_moneda: moneda, p_tipo: empresa.tipo_cuenta,

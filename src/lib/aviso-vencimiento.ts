@@ -11,6 +11,11 @@
  *   · 'periodo' → el que PAGA: se le vence el período. Push y correo.
  *   · 'prueba'  → la prueba se termina. El push ya sale desde la 071; acá
  *     se arma el correo.
+ *
+ * Y dos clases de cuenta (110, 28/09/2026): al negocio que no paga se le
+ * pausa la cuenta; la personal pasa al plan Gratis. Para la personal la
+ * frase del correo y el cuerpo del push lo dicen y nombran lo que se
+ * cierra. Asunto, precio, botón y pie son los mismos.
  */
 
 export type TipoVencimiento = 'periodo' | 'prueba';
@@ -62,8 +67,12 @@ export interface TextosAvisoVencimiento {
   periodo: {
     titulo: (dias: number) => string;
     cuerpo: (plan: string, precio: string | null) => string;
+    /** La cuenta personal no se corta: pasa al plan Gratis (110). Dice qué se cierra. */
+    cuerpoPersonal: (plan: string, precio: string | null) => string;
     asunto: (plan: string, cuando: string) => string;
     frase: (plan: string, cuando: string) => string;
+    /** Ídem en el correo; ya dice que lo cargado queda guardado. */
+    frasePersonal: (plan: string, cuando: string) => string;
     precio: (precio: string) => string;
     boton: string;
     pie: string;
@@ -71,6 +80,8 @@ export interface TextosAvisoVencimiento {
   prueba: {
     asunto: (cuando: string) => string;
     frase: (cuando: string) => string;
+    /** La prueba de la cuenta personal termina en el plan Gratis (110); ya dice que lo cargado queda guardado. */
+    frasePersonal: (cuando: string) => string;
     precio: (plan: string, precio: string) => string;
     boton: string;
     pie: string;
@@ -126,13 +137,23 @@ export function claveDeEnvio(v: Vencimiento, canal: 'push' | 'email', userId?: s
     : `${base}_correo:${v.empresa_id}:${userId ?? ''}:${v.fecha_fin}:${v.dias}`;
 }
 
+/**
+ * ¿Es una cuenta personal? Desde la 110 (28/09/2026) la personal que no paga
+ * pasa al plan Gratis y no a la cuenta pausada: sus avisos dicen eso y qué se
+ * cierra. Un negocio sigue con los textos de siempre.
+ */
+function esPersonal(v: Vencimiento): boolean {
+  return v.tipo_cuenta === 'personal';
+}
+
 /** El push del período pago. La prueba no pasa por acá: su push es el de la 071. */
 export function pushDeVencimiento(
   v: Vencimiento, t: TextosAvisoVencimiento, locale: string,
 ): { titulo: string; cuerpo: string } {
+  const cuerpo = esPersonal(v) ? t.periodo.cuerpoPersonal : t.periodo.cuerpo;
   return {
     titulo: t.periodo.titulo(v.dias),
-    cuerpo: t.periodo.cuerpo(nombreDelPlan(v.plan, t), precioDelPlan(v, t, locale)),
+    cuerpo: cuerpo(nombreDelPlan(v.plan, t), precioDelPlan(v, t, locale)),
   };
 }
 
@@ -162,8 +183,14 @@ export function correoDeVencimiento(
   const enlace = `${sitio.replace(/\/+$/, '')}${RUTA_PARA_PAGAR}`;
 
   const esPrueba = v.tipo === 'prueba';
+  const personal = esPersonal(v);
   const asunto = esPrueba ? t.prueba.asunto(cuando) : t.periodo.asunto(plan, cuando);
-  const frase = esPrueba ? t.prueba.frase(cuando) : t.periodo.frase(plan, cuando);
+  const frase = esPrueba
+    ? (personal ? t.prueba.frasePersonal(cuando) : t.prueba.frase(cuando))
+    : (personal ? t.periodo.frasePersonal(plan, cuando) : t.periodo.frase(plan, cuando));
+  // La frase de la personal ya dice que lo cargado queda guardado: repetirlo con
+  // `guardado` en la oración siguiente sonaba a relleno (110, 28/09/2026).
+  const cierre = personal ? frase : `${frase} ${t.guardado}`;
   const lineaPrecio = precio ? (esPrueba ? t.prueba.precio(plan, precio) : t.periodo.precio(precio)) : null;
   const boton = esPrueba ? t.prueba.boton : t.periodo.boton;
   const pie = esPrueba ? t.prueba.pie : t.periodo.pie;
@@ -172,7 +199,7 @@ export function correoDeVencimiento(
   const texto = [
     t.hola(d.nombre),
     '',
-    `${frase} ${t.guardado}`,
+    cierre,
     ...(lineaPrecio ? ['', lineaPrecio] : []),
     '',
     `${t.comoPagarTitulo}: ${comoPagar}`,
@@ -202,7 +229,7 @@ export function correoDeVencimiento(
 
   <tr><td style="padding:16px 24px 0;">
     <p style="margin:0 0 12px;font-size:14px;line-height:1.55;color:${TINTA};">
-      ${escapar(t.hola(d.nombre))} ${escapar(frase)} ${escapar(t.guardado)}
+      ${escapar(t.hola(d.nombre))} ${escapar(cierre)}
     </p>
     ${lineaPrecio ? `<p style="margin:0 0 12px;font-size:16px;font-weight:700;line-height:1.4;color:${TINTA};">
       ${escapar(lineaPrecio)}

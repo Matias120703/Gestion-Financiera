@@ -127,14 +127,17 @@ export interface FilaDePlan {
 }
 
 /**
- * Espejo de `limites_plan()` de la migración 009.
+ * Espejo de `limites_plan()` (077) y, para `gratis`, de `limites_de_empresa()`
+ * en una cuenta personal (110, 28/09/2026).
  *
  * IMPORTANTE: esto es solo para pintar la tabla de precios. Quien decide qué
  * se puede hacer es PostgreSQL. Si alguien edita este archivo no gana ni una
  * captura: la función `consumir_credito_ia()` la rechaza igual.
  */
 export const LIMITES_VISIBLES: Record<'gratis' | PlanPago, FilaDePlan> = {
-  gratis:  { plan: 'gratis',  capturas: 20,   miembros: 1,  adjuntos: false, excel: false },
+  // Para un negocio, gratis es cuenta vencida (candado). Para la personal es
+  // el plan Gratis: a mano, sin IA, sin comprobantes y sin Excel.
+  gratis:  { plan: 'gratis',  capturas: 0,    miembros: 1,  adjuntos: false, excel: false },
   // Un negocio de una sola persona: todo lo demás igual que Pro (077).
   basico:  { plan: 'basico',  capturas: 300,  miembros: 1,  adjuntos: true,  excel: true },
   pro:     { plan: 'pro',     capturas: 600,  miembros: 3,  adjuntos: true,  excel: true },

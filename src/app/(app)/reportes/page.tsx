@@ -55,6 +55,9 @@ export default async function PaginaReportes({
 }) {
   const searchParams = await busqueda;
   const ctx = await contextoObligatorio();
+  // (110, 28/09/2026) la tarjeta la pone CandadoSeccion en el layout; así no
+  // se leen ni viajan datos del Pro. Para un negocio es siempre false.
+  if (ctx.gratisPersonal) return null;
   // Reportes trae la ganancia y el detalle financiero del negocio entero:
   // es la vista del dueño en cualquiera de las dos cuentas, personal o no.
   if (!ctx.esAdmin) redirect('/panel');

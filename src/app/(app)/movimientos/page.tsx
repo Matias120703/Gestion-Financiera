@@ -58,6 +58,13 @@ export default async function PaginaMovimientos({
    */
   const ciclosLargos = ficha.ciclosLargos;
   const lotesEnCurso = lotes.filter((l) => l.estado === 'abierto').length;
+  /**
+   * UNA PERSONA NO TIENE «GANANCIA NETA» NI «UNIDADES» (28/09/2026): tiene lo
+   * que le quedó. Tampoco vende, así que el filtro «Ventas» sobra. Vale con
+   * cualquier plan; en el Gratis, el historial es una de sus tres pantallas.
+   */
+  const esPersonal = ctx.empresa.tipo_cuenta === 'personal';
+  const teQuedo = r.ingresosTotales - r.gastos;
 
   return (
     <div className="space-y-5">
@@ -67,7 +74,9 @@ export default async function PaginaMovimientos({
         <Indicador titulo={t.pantallas.movimientosValidos} valor={numero(total - r.movimientosAnulados)} detalle={rango.etiqueta.toLowerCase()} />
         <Indicador titulo={t.pantallas.entro} valor={dineroCorto(r.ingresosTotales, m)} tono="bueno" />
         <Indicador titulo={t.pantallas.salio} valor={dineroCorto(r.gastos, m)} tono="malo" />
-        {ciclosLargos ? (
+        {esPersonal ? (
+          <Indicador titulo={t.pantallas.teQuedo} valor={dineroCorto(teQuedo, m)} tono={teQuedo >= 0 ? 'bueno' : 'malo'} />
+        ) : ciclosLargos ? (
           <Indicador titulo={t.lotes.enCurso} valor={numero(lotesEnCurso)} detalle={t.movimientos.resultadoEnLotes} />
         ) : verRent ? (
           <Indicador titulo={t.panel.gananciaNeta} valor={dineroCorto(r.gananciaNeta, m)} tono={r.gananciaNeta >= 0 ? 'bueno' : 'malo'} />
@@ -96,6 +105,7 @@ export default async function PaginaMovimientos({
         hoy={hoyISO(ctx.zonaHoraria)}
         cargarPagina={cargarPagina}
         conCampanas={conCampanas}
+        conVentas={!esPersonal}
         // Solo lo que el chip necesita: los números de cada campaña no viajan.
         campanas={lotes.map((l): CampanaParaElegir => ({
           id: l.id, nombre: l.nombre, cultivo: l.cultivo ?? '', campana: l.campana ?? '',

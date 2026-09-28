@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
-import { fichaDe, palabra, type Seccion } from '@/lib/rubros';
+import { fichaDe, palabra, seccionesCerradas, type Seccion } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 import { useBloquearFondo } from '@/lib/fondo';
@@ -254,13 +254,26 @@ const EN_BARRA_INFERIOR_VENDEDOR: Seccion[] = ['/panel', '/vender', '/gastos', '
  */
 const EN_BARRA_INFERIOR_PERSONAL: Seccion[] = ['/panel', '/deudas', '/gastos', '/organizacion'];
 
-export function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: boolean = true) {
+/**
+ * La cuenta personal en el plan Gratis (110, 28/09/2026): Panel, Gastos e
+ * Historial, más «Más». Deudas y Presupuesto son del Pro: dejarlos fijos
+ * abajo sería tener media barra cerrada. Siguen a un toque en «Más», con la
+ * pastilla «Pro».
+ */
+const EN_BARRA_INFERIOR_GRATIS: Seccion[] = ['/panel', '/gastos', '/movimientos'];
+
+export function barraDe(
+  tipo: TipoCuenta,
+  rubro: Rubro = 'comercio',
+  esAdmin: boolean = true,
+  gratisPersonal: boolean = false,
+) {
   const ficha = fichaDe(rubro, tipo);
   // El rubro puede traer su propia barra: la del profe y la del trainer
   // ponen la agenda y sus clientes a un toque (ver `barra` en rubros.ts).
   // Un vendedor ve la misma, sin lo que es solo del dueño.
   const base = tipo === 'personal'
-    ? EN_BARRA_INFERIOR_PERSONAL
+    ? (gratisPersonal ? EN_BARRA_INFERIOR_GRATIS : EN_BARRA_INFERIOR_PERSONAL)
     : ficha.barra
       ? (esAdmin ? ficha.barra : ficha.barra.filter((href) => !SOLO_ADMIN.includes(href)))
       : esAdmin ? EN_BARRA_INFERIOR : EN_BARRA_INFERIOR_VENDEDOR;
@@ -271,6 +284,24 @@ export function barraDe(tipo: TipoCuenta, rubro: Rubro = 'comercio', esAdmin: bo
 
 function activo(ruta: string, href: string) {
   return ruta === href || ruta.startsWith(`${href}/`);
+}
+
+/**
+ * La pastilla «Pro», con un candado mini, de una sección cerrada en el plan
+ * Gratis personal (110, 28/09/2026). La sección se ve y se puede tocar: al
+ * entrar, CandadoSeccion explica qué hace. Esconderla sería que la persona
+ * no sepa que existe.
+ */
+function PastillaPro({ texto }: { texto: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-arena px-1.5 py-[1px] text-[10px] font-bold leading-tight text-tinta/70">
+      <svg viewBox="0 0 24 24" className="h-[10px] w-[10px]" aria-hidden="true" {...trazo} strokeWidth={2.4}>
+        <rect x="4" y="10" width="16" height="10" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </svg>
+      {texto}
+    </span>
+  );
 }
 
 /**
@@ -286,15 +317,21 @@ function activo(ruta: string, href: string) {
  * panel sin decirle por qué.
  */
 export function NavLateral({
-  empresa, esAdmin = true, administraOrden = false,
+  empresa, esAdmin = true, administraOrden = false, gratisPersonal = false,
 }: {
   empresa: Empresa;
   esAdmin?: boolean;
   administraOrden?: boolean;
+  /** La cuenta personal en el plan Gratis (110): lo del Pro va abajo, con candado. */
+  gratisPersonal?: boolean;
 }) {
   const ruta = usePathname();
   const t = useTextos();
   const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, esAdmin);
+  // Para un negocio viene vacía y el menú queda como siempre.
+  const cerradas = seccionesCerradas(gratisPersonal);
+  const abiertos = ITEMS.filter((i) => !cerradas.includes(i.href));
+  const conCandado = ITEMS.filter((i) => cerradas.includes(i.href));
   return (
     <aside className="hidden w-[232px] shrink-0 flex-col border-r border-borde bg-superficie lg:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -306,7 +343,7 @@ export function NavLateral({
       </div>
 
       <nav className="flex-1 space-y-0.5 px-3 py-2">
-        {ITEMS.map((i) => (
+        {abiertos.map((i) => (
           <Link
             key={i.href} href={i.href}
             className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-semibold transition ${
@@ -317,6 +354,44 @@ export function NavLateral({
             {i.texto}
           </Link>
         ))}
+
+        {/* En Gratis (110) el plan va a la vista también en la compu: en el
+            celular está en «Más», y acá solo se llegaba por Ajustes. Va
+            antes de lo del Pro para que no parezca una sección cerrada. */}
+        {gratisPersonal && (
+          <Link
+            href="/plan"
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-semibold transition ${
+              activo(ruta, '/plan') ? 'bg-verde-claro text-verde-fuerte' : 'text-tinta/60 hover:bg-arena hover:text-tinta'
+            }`}
+          >
+            {Ico.plan}
+            {t.nav.plan}
+          </Link>
+        )}
+
+        {/* Lo del Pro, agrupado abajo de lo que anda (110, 28/09/2026):
+            mezclado, el menú parecía una demo. */}
+        {conCandado.length > 0 && (
+          <>
+            <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-tinta/40">
+              {t.planGratis.nav.conPro}
+            </p>
+            {conCandado.map((i) => (
+              <Link
+                key={i.href} href={i.href}
+                aria-label={`${i.texto} · ${t.plan.pro}`}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14.5px] font-semibold transition ${
+                  activo(ruta, i.href) ? 'bg-verde-claro text-verde-fuerte' : 'text-tinta/60 opacity-60 hover:bg-arena hover:text-tinta hover:opacity-100'
+                }`}
+              >
+                {i.icono}
+                <span className="min-w-0 flex-1 truncate">{i.texto}</span>
+                <PastillaPro texto={t.plan.pro} />
+              </Link>
+            ))}
+          </>
+        )}
 
         {/* Recomendar no es una sección del negocio: es un extra de la
             persona. Va abajo de todo, después de una línea, y en la barra del
@@ -459,7 +534,7 @@ function useLenteDeVidrio(columnas: number, alSoltar: (indice: number) => void) 
 }
 
 export function NavInferior({
-  tipo = 'emprendedor', rubro = 'comercio', esAdmin = true, administraOrden = false,
+  tipo = 'emprendedor', rubro = 'comercio', esAdmin = true, administraOrden = false, gratisPersonal = false,
 }: {
   tipo?: TipoCuenta;
   rubro?: Rubro;
@@ -473,6 +548,8 @@ export function NavInferior({
    * `superadmins`: un cliente no lo ve ni se entera de que existe.
    */
   administraOrden?: boolean;
+  /** La cuenta personal en el plan Gratis (110): otra barra, y lo del Pro abajo en «Más». */
+  gratisPersonal?: boolean;
 }) {
   const ruta = usePathname();
   const router = useRouter();
@@ -482,8 +559,12 @@ export function NavInferior({
   // Mientras el menú está adelante, la página de atrás no se mueve.
   useBloquearFondo(abierto);
 
-  const enBarra = barraDe(tipo, rubro, esAdmin);
+  const enBarra = barraDe(tipo, rubro, esAdmin, gratisPersonal);
   const todos = itemsDe(t, tipo, rubro, esAdmin);
+  // Para un negocio viene vacía y «Más» queda como siempre.
+  const cerradas = seccionesCerradas(gratisPersonal);
+  const abiertos = todos.filter((i) => !cerradas.includes(i.href));
+  const conCandado = todos.filter((i) => cerradas.includes(i.href));
   // El orden de la barra manda sobre el orden del menú: en personal, Deudas
   // tiene que quedar donde estaba Vender y no al final.
   const fijos = enBarra
@@ -559,7 +640,7 @@ export function NavInferior({
             <div
               className="grid min-h-0 touch-pan-y grid-cols-3 gap-2.5 overflow-y-auto overscroll-contain p-1"
             >
-              {todos.map((i) => {
+              {abiertos.map((i) => {
                 const on = activo(ruta, i.href);
                 return (
                   <Link
@@ -612,6 +693,35 @@ export function NavInferior({
                   {Ico.orden}
                   <span className="px-0.5">{t.nav.panelOrden}</span>
                 </Link>
+              )}
+
+              {/* Lo del Pro en el plan Gratis personal (110, 28/09/2026), abajo
+                  de todo lo que anda —el plan y las invitaciones también andan—
+                  bajo su título: mezclado, el menú parecía una demo. */}
+              {conCandado.length > 0 && (
+                <>
+                  <p className="col-span-3 px-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-white/55">
+                    {t.planGratis.nav.conPro}
+                  </p>
+                  {conCandado.map((i) => {
+                    const on = activo(ruta, i.href);
+                    return (
+                      <Link
+                        key={i.href}
+                        href={i.href}
+                        onClick={() => setAbierto(false)}
+                        aria-label={`${i.texto} · ${t.plan.pro}`}
+                        className={`flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-3 text-center text-[11.5px] font-bold leading-tight shadow-tarjeta transition active:scale-95 ${
+                          on ? 'bg-verde-claro text-verde-fuerte' : 'bg-superficie text-tinta/70 opacity-60'
+                        }`}
+                      >
+                        {i.icono}
+                        <span className="px-0.5">{i.texto}</span>
+                        <PastillaPro texto={t.plan.pro} />
+                      </Link>
+                    );
+                  })}
+                </>
               )}
             </div>
           </div>

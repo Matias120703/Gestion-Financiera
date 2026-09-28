@@ -679,7 +679,7 @@ const resumen = (db, uid, empresa) => H.intentar(db, uid,
     'No tenés acceso');
 
   // ═══════════════════════════════════════════════════════════
-  grupo('11 · Con la cuenta vencida se mira, no se escribe');
+  grupo('11 · Con la cuenta en Gratis, lo del Pro no se escribe');
 
   await db.query(
     "update public.suscripciones set estado='vencida', plan='gratis', periodo_fin = now() - interval '5 days' where empresa_id=$1",
@@ -688,22 +688,22 @@ const resumen = (db, uid, empresa) => H.intentar(db, uid,
   rechazado('ni guardar plata en un ahorro',
     await H.intentar(db, yo.uid, () => db.query(
       'select public.guardar_ahorro($1,$2)', [yo.empresaId, 'Fondo nuevo'])),
-    'prueba|activar el plan');
+    'plan Pro');
 
   rechazado('ni cargar un gasto fijo',
     await H.intentar(db, yo.uid, () => db.query(
       'select public.guardar_gasto_fijo($1,$2,$3)', [yo.empresaId, 'Netflix', 60])),
-    'prueba|activar el plan');
+    'plan Pro');
 
   rechazado('no se puede cambiar el plan de gastos',
     await H.intentar(db, yo.uid, () => db.query(
       'select public.guardar_presupuesto($1,$2,$3)', [yo.empresaId, 'Ropa', 80])),
-    'prueba|activar el plan');
+    'plan Pro');
 
   rechazado('ni cargar un ingreso fijo',
     await H.intentar(db, yo.uid, () => db.query(
       'select public.guardar_ingreso_fijo($1,$2,$3)', [yo.empresaId, 'Aguinaldo', 500])),
-    'prueba|activar el plan');
+    'plan Pro');
 
   aceptado('pero se sigue viendo todo',
     await H.intentar(db, yo.uid, () => db.query(

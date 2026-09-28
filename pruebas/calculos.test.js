@@ -376,8 +376,13 @@ ok('tieneSeccion contesta igual que la ficha',
     ['ganadería dueño',    'ganaderia',   'emprendedor', fichaDe('ganaderia', 'emprendedor').barra],
     ['agricultura dueño',  'agricultura', 'emprendedor', fichaDe('agricultura', 'emprendedor').barra],
     ['personal',           'comercio',    'personal',    listaDe('EN_BARRA_INFERIOR_PERSONAL:')],
+    // La personal en el plan Gratis (110, 28/09/2026): sin Deudas ni
+    // Presupuesto fijos abajo, que son del Pro.
+    ['personal gratis',    'comercio',    'personal',    listaDe('EN_BARRA_INFERIOR_GRATIS:')],
     ['comercio vendedor',  'comercio',    'emprendedor', listaDe('EN_BARRA_INFERIOR_VENDEDOR:')],
   ];
+  ok('la barra del plan Gratis personal: Panel, Gastos e Historial (más «Más»)',
+    listaDe('EN_BARRA_INFERIOR_GRATIS:'), ['/panel', '/gastos', '/movimientos']);
 
   // Cuántos botones tiene de verdad cada uno: los fijos que existen para
   // ese rubro, más el de «Más», que está siempre.
@@ -2182,6 +2187,112 @@ ok('un rubro desconocido no rompe: cae en comercio',
     [es.includes("monedaAgricultura: 'Si comprás los insumos y vendés el grano en dólares, elegí dólares. Si vendés en guaraníes al acopiador o en la feria, elegí guaraníes.'"),
       pt.includes("monedaAgricultura: 'Se você compra os insumos e vende o grão em dólares, escolha dólares. Se vende em guaranis para o cerealista ou na feira, escolha guaranis.'")],
     [true, true]);
+}
+
+// --- La cuenta personal en el plan Gratis (110, 28/09/2026) ---
+//
+// Al terminar la prueba, la personal ya no queda con el candado total: pasa
+// al Gratis, carga gastos e ingresos a mano y lo del Pro se tapa sección por
+// sección. La autoridad es la base (personal-gratis.test.js); acá se vigila
+// que la pantalla la acompañe y que para un negocio nada cambie. Las fuentes
+// se leen sin \r: en un worktree de Windows pueden venir con CRLF.
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const { SECCIONES_DEL_PRO_PERSONAL, seccionesCerradas } = require('../.compilado/rubros.js');
+
+  // El espejo de la base, y que no toque la ficha.
+  ok('las secciones del Pro de la personal, en orden',
+    SECCIONES_DEL_PRO_PERSONAL, ['/deudas', '/fiado', '/billetera', '/organizacion', '/reportes']);
+  ok('para un negocio no se cierra ninguna', seccionesCerradas(false), []);
+  ok('para la personal en Gratis, esas cinco', seccionesCerradas(true), SECCIONES_DEL_PRO_PERSONAL);
+  ok('y las cinco siguen en la ficha personal: se ven con candado, no desaparecen',
+    SECCIONES_DEL_PRO_PERSONAL.map((s) => fichaDe('comercio', 'personal').secciones[s]), [true, true, true, true, true]);
+
+  // La señal sale de la base, nunca de tipo_cuenta + plan en la pantalla.
+  const ses = leer('src/lib/sesion.ts');
+  ok('gratisPersonal lo decide la base (limites.gratis_personal)',
+    ses.includes('gratisPersonal: info.limites?.gratis_personal === true'), true);
+
+  // El layout.
+  const lay = leer('src/app/(app)/layout.tsx');
+  ok('el layout tapa lo del Pro por sección',
+    [lay.includes('<CandadoSeccion'), lay.includes('seccionesCerradas(ctx.gratisPersonal)')], [true, true]);
+  ok('adentro del candado total, que para un negocio sigue igual',
+    lay.indexOf('<CandadoCuenta') < lay.indexOf('<CandadoSeccion')
+      && lay.indexOf('<CandadoSeccion') < lay.indexOf('</CandadoCuenta>'), true);
+  ok('el micrófono sabe si el plan tiene IA', lay.includes('conIA={'), true);
+  const aviso = /<AvisoCuenta[\s\S]*?\/>/.exec(lay);
+  ok('la franja sabe si la cuenta pasó a Gratis',
+    Boolean(aviso && aviso[0].includes('gratisPersonal={ctx.gratisPersonal}')), true);
+  ok('la barra y el menú también',
+    [/<NavLateral[^>]*gratisPersonal=\{ctx\.gratisPersonal\}/.test(lay),
+      /<NavInferior[^>]*gratisPersonal=\{ctx\.gratisPersonal\}/.test(lay)], [true, true]);
+
+  // El candado por sección y la franja del día que pasa a Gratis.
+  const can = leer('src/components/CandadoSeccion.tsx');
+  ok('el candado por sección lleva a /plan y a anotar un gasto',
+    [can.includes('href="/plan"'), can.includes('href="/gastos"'), can.includes('t.planGratis.seccion')], [true, true, true]);
+  ok('la franja nueva va en AvisoCuenta', leer('src/components/AvisoCuenta.tsx').includes('<FranjaGratis'), true);
+  const franja = leer('src/components/FranjaGratis.tsx');
+  ok('y se cierra con el navegador, sin romperse sin él',
+    [franja.includes('try'), franja.includes('localStorage')], [true, true]);
+  const pasate = leer('src/components/TarjetaPasatePro.tsx');
+  ok('«Pasate al plan Pro» también, y vuelve a los 30 días',
+    [pasate.includes('try'), pasate.includes('localStorage'), pasate.includes('30 * 86_400_000')], [true, true, true]);
+
+  // Las cinco páginas del Pro cortan antes de leer: sus datos no viajan.
+  for (const p of ['deudas', 'fiado', 'billetera', 'organizacion', 'reportes']) {
+    const pag = leer(`src/app/(app)/${p}/page.tsx`);
+    ok(`/${p} corta en Gratis antes de leer nada`,
+      /contextoObligatorio\(\);\n(\s*\/\/[^\n]*\n)*\s*if \(ctx\.gratisPersonal\) return null;/.test(pag), true);
+  }
+
+  // El panel de Gratis: propio, sin leer lo del Pro.
+  const pan = leer('src/app/(app)/panel/page.tsx');
+  ok('el descuento, solo si ya está ganado', pan.includes('descuentoPersonal?.logrado'), true);
+  const ramaGratis = pan.slice(pan.indexOf('if (ctx.gratisPersonal) {'), pan.indexOf('<TarjetaPasatePro />'));
+  ok('la rama del panel Gratis se encontró', ramaGratis.length > 0 && ramaGratis.includes('<PanelPersonalGratis'), true);
+  ok('y no pide el resumen del ciclo, las deudas ni la billetera',
+    ['traerResumenPersonal', 'traerResumenDeudas', 'traerBilletera'].map((f) => ramaGratis.includes(f)),
+    [false, false, false]);
+
+  // Las rutas del servidor.
+  const excel = leer('src/app/api/excel/route.ts');
+  ok('el Excel lo decide la base con su propia pregunta',
+    [excel.includes("rpc('puede_bajar_excel'"), excel.includes("rpc('puede_cargar'")], [true, false]);
+  ok('la IA le dice a la Gratis que es del Pro, no que «se le acabaron»',
+    leer('src/app/api/capturar/route.ts').includes('capturaEsDePro'), true);
+  ok('el recordatorio de la racha lleva a Gastos, no a Presupuesto',
+    leer('src/app/api/tareas/recordatorio/route.ts').includes("'/organizacion'"), false);
+
+  // El micrófono sin IA: nunca un camino a grabar, a la foto ni al texto.
+  const cap = leer('src/components/CapturaInteligente.tsx');
+  ok('el micrófono sin IA tiene sus textos',
+    ['conIA', 'planGratis.captura.soloPro', 'planGratis.captura.encabezado', 'planGratis.captura.botonAria']
+      .map((x) => cap.includes(x)), [true, true, true, true]);
+  ok('y una opción cerrada no hace nada', cap.includes('onClick={cerrada ? undefined : onClick}'), true);
+
+  // Gastos y el Historial le hablan a una persona.
+  ok('Gastos tiene los chips de una persona', leer('src/components/PantallaGastos.tsx').includes('rapidasPersonal'), true);
+  const gas = leer('src/app/(app)/gastos/page.tsx');
+  ok('con sus categorías de gasto y de ingreso, de la base',
+    [gas.includes("traerCategoriasPersonales(ctx.empresa.id, 'gasto')"),
+      gas.includes("traerCategoriasPersonales(ctx.empresa.id, 'ingreso')")], [true, true]);
+  ok('y en Gratis sin el chip de la cuenta', gas.includes('ctx.esAdmin && !ctx.gratisPersonal ? traerCuentasParaElegir'), true);
+  const mov = leer('src/app/(app)/movimientos/page.tsx');
+  ok('el Historial de una persona dice «Te quedó» y no ofrece «Ventas»',
+    [mov.includes('t.pantallas.teQuedo'), mov.includes('conVentas=')], [true, true]);
+
+  // El WhatsApp para suscribirse no dice «Negocio:» a una persona.
+  ok('el mensaje de la personal es el suyo',
+    leer('src/components/BotonSuscribirme.tsx').includes('planGratis.plan.mensajeSuscribirme'), true);
+
+  // El menú: la barra de la Gratis y lo del Pro abajo, en los dos menús.
+  const nav = leer('src/components/Navegacion.tsx');
+  ok('la barra de abajo mira si es Gratis', nav.includes('barraDe(tipo, rubro, esAdmin, gratisPersonal)'), true);
+  ok('el menú lateral y «Más» agrupan lo del Pro',
+    (nav.match(/seccionesCerradas\(gratisPersonal\)/g) ?? []).length, 2);
 }
 
 // Las comprobaciones que esperan algo (una función async) se anotan en

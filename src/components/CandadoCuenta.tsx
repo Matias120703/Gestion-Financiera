@@ -8,13 +8,18 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 
 /**
- * El candado de pantalla completa para cuando la cuenta está vencida.
+ * El candado de pantalla completa para cuando la cuenta de un NEGOCIO está
+ * vencida.
  *
  * Decisión explícita de Matías (2026-09-15), que reemplaza la de la
  * migración 018: Orden dejó de ser un sistema que se puede seguir mirando
  * gratis después de la prueba. Vencida la cuenta, no se ve nada de
  * ninguna pantalla — ni el panel, ni el historial, ni el Excel — salvo
  * /plan, que es adonde hay que ir para pagar.
+ *
+ * La cuenta personal no llega acá desde la 110 (28/09/2026): al vencer pasa
+ * al plan Gratis, con `escritura` en true, y lo del Pro lo tapa
+ * `CandadoSeccion` sección por sección. Los negocios siguen como el 15/09.
  *
  * Va en el layout de `(app)` y no en cada pantalla, por lo mismo que
  * `AvisoCuenta`: la cuenta vencida no es un asunto del panel ni de

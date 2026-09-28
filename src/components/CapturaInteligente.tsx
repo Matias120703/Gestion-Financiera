@@ -69,7 +69,7 @@ function mimeSoportado(): string {
 }
 
 export function BotonCaptura({
-  empresaId, moneda, guardaComprobantes = false, tipoCuenta = 'emprendedor',
+  empresaId, moneda, guardaComprobantes = false, tipoCuenta = 'emprendedor', conIA = true,
 }: {
   empresaId: string;
   moneda: string;
@@ -82,6 +82,14 @@ export function BotonCaptura({
    * a mano lo que el sistema no acepta es prometer algo que va a fallar.
    */
   tipoCuenta?: TipoCuenta;
+  /**
+   * Si el plan tiene capturas con IA (tope > 0). En el plan Gratis personal
+   * (110, 28/09/2026) no: el micrófono se queda —es la cara de Orden— pero
+   * abre «Anotar a mano» primero y la voz, la foto y el texto con candado.
+   * Así nadie graba ni saca la foto en vano: nunca se llama a /api/capturar.
+   * La base igual lo frena (`consumir_credito_ia` con tope 0).
+   */
+  conIA?: boolean;
 }) {
   const router = useRouter();
   const ruta = usePathname();
@@ -580,7 +588,7 @@ export function BotonCaptura({
       <button
         type="button"
         onClick={() => setModo('menu')}
-        aria-label={t.captura.botonAria}
+        aria-label={conIA ? t.captura.botonAria : t.planGratis.captura.botonAria}
         className="fixed right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-verde text-sobre-verde shadow-[0_10px_30px_-6px_rgba(40,180,100,.7)] transition active:scale-95 lg:bottom-7 lg:right-7 lg:h-[60px] lg:w-[60px]"
         style={{ bottom: 'calc(96px + env(safe-area-inset-bottom))' }}
       >
@@ -611,11 +619,14 @@ export function BotonCaptura({
                 </h2>
                 {/* Que el micrófono sirve para más que plata se dice acá: si no,
                     nadie prueba decirle «agregá el shampoo». En una cuenta
-                    personal no hay catálogo ni clientes. */}
+                    personal no hay catálogo ni clientes. Sin IA (Gratis, 110)
+                    no se promete lo que no hay: se anota a mano. */}
                 <p className="mt-1 px-1 text-[14px] leading-relaxed text-white/60">
-                  {tipoCuenta === 'personal'
-                    ? t.captura.contaleLoQuePasoPersonal
-                    : t.captura.contaleLoQuePasoNegocio}
+                  {!conIA
+                    ? t.planGratis.captura.encabezado
+                    : tipoCuenta === 'personal'
+                      ? t.captura.contaleLoQuePasoPersonal
+                      : t.captura.contaleLoQuePasoNegocio}
                 </p>
 
                 {/* Pidió algo que esta cuenta no tiene. Se muestra lo que
@@ -656,25 +667,49 @@ export function BotonCaptura({
                 )}
 
                 <div className="mt-5 space-y-2.5">
+                  {/* En Gratis, lo que anda va primero: Gastos, donde el monto
+                      ya tiene el foco. Son dos toques. */}
+                  {!conIA && (
+                    <Opcion
+                      titulo={t.planGratis.captura.anotarAMano}
+                      detalle={t.planGratis.captura.anotarAManoDetalle}
+                      onClick={() => { cerrar(); router.push('/gastos'); }}
+                      icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 5v14M5 12h14" /></svg>}
+                    />
+                  )}
                   <Opcion
                     titulo={t.captura.porVoz}
                     detalle={tipoCuenta === 'personal'
                       ? t.captura.ejemploVozPersonal
                       : t.captura.ejemploVozNegocio}
                     onClick={empezarGrabacion}
+                    cerrada={!conIA}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z" /><path d="M18.5 11.5A6.5 6.5 0 0 1 5.5 11.5M12 18v3.2" /></svg>}
                   />
                   <Opcion
                     titulo={t.captura.porFoto} detalle={t.captura.porFotoDetalle}
                     onClick={() => archivoRef.current?.click()}
+                    cerrada={!conIA}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M3.5 8.5h3l1.5-2.5h8L17.5 8.5h3v10h-17z" /><circle cx="12" cy="13" r="3.2" /></svg>}
                   />
                   <Opcion
                     titulo={t.captura.porTexto} detalle={t.captura.porTextoDetalle}
                     onClick={() => { setError(''); setModo('texto'); }}
+                    cerrada={!conIA}
                     icono={<svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M4 20h16M6 16.5 16.5 6a2.1 2.1 0 0 1 3 3L9 19.5l-4 1z" /></svg>}
                   />
                 </div>
+
+                {/* Lo del Pro en una línea y no en un cuadro ámbar: no es un
+                    error, es lo que trae el plan (110, 28/09/2026). */}
+                {!conIA && (
+                  <p className="mt-3 px-1 text-[13px] leading-relaxed text-white/60">
+                    {t.planGratis.captura.soloPro}{' '}
+                    <Link href="/plan" onClick={cerrar} className="font-bold text-white underline">
+                      {t.planGratis.captura.verPlan}
+                    </Link>
+                  </p>
+                )}
 
                 <button onClick={cerrar} className="mt-4 w-full py-2 text-[13.5px] font-semibold text-white/50">{t.comun.cancelar}</button>
               </>
@@ -764,13 +799,38 @@ export function BotonCaptura({
   );
 }
 
-function Opcion({ titulo, detalle, icono, onClick }: { titulo: string; detalle: string; icono: React.ReactNode; onClick: () => void }) {
+function Opcion({
+  titulo, detalle, icono, onClick, cerrada = false,
+}: {
+  titulo: string;
+  detalle: string;
+  icono: React.ReactNode;
+  onClick: () => void;
+  /**
+   * Del plan Pro, en una cuenta sin IA (Gratis personal, 110): se ve, con
+   * candado, pero no hace nada. Sin `onClick` no hay camino a grabar, a la
+   * foto ni al texto.
+   */
+  cerrada?: boolean;
+}) {
   return (
     <button
-      type="button" onClick={onClick}
-      className="flex w-full items-center gap-3.5 rounded-2xl border border-borde bg-superficie px-4 py-3.5 text-left shadow-tarjeta transition hover:border-verde hover:bg-verde-claro/40 active:scale-[.99]"
+      type="button" onClick={cerrada ? undefined : onClick}
+      disabled={cerrada} aria-disabled={cerrada || undefined}
+      className={`flex w-full items-center gap-3.5 rounded-2xl border border-borde bg-superficie px-4 py-3.5 text-left shadow-tarjeta transition ${
+        cerrada ? 'cursor-not-allowed opacity-60' : 'hover:border-verde hover:bg-verde-claro/40 active:scale-[.99]'
+      }`}
     >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-verde-claro text-verde-fuerte">{icono}</span>
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+        cerrada ? 'bg-arena text-tinta/50' : 'bg-verde-claro text-verde-fuerte'
+      }`}>
+        {cerrada ? (
+          <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" {...trazo}>
+            <rect x="4" y="10" width="16" height="10" rx="2" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+          </svg>
+        ) : icono}
+      </span>
       <span className="min-w-0">
         <span className="block text-[15px] font-bold">{titulo}</span>
         <span className="block truncate text-[13px] text-tinta/55" dangerouslySetInnerHTML={{ __html: detalle }} />

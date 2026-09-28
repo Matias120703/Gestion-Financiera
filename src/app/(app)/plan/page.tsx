@@ -29,6 +29,9 @@ export const dynamic = 'force-dynamic';
  * Los datos no se borran ni se pierden: quedan intactos esperando a que se
  * active el plan.
  *
+ * Desde la 110 (28/09/2026) eso vale para un negocio. La cuenta personal no
+ * queda con candado: pasa al plan Gratis, y acá ve Gratis y Pro lado a lado.
+ *
  * EL PRECIO VA SIEMPRE EN GUARANÍES, CON LOS DÓLARES AL LADO (23/09).
  * La suscripción se cobra solo en guaraníes (Bancard deja una sola moneda y
  * Matías eligió guaraníes), así que ya no hay selector Gs / US$: mostrar un
@@ -63,6 +66,16 @@ export default async function PaginaPlan({
   ]);
   const sus = ctx.suscripcion;
   /**
+   * LA CUENTA PERSONAL TIENE PLAN GRATIS (110, 28/09/2026).
+   *
+   * Al terminar la prueba (o el Pro) no queda con candado: pasa al Gratis y
+   * sigue anotando a mano. Por eso a ella se le muestra Gratis al lado del
+   * Pro mientras prueba o si ya está en Gratis, y sus textos dicen «pasás al
+   * plan Gratis» y no «hace falta activar un plan». Un negocio no cambia.
+   */
+  const esPersonal = ctx.empresa.tipo_cuenta === 'personal';
+  const conGratis = esPersonal && (sus.en_prueba || ctx.gratisPersonal);
+  /**
    * QUÉ PLANES SE OFRECEN: LOS DE SU RUBRO (102).
    *
    * Un profe ve solo el Básico, el campo Básico y Pro, un comercio los tres
@@ -90,7 +103,12 @@ export default async function PaginaPlan({
 
   // El descuento que se gana cargando durante la prueba (078). Si falla, no
   // se muestra la promo y la pantalla sigue igual.
-  const descuento = await traerDescuentoRacha(ctx.empresa.id);
+  // En el plan Gratis personal (110) no se gana un descuento nuevo: se
+  // respeta el que ya se ganó. Mismo criterio que el panel: a un Pro pagado
+  // que venció por fecha la base le sigue dando la constancia «vigente», y
+  // le prometería un descuento que en Gratis no corre.
+  const racha = await traerDescuentoRacha(ctx.empresa.id);
+  const descuento = ctx.gratisPersonal && !racha?.logrado ? null : racha;
 
   // Mientras el cobro sea por transferencia, el camino es WhatsApp. Si algún
   // día se enchufa una pasarela, con quitar el número vuelve solo el botón de
@@ -101,6 +119,8 @@ export default async function PaginaPlan({
   const whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP ?? '').replace(/\D/g, '') || null;
 
   const regalo = mesesDeRegalo(precioDe(precios, 'pro', 'mensual'), precioDe(precios, 'pro', 'anual'));
+  // Las columnas cuentan la tarjeta Gratis de la personal.
+  const columnas = planesVisibles.length + (conGratis ? 1 : 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -111,9 +131,13 @@ export default async function PaginaPlan({
       {/* ---------------- Dónde está parada la persona ---------------- */}
       {sus.en_prueba && (
         <div className="tarjeta border-verde/40 bg-verde-claro/50 p-4">
-          <p className="text-[15px] font-bold text-verde-fuerte">{t.plan.enPrueba}</p>
+          <p className="text-[15px] font-bold text-verde-fuerte">
+            {esPersonal ? t.planGratis.plan.enPrueba : t.plan.enPrueba}
+          </p>
           <p className="mt-1 text-[14px] font-semibold">{t.plan.diasDePrueba(sus.dias_restantes)}</p>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">{t.plan.pruebaVence}</p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">
+            {esPersonal ? t.planGratis.plan.pruebaVence : t.plan.pruebaVence}
+          </p>
         </div>
       )}
 
@@ -129,7 +153,14 @@ export default async function PaginaPlan({
         <TarjetaRecomendar encabezado={t.plan.alDia} />
       )}
 
-      {!sus.en_prueba && ctx.planEfectivo === 'gratis' && sus.ya_uso_prueba && (
+      {/* La personal en Gratis no está vencida: está en un plan que anda.
+          Verde suave, no ámbar. El ámbar queda para el negocio vencido. */}
+      {ctx.gratisPersonal ? (
+        <div className="tarjeta border-verde/40 bg-verde-claro/50 p-4">
+          <p className="text-[15px] font-bold text-verde-fuerte">{t.planGratis.plan.gratisTitulo}</p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">{t.planGratis.plan.gratisDetalle}</p>
+        </div>
+      ) : !sus.en_prueba && ctx.planEfectivo === 'gratis' && sus.ya_uso_prueba && (
         <div className="tarjeta border-ambar/40 bg-ambar-claro/50 p-4">
           <p className="text-[15px] font-bold text-ambar">{t.plan.vencida}</p>
           <p className="mt-1.5 text-[13px] leading-relaxed text-tinta/60">{t.plan.vencidaDetalle}</p>
@@ -215,10 +246,24 @@ export default async function PaginaPlan({
       />
 
       {/* ---------------- Los planes ----------------
-          Ya no aparece una tarjeta «Gratis». Gratis significa CUENTA
-          VENCIDA: no se puede usar nada de Orden. Ofrecerlo como si fuera
-          una opción era invitar a elegir el estado de «no poder trabajar». */}
-      <div className={`grid gap-4 ${planesVisibles.length === 1 ? 'sm:max-w-md' : planesVisibles.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+          Para un negocio no aparece una tarjeta «Gratis»: Gratis es cuenta
+          vencida y no se puede usar nada de Orden. Ofrecerlo como si fuera
+          una opción era invitar a elegir el estado de «no poder trabajar».
+          Para la personal (110, 28/09/2026) Gratis es un plan que anda, y se
+          muestra junto al Pro mientras prueba o si ya está en Gratis. */}
+      <div className={`grid gap-4 ${columnas === 1 ? 'sm:max-w-md' : columnas === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+        {conGratis && (
+          <Tarjeta
+            nombre={t.plan.gratis}
+            precio={precioTexto(0, moneda, locale)}
+            porPeriodo={periodo === 'anual' ? `/ ${t.plan.porAnio}` : `/ ${t.plan.porMes}`}
+            puntos={t.planGratis.plan.gratisPuntos}
+            actual={ctx.gratisPersonal}
+            etiquetaActual={t.plan.actual}
+            incluye={t.plan.incluye}
+            pie={null}
+          />
+        )}
         {planesVisibles.map((plan) => {
           const precio = precioDe(precios, plan, periodo);
           const enDolares = precioDe(referencia, plan, periodo);
@@ -256,12 +301,16 @@ export default async function PaginaPlan({
               etiquetaActual={t.plan.actual}
               incluye={t.plan.incluye}
               puntos={
-                ctx.empresa.tipo_cuenta === 'personal'
+                esPersonal
+                  // Lo que suma el Pro sobre el Gratis (110), con el tope
+                  // real de capturas: «sin tope» no era cierto.
                   ? [
-                      t.plan.capturasLibres,
-                      t.plan.conAdjuntos,
-                      t.plan.conExcel,
+                      t.planGratis.plan.proCargas(limites.capturas),
+                      t.planGratis.plan.proPresupuesto,
                       t.plan.soloVos,
+                      t.planGratis.plan.proMeDebenYBilletera,
+                      t.plan.conAdjuntos,
+                      t.planGratis.plan.proReportes,
                     ]
                   : plan === 'basico'
                     ? [
@@ -292,6 +341,7 @@ export default async function PaginaPlan({
                       precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
                       periodo={periodo}
                       etiqueta={sus.en_prueba ? t.plan.activarEstePlan : t.plan.suscribirme}
+                      esPersonal={esPersonal}
                     />
                   )
                 ) : (
@@ -319,10 +369,13 @@ export default async function PaginaPlan({
         href="/recomendar"
         className="flex items-center justify-between gap-3 rounded-2xl border border-verde/30 bg-verde-claro/30 p-4 transition hover:bg-verde-claro/50"
       >
+        {/* En Gratis no hay lo que «bajar»: se gana plata invitando (110). */}
         <span className="min-w-0">
-          <span className="block text-[14.5px] font-bold">{t.plan.podesBajar}</span>
+          <span className="block text-[14.5px] font-bold">
+            {ctx.gratisPersonal ? t.planGratis.plan.podesGanar : t.plan.podesBajar}
+          </span>
           <span className="mt-0.5 block text-[13px] leading-relaxed text-tinta/65">
-            {t.plan.podesBajarDetalle}
+            {ctx.gratisPersonal ? t.planGratis.plan.podesGanarDetalle : t.plan.podesBajarDetalle}
           </span>
         </span>
         <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">{t.plan.ver}</span>
@@ -332,7 +385,7 @@ export default async function PaginaPlan({
         <div className="tarjeta p-4">
           <p className="titulo-seccion mb-1.5">{t.pantallas.comoSePaga}</p>
           <p className="text-[13.5px] leading-relaxed text-tinta/65">
-            {t.pantallas.comoSePagaDetalle}
+            {ctx.gratisPersonal ? t.planGratis.plan.comoSePagaDetalle : t.pantallas.comoSePagaDetalle}
           </p>
         </div>
       )}

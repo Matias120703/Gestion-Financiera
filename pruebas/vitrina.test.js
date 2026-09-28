@@ -17,6 +17,8 @@
  *     español y en portugués, y los textos de cada plan que compra;
  *   · los números de ejemplo de las pantallas cierran entre sí (lo que dice
  *     la vitrina no puede ser una cuenta mal hecha);
+ *   · «Para vos» muestra el plan Gratis aparte y dice que al terminar la
+ *     prueba se pasa a Gratis, no a la cuenta pausada (110, 28/09/2026);
  *   · el teclado se mueve entre los chips como en un grupo de radio.
  *
  * NO usa `.compilado/`: compila acá mismo, con el compilador de TypeScript
@@ -228,7 +230,30 @@ console.log('\n── 6 · Los textos, en los dos idiomas ──');
     ok(`${idioma}: las deudas con vencimiento no son solo de Pro`,
       v.planes.comercio.pro.puntos.some((x) => /deuda|dívida/i.test(x)), false);
     ok(`${idioma}: el botón dice los días`, v.probar(8).includes('8'), true);
+
+    // La cuenta personal pasa al plan Gratis al terminar la prueba (110,
+    // 28/09/2026); el negocio sigue con la cuenta pausada.
+    ok(`${idioma}: el fin de la prueba personal dice Gratis y que los datos no se borran`,
+      [/Gr[aá]tis/.test(v.finDePruebaPersonal), /no se borran|não são apagados/.test(v.finDePruebaPersonal)], [true, true]);
+    ok(`${idioma}: el fin de la prueba del negocio no nombra Gratis`, /gr[aá]tis/i.test(v.finDePrueba), false);
+    ok(`${idioma}: la tarjeta Gratis tiene tres puntos y dice que el Excel es del Pro`,
+      [v.gratisPersonal.puntos.length, v.gratisPersonal.puntos.every((x) => x.trim()), /Excel/.test(v.gratisPersonal.noIncluye)],
+      [3, true, true]);
+    ok(`${idioma}: la tarjeta Gratis tiene nombre, para quién y botón`,
+      Boolean(v.gratisPersonal.nombre.trim() && v.gratisPersonal.para.trim() && v.gratisPersonal.llamado.trim()), true);
+    ok(`${idioma}: el plan pago de la personal se llama Pro`, v.nombrePersonal, 'Pro');
+    ok(`${idioma}: el Pro personal ya no es «un solo plan»`, /Un solo plan|Um plano só/i.test(v.planes.personal.pro.para), false);
+    ok(`${idioma}: probar el Pro y la garantía personal dicen los días`,
+      [v.probarPro(5).includes('5'), v.garantiasPersonal(5).includes('5')], [true, true]);
+    ok(`${idioma}: el botón grande de la personal no promete días gratis sino empezar gratis`,
+      Boolean(v.empezarGratis.trim()) && !/\d/.test(v.empezarGratis), true);
   }
+
+  ok('ElegiTuRubro usa los textos de la personal en Gratis',
+    ['v.finDePruebaPersonal', 'v.gratisPersonal', 'v.empezarGratis', 'v.probarPro', 'v.garantiasPersonal(']
+      .filter((k) => !elegi.includes(k)), []);
+  ok('y el precio de la tarjeta Gratis sale del formato, no escrito a mano',
+    elegi.includes('importe(0)') && !/Gs\.\s*0/.test(elegi), true);
 
   for (const c of D.CLAVES_VITRINA) {
     const archivo = `src/components/portada/pantallas/${PANTALLAS[c]}.tsx`;

@@ -19,6 +19,12 @@ import type { PlanDeRubro } from '@/lib/rubros';
  *                                  `FichaRubro.planes` (espejo de `planes_de_rubro()`, 102).
  *   · cuenta pausada ............ `CandadoCuenta` (decisión del 15/09): no se ve
  *                                  nada salvo /plan; los datos no se borran.
+ *                                  Desde la 110, solo la de un negocio.
+ *   · plan Gratis personal ...... 110 (`limites_de_empresa`, `exigir_cuenta_activa`,
+ *                                  `exigir_plan_personal`) y `CandadoSeccion`:
+ *                                  carga a mano de gastos e ingresos; lo del Pro,
+ *                                  cerrado y guardado. La copia de los datos en
+ *                                  Gratis la manda Matías a pedido (sin Excel).
  *   · avisos 3, 1 y 0 días ...... 071 (push de la prueba) y 107 (push y correo).
  *   · cobro ..................... /plan abre WhatsApp (`NEXT_PUBLIC_WHATSAPP`);
  *                                  `pasarelaActiva()` sigue en 'ninguna'.
@@ -85,7 +91,7 @@ export interface TextosLegal {
     nombresPlanes: Record<PlanDeRubro, string>;
     cuentaPersonal: string;
     planPersonal: string;
-    /** El nombre solo, para «Personal, 5 días». */
+    /** El nombre solo, para «Pro, 5 días» (el plan que prueba la cuenta personal). */
     nombrePlanPersonal: string;
     pruebaDe: (plan: string, dias: number) => string;
   };
@@ -110,8 +116,9 @@ export const legalEs: TextosLegal = {
     prueba: 'La prueba',
     nombresPlanes: { basico: 'Básico', pro: 'Pro', negocio: 'Premium' },
     cuentaPersonal: 'Cuenta personal',
-    planPersonal: 'Personal (plan único)',
-    nombrePlanPersonal: 'Personal',
+    // Desde la 110 (28/09/2026) la personal tiene Gratis y Pro; se prueba el Pro.
+    planPersonal: 'Gratis · Pro',
+    nombrePlanPersonal: 'Pro',
     pruebaDe: (plan, dias) => `${plan}, ${dias} días`,
   },
   contacto: {
@@ -124,14 +131,14 @@ export const legalEs: TextosLegal = {
     metaTitulo: 'Términos · Orden',
     metaDescripcion: 'Las condiciones de uso de Orden: la prueba, los planes de cada rubro, cómo se paga, qué pasa si no pagás y cómo funcionan las invitaciones.',
     titulo: 'Términos del servicio',
-    actualizado: '24 de septiembre de 2026',
+    actualizado: '28 de septiembre de 2026',
     bajada: 'Escritos para que se entiendan de una leída. Cada cosa que dice esta página es lo que Orden hace hoy, no lo que hará algún día.',
     esencialTitulo: 'Lo esencial',
     esencial: [
       `**${E} días gratis** si es un negocio y **${P}** si es una cuenta personal. Sin tarjeta.`,
       'Cada rubro tiene sus planes, con precio en guaraníes.',
       'Hoy se paga **por transferencia**, coordinada por WhatsApp. No hay débito automático.',
-      'Si no pagás, **la cuenta se pausa** y no se puede usar hasta activar el plan. **Tus datos no se borran.**',
+      'Si es un negocio y no pagás, **la cuenta se pausa** hasta activar el plan. Si es una cuenta personal, **pasa al plan Gratis**. En los dos casos, **tus datos no se borran.**',
       'Si traés a alguien que paga, te llevás **la mitad del precio de lista de un mes** de su plan.',
     ],
     apartados: [
@@ -164,6 +171,7 @@ export const legalEs: TextosLegal = {
           `Toda cuenta nueva arranca a prueba, **sin pedir tarjeta**: **${E} días** si es un negocio y **${P} días** si es una cuenta personal.`,
           'Se prueba el plan más completo que se le vende a tu rubro: Pro si tu rubro lo tiene y, si no, el que tiene. Así lo que probás es algo que después podés contratar.',
           'Si cambiás de rubro mientras probás, la prueba pasa al plan de tu rubro nuevo. Los días que te quedan no cambian.',
+          'Si es una cuenta personal, al terminar la prueba pasa al plan **Gratis** (más abajo).',
         ],
       },
       {
@@ -172,6 +180,7 @@ export const legalEs: TextosLegal = {
         bloques: [
           'Cada rubro tiene los planes que le sirven. Los que suman más personas no se le ofrecen a quien trabaja solo:',
           { especial: 'planesPorRubro' },
+          'La cuenta personal tiene además un plan **Gratis**, que no se paga: se anotan gastos e ingresos a mano, se ve el historial y se puede invitar. La carga por voz, foto o texto, el presupuesto, las deudas, lo que te deben, las cuentas de plata, los reportes y el Excel son del Pro.',
           'Los planes cambian cuántas personas pueden usar la cuenta y cuántas cargas con inteligencia artificial entran por mes. Eso y los precios están en la portada y en la pantalla de tu plan.',
           'Los precios se cobran en **guaraníes**. Al lado puede aparecer un «≈ US$» chico: es solo una referencia, no se cobra en dólares.',
           'Los descuentos —por cargar todos los días durante la prueba y por constancia— se explican en la pantalla de tu plan, con sus condiciones, y se aplican al pagar.',
@@ -191,18 +200,19 @@ export const legalEs: TextosLegal = {
         id: 'si-no-pagas',
         titulo: 'Qué pasa si no pagás',
         bloques: [
-          'Cuando termina la prueba, o el período que pagaste, y no hay un pago nuevo, **la cuenta se pausa**. Mientras está pausada no se puede ver ni usar ninguna pantalla —ni el panel, ni el historial, ni el Excel— salvo la de tu plan, que es donde se activa. Vale para todas las personas de la cuenta.',
+          'Si es un negocio, cuando termina la prueba, o el período que pagaste, y no hay un pago nuevo, **la cuenta se pausa**. Mientras está pausada no se puede ver ni usar ninguna pantalla —ni el panel, ni el historial, ni el Excel— salvo la de tu plan, que es donde se activa. Vale para todas las personas de la cuenta.',
+          'Si es una cuenta personal, no se pausa: **pasa al plan Gratis**. Seguís entrando, anotando tus gastos e ingresos a mano y viendo tus movimientos. Lo del Pro queda guardado y vuelve cuando lo actives.',
           '**Tus datos no se borran.** Quedan guardados tal cual, y apenas se activa el plan volvés a encontrar todo como lo dejaste.',
           'Antes del vencimiento te avisamos tres días antes, un día antes y el mismo día: por correo, y en el celular si activaste los avisos. Si querés tener una copia de tus números, bajá el Excel desde Reportes antes de esa fecha.',
           'Si sos personal trainer, los links de rutina de tus clientes siguen andando hasta 30 días después del vencimiento, y los podés apagar todos de una vez desde la misma pantalla de la cuenta pausada.',
-          'No borramos una cuenta por estar pausada. Si algún día eso cambiara, te lo avisaríamos por correo, con tiempo, antes de hacerlo.',
+          'No borramos una cuenta por estar pausada ni por estar en el plan Gratis. Si algún día eso cambiara, te lo avisaríamos por correo, con tiempo, antes de hacerlo.',
         ],
       },
       {
         id: 'dejar',
         titulo: 'Dejar de usar Orden',
         bloques: [
-          'No hace falta cancelar nada: como no hay débito automático, si no renovás, la cuenta se pausa al terminar el período que ya pagaste. Hasta ese día la seguís usando entera.',
+          'No hace falta cancelar nada: como no hay débito automático, si no renovás, al terminar el período que ya pagaste la cuenta de un negocio se pausa y la personal pasa al plan Gratis. Hasta ese día la seguís usando entera.',
           'Si además querés borrar tus datos, mirá [Cerrar la cuenta](/terminos#cerrar), más abajo.',
         ],
       },
@@ -216,7 +226,7 @@ export const legalEs: TextosLegal = {
               'Es **la mitad del precio de lista de un mes** del plan que activó, según su tipo de cuenta. Se calcula en guaraníes.',
               'Nace con **su primer pago** y es una sola vez por cada cuenta que traés. Lo que pague después no suma.',
               'Aunque pague con descuento o pague el año entero, la base es el precio de lista de un mes. Nunca es más de lo que esa cuenta pagó.',
-              'Mientras la otra persona prueba gratis no se genera nada.',
+              'Mientras la otra persona prueba o usa el plan Gratis, no se genera nada.',
               'No vale traerte a vos mismo ni al negocio donde trabajás.',
               'Lo que ganás se acumula como saldo. Lo retirás desde el mínimo que muestra la pantalla de Invitaciones y te lo transferimos a tu banco o billetera. Para eso te pedimos una vez el titular, la cuenta o alias y la CI o el RUC.',
             ],
@@ -228,7 +238,7 @@ export const legalEs: TextosLegal = {
         id: 'tus-datos',
         titulo: 'Tus datos son tuyos',
         bloques: [
-          'Lo que cargás es tuyo. Mientras la cuenta está activa podés verlo todo, bajarlo en Excel y borrarlo desde Ajustes.',
+          'Lo que cargás es tuyo. Mientras la cuenta está activa podés verlo todo, bajarlo en Excel y borrarlo desde Ajustes. En el plan Gratis de una cuenta personal ves tus movimientos en el historial y podés borrar todo desde Ajustes. Lo que cargaste en las secciones del Pro (deudas, lo que te deben, cuentas, presupuesto) queda guardado y lo volvés a ver con Pro; si necesitás una copia antes, escribinos por WhatsApp y te la mandamos sin costo. El Excel es del Pro.',
           'Nosotros lo usamos solo para prestarte el servicio. Qué guardamos, dónde está y con quién se comparte para funcionar está en la [política de privacidad](/privacidad).',
         ],
       },
@@ -279,7 +289,7 @@ export const legalEs: TextosLegal = {
         id: 'cerrar',
         titulo: 'Cerrar la cuenta',
         bloques: [
-          'Podés borrar tu cuenta cuando quieras desde Ajustes, en «Zona delicada». Es inmediato e irreversible: bajate el Excel antes si querés guardar tu historial.',
+          'Podés borrar tu cuenta cuando quieras desde Ajustes, en «Zona delicada». Es inmediato e irreversible: bajate el Excel antes si querés guardar tu historial. En el plan Gratis, pedinos la copia por WhatsApp.',
           'Si sos dueño de un negocio donde trabaja más gente, primero tenés que sacarlos del equipo. No borramos la contabilidad de personas que siguen trabajando.',
           'Con la cuenta pausada no se llega a Ajustes. En ese caso pedinos el borrado por WhatsApp y lo hacemos por vos.',
         ],
@@ -307,7 +317,7 @@ export const legalEs: TextosLegal = {
     metaTitulo: 'Privacidad · Orden',
     metaDescripcion: 'Qué datos guarda Orden, dónde están, con quién se comparten para funcionar y cómo se borran.',
     titulo: 'Privacidad',
-    actualizado: '24 de septiembre de 2026',
+    actualizado: '28 de septiembre de 2026',
     bajada: 'Escrita sobre lo que Orden hace de verdad, no copiada de una plantilla. Si cambia un proveedor o un dato que pedimos, esta página cambia con él.',
     esencialTitulo: 'Lo esencial',
     esencial: [
@@ -452,7 +462,7 @@ export const legalEs: TextosLegal = {
         id: 'cuanto-tiempo',
         titulo: 'Por cuánto tiempo',
         bloques: [
-          'Mientras tengas la cuenta. Tu historial no se borra solo: justamente sirve para poder mirar hacia atrás. Tampoco se borra si la cuenta se pausa por falta de pago.',
+          'Mientras tengas la cuenta. Tu historial no se borra solo: justamente sirve para poder mirar hacia atrás. Tampoco se borra si la cuenta se pausa por falta de pago, ni si una cuenta personal pasa al plan Gratis.',
           'Cuando borrás tu cuenta, se borra de verdad. No queda una copia «marcada como borrada»: las filas desaparecen de la base y las fotos se eliminan del depósito. Lo único que puede sobrevivir un tiempo son las copias de seguridad automáticas, que se rotan solas.',
         ],
       },
@@ -470,7 +480,7 @@ export const legalEs: TextosLegal = {
         bloques: [
           {
             lista: [
-              '**Verlo todo.** Está en la app, y la administración del negocio lo puede bajar en Excel desde Reportes.',
+              '**Verlo todo.** Está en la app, y la administración del negocio lo puede bajar en Excel desde Reportes. En el plan Gratis de una cuenta personal ves tus movimientos en el historial; lo de las secciones del Pro queda guardado y lo volvés a ver con Pro. Si necesitás una copia de todo, escribinos por WhatsApp y te la mandamos sin costo.',
               '**Corregirlo.** Podés editar o anular cualquier movimiento, y corregir la ficha de un cliente o eliminarlo.',
               '**Empezar de cero.** Desde Ajustes, el dueño puede vaciar el negocio sin borrar la cuenta.',
               '**Irte.** Desde Ajustes podés borrar tu cuenta y todo lo que tengas cargado, vos mismo y en el momento. Si la cuenta está pausada, pedínoslo por WhatsApp y lo hacemos por vos.',
@@ -519,8 +529,8 @@ export const legalPt: TextosLegal = {
     prueba: 'O teste',
     nombresPlanes: { basico: 'Básico', pro: 'Pro', negocio: 'Premium' },
     cuentaPersonal: 'Conta pessoal',
-    planPersonal: 'Pessoal (plano único)',
-    nombrePlanPersonal: 'Pessoal',
+    planPersonal: 'Grátis · Pro',
+    nombrePlanPersonal: 'Pro',
     pruebaDe: (plan, dias) => `${plan}, ${dias} dias`,
   },
   contacto: {
@@ -533,14 +543,14 @@ export const legalPt: TextosLegal = {
     metaTitulo: 'Termos · Orden',
     metaDescripcion: 'As condições de uso do Orden: o teste, os planos de cada ramo, como se paga, o que acontece se você não pagar e como funcionam os convites.',
     titulo: 'Termos de serviço',
-    actualizado: '24 de setembro de 2026',
+    actualizado: '28 de setembro de 2026',
     bajada: 'Escritos pra serem entendidos numa leitura só. Tudo o que esta página diz é o que o Orden faz hoje, não o que vai fazer algum dia.',
     esencialTitulo: 'O essencial',
     esencial: [
       `**${E} dias grátis** se for um negócio e **${P}** se for uma conta pessoal. Sem cartão.`,
       'Cada ramo tem seus planos, com preço em guaranis.',
       'Hoje o pagamento é **por transferência**, combinado pelo WhatsApp. Não tem débito automático.',
-      'Se você não pagar, **a conta fica pausada** e não pode ser usada até ativar o plano. **Seus dados não são apagados.**',
+      'Se for um negócio e você não pagar, **a conta fica pausada** até ativar o plano. Se for uma conta pessoal, **passa pro plano Grátis**. Nos dois casos, **seus dados não são apagados.**',
       'Se você trouxer alguém que paga, fica com **a metade do preço de tabela de um mês** do plano dessa pessoa.',
     ],
     apartados: [
@@ -573,6 +583,7 @@ export const legalPt: TextosLegal = {
           `Toda conta nova começa em teste, **sem pedir cartão**: **${E} dias** se for um negócio e **${P} dias** se for uma conta pessoal.`,
           'Você testa o plano mais completo que é vendido pro seu ramo: o Pro, se o seu ramo tem; se não, o que ele tem. Assim o que você testa é algo que depois pode contratar.',
           'Se você mudar de ramo durante o teste, o teste passa pro plano do ramo novo. Os dias que faltam não mudam.',
+          'Se for uma conta pessoal, ao terminar o teste ela passa pro plano **Grátis** (mais abaixo).',
         ],
       },
       {
@@ -581,6 +592,7 @@ export const legalPt: TextosLegal = {
         bloques: [
           'Cada ramo tem os planos que servem pra ele. Os que somam mais pessoas não são oferecidos a quem trabalha sozinho:',
           { especial: 'planesPorRubro' },
+          'A conta pessoal tem também um plano **Grátis**, que não se paga: dá pra lançar despesas e entradas na mão, ver o histórico e convidar. O registro por voz, foto ou texto, o orçamento, as dívidas, o que te devem, as contas de dinheiro, os relatórios e o Excel são do Pro.',
           'Os planos mudam quantas pessoas podem usar a conta e quantos registros com inteligência artificial cabem por mês. Isso e os preços estão na página inicial e na tela do seu plano.',
           'Os preços são cobrados em **guaranis**. Do lado pode aparecer um «≈ US$» pequeno: é só uma referência, não se cobra em dólares.',
           'Os descontos —por registrar todos os dias durante o teste e por constância— são explicados na tela do seu plano, com as condições, e se aplicam na hora de pagar.',
@@ -600,18 +612,19 @@ export const legalPt: TextosLegal = {
         id: 'si-no-pagas',
         titulo: 'O que acontece se você não pagar',
         bloques: [
-          'Quando termina o teste, ou o período que você pagou, e não entra um pagamento novo, **a conta fica pausada**. Enquanto está pausada não dá pra ver nem usar nenhuma tela —nem o painel, nem o histórico, nem o Excel— a não ser a do seu plano, que é onde se ativa. Vale pra todas as pessoas da conta.',
+          'Se for um negócio, quando termina o teste, ou o período que você pagou, e não entra um pagamento novo, **a conta fica pausada**. Enquanto está pausada não dá pra ver nem usar nenhuma tela —nem o painel, nem o histórico, nem o Excel— a não ser a do seu plano, que é onde se ativa. Vale pra todas as pessoas da conta.',
+          'Se for uma conta pessoal, ela não fica pausada: **passa pro plano Grátis**. Você continua entrando, lançando suas despesas e entradas na mão e vendo seus lançamentos. O que é do Pro fica guardado e volta quando você ativar o Pro.',
           '**Seus dados não são apagados.** Ficam guardados do jeito que estão e, assim que o plano é ativado, você encontra tudo como deixou.',
           'Antes do vencimento avisamos três dias antes, um dia antes e no próprio dia: por e-mail, e no celular se você ativou os avisos. Se quiser ter uma cópia dos seus números, baixe o Excel em Relatórios antes dessa data.',
           'Se você é personal trainer, os links de treino dos seus clientes continuam funcionando até 30 dias depois do vencimento, e você pode desligar todos de uma vez na própria tela da conta pausada.',
-          'Não apagamos uma conta por estar pausada. Se um dia isso mudar, vamos avisar por e-mail, com tempo, antes de fazer.',
+          'Não apagamos uma conta por estar pausada nem por estar no plano Grátis. Se um dia isso mudar, vamos avisar por e-mail, com tempo, antes de fazer.',
         ],
       },
       {
         id: 'dejar',
         titulo: 'Parar de usar o Orden',
         bloques: [
-          'Não precisa cancelar nada: como não tem débito automático, se você não renovar, a conta fica pausada ao terminar o período que já pagou. Até esse dia você continua usando tudo.',
+          'Não precisa cancelar nada: como não tem débito automático, se você não renovar, ao terminar o período que já pagou a conta de um negócio fica pausada e a pessoal passa pro plano Grátis. Até esse dia você continua usando tudo.',
           'Se além disso quiser apagar seus dados, veja [Encerrar a conta](/terminos#cerrar), mais abaixo.',
         ],
       },
@@ -625,7 +638,7 @@ export const legalPt: TextosLegal = {
               'É **a metade do preço de tabela de um mês** do plano que a pessoa ativou, conforme o tipo de conta. É calculada em guaranis.',
               'Nasce com **o primeiro pagamento** e é uma vez só por cada conta que você traz. O que ela pagar depois não soma.',
               'Mesmo que pague com desconto ou pague o ano inteiro, a base é o preço de tabela de um mês. Nunca é mais do que essa conta pagou.',
-              'Enquanto a outra pessoa testa grátis, não gera nada.',
+              'Enquanto a outra pessoa testa ou usa o plano Grátis, não gera nada.',
               'Não vale trazer você mesmo nem o negócio onde você trabalha.',
               'O que você ganha vira saldo. Você saca a partir do mínimo que aparece na tela de Convites e transferimos pro seu banco ou carteira. Pra isso pedimos uma vez o titular, a conta ou o alias e a CI ou o RUC.',
             ],
@@ -637,7 +650,7 @@ export const legalPt: TextosLegal = {
         id: 'tus-datos',
         titulo: 'Seus dados são seus',
         bloques: [
-          'O que você registra é seu. Enquanto a conta está ativa, você pode ver tudo, baixar em Excel e apagar em Configurações.',
+          'O que você registra é seu. Enquanto a conta está ativa, você pode ver tudo, baixar em Excel e apagar em Configurações. No plano Grátis de uma conta pessoal você vê seus lançamentos no histórico e pode apagar tudo em Configurações. O que você lançou nas seções do Pro (dívidas, o que te devem, contas, orçamento) fica guardado e você vê de novo com o Pro; se precisar de uma cópia antes, escreva pra gente no WhatsApp e mandamos sem custo. O Excel é do Pro.',
           'A gente usa só pra prestar o serviço. O que guardamos, onde fica e com quem se compartilha pra funcionar está na [política de privacidade](/privacidad).',
         ],
       },
@@ -688,7 +701,7 @@ export const legalPt: TextosLegal = {
         id: 'cerrar',
         titulo: 'Encerrar a conta',
         bloques: [
-          'Você pode apagar sua conta quando quiser em Configurações, na «Zona delicada». É imediato e irreversível: baixe o Excel antes se quiser guardar o seu histórico.',
+          'Você pode apagar sua conta quando quiser em Configurações, na «Zona delicada». É imediato e irreversível: baixe o Excel antes se quiser guardar o seu histórico. No plano Grátis, peça a cópia pelo WhatsApp.',
           'Se você é dono de um negócio onde trabalham outras pessoas, primeiro precisa tirá-las da equipe. Não apagamos a contabilidade de pessoas que continuam trabalhando.',
           'Com a conta pausada não dá pra chegar em Configurações. Nesse caso, peça o apagamento pelo WhatsApp e a gente faz por você.',
         ],
@@ -716,7 +729,7 @@ export const legalPt: TextosLegal = {
     metaTitulo: 'Privacidade · Orden',
     metaDescripcion: 'Que dados o Orden guarda, onde ficam, com quem são compartilhados pra funcionar e como se apagam.',
     titulo: 'Privacidade',
-    actualizado: '24 de setembro de 2026',
+    actualizado: '28 de setembro de 2026',
     bajada: 'Escrita sobre o que o Orden faz de verdade, não copiada de um modelo. Se mudar um fornecedor ou um dado que pedimos, esta página muda junto.',
     esencialTitulo: 'O essencial',
     esencial: [
@@ -861,7 +874,7 @@ export const legalPt: TextosLegal = {
         id: 'cuanto-tiempo',
         titulo: 'Por quanto tempo',
         bloques: [
-          'Enquanto você tiver a conta. O seu histórico não se apaga sozinho: ele serve justamente pra olhar pra trás. Também não se apaga se a conta ficar pausada por falta de pagamento.',
+          'Enquanto você tiver a conta. O seu histórico não se apaga sozinho: ele serve justamente pra olhar pra trás. Também não se apaga se a conta ficar pausada por falta de pagamento, nem se uma conta pessoal passar pro plano Grátis.',
           'Quando você apaga a sua conta, ela é apagada de verdade. Não fica uma cópia «marcada como apagada»: as linhas somem do banco e as fotos são eliminadas do depósito. O único que pode sobreviver um tempo são os backups automáticos, que vão sendo substituídos sozinhos.',
         ],
       },
@@ -879,7 +892,7 @@ export const legalPt: TextosLegal = {
         bloques: [
           {
             lista: [
-              '**Ver tudo.** Está no app, e a administração do negócio pode baixar em Excel em Relatórios.',
+              '**Ver tudo.** Está no app, e a administração do negócio pode baixar em Excel em Relatórios. No plano Grátis de uma conta pessoal você vê seus lançamentos no histórico; o que é das seções do Pro fica guardado e você vê de novo com o Pro. Se precisar de uma cópia de tudo, escreva pra gente no WhatsApp e mandamos sem custo.',
               '**Corrigir.** Você pode editar ou anular qualquer movimento, e corrigir a ficha de um cliente ou excluí-lo.',
               '**Começar do zero.** Em Configurações, o dono pode esvaziar o negócio sem apagar a conta.',
               '**Ir embora.** Em Configurações você mesmo pode apagar a sua conta e tudo o que registrou, na hora. Se a conta estiver pausada, peça pelo WhatsApp e a gente faz por você.',

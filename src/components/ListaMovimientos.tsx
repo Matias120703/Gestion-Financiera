@@ -258,7 +258,7 @@ export function HojaCampana({
 export function ListaMovimientos({
   movimientos: inicial, cursorInicial, total, desde, hasta,
   moneda, rol, userId, hoy, cargarPagina, empresaId, guardaComprobantes = false,
-  campanas = [], conCampanas = false,
+  campanas = [], conCampanas = false, conVentas = true,
 }: {
   empresaId: string;
   /** Del plan: si el plan no guarda comprobantes, no se ofrece agregarlos. */
@@ -285,6 +285,11 @@ export function ListaMovimientos({
   campanas?: CampanaParaElegir[];
   /** Si el negocio tiene lotes (`ficha.secciones['/lotes']`). */
   conCampanas?: boolean;
+  /**
+   * Si se ofrece el filtro «Ventas» (28/09/2026). Una cuenta personal no
+   * vende: el chip sobraba y le hablaba como a un comercio.
+   */
+  conVentas?: boolean;
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -433,7 +438,7 @@ export function ListaMovimientos({
             value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         </div>
         <div className="scroll-limpio flex gap-2 overflow-x-auto">
-          {FILTROS.map((f) => (
+          {FILTROS.filter((f) => conVentas || f.valor !== 'venta').map((f) => (
             <button
               key={f.valor} type="button" onClick={() => setFiltro(f.valor)}
               className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${

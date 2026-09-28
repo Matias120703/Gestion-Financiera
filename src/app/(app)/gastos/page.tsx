@@ -48,19 +48,29 @@ export default async function PaginaGastos({
   // cerrada se le suma algo desde el historial.
   const conCampanas = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones['/lotes'];
   const loteParam = typeof searchParams.lote === 'string' ? searchParams.lote : null;
+  const esPersonal = ctx.empresa.tipo_cuenta === 'personal';
   // Los totales salen agregados; la lista es solo la primera página.
-  const [r, categorias, paginaGastos, paginaIngresos, cuentas, lotes, delRubro] = await Promise.all([
+  const [r, categorias, paginaGastos, paginaIngresos, cuentas, lotes, delRubro, gastoP, ingresoP] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
     traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tipo: 'gasto', tamano: 50 }),
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tipo: 'ingreso', tamano: 50 }),
     // Para elegir de qué cuenta salió (075). Un vendedor no administra la
     // billetera, así que para él la lista viene vacía y no se pregunta nada.
-    ctx.esAdmin ? traerCuentasParaElegir(ctx.empresa.id) : Promise.resolve([]),
+    // En el plan Gratis personal (110, 28/09/2026) tampoco: la billetera es
+    // del Pro. La base igual asigna cada gasto a su cuenta por la forma de
+    // pago (074, `anotar_en_su_cuenta`), y el saldo es calculado: al volver
+    // al Pro, la billetera está al día.
+    ctx.esAdmin && !ctx.gratisPersonal ? traerCuentasParaElegir(ctx.empresa.id) : Promise.resolve([]),
     conCampanas ? traerLotes(ctx.empresa.id, false) : Promise.resolve([]),
     // Las del rubro, las mismas con que clasifica la captura (101): al
     // sojero no se le ofrece «Mercadería».
     conCampanas ? traerCategoriasPersonales(ctx.empresa.id, 'gasto') : Promise.resolve([]),
+    // Y a una persona, las suyas (28/09/2026): Sueldo, Alquiler, Salud… y no
+    // las de un comercio. Si no se pueden leer, quedan los chips de siempre:
+    // son atajos, no un número del que dependa una decisión.
+    esPersonal ? traerCategoriasPersonales(ctx.empresa.id, 'gasto').catch(() => []) : Promise.resolve([]),
+    esPersonal ? traerCategoriasPersonales(ctx.empresa.id, 'ingreso').catch(() => []) : Promise.resolve([]),
   ]);
   // Solo lo que el chip necesita: los números de cada campaña no viajan.
   const campanas = lotes.map((l): CampanaParaElegir => ({
@@ -123,6 +133,10 @@ export default async function PaginaGastos({
         // sin tocar quedaban como comida (fase 0 de ganadería, 24/09).
         categoriaPorDefecto={ctx.empresa.rubro === 'ganaderia' ? 'Otros' : null}
         dolarDeHoy={conCampanas ? dolarDeLaVista(ctx.empresa) : null}
+        // Si alguna lista llega vacía, quedan los chips de hoy.
+        rapidasPersonal={esPersonal && gastoP.length > 0 && ingresoP.length > 0
+          ? { gasto: gastoP.map((c) => c.nombre), ingreso: ingresoP.map((c) => c.nombre) }
+          : undefined}
       />
     </div>
   );

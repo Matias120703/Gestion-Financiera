@@ -142,7 +142,9 @@ export async function POST(request: Request) {
   if (cupo && cupo.permitido === false) {
     return NextResponse.json(
       {
-        error: s.sinCupoIA,
+        // La personal en el plan Gratis (110, 28/09/2026) nunca tuvo
+        // capturas: «se te acabaron» sería falso. Se dice que es del Pro.
+        error: esPersonal && cupo.tope === 0 ? (await textos()).planGratis.servidor.capturaEsDePro : s.sinCupoIA,
         motivo: 'sin_cupo',
         usados: cupo.usados,
         tope: cupo.tope,

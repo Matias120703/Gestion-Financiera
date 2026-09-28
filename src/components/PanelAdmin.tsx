@@ -19,15 +19,28 @@ const trazo = {
   strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
 };
 
-type Filtro = 'atencion' | 'todas' | 'prueba' | 'pagando' | 'vencidas';
+type Filtro = 'atencion' | 'todas' | 'prueba' | 'pagando' | 'vencidas' | 'gratis';
 
 const FILTROS: { valor: Filtro; texto: string }[] = [
   { valor: 'atencion', texto: 'Necesitan atención' },
   { valor: 'prueba', texto: 'En prueba' },
   { valor: 'pagando', texto: 'Pagando' },
   { valor: 'vencidas', texto: 'Vencidas' },
+  // Desde la 110 (28/09/2026) una personal vencida no está vencida: está en
+  // el plan Gratis, anotando a mano. Va aparte para no mezclarla con los
+  // negocios a recuperar.
+  { valor: 'gratis', texto: 'Gratis (personales)' },
   { valor: 'todas', texto: 'Todas' },
 ];
+
+/**
+ * Una cuenta personal en el plan Gratis (110). `plan` es el efectivo
+ * (`listar_cuentas`), así que cubre la prueba terminada, el Pro vencido y la
+ * cortada desde acá. Un negocio nunca entra.
+ */
+function enGratisPersonal(cuenta: { tipo_cuenta: TipoCuenta; plan: string }) {
+  return cuenta.tipo_cuenta === 'personal' && cuenta.plan === 'gratis';
+}
 
 /**
  * Cómo se lee «le quedan N días».
@@ -42,6 +55,17 @@ function urgencia(dias: number | null) {
   if (dias <= 3) return { texto: `Faltan ${dias} d`, clase: 'bg-ambar-claro text-ambar', punto: 'bg-ambar' };
   if (dias <= 7) return { texto: `${dias} días`, clase: 'bg-ambar-claro/60 text-ambar', punto: 'bg-ambar' };
   return { texto: `${dias} días`, clase: 'bg-verde-claro text-verde-fuerte', punto: 'bg-verde' };
+}
+
+/**
+ * La pastilla de días de una cuenta. Una personal en Gratis (110,
+ * 28/09/2026) no está vencida: su fecha es la del fin de la prueba o del
+ * Pro, y el rojo «Venció hace N d» la ponía entre las que hay que
+ * recuperar, cuando el filtro y la métrica «Vencidas» ya no la cuentan.
+ */
+function urgenciaDe(cuenta: { tipo_cuenta: TipoCuenta; plan: string; dias_restantes: number | null }) {
+  if (enGratisPersonal(cuenta)) return { texto: 'Gratis', clase: 'bg-arena text-tinta/60', punto: 'bg-noche/25' };
+  return urgencia(cuenta.dias_restantes);
 }
 
 function fechaCorta(iso: string | null) {
@@ -75,8 +99,12 @@ function quienEs(cuenta: { contacto?: string; propietario?: string; nombre: stri
  *
  * Mientras dura la prueba, entonces, lo que manda es la prueba. El plan
  * de abajo no se muestra: todavía no es de nadie.
+ *
+ * Una personal en Gratis (110) se llama «Gratis», y va antes de mirar la
+ * prueba: terminada, el estado sigue en 'prueba' pero ya no está probando.
  */
-function comoSeLlama(cuenta: { plan: string; estado: string }) {
+function comoSeLlama(cuenta: { plan: string; estado: string; tipo_cuenta: TipoCuenta }) {
+  if (enGratisPersonal(cuenta)) return 'Gratis';
   if (cuenta.estado === 'prueba') return 'En prueba';
   return NOMBRE_PLAN[cuenta.plan] ?? cuenta.plan;
 }
@@ -138,13 +166,17 @@ export function PanelAdmin({
         return false;
       }
       const d = c.dias_restantes;
+      // La personal en Gratis no está vencida ni pagando (110): no cuenta en
+      // esos tres. Tiene su filtro.
+      const gratis = enGratisPersonal(c);
       switch (filtro) {
         // El filtro por defecto: a quiénes hay que escribirles hoy. Incluye
         // los ya vencidos, que son los que más urge recuperar.
-        case 'atencion': return d !== null && d <= 7;
-        case 'vencidas': return d !== null && d < 0;
-        case 'pagando': return c.estado === 'activa' && c.plan !== 'gratis';
+        case 'atencion': return !gratis && d !== null && d <= 7;
+        case 'vencidas': return !gratis && d !== null && d < 0;
+        case 'pagando': return !gratis && c.estado === 'activa' && c.plan !== 'gratis';
         case 'prueba': return c.estado === 'prueba' && d !== null && d >= 0;
+        case 'gratis': return gratis;
         default: return true;
       }
     });
@@ -210,7 +242,7 @@ export function PanelAdmin({
           <Metrica
             titulo="Vencidas"
             valor={resumen.vencidas}
-            detalle="para recuperar"
+            detalle={`para recuperar · ${resumen.gratis_personales ?? 0} personales en Gratis`}
             tono={resumen.vencidas > 0 ? 'rojo' : undefined}
           />
         </div>
@@ -248,7 +280,7 @@ export function PanelAdmin({
         ) : (
           <ul className="divide-y divide-borde">
             {visibles.map((c) => {
-              const u = urgencia(c.dias_restantes);
+              const u = urgenciaDe(c);
               const usoIA = c.ia_tope > 0 ? Math.round((c.ia_usada / c.ia_tope) * 100) : 0;
 
               return (
@@ -663,7 +695,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     }
   }
 
-  const u = urgencia(cuenta.dias_restantes);
+  const u = urgenciaDe(cuenta);
   const ocupado = trabajando !== '';
 
   return (
@@ -696,7 +728,10 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
           <div className="rounded-2xl bg-arena p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className={`pastilla ${u.clase}`}>{u.texto}</span>
-              <span className="pastilla bg-superficie text-tinta/60">{comoSeLlama(cuenta)}</span>
+              {/* En Gratis la de los días ya dice «Gratis»: dos iguales, no. */}
+              {comoSeLlama(cuenta) !== u.texto && (
+                <span className="pastilla bg-superficie text-tinta/60">{comoSeLlama(cuenta)}</span>
+              )}
               <span className="pastilla bg-superficie text-tinta/60">
                 {cuenta.tipo_cuenta === 'personal' ? 'Personal' : 'Comercio'}
               </span>
@@ -983,18 +1018,29 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
             </div>
           )}
 
-          {/* ---- cortar ---- */}
+          {/* ---- cortar ----
+              A una personal, «cortar» ya no la corta (110, 28/09/2026): la
+              pasa al plan Gratis. La RPC es la misma; cambia lo que dice.
+              El texto del negocio queda como estaba (tarea aparte). */}
           <div className="rounded-2xl border border-rojo/20 bg-rojo-claro/25 p-4">
-            <p className="titulo-seccion mb-1 text-rojo">Cortar el servicio</p>
+            <p className="titulo-seccion mb-1 text-rojo">{esPersonal ? 'Pasar a Gratis' : 'Cortar el servicio'}</p>
             <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/60">
-              Deja de poder cargar. Sigue entrando, viendo lo suyo y bajando su Excel:
-              los datos son de esa persona, no nuestros.
+              {esPersonal ? (
+                'Pasa al plan Gratis: sigue anotando gastos e ingresos a mano; lo del Pro queda guardado y cerrado hasta que pague.'
+              ) : (
+                <>
+                  Deja de poder cargar. Sigue entrando, viendo lo suyo y bajando su Excel:
+                  los datos son de esa persona, no nuestros.
+                </>
+              )}
             </p>
             <button
               className="boton-suave w-full border-rojo/30 py-2.5 text-rojo hover:bg-rojo-claro"
               onClick={cortar} disabled={ocupado}
             >
-              {trabajando === 'cortando' ? 'Cortando…' : 'Cortar'}
+              {esPersonal
+                ? (trabajando === 'cortando' ? 'Pasando…' : 'Pasar a Gratis')
+                : (trabajando === 'cortando' ? 'Cortando…' : 'Cortar')}
             </button>
 
             <hr className="my-4 border-rojo/15" />
