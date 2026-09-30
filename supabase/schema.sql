@@ -37460,7 +37460,7 @@ begin
   -- El espacio duro de WhatsApp (U+00A0) y sus parientes, escritos como
   -- códigos y no pegados: pegados, se volvían espacios comunes al aplicar la
   -- migración, y el link mostraba el apellido.
-  v_nombre := coalesce(substring(v_cli.nombre from E'[^[:space:]   ⁠﻿]+'), '');
+  v_nombre := coalesce(substring(v_cli.nombre from E'[^[:space:]\u00A0\u2007\u202F\u2060\uFEFF]+'), '');
 
   v_renovar := not public.puede_cargar(v_emp.id)
     and coalesce((
