@@ -41,7 +41,9 @@ export default async function PaginaReservar({ params }: { params: Promise<{ slu
   const datos = await traer(slug);
 
   // Un link apagado y uno que no existe dan la misma pantalla. Distinguirlos
-  // le diría a cualquiera qué negocios usan Orden y cuáles cerraron.
+  // le diría a cualquiera qué negocios usan Orden y cuáles cerraron. El de
+  // un negocio vencido también (115): la base contesta lo mismo y la
+  // pantalla es not-found.tsx, al lado de esta.
   if (!datos?.existe) notFound();
 
   return <ReservaPublica slug={slug} datos={datos} />;

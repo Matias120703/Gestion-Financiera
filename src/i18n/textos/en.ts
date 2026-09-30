@@ -1125,7 +1125,10 @@ export const en: Parcial<Textos> = {
     detalle: 'Nothing below can be undone. There is no trash bin and no way to get it back.',
 
     vaciarTitulo: 'Start over',
-    vaciarDetalle: 'Deletes every sale, expense, product and receipt in this business. Your team, your plan and the invite code stay as they are.',
+    vaciarDetalle: 'Deletes every sale, expense, product and receipt in this business. If you use the calendar, class packages or grain settlements, they are deleted too: the bookings (including the ones your customers already made through the link), your students\' packages and enrollments, and the settlements. Your team, your customers, your plan and the invite code stay as they are.',
+    vaciarTurnosPorVenir: (n: number) => (n === 1
+      ? 'You have 1 upcoming booking in the calendar. It is deleted with everything else and that person gets no notice: tell them first if needed.'
+      : `You have ${n} upcoming bookings in the calendar. They are deleted with everything else and those people get no notice: tell them first if needed.`),
     vaciarBoton: 'Empty this business',
     vaciarPide: (nombre: string) => `Type ${nombre} to confirm`,
     vaciarListo: (movs: number) => `Done. ${movs} entries deleted and the business is back to zero.`,

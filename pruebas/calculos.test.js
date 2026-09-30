@@ -907,7 +907,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // La captura por voz: lo que la IA entendió como «a quién» tiene que
   // llegar ya escrito, y olvidarse al cerrar. Las dos cosas fallaban.
   {
-    const cap = fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8');
+    // Normalizado: con CRLF (las worktrees) el '\n  }\n' de abajo no aparece
+    // y el «cuerpo» de cerrar() sería casi todo el archivo.
+    const cap = fs.readFileSync('src/components/CapturaInteligente.tsx', 'utf8').replace(/\r\n/g, '\n');
     ok('la captura trae el nombre que entendió la IA',
       cap.includes('nombre: interpretado.contraparte'), true);
     const desde = cap.indexOf('function cerrar()');

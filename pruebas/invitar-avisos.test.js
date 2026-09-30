@@ -132,7 +132,8 @@ const debe = (estado, historial, ahora = AHORA, yaEnEstaSesion = false) =>
 
 // --- Los textos, en los dos idiomas, y sin promesas falsas ---
 {
-  const leer = (r) => fs.readFileSync(r, 'utf8');
+  // Las worktrees traen CRLF: sin normalizar, ningún '\n' de abajo aparece.
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
   const bloque = (fuente) => {
     const i = fuente.indexOf('  invitarAvisos: {');
     const j = fuente.indexOf('\n  },\n', i);
@@ -186,7 +187,7 @@ const debe = (estado, historial, ahora = AHORA, yaEnEstaSesion = false) =>
 
 // --- Las piezas, enchufadas ---
 {
-  const leer = (r) => fs.readFileSync(r, 'utf8');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
   const pref = leer('src/components/Preferencias.tsx');
   const hoja = leer('src/components/InvitarAvisos.tsx');
   const panel = leer('src/app/(app)/panel/page.tsx');

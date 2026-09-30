@@ -366,14 +366,32 @@ export default async function PaginaAjustes({
           </div>
         );
 
-      case 'peligro':
+      case 'peligro': {
+        const esPropietario = ctx.miembro.rol === 'propietario';
+        // «Empezar de cero» borra también los turnos que los clientes ya
+        // sacaron por el link (115), y a ellos no les llega ningún aviso. El
+        // dueño tiene que saber cuántos son ANTES de escribir el nombre, no
+        // después. Si la cuenta falla, no se muestra el aviso: el texto de
+        // siempre ya dice que los turnos se borran.
+        let turnosPorVenir = 0;
+        if (esPropietario) {
+          const { count } = await supabase
+            .from('turnos_reserva')
+            .select('id', { count: 'exact', head: true })
+            .eq('empresa_id', ctx.empresa.id)
+            .in('estado', ['pendiente', 'confirmada'])
+            .gt('inicia', new Date().toISOString());
+          turnosPorVenir = count ?? 0;
+        }
         return (
           <ZonaPeligro
             empresaId={ctx.empresa.id}
             nombreEmpresa={ctx.empresa.nombre}
-            esPropietario={ctx.miembro.rol === 'propietario'}
+            esPropietario={esPropietario}
+            turnosPorVenir={turnosPorVenir}
           />
         );
+      }
     }
   }
 }

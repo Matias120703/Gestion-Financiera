@@ -17,11 +17,13 @@ import { mensajeDeError } from '@/lib/errores';
  * rojo suelto en Ajustes es un botón que alguien va a tocar por curiosidad.
  */
 export function ZonaPeligro({
-  empresaId, nombreEmpresa, esPropietario,
+  empresaId, nombreEmpresa, esPropietario, turnosPorVenir = 0,
 }: {
   empresaId: string;
   nombreEmpresa: string;
   esPropietario: boolean;
+  /** Turnos pendientes o confirmados de acá en adelante (ajustes/page.tsx). */
+  turnosPorVenir?: number;
 }) {
   const t = useTextos();
   const [abierta, setAbierta] = useState(false);
@@ -48,6 +50,7 @@ export function ZonaPeligro({
         empresaId={empresaId}
         nombreEmpresa={nombreEmpresa}
         esPropietario={esPropietario}
+        turnosPorVenir={turnosPorVenir}
       />
 
       <div className="border-t border-borde pt-5">
@@ -57,13 +60,21 @@ export function ZonaPeligro({
   );
 }
 
-/** Empezar de cero: el negocio queda, los datos no. */
+/**
+ * Empezar de cero: el negocio queda, los datos no.
+ *
+ * Desde la 115 se van también los turnos de la agenda —incluidos los que los
+ * clientes sacaron por el link—, los paquetes e inscripciones de los alumnos
+ * y las liquidaciones de grano. Los turnos por venir se avisan con su número
+ * antes de confirmar: son de terceros, y a ellos no les llega ningún aviso.
+ */
 function VaciarNegocio({
-  empresaId, nombreEmpresa, esPropietario,
+  empresaId, nombreEmpresa, esPropietario, turnosPorVenir,
 }: {
   empresaId: string;
   nombreEmpresa: string;
   esPropietario: boolean;
+  turnosPorVenir: number;
 }) {
   const t = useTextos();
   const router = useRouter();
@@ -108,6 +119,12 @@ function VaciarNegocio({
     <div>
       <h3 className="text-[15px] font-bold tracking-tight">{t.zonaPeligro.vaciarTitulo}</h3>
       <p className="mt-1 text-[13px] leading-relaxed text-tinta/55">{t.zonaPeligro.vaciarDetalle}</p>
+
+      {esPropietario && turnosPorVenir > 0 && (
+        <p className="mt-2 rounded-xl bg-ambar-claro px-3 py-2.5 text-[13px] font-medium leading-relaxed text-ambar">
+          {t.zonaPeligro.vaciarTurnosPorVenir(turnosPorVenir)}
+        </p>
+      )}
 
       {!esPropietario ? (
         <p className="mt-2 text-[12.5px] font-semibold text-tinta/40">

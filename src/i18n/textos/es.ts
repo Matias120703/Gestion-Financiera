@@ -2462,6 +2462,12 @@ export const es = {
     reservar: (hora: string) => `Reservar ${hora}`,
     turnosConOrden: 'Turnos con Orden',
 
+    // Un link que no existe, uno apagado o el de un negocio vencido (115):
+    // la misma pantalla para los tres, a propósito.
+    noDisponible: 'Esta página de reservas no está disponible',
+    noDisponibleDetalle: 'Para sacar un turno, escribile al local directamente.',
+    siYaTeniasTurno: 'Si ya tenías un turno, el enlace que te quedó al reservar sigue sirviendo para verlo o cancelarlo.',
+
     noSePudoCancelar: 'No se pudo cancelar. Probá de nuevo.',
     noEncontramos: 'No encontramos este turno',
     enlaceIncompleto: 'Puede que el enlace esté incompleto. Fijate de copiarlo entero, o escribile al local.',
@@ -2525,7 +2531,12 @@ export const es = {
     detalle: 'Lo de acá abajo no se puede deshacer. No hay papelera ni forma de recuperarlo.',
 
     vaciarTitulo: 'Empezar de cero',
-    vaciarDetalle: 'Borra todas las ventas, gastos, productos y comprobantes de este negocio. El equipo, tu plan y el código de invitación quedan como están.',
+    // Desde la 115 se van también los turnos, los paquetes y las
+    // liquidaciones: el dueño lo tiene que leer antes de escribir el nombre.
+    vaciarDetalle: 'Borra todas las ventas, gastos, productos y comprobantes de este negocio. Si usás la agenda, los paquetes de clases o las liquidaciones de grano, también se borran: los turnos (incluidos los que ya reservaron tus clientes por el link), los paquetes e inscripciones de tus alumnos y las liquidaciones. El equipo, tus clientes, tu plan y el código de invitación quedan como están.',
+    vaciarTurnosPorVenir: (n: number) => (n === 1
+      ? 'Tenés 1 turno por venir en la agenda. Se borra con todo lo demás y a esa persona no le llega ningún aviso: si hace falta, avisale antes.'
+      : `Tenés ${n} turnos por venir en la agenda. Se borran con todo lo demás y a esas personas no les llega ningún aviso: si hace falta, avisales antes.`),
     vaciarBoton: 'Vaciar el negocio',
     vaciarPide: (nombre: string) => `Escribí ${nombre} para confirmar`,
     vaciarListo: (movs: number) => `Listo. Se borraron ${movs} movimientos y el negocio quedó en cero.`,

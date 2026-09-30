@@ -337,9 +337,11 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
       await contar('select count(*)::int n from public.turnos_pago where empresa_id=$1', [NV.empresaId]),
       await contar('select count(movimiento_id)::int n from public.turnos_pago where empresa_id=$1', [NV.empresaId])],
     [1, 0, 1, 0]);
-  ok('la silla quedó sin producto, el paquete sin venta y el fiado sin cobro',
+  // Los paquetes se van con sus ventas desde la 115: sin venta, figuraban
+  // como «por cobrar» (empezar-de-cero.test.js, grupo 8).
+  ok('la silla quedó sin producto, los paquetes se fueron con su venta y el fiado sin cobro',
     [await contar('select count(producto_id)::int n from public.turnos_atribucion where empresa_id=$1', [NV.empresaId]),
-      await contar('select count(movimiento_id)::int n from public.paquetes where empresa_id=$1', [NV.empresaId]),
+      await contar('select count(*)::int n from public.paquetes where empresa_id=$1', [NV.empresaId]),
       await contar('select count(cobro_id)::int n from public.fiado where empresa_id=$1', [NV.empresaId])],
     [0, 0, 0]);
   rechazado('después, el fiado sigue cerrado (la marca no quedó puesta)',

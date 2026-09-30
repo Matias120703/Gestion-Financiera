@@ -2296,6 +2296,10 @@ export const pt: Textos = {
     reservar: (hora: string) => `Agendar ${hora}`,
     turnosConOrden: 'Agendamentos com Orden',
 
+    noDisponible: 'Esta página de agendamentos não está disponível',
+    noDisponibleDetalle: 'Pra agendar um horário, fale direto com o local.',
+    siYaTeniasTurno: 'Se você já tinha um horário, o link que ficou com você ao agendar continua servindo pra ver ou cancelar.',
+
     noSePudoCancelar: 'Não foi possível cancelar. Tente de novo.',
     noEncontramos: 'Não encontramos este horário',
     enlaceIncompleto: 'Pode ser que o link esteja incompleto. Copie inteiro, ou fale com o local.',
@@ -2359,7 +2363,10 @@ export const pt: Textos = {
     detalle: 'O que está aqui embaixo não dá pra desfazer. Não há lixeira nem forma de recuperar.',
 
     vaciarTitulo: 'Começar do zero',
-    vaciarDetalle: 'Apaga todas as vendas, despesas, produtos e comprovantes deste negócio. A equipe, seu plano e o código de convite ficam como estão.',
+    vaciarDetalle: 'Apaga todas as vendas, despesas, produtos e comprovantes deste negócio. Se você usa a agenda, os pacotes de aulas ou as liquidações de grãos, eles também são apagados: os horários agendados (inclusive os que seus clientes já marcaram pelo link), os pacotes e inscrições dos seus alunos e as liquidações. A equipe, seus clientes, seu plano e o código de convite ficam como estão.',
+    vaciarTurnosPorVenir: (n: number) => (n === 1
+      ? 'Você tem 1 horário agendado pela frente. Ele é apagado junto com o resto e essa pessoa não recebe nenhum aviso: se precisar, avise antes.'
+      : `Você tem ${n} horários agendados pela frente. Eles são apagados junto com o resto e essas pessoas não recebem nenhum aviso: se precisar, avise antes.`),
     vaciarBoton: 'Zerar o negócio',
     vaciarPide: (nombre: string) => `Escreva ${nombre} pra confirmar`,
     vaciarListo: (movs: number) => `Pronto. ${movs} lançamentos foram apagados e o negócio ficou zerado.`,
