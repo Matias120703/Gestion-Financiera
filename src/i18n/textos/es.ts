@@ -1884,7 +1884,7 @@ export const es = {
     gratis: 'Gratis',
     basico: 'Básico',
     pro: 'Pro',
-    negocio: 'Negocio',
+    negocio: 'Premium',
     mensual: 'por mes',
     anual: 'por año',
     porMes: 'mes',

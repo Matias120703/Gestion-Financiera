@@ -26,7 +26,7 @@ export function TarjetaPlan({
   /** Ya está en el plan Gratis personal: no está vencida, anda (110). */
   gratisPersonal?: boolean;
 }) {
-  const nombre = plan === 'negocio' ? t.plan.negocio : plan === 'pro' ? t.plan.pro : t.plan.gratis;
+  const nombre = t.plan[plan];
   const porVencer = suscripcion.en_prueba && suscripcion.dias_restantes <= 3;
 
   return (

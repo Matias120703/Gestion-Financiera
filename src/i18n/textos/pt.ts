@@ -1760,7 +1760,7 @@ export const pt: Textos = {
     gratis: 'Grátis',
     basico: 'Básico',
     pro: 'Pro',
-    negocio: 'Negócio',
+    negocio: 'Premium',
     mensual: 'por mês',
     anual: 'por ano',
     porMes: 'mês',

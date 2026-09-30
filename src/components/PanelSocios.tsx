@@ -30,7 +30,7 @@ function fechaCorta(iso: string | null) {
 const num = (v: unknown) => Number(v ?? 0);
 
 /** Los nombres que ve el dueño, que no son los de la base. */
-const NOMBRE_PLAN: Record<string, string> = { pro: 'Pro', negocio: 'Premium', gratis: 'sin pagar' };
+const NOMBRE_PLAN: Record<string, string> = { basico: 'Básico', pro: 'Pro', negocio: 'Premium', gratis: 'sin pagar' };
 
 /**
  * SOCIOS Y COMISIONES.

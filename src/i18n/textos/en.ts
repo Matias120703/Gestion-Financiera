@@ -754,8 +754,9 @@ export const en: Parcial<Textos> = {
   plan: {
     titulo: 'Your plan',
     gratis: 'Free',
+    basico: 'Basic',
     pro: 'Pro',
-    negocio: 'Business',
+    negocio: 'Premium',
     mensual: 'per month',
     anual: 'per year',
     porMes: 'month',
