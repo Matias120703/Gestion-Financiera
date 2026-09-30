@@ -44,6 +44,13 @@ export interface EjercicioEditor {
   descanso_seg: number | null;
   nota: string;
   junto_al_anterior: boolean;
+  /**
+   * El link de la columna «Video» de una planilla importada (114). NO va a
+   * `paraGuardar` ni a `firma`: después de guardar la rutina, el editor lo
+   * manda a la biblioteca (`completar_videos_de_ejercicios`), que lo pone
+   * solo si ese ejercicio no tenía ni link ni video propio.
+   */
+  video_importado?: string;
 }
 
 export interface DiaEditor {
@@ -310,8 +317,28 @@ export function desdeLeido(
       ? leido.descanso_seg : null,
     nota: (leido.nota ?? '').slice(0, LARGOS.nota),
     junto_al_anterior: !!leido.junto_al_anterior,
+    ...(leido.video ? { video_importado: leido.video } : {}),
   };
   return conNombre(base, leido.nombre, biblioteca);
+}
+
+/**
+ * Los links de video de una planilla importada (114), uno por ejercicio,
+ * para la biblioteca: `completar_videos_de_ejercicios` los pone solo donde
+ * no había ni link ni video propio.
+ */
+export function videosImportados(r: RutinaEditor): { nombre: string; url: string }[] {
+  const vistos = new Set<string>();
+  const out: { nombre: string; url: string }[] = [];
+  for (const d of r.dias) {
+    for (const e of d.ejercicios) {
+      const k = claveEjercicio(e.nombre);
+      if (!e.video_importado || !k || vistos.has(k)) continue;
+      vistos.add(k);
+      out.push({ nombre: e.nombre.trim(), url: e.video_importado });
+    }
+  }
+  return out.slice(0, 300);
 }
 
 // ─────────────────────────── la carga ───────────────────────────

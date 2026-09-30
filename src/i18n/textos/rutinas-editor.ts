@@ -169,6 +169,8 @@ export const rutinasEditorEs = {
     sinUnidad: '¿kg o lb? Escribí la unidad («40kg», «25lb»): un número solo se puede leer mal.',
     conDetalle: '+ Con más detalle',
     pegarTexto: 'Pegar texto',
+    /** «Subir planilla» (114): la rutina de Excel o Google Sheets. */
+    subirPlanilla: 'Subir planilla',
   },
 
   /** La hoja para agregar o editar un ejercicio. */
@@ -229,6 +231,57 @@ export const rutinasEditorEs = {
     usar: 'Usar esta rutina',
     demasiadosDias: (n: number) => `Quedarían ${n} días, y el máximo es 10.`,
     demasiadosEjercicios: (dia: string) => `«${dia}» tiene más de 30 ejercicios: partilo en dos días.`,
+  },
+
+  /**
+   * «Subir planilla» (114): la rutina de un Excel, un CSV o un link de
+   * Google Sheets. La revisión es la de «Pegar texto», con estos extras.
+   */
+  importar: {
+    titulo: 'Subir planilla',
+    explicacion: 'Subí tu rutina de Excel o Google Sheets. La acomodamos en días y ejercicios, y antes de usarla te mostramos lo que entendimos.',
+    elegirArchivo: 'Elegir archivo (.xlsx o .csv)',
+    oLink: 'O pegá el link de Google Sheets',
+    linkCampo: 'Link de Google Sheets',
+    linkEjemplo: 'https://docs.google.com/spreadsheets/d/…',
+    traer: 'Traer',
+    ayudaGoogle: 'En Google Sheets: Archivo → Descargar → Microsoft Excel (.xlsx), y subí ese archivo. O compartila con «Cualquier persona con el enlace» y pegá el link.',
+    leyendo: 'Leyendo la planilla…',
+    hojaNoUsada: (nombre: string) => `${nombre}: sin ejercicios, no se usa`,
+    semana: 'Semana',
+    semanaElegida: (n: number, total: number) => `Tu planilla tiene ${total} semanas. Usamos la semana ${n}:`,
+    avisos: {
+      fechaCorregida: (ejercicios: string) =>
+        `Excel había convertido en fecha las repeticiones de ${ejercicios}. Revisá que estén bien.`,
+      seriesRaras: (ejercicios: string) => `En ${ejercicios} hay muchas series de pocas repeticiones. ¿Están al revés?`,
+      darVuelta: 'Dar vuelta series y repeticiones',
+      cargasSinUnidad: 'El encabezado dice la unidad, pero las cargas no: quedan tal cual. Tocá cada una en la rutina para ponerle la unidad.',
+      datosNoUsados: (etiquetas: string) => `No usamos estos datos de la planilla: ${etiquetas}.`,
+      filasRecortadas: 'La planilla es muy larga: leímos las primeras 500 filas de cada hoja.',
+      videos: (n: number) => (n === 1
+        ? '1 link de video: al guardar va a tu lista de ejercicios, si ese ejercicio no tiene video.'
+        : `${n} links de video: al guardar van a tu lista de ejercicios, en los que no tienen video.`),
+    },
+    editarComoTexto: 'Editar como texto',
+    otroArchivo: 'Elegir otro archivo',
+    videosNoGuardados: 'La rutina se guardó, pero no pudimos poner los links de video en tu lista.',
+    errores: {
+      muy_grande: 'La planilla pesa más de 4 MB. Guardala sin imágenes o bajala como CSV.',
+      xls_viejo: 'Es un Excel viejo (.xls) o tiene contraseña. Abrilo y guardalo como «Libro de Excel (.xlsx)», sin contraseña.',
+      ods: 'Es de LibreOffice (.ods). Guardalo como .xlsx y subilo de nuevo.',
+      numbers: 'Es de Numbers. En Numbers: Archivo → Exportar a → Excel, y subí ese archivo.',
+      no_es_planilla: 'No pudimos abrir ese archivo. Guardalo de nuevo como .xlsx, bajalo como CSV o usá «Pegar texto».',
+      sin_ejercicios: 'No encontré ejercicios en esta planilla.',
+      enlace_invalido: 'Ese link no es de Google Sheets.',
+      no_es_sheets: 'Ese link es de un documento, no de una planilla.',
+      archivo_en_drive: 'Ese link es de Drive. Abrí la planilla con Google Sheets y copiá ese link, o descargala y subila.',
+      no_compartida: 'Esa planilla no está compartida. En Google Sheets: Compartir → Acceso general → «Cualquier persona con el enlace». O descargala como Excel y subila.',
+      no_existe: 'Esa planilla no existe o se borró.',
+      google_no_responde: 'Google no respondió. Probá de nuevo en un rato, o descargala como Excel y subila.',
+      sin_sesion: 'Tu sesión se cerró. Volvé a entrar y probá de nuevo.',
+      sin_acceso: 'No tenés acceso a esta cuenta.',
+      error: 'No se pudo leer la planilla. Probá de nuevo.',
+    },
   },
 
   /** Lo que frena antes de guardar. */
@@ -397,6 +450,7 @@ export const rutinasEditorPt: typeof rutinasEditorEs = {
     sinUnidad: 'kg ou lb? Escreva a unidade («40kg», «25lb»): um número sozinho pode ser lido errado.',
     conDetalle: '+ Com mais detalhes',
     pegarTexto: 'Colar texto',
+    subirPlanilla: 'Enviar planilha',
   },
 
   hoja: {
@@ -455,6 +509,53 @@ export const rutinasEditorPt: typeof rutinasEditorEs = {
     usar: 'Usar este treino',
     demasiadosDias: (n: number) => `Ficariam ${n} dias, e o máximo é 10.`,
     demasiadosEjercicios: (dia: string) => `«${dia}» tem mais de 30 exercícios: divida em dois dias.`,
+  },
+
+  importar: {
+    titulo: 'Enviar planilha',
+    explicacion: 'Envie seu treino do Excel ou do Google Sheets. A gente organiza em dias e exercícios e, antes de usar, mostra o que entendeu.',
+    elegirArchivo: 'Escolher arquivo (.xlsx ou .csv)',
+    oLink: 'Ou cole o link do Google Sheets',
+    linkCampo: 'Link do Google Sheets',
+    linkEjemplo: 'https://docs.google.com/spreadsheets/d/…',
+    traer: 'Buscar',
+    ayudaGoogle: 'No Google Sheets: Arquivo → Fazer download → Microsoft Excel (.xlsx) e envie esse arquivo. Ou compartilhe com «Qualquer pessoa com o link» e cole o link.',
+    leyendo: 'Lendo a planilha…',
+    hojaNoUsada: (nombre: string) => `${nombre}: sem exercícios, não é usada`,
+    semana: 'Semana',
+    semanaElegida: (n: number, total: number) => `Sua planilha tem ${total} semanas. Usamos a semana ${n}:`,
+    avisos: {
+      fechaCorregida: (ejercicios: string) =>
+        `O Excel tinha transformado em data as repetições de ${ejercicios}. Confira se estão certas.`,
+      seriesRaras: (ejercicios: string) => `Em ${ejercicios} há muitas séries de poucas repetições. Estão invertidas?`,
+      darVuelta: 'Inverter séries e repetições',
+      cargasSinUnidad: 'O cabeçalho diz a unidade, mas as cargas não: ficam como estão. Toque em cada uma no treino para colocar a unidade.',
+      datosNoUsados: (etiquetas: string) => `Não usamos estes dados da planilha: ${etiquetas}.`,
+      filasRecortadas: 'A planilha é muito longa: lemos as primeiras 500 linhas de cada aba.',
+      videos: (n: number) => (n === 1
+        ? '1 link de vídeo: ao salvar vai para a sua lista de exercícios, se esse exercício não tiver vídeo.'
+        : `${n} links de vídeo: ao salvar vão para a sua lista de exercícios, nos que não têm vídeo.`),
+    },
+    editarComoTexto: 'Editar como texto',
+    otroArchivo: 'Escolher outro arquivo',
+    videosNoGuardados: 'O treino foi salvo, mas não conseguimos colocar os links de vídeo na sua lista.',
+    errores: {
+      muy_grande: 'A planilha tem mais de 4 MB. Salve sem imagens ou baixe como CSV.',
+      xls_viejo: 'É um Excel antigo (.xls) ou tem senha. Abra e salve como «Pasta de Trabalho do Excel (.xlsx)», sem senha.',
+      ods: 'É do LibreOffice (.ods). Salve como .xlsx e envie de novo.',
+      numbers: 'É do Numbers. No Numbers: Arquivo → Exportar para → Excel e envie esse arquivo.',
+      no_es_planilla: 'Não conseguimos abrir esse arquivo. Salve de novo como .xlsx, baixe como CSV ou use «Colar texto».',
+      sin_ejercicios: 'Não encontrei exercícios nesta planilha.',
+      enlace_invalido: 'Esse link não é do Google Sheets.',
+      no_es_sheets: 'Esse link é de um documento, não de uma planilha.',
+      archivo_en_drive: 'Esse link é do Drive. Abra a planilha no Google Sheets e copie esse link, ou baixe e envie.',
+      no_compartida: 'Essa planilha não está compartilhada. No Google Sheets: Compartilhar → Acesso geral → «Qualquer pessoa com o link». Ou baixe como Excel e envie.',
+      no_existe: 'Essa planilha não existe ou foi apagada.',
+      google_no_responde: 'O Google não respondeu. Tente de novo daqui a pouco, ou baixe como Excel e envie.',
+      sin_sesion: 'Sua sessão foi encerrada. Entre de novo e tente outra vez.',
+      sin_acceso: 'Você não tem acesso a esta conta.',
+      error: 'Não deu para ler a planilha. Tente de novo.',
+    },
   },
 
   problemas: {

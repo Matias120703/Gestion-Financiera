@@ -4,11 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useTextos } from '@/i18n/cliente';
 import { rutinaComoTexto } from '@/lib/rutina-texto';
-import type { RutinaPublica } from '@/lib/tipos-rutinas';
+import { clipsDeLaRutina, esCopiaVieja } from '@/lib/rutina-sin-senal';
+import type { ClipPublico, RutinaPublica } from '@/lib/tipos-rutinas';
 import { TarjetaEjercicio, type EjercicioPublico } from './publico/TarjetaEjercicio';
+import { GuardarVideos } from './publico/GuardarVideos';
 import { alternarTilde, diaParaAbrir, hoyDelCelular, leerTildes, type Tildes } from './publico/tildes';
 import { limpiarRutinaPublica } from './publico/datos';
 import { esTokenDeRutina } from './publico/enlace';
+import { podarClips } from './publico/clips';
+import { borrarCopia, esIphoneEnSafari, pedirGuardado } from './publico/sinSenal';
 
 type ConRutina = Extract<RutinaPublica, { existe: true }>;
 type Rutina = NonNullable<ConRutina['rutina']>;
@@ -16,6 +20,17 @@ type Dia = Rutina['dias'][number];
 
 /** Lo que lleva una pestaña en segundo plano antes de volver a pedir la rutina. */
 const MEDIA_HORA = 30 * 60 * 1000;
+
+/**
+ * Con señal, cuánto se espera a que la base conteste antes de avisar que lo
+ * que se ve es la copia guardada: así no parpadea el aviso cuando la base
+ * contesta enseguida (una copia que el service worker sirvió porque la red
+ * tardó, o un celular con la hora corrida).
+ */
+const ESPERA_AVISO_COPIA_MS = 3000;
+
+/** Lo que queda en el pie sobre la copia de este celular. */
+type EstadoCopiaLocal = { guardada: boolean; consejoIphone: boolean; borrada: boolean };
 
 /**
  * LA RUTINA DEL CLIENTE · lo que abre desde WhatsApp (098).
@@ -40,12 +55,60 @@ const MEDIA_HORA = 30 * 60 * 1000;
  * Se le pregunta a la base desde acá con la misma función pública (abierta a
  * `anon`, como la usa la página), y si no contesta, queda lo que ya se veía.
  * La respuesta pasa por el mismo filtro que la del servidor (publico/datos.ts).
+ *
+ * SIN SEÑAL
+ *
+ * El service worker guarda esta página cada vez que se abre con señal, y la
+ * muestra cuando no hay o cuando la red tarda (public/sw.js). La página se
+ * da cuenta de que es una copia por `generada`, la hora en que la armó el
+ * servidor: si tiene más de 2 minutos, intenta traer la rutina de la base;
+ * si no puede, avisa «Sin señal: es tu rutina guardada el dd/mm a las
+ * hh:mm», y al volver la señal (`online`) la trae sola. Con la rutina al
+ * día le pide al service worker que guarde la página de nuevo.
+ *
+ * En la primera visita el service worker todavía no controlaba la página:
+ * por eso, al abrir con señal, la página le pide que la guarde
+ * (publico/sinSenal.ts). Si la base dice que el link ya no anda, se borra
+ * la copia de este celular y lo tildado; el alumno también la puede borrar
+ * a mano, al pie.
  */
-export function RutinaDelCliente({ token, datos: inicial }: { token: string; datos: RutinaPublica | null }) {
+export function RutinaDelCliente({
+  token, datos: inicial, generada,
+}: {
+  token: string;
+  datos: RutinaPublica | null;
+  /** Cuándo armó el servidor esta página (ISO). En una copia guardada, es viejo. */
+  generada: string;
+}) {
   const r = useTextos().rutinaPublica;
   const [datos, setDatos] = useState(inicial);
   const [reintentando, setReintentando] = useState(false);
   const ultimaCarga = useRef(Date.now());
+
+  // ¿Lo que se ve es la copia guardada? `enCopia` dibuja el aviso; la ref es
+  // la misma verdad para los que escuchan eventos.
+  const [enCopia, setEnCopia] = useState(false);
+  const enCopiaRef = useRef(false);
+  const [copia, setCopia] = useState<EstadoCopiaLocal>({ guardada: false, consejoIphone: false, borrada: false });
+
+  const guardarEnElCelular = useCallback(async (forzarHtml: boolean) => {
+    const resultado = await pedirGuardado(token, { forzarHtml, fresca: true });
+    if (resultado.ok) setCopia({ guardada: true, consejoIphone: esIphoneEnSafari(), borrada: false });
+  }, [token]);
+
+  /**
+   * Lo que se hace con una rutina recién traída de la base: si el link ya no
+   * anda, borrar la copia y los tildes; si anda, soltar los videos que ya no
+   * están en la rutina. Nunca con los datos de una copia.
+   */
+  const alTraerDeLaBase = useCallback((limpio: RutinaPublica) => {
+    if (!limpio.existe) {
+      void borrarCopia(token);
+      setCopia({ guardada: false, consejoIphone: false, borrada: false });
+      return;
+    }
+    void podarClips(token, clipsDeLaRutina(limpio).map((c) => c.id));
+  }, [token]);
 
   const recargar = useCallback(async (): Promise<boolean> => {
     // Un token que no es un uuid ni se pregunta: la base lo rechazaría, y
@@ -58,16 +121,58 @@ export function RutinaDelCliente({ token, datos: inicial }: { token: string; dat
       if (!limpio) return false;
       ultimaCarga.current = Date.now();
       setDatos(limpio);
+      alTraerDeLaBase(limpio);
+      // Ya no es una copia: se ve lo de la base. Y la copia del celular se
+      // pone al día (la página que guardó puede ser de antes del cambio).
+      enCopiaRef.current = false;
+      setEnCopia(false);
+      if (limpio.existe) void guardarEnElCelular(true);
       return true;
     } catch {
       return false;
     }
-  }, [token]);
+  }, [token, alTraerDeLaBase, guardarEnElCelular]);
+
+  // Al abrir: ¿es una copia? (después de montar: el servidor no lo sabe).
+  useEffect(() => {
+    let vivo = true;
+    if (esCopiaVieja(generada, Date.now())) {
+      enCopiaRef.current = true;
+      if (navigator.onLine === false) {
+        setEnCopia(true);
+      } else {
+        const aviso = setTimeout(() => { if (vivo && enCopiaRef.current) setEnCopia(true); }, ESPERA_AVISO_COPIA_MS);
+        void recargar().then((bien) => {
+          clearTimeout(aviso);
+          if (vivo && !bien) setEnCopia(true);
+        });
+      }
+    } else if (inicial?.existe) {
+      // Recién traída con señal: que quede guardada, y sin videos de más.
+      void guardarEnElCelular(false);
+      alTraerDeLaBase(inicial);
+    } else if (inicial && !inicial.existe) {
+      alTraerDeLaBase(inicial);
+    }
+    return () => { vivo = false; };
+    // Solo al abrir.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Volvió la señal mientras se veía la copia: se trae la rutina sola.
+  useEffect(() => {
+    function alVolverLaSenal() {
+      if (enCopiaRef.current) void recargar();
+    }
+    window.addEventListener('online', alVolverLaSenal);
+    return () => window.removeEventListener('online', alVolverLaSenal);
+  }, [recargar]);
 
   useEffect(() => {
     function alVolver() {
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - ultimaCarga.current < MEDIA_HORA) return;
+      // Una copia se intenta poner al día cada vez que vuelve a la pestaña.
+      if (!enCopiaRef.current && Date.now() - ultimaCarga.current < MEDIA_HORA) return;
       // Sin señal ni se intenta: queda lo que se ve, y se prueba la próxima vez.
       if (navigator.onLine === false) return;
       void recargar();
@@ -81,6 +186,18 @@ export function RutinaDelCliente({ token, datos: inicial }: { token: string; dat
       window.removeEventListener('pageshow', alVolver);
     };
   }, [recargar]);
+
+  const clips = useMemo(() => clipsDeLaRutina(datos), [datos]);
+
+  async function borrarDeEsteCelular() {
+    await borrarCopia(token);
+    setCopia({ guardada: false, consejoIphone: false, borrada: true });
+  }
+
+  const aviso = enCopia ? <AvisoCopia generada={generada} /> : null;
+  const pie = (
+    <PieCopia estado={copia} onBorrar={() => void borrarDeEsteCelular()} />
+  );
 
   if (datos === null) {
     return (
@@ -117,7 +234,7 @@ export function RutinaDelCliente({ token, datos: inicial }: { token: string; dat
 
   if (datos.renovar) {
     return (
-      <Marco>
+      <Marco arriba={aviso} abajo={pie}>
         <Saludo negocio={datos.negocio} nombre={datos.nombre} />
         <p className="mt-4 text-[16px] leading-relaxed text-tinta/70">{r.renovar}</p>
       </Marco>
@@ -128,7 +245,7 @@ export function RutinaDelCliente({ token, datos: inicial }: { token: string; dat
   // días se trata como que todavía no está lista.
   if (!datos.rutina || datos.rutina.dias.length === 0) {
     return (
-      <Marco>
+      <Marco arriba={aviso} abajo={pie}>
         <Saludo negocio={datos.negocio} nombre={datos.nombre} />
         <p className="mt-4 text-[16px] font-semibold leading-relaxed">{r.preparando}</p>
         <p className="mt-1 text-[15px] leading-relaxed text-tinta/60">{r.preparandoTexto}</p>
@@ -143,20 +260,83 @@ export function RutinaDelCliente({ token, datos: inicial }: { token: string; dat
       nombre={datos.nombre}
       actualizada={datos.actualizada}
       rutina={datos.rutina}
+      clips={clips}
+      aviso={aviso}
+      pie={pie}
     />
+  );
+}
+
+// ─────────────────────────── la copia de este celular ───────────────────────────
+
+/**
+ * «Sin señal: es tu rutina guardada el 22/09 a las 18:40». La fecha y la
+ * hora son las del celular (la copia se armó en el servidor, en UTC); este
+ * aviso solo se dibuja después de montar, así que no hay diferencia con la
+ * pintada del servidor. Armadas a mano, como `diaMes` más abajo.
+ */
+function AvisoCopia({ generada }: { generada: string }) {
+  const r = useTextos().rutinaPublica;
+  const f = new Date(generada);
+  if (Number.isNaN(f.getTime())) return null;
+  const dos = (n: number) => String(n).padStart(2, '0');
+  const fecha = `${dos(f.getDate())}/${dos(f.getMonth() + 1)}`;
+  const hora = `${dos(f.getHours())}:${dos(f.getMinutes())}`;
+  return (
+    <p role="status" className="rounded-2xl bg-ambar-claro px-4 py-3 text-[14.5px] font-semibold leading-snug">
+      {r.copiaGuardada(fecha, hora)}
+    </p>
+  );
+}
+
+/**
+ * El pie sobre la copia: si quedó guardada (y el consejo del iPhone), y el
+ * botón para borrarla de este celular (un celular compartido).
+ */
+function PieCopia({ estado, onBorrar }: { estado: EstadoCopiaLocal; onBorrar: () => void }) {
+  const r = useTextos().rutinaPublica;
+  return (
+    <div className="space-y-2 text-center">
+      {estado.guardada && (
+        <p className="text-[13px] font-semibold leading-relaxed text-verde-fuerte">
+          <span aria-hidden>✓ </span>
+          {r.guardadaEnEsteCelular}
+        </p>
+      )}
+      {estado.guardada && estado.consejoIphone && (
+        <p className="text-[13px] leading-relaxed text-tinta/55">{r.consejoIphone}</p>
+      )}
+      {estado.borrada ? (
+        <p role="status" className="text-[13px] font-semibold text-tinta/60">{r.copiaBorrada}</p>
+      ) : (
+        <button
+          type="button"
+          onClick={onBorrar}
+          className="boton-texto min-h-[44px] text-[13px] text-tinta/55"
+        >
+          {r.borrarCopia}
+        </button>
+      )}
+    </div>
   );
 }
 
 // ─────────────────────────── la rutina ───────────────────────────
 
 function VistaRutina({
-  token, negocio, nombre, actualizada, rutina,
+  token, negocio, nombre, actualizada, rutina, clips, aviso, pie,
 }: {
   token: string;
   negocio: string;
   nombre: string;
   actualizada: string | null;
   rutina: Rutina;
+  /** Los videos propios de la rutina, para «Guardar los videos». */
+  clips: ClipPublico[];
+  /** «Sin señal: es tu rutina guardada…», si lo que se ve es la copia. */
+  aviso: React.ReactNode;
+  /** Lo de la copia de este celular, al pie. */
+  pie: React.ReactNode;
 }) {
   const r = useTextos().rutinaPublica;
 
@@ -249,7 +429,8 @@ function VistaRutina({
     <div className="min-h-screen bg-arena">
       <main className="zona-segura-abajo mx-auto max-w-md px-4 pb-16">
         <header className="zona-segura-arriba">
-          <div className="pt-8">
+          {aviso && <div className="pt-4">{aviso}</div>}
+          <div className={aviso ? 'pt-5' : 'pt-8'}>
             <p className="break-words text-[12px] font-bold uppercase tracking-wider text-tinta/45">{negocio}</p>
             <h1 className="mt-1 break-words font-titulo text-[28px] font-extrabold leading-tight tracking-tight">
               {r.hola(nombre)}
@@ -265,6 +446,8 @@ function VistaRutina({
             <p className="mt-1.5 whitespace-pre-line break-words text-[16px] leading-relaxed">{rutina.notas}</p>
           </section>
         )}
+
+        <GuardarVideos token={token} clips={clips} />
 
         <div ref={ancla} className="mt-5" />
         {dias.length > 1 && (
@@ -325,6 +508,7 @@ function VistaRutina({
                 g.length === 1 ? (
                   <TarjetaEjercicio
                     key={g[0].ejercicio.id}
+                    token={token}
                     ejercicio={g[0].ejercicio}
                     etiqueta={g[0].etiqueta}
                     hecho={hechos.has(g[0].ejercicio.id)}
@@ -340,6 +524,7 @@ function VistaRutina({
                       {g.map(({ ejercicio, etiqueta }) => (
                         <TarjetaEjercicio
                           key={ejercicio.id}
+                          token={token}
                           ejercicio={ejercicio}
                           etiqueta={etiqueta}
                           hecho={hechos.has(ejercicio.id)}
@@ -364,6 +549,7 @@ function VistaRutina({
           <CopiarComoTexto rutina={rutina} />
           <p className="text-center text-[13px] leading-relaxed text-tinta/50">{r.tildesSoloAca}</p>
           <p className="text-center text-[13px] leading-relaxed text-tinta/50">{r.siempreAlDia}</p>
+          {pie}
         </div>
 
         <p className="mt-10 text-center text-[11.5px] text-tinta/35">{r.pie}</p>
@@ -472,14 +658,19 @@ function Saludo({ negocio, nombre }: { negocio: string; nombre: string }) {
   );
 }
 
-/** El marco de los estados sin rutina, como el de /turno. */
-function Marco({ children }: { children: React.ReactNode }) {
+/**
+ * El marco de los estados sin rutina, como el de /turno. `arriba`: el aviso
+ * de la copia guardada; `abajo`: lo de la copia de este celular.
+ */
+function Marco({ children, arriba, abajo }: { children: React.ReactNode; arriba?: React.ReactNode; abajo?: React.ReactNode }) {
   const r = useTextos().rutinaPublica;
   return (
     <div className="min-h-screen bg-arena">
       <div className="zona-segura-arriba mx-auto max-w-md px-4 pb-16">
-        <div className="pt-10">
+        <div className={arriba ? 'pt-4' : 'pt-10'}>
+          {arriba && <div className="mb-4">{arriba}</div>}
           <div className="tarjeta p-5">{children}</div>
+          {abajo && <div className="mt-6">{abajo}</div>}
           <p className="mt-8 text-center text-[11.5px] text-tinta/35">{r.pie}</p>
         </div>
       </div>

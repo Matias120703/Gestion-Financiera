@@ -27,8 +27,11 @@ export default async function PaginaSinConexion() {
         <p className="mt-2 text-[14px] leading-relaxed text-tinta/55">{t.sinConexion.detalle}</p>
 
         {/* Un <a> y no un Link: si el enrutador de Next no llegó a cargarse,
-            una navegación normal del navegador es lo único que funciona. */}
-        <a href="/panel" className="boton-principal mt-6 inline-flex">{t.comun.reintentar}</a>
+            una navegación normal del navegador es lo único que funciona.
+            `href=""` vuelve a pedir la dirección que falló (el service worker
+            muestra esta pantalla en lugar de esa): antes iba a /panel, y al
+            alumno que abría su rutina sin señal lo mandaba al login. */}
+        <a href="" className="boton-principal mt-6 inline-flex">{t.comun.reintentar}</a>
       </div>
     </main>
   );

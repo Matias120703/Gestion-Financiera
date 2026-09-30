@@ -1,14 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useTextos } from '@/i18n/cliente';
 import { claveEjercicio, GRUPOS_EJERCICIO } from '@/lib/ejercicios-base';
 import { LARGOS } from '@/lib/rutina-texto';
+import { limpiarVideosPendientes } from '@/lib/video';
 import { Vacio } from '@/components/Piezas';
-import type { EjercicioBiblioteca, GrupoEjercicio } from '@/lib/tipos-rutinas';
+import type { CupoVideos, EjercicioBiblioteca, GrupoEjercicio } from '@/lib/tipos-rutinas';
 import { Confirmar, Hoja, MensajeError, MensajeListo } from './panel/Piezas';
 import { useAccion } from './panel/useAccion';
+import { VideoDelEjercicio } from './VideoDelEjercicio';
 
 /** Lo mismo que el check de `ejercicios.video_url`. */
 const VIDEO = /^https:\/\/\S+$/;
@@ -34,19 +37,32 @@ const LARGO_INDICACIONES = 500;
  * Apagar es la forma de sacar uno que se usa: deja de sugerirse al armar,
  * pero las rutinas que ya lo tienen no cambian. Borrar de verdad, solo el
  * que no está en ninguna rutina.
+ *
+ * EL VIDEO PROPIO (113)
+ *
+ * Además del link, el trainer puede subir un video suyo a cada ejercicio
+ * (VideoDelEjercicio), hasta 100 por cuenta: arriba de la lista se ve
+ * cuántos lleva. La hoja abierta se busca por id en la lista de la página,
+ * para que al subir o quitar un video (que refresca la página) muestre el
+ * de ahora.
  */
 export function BibliotecaEjercicios({
-  empresaId, esAdmin, ejercicios,
+  empresaId, esAdmin, ejercicios, cupoVideos,
 }: {
   empresaId: string;
   esAdmin: boolean;
   ejercicios: EjercicioBiblioteca[];
+  /** «Videos propios: N de 100» (videos_de_la_cuenta). Null si no se pudo leer. */
+  cupoVideos: CupoVideos | null;
 }) {
   const t = useTextos();
   const b = t.rutinasPanel.biblioteca;
   const [busca, setBusca] = useState('');
-  const [abierto, setAbierto] = useState<EjercicioBiblioteca | 'nuevo' | null>(null);
+  const [abiertoId, setAbiertoId] = useState<string | 'nuevo' | null>(null);
   const [aviso, setAviso] = useState('');
+  const abierto: EjercicioBiblioteca | 'nuevo' | null = abiertoId === 'nuevo'
+    ? 'nuevo'
+    : ejercicios.find((e) => e.id === abiertoId) ?? null;
 
   const texto = claveEjercicio(busca);
   // Los apagados al final: son los que ya no se usan para armar.
@@ -64,10 +80,20 @@ export function BibliotecaEjercicios({
           className="campo flex-1" placeholder={b.buscar} value={busca} aria-label={b.buscar}
           onChange={(e) => setBusca(e.target.value)}
         />
-        <button type="button" onClick={() => { setAviso(''); setAbierto('nuevo'); }} className="boton-principal min-h-[44px] shrink-0 px-4">
+        <button type="button" onClick={() => { setAviso(''); setAbiertoId('nuevo'); }} className="boton-principal min-h-[44px] shrink-0 px-4">
           {b.nuevo}
         </button>
       </div>
+
+      {cupoVideos && cupoVideos.tope > 0 && (
+        <p className="text-[12.5px] font-semibold tabular-nums text-tinta/55">
+          {b.propio.cupo(cupoVideos.usados, cupoVideos.tope)}
+          {/* En la prueba el tope es más chico (limite_videos_en_prueba): se dice cuánto es con el plan. */}
+          {cupoVideos.topePlan !== undefined && cupoVideos.topePlan > cupoVideos.tope && (
+            <span className="font-normal">{` · ${b.propio.cupoEnPrueba(cupoVideos.topePlan)}`}</span>
+          )}
+        </p>
+      )}
 
       <MensajeListo texto={aviso} />
 
@@ -81,7 +107,7 @@ export function BibliotecaEjercicios({
             {visibles.map((e) => (
               <li key={e.id}>
                 <button
-                  type="button" onClick={() => { setAviso(''); setAbierto(e); }}
+                  type="button" onClick={() => { setAviso(''); setAbiertoId(e.id); }}
                   className={`flex min-h-[56px] w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-arena/60 ${e.activo ? '' : 'opacity-60'}`}
                 >
                   <span className="min-w-0 flex-1">
@@ -90,10 +116,12 @@ export function BibliotecaEjercicios({
                       {[
                         e.grupo ? t.rutinasComun.grupos[e.grupo] : '',
                         b.usos(e.usos),
-                        e.video_url ? b.conVideo : '',
+                        // Con video propio, esa pastilla lo dice: el link queda de repuesto.
+                        e.video_url && !e.video ? b.conVideo : '',
                       ].filter(Boolean).join(' · ')}
                     </span>
                   </span>
+                  {e.video && <span className="pastilla shrink-0 bg-verde-claro text-verde-fuerte">{b.propio.conVideoPropio}</span>}
                   {!e.activo && <span className="pastilla shrink-0 bg-arena text-tinta/55">{b.apagado}</span>}
                   <span aria-hidden className="shrink-0 text-[18px] text-tinta/30">›</span>
                 </button>
@@ -109,8 +137,9 @@ export function BibliotecaEjercicios({
           esAdmin={esAdmin}
           ejercicio={abierto === 'nuevo' ? null : abierto}
           todos={ejercicios}
-          onCerrar={() => setAbierto(null)}
-          onListo={(mensaje) => { setAbierto(null); setAviso(mensaje); }}
+          cupoVideos={cupoVideos}
+          onCerrar={() => setAbiertoId(null)}
+          onListo={(mensaje) => { setAbiertoId(null); setAviso(mensaje); }}
         />
       )}
     </div>
@@ -118,19 +147,24 @@ export function BibliotecaEjercicios({
 }
 
 function HojaEjercicio({
-  empresaId, esAdmin, ejercicio, todos, onCerrar, onListo,
+  empresaId, esAdmin, ejercicio, todos, cupoVideos, onCerrar, onListo,
 }: {
   empresaId: string;
   esAdmin: boolean;
   /** Null: uno nuevo. */
   ejercicio: EjercicioBiblioteca | null;
   todos: EjercicioBiblioteca[];
+  cupoVideos: CupoVideos | null;
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
 }) {
   const t = useTextos();
   const b = t.rutinasPanel.biblioteca;
-  const { ocupado, error, setError, correr } = useAccion();
+  const router = useRouter();
+  const { ocupado: ocupadoBase, error, setError, correr } = useAccion();
+  // Mientras se prepara o se sube el video, la hoja no se cierra ni se guarda.
+  const [ocupadoVideo, setOcupadoVideo] = useState(false);
+  const ocupado = ocupadoBase || ocupadoVideo;
 
   const [nombre, setNombre] = useState(ejercicio?.nombre ?? '');
   const [grupo, setGrupo] = useState<GrupoEjercicio | null>(ejercicio?.grupo ?? null);
@@ -161,6 +195,8 @@ function HojaEjercicio({
     }));
     if (!r.ok) return;
     const d = r.data as { id: string; unido: boolean } | null;
+    // Al unir, el video del que se fue (si los dos tenían) quedó para borrar.
+    if (d?.unido) void limpiarVideosPendientes(empresaId);
     if (d?.unido && uniendo) onListo(b.unidos(uniendo.nombre));
     else if (!ejercicio) onListo(b.creado(limpio));
     else onListo(b.guardado);
@@ -190,7 +226,10 @@ function HojaEjercicio({
   async function borrar() {
     if (!ejercicio) return;
     const r = await correr(() => clienteNavegador().rpc('borrar_ejercicio', { p_empresa: empresaId, p_id: ejercicio.id }));
-    if (r.ok) onListo(b.borrado);
+    if (!r.ok) return;
+    // Su video propio, si tenía, quedó para borrar: el archivo se borra ya.
+    void limpiarVideosPendientes(empresaId);
+    onListo(b.borrado);
   }
 
   if (uniendo && ejercicio) {
@@ -252,6 +291,20 @@ function HojaEjercicio({
           />
           <span className="mt-1 block text-[12.5px] text-tinta/55">{b.comoSeHaceAyuda}</span>
         </label>
+
+        {ejercicio ? (
+          <VideoDelEjercicio
+            empresaId={empresaId}
+            ejercicio={ejercicio}
+            cupo={cupoVideos}
+            onCambio={() => router.refresh()}
+            onOcupado={setOcupadoVideo}
+          />
+        ) : (
+          <p className="rounded-2xl border border-borde px-3.5 py-3 text-[12.5px] leading-snug text-tinta/55">
+            {b.propio.guardaloPrimero}
+          </p>
+        )}
 
         <label className="block">
           <span className="etiqueta">{b.video} <span className="font-normal text-tinta/45">{b.opcional}</span></span>

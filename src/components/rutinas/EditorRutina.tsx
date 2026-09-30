@@ -15,7 +15,7 @@ import { primerNombre } from './panel/utiles';
 import {
   TOPES, agregarDia, agregarEjercicios, alternarJunto, cambiarDia, cantidadDeEjercicios, conNombre,
   desdeLeido, desdeRutina, duplicarDia, duplicarEjercicio, firma, mezclar, moverDia, moverEjercicio, nuevaClave,
-  paraGuardar, quitarDia, quitarEjercicio, reemplazarEjercicio, rutinaVacia, sinIds, validar,
+  paraGuardar, quitarDia, quitarEjercicio, reemplazarEjercicio, rutinaVacia, sinIds, validar, videosImportados,
   type DiaEditor, type Problema, type RutinaEditor,
 } from './editor/modelo';
 import {
@@ -25,6 +25,7 @@ import { PestanasDias } from './editor/PestanasDias';
 import { PanelDia } from './editor/PanelDia';
 import { HojaEjercicio, type DatosHoja } from './editor/HojaEjercicio';
 import { PegarTexto, type ModoPegar } from './editor/PegarTexto';
+import { ImportarPlanilla } from './editor/ImportarPlanilla';
 import { HojaGuardada } from './editor/HojaGuardada';
 
 /** La persona de la rutina, como la trae la página (`rutinas_del_cliente`). */
@@ -41,7 +42,10 @@ type HojaAbierta =
   // `vuelta` cambia con cada «Guardar y otro»: la hoja se arma de nuevo, vacía.
   | { tipo: 'nuevo'; dia: number; vuelta: number; agregado?: string }
   | { tipo: 'editar'; dia: number; indice: number; problema?: string }
-  | { tipo: 'pegar' }
+  // «Pegar texto»; con `texto`, lo que armó «Editar como texto» desde una planilla.
+  | { tipo: 'pegar'; texto?: string }
+  // «Subir planilla» (114).
+  | { tipo: 'importar' }
   | { tipo: 'borrarDia'; dia: number }
   | { tipo: 'salir' }
   | { tipo: 'guardada'; respuesta: RespuestaGuardarRutina; nueva: boolean };
@@ -141,6 +145,8 @@ export function EditorRutina({
   // «Guardada», después de guardar una plantilla o una próxima que ya existía:
   // el editor se queda abierto, y esto dice que anduvo.
   const [guardadaAca, setGuardadaAca] = useState(false);
+  // La rutina se guardó, pero los links de video de la planilla no llegaron a la biblioteca (114).
+  const [videosSinGuardar, setVideosSinGuardar] = useState(false);
   const [choque, setChoque] = useState(false);
   const [recuperable, setRecuperable] = useState<BorradorLocal | null>(null);
   // Nombre, indicaciones y semanas: a la vista al armar una nueva (o si hay
@@ -325,8 +331,17 @@ export function EditorRutina({
    * Usar lo pegado: los días con algo adentro, cada ejercicio buscado en la
    * biblioteca. Un día sin nombre queda vacío y se ve (y se guarda) con el
    * de su lugar: «Día A», «Día B».
+   *
+   * `extra.semanas`: «Duración: 4 semanas» de una planilla (114). Va a
+   * «Cambiarla en» solo si estaba vacío: no pisa lo que eligió el trainer.
    */
-  function usarPegado(leida: RutinaLeidaConNotas, modo: ModoPegar) {
+  function usarPegado(leida: RutinaLeidaConNotas, modo: ModoPegar, extra?: { semanas?: number | null }) {
+    const semanasLeidas = extra?.semanas ?? null;
+    if (semanasLeidas !== null && Number.isInteger(semanasLeidas) && semanasLeidas >= 1 && semanasLeidas <= TOPES.semanas
+      && datos.semanas === null) {
+      setOtraSemana((SEMANAS as readonly number[]).includes(semanasLeidas) ? '' : String(semanasLeidas));
+      cambiar((r) => (r.semanas === null ? { ...r, semanas: semanasLeidas } : r));
+    }
     const dias: DiaEditor[] = leida.dias
       .filter((d) => d.ejercicios.length > 0 || d.notas.trim())
       .map((d) => ({
@@ -435,6 +450,24 @@ export function EditorRutina({
       setBase(datos);
       setVersion(r.version);
       setRutinaId(r.id);
+
+      // Los links de video de una planilla importada (114), ahora que los
+      // ejercicios nuevos ya existen: a la biblioteca, solo donde no había ni
+      // link ni video propio. Si falla, la rutina ya está guardada: se avisa
+      // y no se deshace nada.
+      const videos = videosImportados(datos);
+      setVideosSinGuardar(false);
+      if (videos.length) {
+        try {
+          const { error: sinVideos } = await clienteNavegador().rpc('completar_videos_de_ejercicios', {
+            p_empresa: empresaId,
+            p_lista: videos,
+          });
+          if (sinVideos) setVideosSinGuardar(true);
+        } catch {
+          setVideosSinGuardar(true);
+        }
+      }
 
       if (r.estado === 'vigente' && cliente) {
         // La ve el cliente: es el momento de avisarle. La dirección pasa a
@@ -554,6 +587,11 @@ export function EditorRutina({
               {clienteId ? e.guardada.volver : e.barra.volverAPlantillas}
             </Link>
           </div>
+        )}
+        {videosSinGuardar && !error && (
+          <p role="status" className="mt-2 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar shadow-[0_10px_28px_-18px_rgba(0,0,0,.45)]">
+            {e.importar.videosNoGuardados}
+          </p>
         )}
       </div>
 
@@ -723,6 +761,7 @@ export function EditorRutina({
           onRenglon={(leido) => agregarDesdeRenglon(indiceDia, leido)}
           onNuevo={() => setHoja({ tipo: 'nuevo', dia: indiceDia, vuelta: 0 })}
           onPegar={() => setHoja({ tipo: 'pegar' })}
+          onImportar={() => setHoja({ tipo: 'importar' })}
         />
       )}
 
@@ -766,7 +805,20 @@ export function EditorRutina({
           diasActuales={datos.dias.length}
           hayEjercicios={hayEjercicios}
           biblioteca={biblioteca}
+          textoInicial={hoja.texto}
           onUsar={usarPegado}
+          onCerrar={() => setHoja(null)}
+        />
+      )}
+
+      {hoja?.tipo === 'importar' && (
+        <ImportarPlanilla
+          empresaId={empresaId}
+          diasActuales={datos.dias.length}
+          hayEjercicios={hayEjercicios}
+          biblioteca={biblioteca}
+          onUsar={usarPegado}
+          onEditarComoTexto={(texto) => setHoja({ tipo: 'pegar', texto })}
           onCerrar={() => setHoja(null)}
         />
       )}

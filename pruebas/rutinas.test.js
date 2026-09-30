@@ -224,7 +224,9 @@ const claves = (o) => Object.keys(o ?? {}).sort();
   rechazado('sin nombre', await ejercicio(T.uid, '   '), 'le falta el nombre');
   const biblio = await J(T.uid, 'select public.ejercicios_de($1) j', [E]);
   ok('la biblioteca lo lista con sus datos', claves(biblio[0]),
-    ['activo', 'grupo', 'id', 'indicaciones', 'nombre', 'usos', 'video_url']);
+    // `video`: el video propio del trainer (113), null si no subió uno.
+    ['activo', 'grupo', 'id', 'indicaciones', 'nombre', 'usos', 'video', 'video_url']);
+  ok('sin video propio, video es null', biblio.find((e) => e.id === sentadilla).video, null);
   ok('todavía sin usos', biblio.find((e) => e.id === sentadilla).usos, 0);
 
   // ═══════════════════════════════════════════════════════════
@@ -569,7 +571,10 @@ const claves = (o) => Object.keys(o ?? {}).sort();
   ok('las de la rutina', claves(pub.rutina), ['desde', 'dias', 'nombre', 'notas']);
   ok('las de cada día', claves(pub.rutina.dias[0]), ['ejercicios', 'nombre', 'notas', 'orden']);
   ok('las de cada ejercicio', claves(pub.rutina.dias[0].ejercicios[0]),
-    ['carga', 'como', 'descanso_seg', 'id', 'junto', 'nombre', 'nota', 'orden', 'reps', 'series', 'video']);
+    // `clip`: el video propio (113), sin ruta ni empresa. Lo prueba videos.test.js.
+    ['carga', 'clip', 'como', 'descanso_seg', 'id', 'junto', 'nombre', 'nota', 'orden', 'reps', 'series', 'video']);
+  ok('sin video propio, clip es null en todos',
+    pub.rutina.dias.flatMap((d) => d.ejercicios.map((e) => e.clip)).every((c) => c === null), true);
   ok('solo el nombre de pila', pub.nombre, 'Ana');
   // `guardar_cliente` solo recorta espacios comunes: un nombre pegado desde
   // los contactos trae un espacio duro, un tabulador o un salto de línea, y
@@ -1283,6 +1288,64 @@ const claves = (o) => Object.keys(o ?? {}).sort();
     ['archivado', { nombre: 'Toto Barba', telefono: '0983100010', notas: '', activo: false }]);
   ok('y si vuelve con su teléfono, vuelve a su ficha, sin ellas',
     [await idDe('Toto Barba', '0983100010', '', B.uid, B.empresaId), (await fichaDe(pepe)).notas], [pepe, '']);
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('25 · Los links de video de una planilla (114)');
+  // ═══════════════════════════════════════════════════════════
+  // La columna «Video» de una planilla importada nunca va a la nota: al
+  // guardar la rutina, el editor manda [{nombre, url}] y la base completa la
+  // biblioteca SOLO donde no había ni link ni video propio.
+  const completar = (uid, lista, empresa = E) =>
+    como(uid, 'select public.completar_videos_de_ejercicios($1,$2::jsonb) n', [empresa, JSON.stringify(lista)]);
+  const nuevoEj = async (nombre, video = null) =>
+    (await valor(T.uid, 'select public.guardar_ejercicio($1,$2,null,$3,$4) j', [E, nombre, '', video])).j.id;
+  const linkDe = async (id) => (await fila('select video_url from public.ejercicios where id=$1', [id])).video_url;
+  const sinLink = await nuevoEj('Remo planilla');
+  const conLink = await nuevoEj('Curl planilla', 'https://youtu.be/ya-tenia');
+  const conPropio = await nuevoEj('Press planilla');
+  const vid25 = (await fila(`insert into public.videos (empresa_id, segundos, bytes, estado)
+                             values ($1, 30, 1000, 'listo') returning id`, [E])).id;
+  await db.query('update public.ejercicios set video_id = $1 where id = $2', [vid25, conPropio]);
+  const ajeno25 = (await valor(Otro.uid, 'select public.guardar_ejercicio($1,$2) j', [Otro.empresaId, 'Remo planilla'])).j.id;
+  const r25 = await completar(T.uid, [
+    { nombre: 'remo  PLANILLA', url: 'https://youtu.be/remo' },
+    { nombre: 'Curl planilla', url: 'https://youtu.be/otro' },
+    { nombre: 'Press planilla', url: 'https://youtu.be/press' },
+    { nombre: 'Uno que no existe', url: 'https://youtu.be/nada' },
+  ]);
+  ok('completa solo el que no tenía link ni video propio (por la clave: «remo  PLANILLA»)', r25.ok && r25.valor.rows[0].n, 1);
+  ok('un link importado nunca reemplaza nada', [await linkDe(sinLink), await linkDe(conLink), await linkDe(conPropio)],
+    ['https://youtu.be/remo', 'https://youtu.be/ya-tenia', null]);
+  ok('el ejercicio de otra empresa con el mismo nombre no se toca', await linkDe(ajeno25), null);
+  const hip25 = await nuevoEj('Hip thrust planilla');
+  const r25b = await completar(T.uid, [
+    { nombre: 'Hip thrust planilla', url: 'http://youtu.be/x' },
+    { nombre: 'Hip thrust planilla', url: `https://youtu.be/${'a'.repeat(300)}` },
+    { nombre: 'Hip thrust planilla', url: 'https://youtu.be/con espacio' },
+    { nombre: 'Hip thrust planilla' },
+    'no es un objeto',
+  ]);
+  ok('un link que no es https://, de más de 300 letras o con espacios se salta en silencio',
+    [r25b.ok && r25b.valor.rows[0].n, await linkDe(hip25)], [0, null]);
+  rechazado('una lista de 301: el mensaje',
+    await completar(T.uid, Array.from({ length: 301 }, () => ({ nombre: 'x', url: 'https://youtu.be/x' }))), 'Esa lista de videos no es válida');
+  rechazado('algo que no es una lista, tampoco',
+    await como(T.uid, 'select public.completar_videos_de_ejercicios($1,$2::jsonb)', [E, '{"nombre":"x"}']), 'Esa lista de videos no es válida');
+  rechazado('otra empresa no completa la biblioteca de Lucas',
+    await completar(Otro.uid, [{ nombre: 'Hip thrust planilla', url: 'https://youtu.be/x' }], E), 'No pertenecés a esta empresa');
+  rechazado('anon no la puede llamar',
+    await H.intentarComo(db, 'anon', null, () => db.query('select public.completar_videos_de_ejercicios($1,$2::jsonb)', [E, '[]'])), 'permission denied');
+  await vencer("periodo_fin = now() - interval '10 days'");
+  rechazado('con la cuenta vencida la frena el candado de la biblioteca',
+    await completar(T.uid, [{ nombre: 'Hip thrust planilla', url: 'https://youtu.be/hip' }]), 'Se te terminó la prueba');
+  ok('y no quedó nada a medias', await linkDe(hip25), null);
+  await vencer("estado = 'prueba', periodo_fin = now() + interval '14 days'");
+  await H.aplicarMigracion(db, '114');
+  await H.aplicarMigracion(db, '114');
+  ok('la 114 se aplica dos veces: la función existe una sola vez, con search_path fijo',
+    await fila(`select count(*)::int n, min(array_to_string(proconfig, ',')) c from pg_proc
+                where proname = 'completar_videos_de_ejercicios'`), { n: 1, c: 'search_path=public' });
+  ok('y sigue andando', (await completar(T.uid, [{ nombre: 'Hip thrust planilla', url: 'https://youtu.be/hip' }])).valor.rows[0].n, 1);
 
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {

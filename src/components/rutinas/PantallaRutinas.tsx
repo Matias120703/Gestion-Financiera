@@ -7,7 +7,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { Vacio } from '@/components/Piezas';
 import type {
-  EjercicioBiblioteca, MotivoAtender, RespuestaCopiarRutina, RutinasDelNegocio,
+  CupoVideos, EjercicioBiblioteca, MotivoAtender, RespuestaCopiarRutina, RutinasDelNegocio,
 } from '@/lib/tipos-rutinas';
 import { BibliotecaEjercicios } from './BibliotecaEjercicios';
 import { Confirmar, MensajeError, MensajeListo, Pestanas } from './panel/Piezas';
@@ -35,7 +35,7 @@ type Plantilla = RutinasDelNegocio['plantillas'][number];
  * muestra al resto.
  */
 export function PantallaRutinas({
-  empresaId, zona, hoy, esAdmin, ver, todos, datos, ejercicios,
+  empresaId, zona, hoy, esAdmin, ver, todos, datos, ejercicios, cupoVideos = null,
 }: {
   empresaId: string;
   zona: string;
@@ -46,6 +46,8 @@ export function PantallaRutinas({
   datos: RutinasDelNegocio;
   /** La biblioteca: solo llega con la pestaña Ejercicios abierta. */
   ejercicios: EjercicioBiblioteca[] | null;
+  /** «Videos propios: N de 100» (113): solo con la pestaña Ejercicios. */
+  cupoVideos?: CupoVideos | null;
 }) {
   const t = useTextos();
   const p = t.rutinasPanel;
@@ -66,7 +68,7 @@ export function PantallaRutinas({
         <PestanaPlantillas empresaId={empresaId} zona={zona} esAdmin={esAdmin} plantillas={datos.plantillas} />
       )}
       {ver === 'ejercicios' && (
-        <BibliotecaEjercicios empresaId={empresaId} esAdmin={esAdmin} ejercicios={ejercicios ?? []} />
+        <BibliotecaEjercicios empresaId={empresaId} esAdmin={esAdmin} ejercicios={ejercicios ?? []} cupoVideos={cupoVideos} />
       )}
     </div>
   );

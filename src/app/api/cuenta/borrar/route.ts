@@ -18,7 +18,8 @@ const PALABRA = 'BORRAR';
  *      estar en el navegador.
  *   2. Los ARCHIVOS de Storage no se van solos. Storage no entiende de claves
  *      foráneas: borrar la empresa se lleva las filas de `adjuntos`, pero las
- *      fotos quedarían ocupando lugar —y costando plata— para siempre.
+ *      fotos quedarían ocupando lugar —y costando plata— para siempre. Lo
+ *      mismo los videos propios del trainer (113, bucket `videos`).
  *
  * El orden es a propósito: primero se averigua qué archivos hay, después se
  * borran los datos, y al final los archivos. Si se hiciera al revés, un fallo
@@ -50,11 +51,20 @@ export async function POST(request: Request) {
   const servicio = clienteDeServicio();
 
   try {
-    // 1. Qué archivos van a quedar sin dueño.
+    // 1. Qué archivos van a quedar sin dueño: comprobantes y videos (113).
     const { data: rutas, error: errorRutas } = await servicio.rpc('archivos_a_borrar', {
       p_user: user.id,
     });
     if (errorRutas) throw new Error(errorRutas.message);
+    // Los videos NO frenan el borrado: si la 113 todavía no está aplicada
+    // (la función no existe) no hay videos, y si la consulta falla por otra
+    // cosa, los archivos que queden sin fila los barre el reloj diario
+    // (videos_para_limpiar: objetos del bucket sin fila, a las 3 h). Nadie
+    // se queda sin poder borrar su cuenta por un video.
+    const { data: rutasVideos, error: errorVideos } = await servicio.rpc('videos_a_borrar', {
+      p_user: user.id,
+    });
+    if (errorVideos) console.error('[borrar-cuenta] videos_a_borrar', errorVideos.code ?? '', errorVideos.message);
 
     // 2. Los datos. Si la persona es propietaria de un negocio con más gente
     //    adentro, esto falla y no se toca nada.
@@ -81,6 +91,11 @@ export async function POST(request: Request) {
         if (error) console.error('[borrar-cuenta] archivos', error.message);
       }
     }
+    const videos = Array.isArray(rutasVideos) ? (rutasVideos as string[]) : [];
+    for (let i = 0; i < videos.length; i += 100) {
+      const { error } = await servicio.storage.from('videos').remove(videos.slice(i, i + 100));
+      if (error) console.error('[borrar-cuenta] videos', error.message);
+    }
 
     // 4. La cuenta. Último paso: mientras exista, la persona podría volver a
     //    entrar y ver una app a medio borrar.
@@ -94,7 +109,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       borrado: true,
       empresas: resultado?.empresas_borradas ?? 0,
-      archivos: lista.length,
+      archivos: lista.length + videos.length,
     });
   } catch (e: any) {
     console.error('[borrar-cuenta]', e?.message ?? e);

@@ -1,4 +1,5 @@
 import type { RutinaPublica } from '@/lib/tipos-rutinas';
+import { clipLimpio } from '@/lib/rutina-sin-senal';
 
 type ConRutina = Extract<RutinaPublica, { existe: true }>;
 type Rutina = NonNullable<ConRutina['rutina']>;
@@ -78,6 +79,8 @@ function ejercicio(v: unknown): Ejercicio | null {
     junto: v.junto === true,
     video: textoONull(v.video),
     como: texto(v.como),
+    // El video propio (113): id, bytes y segundos, y nada más.
+    clip: clipLimpio(v.clip),
   };
 }
 

@@ -432,14 +432,18 @@ const SHEETS = 'N°\tEjercicio\tSeries\tRepeticiones\tKg\tDescanso (min)\tVideo\
   + '1\tHip thrust\t4\t12\t60\t1,5\thttps://youtu.be/abc123\n'
   + '2\tPeso muerto rumano\t3\t10\t40\t2\t\n'
   + '3\tPatada de glúteo en polea\t3\t15 c/pierna\tplaca 3\t1\t';
-ok('11 · «Descanso (min)» da la unidad; la columna que no se conoce va a la nota', corto(R.leerRutina(SHEETS)), {
+// Desde la 114 la columna «Video» ya no va a la nota (la ve el cliente): va a
+// `video`, y al guardar a la biblioteca si ese ejercicio no tenía uno.
+ok('11 · «Descanso (min)» da la unidad; el link de la columna «Video» no va a la nota', corto(R.leerRutina(SHEETS)), {
   nombre: null, notas: '',
   dias: [['', '', [
-    ['Hip thrust', 4, '12', '60', 90, 'Video: https://youtu.be/abc123', false],
+    ['Hip thrust', 4, '12', '60', 90, '', false],
     ['Peso muerto rumano', 3, '10', '40', 120, '', false],
     ['Patada de glúteo en polea', 3, '15 c/pierna', 'placa 3', 60, '', false]]]],
   no: [],
 });
+ok('11 · el link va a `video`, solo en el ejercicio que lo tenía',
+  R.leerRutina(SHEETS).dias[0].ejercicios.map((e) => e.video ?? null), ['https://youtu.be/abc123', null, null]);
 
 // 12. Todo en minúsculas, «3 de 15», entrenamiento en casa.
 const MINUSCULAS = `lunes y jueves
@@ -1098,6 +1102,106 @@ ok('42 · en un renglón: «Descanso: 2-3 min», «2-3 min de descanso»; «desc
     ['Remo', 3, '12', '', null, 'descanso 2-3'], ['Hip thrust', 4, '12', '', null, 'pausa 2-3 seg arriba']]);
 
 // ═══════════════════════════════════════════════════════════
+console.log('\n── 4c · Planillas de coach (114): lo que el lector aprendió ──');
+// Los textos salen de PLANILLAS-EJEMPLO.md (F2, F4, F6), ya partidos en
+// segmentos como los deja el convertidor (rutina-planilla.ts). Lo que el
+// convertidor hace aparte (hojas, bloques, semanas) se prueba en
+// rutinas-planilla.test.js.
+const T = (filas) => filas.map((f) => f.join('\t')).join('\n');
+
+// L1: las columnas nuevas del encabezado.
+ok('L1 · tipoDeColumna: video, grupo, aproximación antes que series, alternativa, hecho, semana',
+  ['Vídeo', 'Link del video', 'Grupo muscular', 'Series de aproximación', 'Séries de aquecimento', 'Warm-up',
+    'Series efectivas', 'Serie', 'Alternativa 1', 'Substituição', 'Hecho', 'Feito', 'S1', 'Semana 4 (descarga)', 'RIR', 'Tempo']
+    .map(R.tipoDeColumna),
+  ['video', 'video', 'grupo', 'aproximacion', 'aproximacion', 'aproximacion',
+    'series', 'series', 'alternativa', 'alternativa', 'hecho', 'hecho', 'semana', 'semana', 'otra', 'otra']);
+const F4_TREINO_A = T([
+  ['Grupo muscular', 'Exercício', 'Séries', 'Repetições', 'Carga', 'Intervalo', 'Observação', 'Vídeo'],
+  ['Peito', 'Supino reto', '4', '10', '30 kg', "60''", '', 'https://youtu.be/supino123'],
+  ['Peito', 'Supino inclinado com halteres', '3', '12', '14 kg', "60''", '', 'https://www.youtube.com/watch?v=incl456'],
+  ['Peito', 'Crucifixo', '3', '12', '10 kg', '45s', 'Bi-set com crossover', 'Ver vídeo'],
+  ['Ombro', 'Desenvolvimento com halteres', '3', '10', '12 kg', "1'30''", '', ''],
+  ['Tríceps', 'Tríceps corda', '3', '15', 'placa 5', '45s', 'Até a falha na última', ''],
+]);
+const F4L = R.leerRutina(F4_TREINO_A);
+ok('L1 · F4: «Grupo muscular» se ignora y «Vídeo» no va a la nota', corto(F4L).dias[0][2], [
+  ['Supino reto', 4, '10', '30 kg', 60, '', false],
+  ['Supino inclinado com halteres', 3, '12', '14 kg', 60, '', false],
+  ['Crucifixo', 3, '12', '10 kg', 45, 'Bi-set com crossover', false],
+  ['Desenvolvimento com halteres', 3, '10', '12 kg', 90, '', false],
+  ['Tríceps corda', 3, '15', 'placa 5', 45, 'Até a falha na última', false]]);
+ok('L1 · el link va a `video`; un texto que no es un link («Ver vídeo») se descarta',
+  F4L.dias[0].ejercicios.map((e) => e.video ?? null),
+  ['https://youtu.be/supino123', 'https://www.youtube.com/watch?v=incl456', null, null, null]);
+ok('L1 · un link de más de 300 letras o http:// tampoco', R.leerRutina(T([['Ejercicio', 'Series', 'Video'],
+  ['Remo', '3', 'http://youtu.be/x'], ['Curl', '3', `https://youtu.be/${'a'.repeat(300)}`]])).dias[0].ejercicios.map((e) => [e.video ?? null, e.nota]),
+[[null, ''], [null, '']]);
+
+// L1 + L3 + L4: la planilla del coach online (F6), UPPER 1.
+const F6_UPPER = T([
+  ['Ejercicio', 'Series de aproximación', 'Series efectivas', 'Reps', 'RIR', 'Tempo', 'Descanso', 'Alternativa 1', 'Alternativa 2', 'Video', 'Notas'],
+  ['Press banca', '2', '3', '6-8', '2', '3-1-1', '~3 min', 'Press con mancuernas', 'Press en máquina', 'https://youtu.be/pb1', 'Pausa de 1 s en el pecho'],
+  ['Remo con pecho apoyado', '1', '3', '8-10', '1-2', '', '~2 min', 'Remo en polea', '', '', ''],
+  ['Elevaciones laterales', '0', '3', '12-15', '0', '', '~1.5 min', 'Laterales en polea', '', 'https://youtu.be/el1', 'Última serie: drop set'],
+]);
+ok('L1 · L3 · L4 · F6: las piezas con « · » (notas, etiquetas en orden, alternativas al final), «~3 min» = 180',
+  corto(R.leerRutina(F6_UPPER)).dias[0][2], [
+    ['Press banca', 3, '6-8', '', 180, 'Pausa de 1 s en el pecho · Aproximación: 2 · RIR: 2 · Tempo: 3-1-1 · Alternativas: Press con mancuernas, Press en máquina', false],
+    ['Remo con pecho apoyado', 3, '8-10', '', 120, 'Aproximación: 1 · RIR: 1-2 · Alternativas: Remo en polea', false],
+    ['Elevaciones laterales', 3, '12-15', '', 90, 'Última serie: drop set · RIR: 0 · Alternativas: Laterales en polea', false]]);
+ok('L3 · con una sola columna de alternativa, en singular y como la escribió',
+  R.leerRutina(T([['Ejercicio', 'Series', 'Substituição'], ['Supino', '3', 'Flexão']])).dias[0].ejercicios[0].nota, 'Substituição: Flexão');
+const LARGA = 'Bajar lento, controlar la subida y no rebotar abajo. '.repeat(3).trim();
+const NOTA200 = R.leerRutina(T([['Ejercicio', 'Series', 'RIR', 'Tempo', 'Método', 'Notas'],
+  ['Sentadilla', '4', '2', '3-1-1', 'Rest-pause en la última serie con 15 segundos entre mini series', LARGA]])).dias[0].ejercicios[0].nota;
+ok('L3 · más de 200 letras: se sacan piezas enteras desde el final, nunca media palabra',
+  [Array.from(NOTA200).length <= 200, NOTA200.startsWith(LARGA), NOTA200.includes('Método'), NOTA200.endsWith('RIR: 2')],
+  [true, true, false, false]);
+ok('L4 · leerDescanso: «~3 min», «≈ 90 s», «aprox. 2 min», «+- 60», «cerca de 1 min», «unos 45 s», «uns 2 min»',
+  ['~3 min', '≈ 90 s', 'aprox. 2 min', '+- 60', 'cerca de 1 min', 'unos 45 s', 'uns 2 min', '~1.5 min', 'approx 90s'].map((x) => R.leerDescanso(x)),
+  [180, 90, 120, 60, 60, 45, 120, 90, 90]);
+
+// L2: «2A/2B» y «A1/A2» en la columna del número arman la superserie.
+const F2_DIA1 = T([
+  ['#', 'Ejercicio', 'Series x Reps', 'Carga', 'Descanso', 'Notas'],
+  ['1', 'Press banca', '4x8-10', '40 kg', "2'", ''],
+  ['2A', 'Remo con mancuerna', '3x12', '20 kg c/mano', '', 'Superserie con 2B'],
+  ['2B', 'Flexiones', '3x al fallo', '', '90"', ''],
+  ['3', 'Elevaciones laterales', '3x15', '6 kg', '60"', 'Controlar la bajada'],
+]);
+ok('L2 · F2: «2A» y «2B» van juntos; «1» y «3» no', corto(R.leerRutina(F2_DIA1)).dias[0][2], [
+  ['Press banca', 4, '8-10', '40 kg', 120, '', false],
+  ['Remo con mancuerna', 3, '12', '20 kg c/mano', null, 'Superserie con 2B', false],
+  ['Flexiones', 3, 'al fallo', '', 90, '', true],
+  ['Elevaciones laterales', 3, '15', '6 kg', 60, 'Controlar la bajada', false]]);
+ok('L2 · «A1», «A2», «B1», «B2»', R.leerRutina(T([['#', 'Ejercicio', 'Series'], ['A1', 'Sentadilla', '4'], ['A2', 'Plancha', '3'],
+  ['B1', 'Press', '4'], ['B2', 'Remo', '4']])).dias[0].ejercicios.map((e) => e.junto_al_anterior), [false, true, false, true]);
+
+// L5: «Ficha de treino», «Planilla…», «Mesociclo…» son el nombre de la rutina.
+ok('L5 · «Ficha de treino» y «Mesociclo 1 – Fuerza» en minúsculas son el nombre, no un ejercicio',
+  [nombreYDias('Ficha de treino\nSupino 4x10\n\nTREINO B\nRemada 4x10'), nombreYDias('Mesociclo 1 – Fuerza\nSentadilla 4x5')],
+  [['Ficha de treino', ['', 'TREINO B'], []], ['Mesociclo 1 – Fuerza', [''], []]]);
+
+// L6: «OBSERVACIONES GENERALES» después del último ejercicio: de la rutina.
+const F2_TODO = [
+  'PLAN HIPERTROFIA – MES 1', '', 'DÍA 1 – TREN SUPERIOR', F2_DIA1, '', 'DÍA 2 – TREN INFERIOR',
+  T([['#', 'Ejercicio', 'Series x Reps', 'Carga', 'Descanso', 'Notas'], ['1', 'Sentadilla', '4 x 6-8', '70 kg', '3 min', 'RIR 2']]),
+  '', 'OBSERVACIONES GENERALES', 'Calentar 10 minutos antes de empezar.', 'Si la técnica se pierde, bajar el peso.',
+].join('\n');
+const F2L = R.leerRutina(F2_TODO);
+ok('L6 · «OBSERVACIONES GENERALES» al final van a las indicaciones de la rutina, no a las del día 2',
+  [F2L.nombre, F2L.notas, F2L.dias.map((d) => [d.nombre, d.notas])],
+  ['PLAN HIPERTROFIA – MES 1', 'Calentar 10 minutos antes de empezar.\nSi la técnica se pierde, bajar el peso.',
+    [['DÍA 1 – TREN SUPERIOR', ''], ['DÍA 2 – TREN INFERIOR', '']]]);
+ok('L6 · «REGRAS GERAIS» al final, igual; «RECOMENDACIONES» (sin «generales») sigue siendo del día',
+  [R.leerRutina('TREINO A\nSupino 4x10\n\nREGRAS GERAIS\n- Beber água.').notas,
+    R.leerRutina('LUNES\nSentadilla 4x10\n\nRECOMENDACIONES\n- Estirar al final').dias[0].notas],
+  ['Beber água.', 'Estirar al final']);
+ok('L6 · con otro día después, las generales siguen siendo del día donde están',
+  R.leerRutina('LUNES\nSentadilla 4x10\n\nNOTAS GENERALES\n- Tomar agua\n\nMARTES\nRemo 4x10').dias.map((d) => d.notas), ['Tomar agua', '']);
+
+// ═══════════════════════════════════════════════════════════
 console.log('\n── 5 · Ida y vuelta: lo que exporta Orden vuelve igual ──');
 
 const e2 = (orden, nombre, series, reps, carga, descanso_seg, nota = '', junto_al_anterior = false) => ({
@@ -1261,13 +1365,16 @@ function esperado(r) {
   };
   ok('la rutina del link da el mismo texto', R.rutinaComoTexto(publica, tEs), texto);
 
-  // Lo leído de un texto real, exportado y vuelto a leer, da lo mismo.
+  // Lo leído de un texto real, exportado y vuelto a leer, da lo mismo. El
+  // link de la columna «Video» de una planilla (114) no viaja en el texto:
+  // va a la biblioteca al guardar, y el WhatsApp no lo lleva.
+  const sinVideo = (r) => ({ ...r, dias: r.dias.map((d) => ({ ...d, ejercicios: d.ejercicios.map(({ video: _v, ...e }) => e) })) });
   for (const [nombre, t] of [['WhatsApp', WHATSAPP], ['Treino', TREINO], ['Series de', SERIES_DE],
     ['Superseries', SUPERSERIES], ['Unidades', UNIDADES], ['Notas', NOTAS], ['Excel', EXCEL],
     ['Planilha', PLANILHA], ['Sheets', SHEETS], ['Teclas', TECLAS], ['Descansos', DESCANSOS], ['Bloques', BLOQUES]]) {
     const primera = R.leerRutina(t);
     const segunda = R.leerRutina(R.rutinaComoTexto(primera, tEs));
-    ok(`leer, exportar y volver a leer: ${nombre}`, segunda, { ...primera, noEntendidas: [] });
+    ok(`leer, exportar y volver a leer: ${nombre}`, segunda, { ...sinVideo(primera), noEntendidas: [] });
   }
 }
 

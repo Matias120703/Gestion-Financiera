@@ -16,7 +16,9 @@
     "../src/lib/reporte-textos.ts", "../src/lib/frases-del-dia.ts", "../src/lib/referido.ts",
     "../src/lib/tipos-rutinas.ts", "../src/lib/medidas.ts", "../src/lib/rutina-texto.ts",
     "../src/lib/ejercicios-base.ts", "../src/lib/agricultura.ts", "../src/lib/liquidacion.ts",
-    "../src/lib/pagos.ts", "../src/lib/invitar-avisos.ts"
+    "../src/lib/pagos.ts", "../src/lib/invitar-avisos.ts",
+    "../src/lib/video-reglas.ts", "../src/lib/rutina-sin-senal.ts", "../src/lib/subida-storage.ts", "../src/lib/bajar-video.ts",
+    "../src/lib/planilla.ts", "../src/lib/planilla-xlsx.ts", "../src/lib/enlace-sheets.ts", "../src/lib/rutina-planilla.ts"
   ],
   "include": ["../src/lib/reportes/*.ts"]
 }

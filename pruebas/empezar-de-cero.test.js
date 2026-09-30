@@ -115,7 +115,9 @@ const QUEDAN = ['ahorros', 'ajustes_cuenta', 'ajustes_orden', 'cargas_historial'
   'ingresos_fijos', 'lotes', 'mediciones', 'miembros', 'movimientos_ahorro', 'pagos_deuda',
   'presupuesto', 'referidos', 'registro_admin', 'rutina_dias', 'rutina_ejercicios', 'rutina_enlaces',
   'rutinas', 'suscripciones', 'turnos_bloqueo', 'turnos_excepcion', 'turnos_horario', 'turnos_pago',
-  'turnos_profesional', 'turnos_publico', 'turnos_slug_usado', 'uso_ia'];
+  'turnos_profesional', 'turnos_publico', 'turnos_slug_usado', 'uso_ia',
+  // videos (113): son de la biblioteca de ejercicios, que queda.
+  'videos'];
 
 // El insert de PantallaGastos.tsx (candado-vencido.test.js), con la campaña.
 const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria,
@@ -328,6 +330,8 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     const U = C.uid;
     const ana = (await val(U, "select public.guardar_cliente($1,'Ana Ruiz','0981 000 001','Rodilla') id", [E])).id;
     await J(U, "select public.guardar_ejercicio($1,'Sentadilla con barra','piernas','Espalda recta','https://youtu.be/x') j", [E]);
+    // Un video propio reservado (113): la biblioteca queda, y su video también.
+    await J(U, 'select public.reservar_video($1,30,8000000) j', [E]);
     const renglon = { nombre: 'Sentadilla con barra', series: 3, reps: '12', carga: '40 kg', descanso_seg: 60, nota: '', junto_al_anterior: false };
     await J(U, 'select public.guardar_rutina($1,$2::jsonb,null,null,null) j',
       [E, JSON.stringify({ nombre: 'Principiante', notas: '', semanas: 4, dias: [{ nombre: 'Full body', notas: '', ejercicios: [renglon] }] })]);

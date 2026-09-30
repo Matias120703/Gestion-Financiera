@@ -11,6 +11,16 @@ import { createClient } from '@supabase/supabase-js';
  * responda a un pedido común del navegador. Si esta clave llegara al
  * navegador, cualquiera podría leer y escribir los datos de cualquier
  * negocio.
+ *
+ * LA ÚNICA EXCEPCIÓN ESCRITA (113, 30/09/2026): la ruta pública
+ * `/rutina/[token]/videos`, que la llama el celular del alumno sin sesión.
+ * La usa solo para firmar las rutas que devuelve `videos_por_token` a partir
+ * del token; nunca una ruta que venga del navegador. Sin sesión no hay otra
+ * forma de firmar un bucket privado (la alternativa era un bucket público,
+ * con los videos del trainer accesibles para siempre con la dirección).
+ * Ojo: con el Smart CDN, una dirección firmada que ya se usó se sigue
+ * sirviendo desde el CDN aunque venza; lo único que corta un video del todo
+ * es borrar su archivo (ver la ruta).
  */
 export function clienteDeServicio() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

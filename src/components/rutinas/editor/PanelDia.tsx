@@ -21,7 +21,7 @@ export function PanelDia({
   dia, indice, total, puedeDuplicar, loVe,
   onCambiar, onMover, onDuplicar, onBorrar,
   onEditar, onMoverEjercicio, onJunto, onDuplicarEjercicio, onQuitarEjercicio,
-  onRenglon, onNuevo, onPegar,
+  onRenglon, onNuevo, onPegar, onImportar,
 }: {
   dia: DiaEditor;
   indice: number;
@@ -42,6 +42,8 @@ export function PanelDia({
   onRenglon: (leido: EjercicioLeido) => void;
   onNuevo: () => void;
   onPegar: () => void;
+  /** «Subir planilla» (114): la rutina de Excel o Google Sheets. */
+  onImportar: () => void;
 }) {
   const t = useTextos();
   const d = t.rutinasEditor.dias;
@@ -145,6 +147,7 @@ export function PanelDia({
           <button type="button" onClick={onNuevo} className="boton-texto min-h-[44px]">{e.renglon.conDetalle}</button>
         )}
         <button type="button" onClick={onPegar} className="boton-texto min-h-[44px]">{e.renglon.pegarTexto}</button>
+        <button type="button" onClick={onImportar} className="boton-texto min-h-[44px]">{e.renglon.subirPlanilla}</button>
       </div>
     </section>
   );

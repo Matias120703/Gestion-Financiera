@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { RutinaDelCliente } from '@/components/rutinas/RutinaDelCliente';
 import { limpiarRutinaPublica } from '@/components/rutinas/publico/datos';
 import { esTokenDeRutina, rutaDeRutina } from '@/components/rutinas/publico/enlace';
+import { estadoParaGuardar } from '@/lib/rutina-sin-senal';
 import type { RutinaPublica } from '@/lib/tipos-rutinas';
 import { idiomaActual, textos } from '@/i18n';
 
@@ -26,8 +28,17 @@ type Props = { params: Promise<{ token: string }> };
  * Un token que no es un uuid ni se le pregunta a la base: termina en el
  * mismo «este link ya no está activo» que uno apagado o inexistente.
  * Distinguirlos le diría a quien prueba links cuál existió.
+ *
+ * SIN SEÑAL. El service worker guarda esta página en el celular del alumno
+ * y la muestra cuando no hay señal (public/sw.js, `navegarRutina`). Para
+ * saber qué hacer con ella lee la marca `<meta name="orden-rutina">` que va
+ * en la metadata (`estadoParaGuardar`): con un error de la base no toca la
+ * copia buena, con un link apagado la borra. Por eso la metadata y la página
+ * tienen que ver LA MISMA respuesta: `cache` hace una sola consulta por
+ * apertura. Y `generada` (la hora del servidor) es lo que le dice a la
+ * página que la está mostrando una copia.
  */
-async function traer(token: string): Promise<RutinaPublica | null> {
+const traer = cache(async (token: string): Promise<RutinaPublica | null> => {
   if (!esTokenDeRutina(token)) return { existe: false };
   try {
     const { data, error } = await clienteServidor().rpc('rutina_por_token', { p_token: token });
@@ -39,7 +50,7 @@ async function traer(token: string): Promise<RutinaPublica | null> {
   } catch {
     return null;
   }
-}
+});
 
 /**
  * La vista previa de WhatsApp y la pestaña del navegador.
@@ -72,11 +83,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ? `${rutaDeRutina(token)}/manifest.webmanifest?idioma=${idioma}`
       : null,
     appleWebApp: { capable: true, title: r.nombreApp, statusBarStyle: 'black-translucent' },
+    // La marca para el service worker (ver arriba): activa, preparando,
+    // renovar, inactiva o error.
+    other: { 'orden-rutina': estadoParaGuardar(datos) },
   };
 }
 
 export default async function PaginaRutina({ params }: Props) {
   const { token } = await params;
   const datos = await traer(token);
-  return <RutinaDelCliente token={token} datos={datos} />;
+  return <RutinaDelCliente token={token} datos={datos} generada={new Date().toISOString()} />;
 }
