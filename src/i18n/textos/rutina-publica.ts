@@ -48,6 +48,35 @@ export const rutinaPublicaEs = {
   noSePudoCopiar: 'No se pudo copiar solo: mantené apretado el texto para copiarlo.',
   siempreAlDia: 'Este link siempre muestra tu rutina al día: guardá el mensaje.',
 
+  // El video que subió el entrenador (113). Se baja entero la primera vez y
+  // queda guardado en el celular.
+  videoVer: 'Ver el video',
+  videoDatos: (duracion: string, mb: string) => `${duracion} · ${mb} MB`,
+  videoBajando: (pct: number) => `Bajando el video… ${pct} %`,
+  videoNecesitaSenal: 'Para ver este video la primera vez necesitás señal.',
+  videoNoCargo: 'No se pudo cargar el video. Probá de nuevo.',
+  videoSeQuedo: 'La señal no alcanza: el video se quedó a medio bajar. Probá de nuevo con mejor señal.',
+  videoCerrar: 'Cerrar el video',
+  videoGuardado: 'Guardado en este celular',
+
+  // Sin señal: la rutina y los videos guardados en el celular del alumno.
+  // La fecha y la hora son las del celular: «22/09» y «18:40».
+  copiaGuardada: (fecha: string, hora: string) => `Sin señal: es tu rutina guardada el ${fecha} a las ${hora}.`,
+  guardadaEnEsteCelular: 'Guardada en este celular: la podés abrir sin señal.',
+  consejoIphone: 'En iPhone, para que no se borre: agregala a la pantalla de inicio (Compartir → Agregar a inicio) y abrila una vez desde ese ícono, con señal. El ícono guarda su propia copia (los videos también se guardan de nuevo ahí).',
+  linkNecesitaSenal: 'Este video se abre en otra app y necesita señal.',
+  guardarVideos: (n: number, mb: string) => (n === 1
+    ? `Guardar el video para verlo sin señal (${mb} MB)`
+    : `Guardar los ${n} videos para verlos sin señal (${mb} MB)`),
+  guardandoVideos: (hechos: number, total: number) => `Guardando videos… ${hechos} de ${total}`,
+  videosGuardados: (n: number) => (n === 1
+    ? 'El video está guardado en este celular.'
+    : `Los ${n} videos están guardados en este celular.`),
+  parar: 'Parar',
+  sinLugar: 'No hay lugar en este celular para guardar los videos.',
+  borrarCopia: 'Borrar la copia de este celular',
+  copiaBorrada: 'Listo: se borró de este celular.',
+
   // Los estados sin rutina. Un link apagado, cambiado, que no existe o de
   // un cliente archivado se ven IGUAL: distinguirlos le diría a quien
   // prueba links cuál existió.
@@ -92,6 +121,31 @@ export const rutinaPublicaPt: typeof rutinaPublicaEs = {
   tildesSoloAca: 'O que você marca fica só neste celular e some no dia seguinte.',
   noSePudoCopiar: 'Não deu para copiar sozinho: segure o dedo no texto para copiar.',
   siempreAlDia: 'Este link sempre mostra o seu treino atualizado: guarde a mensagem.',
+
+  videoVer: 'Ver o vídeo',
+  videoDatos: (duracion: string, mb: string) => `${duracion} · ${mb} MB`,
+  videoBajando: (pct: number) => `Baixando o vídeo… ${pct} %`,
+  videoNecesitaSenal: 'Para ver este vídeo pela primeira vez você precisa de sinal.',
+  videoNoCargo: 'Não deu para carregar o vídeo. Tente de novo.',
+  videoSeQuedo: 'O sinal não é suficiente: o vídeo parou no meio. Tente de novo com sinal melhor.',
+  videoCerrar: 'Fechar o vídeo',
+  videoGuardado: 'Salvo neste celular',
+
+  copiaGuardada: (fecha: string, hora: string) => `Sem sinal: é o seu treino salvo em ${fecha} às ${hora}.`,
+  guardadaEnEsteCelular: 'Salvo neste celular: dá para abrir sem sinal.',
+  consejoIphone: 'No iPhone, para não ser apagado: adicione à Tela de Início (Compartilhar → Adicionar à Tela de Início) e abra uma vez por esse ícone, com sinal. O ícone guarda a sua própria cópia (os vídeos também são salvos de novo ali).',
+  linkNecesitaSenal: 'Este vídeo abre em outro app e precisa de sinal.',
+  guardarVideos: (n: number, mb: string) => (n === 1
+    ? `Salvar o vídeo para ver sem sinal (${mb} MB)`
+    : `Salvar os ${n} vídeos para ver sem sinal (${mb} MB)`),
+  guardandoVideos: (hechos: number, total: number) => `Salvando vídeos… ${hechos} de ${total}`,
+  videosGuardados: (n: number) => (n === 1
+    ? 'O vídeo está salvo neste celular.'
+    : `Os ${n} vídeos estão salvos neste celular.`),
+  parar: 'Parar',
+  sinLugar: 'Não há espaço neste celular para salvar os vídeos.',
+  borrarCopia: 'Apagar a cópia deste celular',
+  copiaBorrada: 'Pronto: foi apagado deste celular.',
 
   inactivoTitulo: 'Este link não está mais ativo.',
   inactivoTexto: 'Peça um novo ao seu treinador.',

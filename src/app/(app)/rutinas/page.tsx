@@ -5,7 +5,7 @@ import { clienteServidor } from '@/lib/supabase/servidor';
 import { exigir, exigirLista } from '@/lib/lectura';
 import { hoyISO } from '@/lib/fechas';
 import { PantallaRutinas, type VistaRutinas } from '@/components/rutinas/PantallaRutinas';
-import type { EjercicioBiblioteca, RutinasDelNegocio } from '@/lib/tipos-rutinas';
+import type { CupoVideos, EjercicioBiblioteca, RutinasDelNegocio } from '@/lib/tipos-rutinas';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,9 +35,12 @@ export default async function PaginaRutinas({
   const todos = searchParams.todos === '1';
 
   const supabase = clienteServidor();
-  const [respuesta, biblioteca] = await Promise.all([
+  const [respuesta, biblioteca, cupo] = await Promise.all([
     supabase.rpc('rutinas_de', { p_empresa: ctx.empresa.id, p_todos: todos }),
     ver === 'ejercicios' ? supabase.rpc('ejercicios_de', { p_empresa: ctx.empresa.id }) : Promise.resolve(null),
+    // «Videos propios: N de 100» (113). Si no se puede leer, la pantalla no
+    // muestra el cupo y la base igual controla el tope.
+    ver === 'ejercicios' ? supabase.rpc('videos_de_la_cuenta', { p_empresa: ctx.empresa.id }) : Promise.resolve(null),
   ]);
 
   const crudo = exigir(respuesta, 'rutinas') as RutinasDelNegocio;
@@ -51,6 +54,7 @@ export default async function PaginaRutinas({
   const ejercicios = biblioteca
     ? (exigirLista(biblioteca as { data: EjercicioBiblioteca[] | null; error: { message: string } | null }, 'ejercicios'))
     : null;
+  const cupoVideos = leerCupo(cupo);
 
   return (
     <PantallaRutinas
@@ -64,6 +68,15 @@ export default async function PaginaRutinas({
       todos={todos}
       datos={datos}
       ejercicios={ejercicios}
+      cupoVideos={cupoVideos}
     />
   );
+}
+
+/** {usados, tope, topePlan} de videos_de_la_cuenta, o null si no llegó bien. */
+function leerCupo(r: { data: unknown; error: unknown } | null): CupoVideos | null {
+  if (!r || r.error || !r.data || typeof r.data !== 'object') return null;
+  const d = r.data as { usados?: unknown; tope?: unknown; tope_plan?: unknown };
+  if (typeof d.usados !== 'number' || typeof d.tope !== 'number') return null;
+  return typeof d.tope_plan === 'number' ? { usados: d.usados, tope: d.tope, topePlan: d.tope_plan } : { usados: d.usados, tope: d.tope };
 }

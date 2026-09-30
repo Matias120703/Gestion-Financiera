@@ -289,9 +289,21 @@ console.log('\n── 7 · Lo que se comprueba leyendo el código ──');
   const conUnidadAMano = archivos.filter((a) => /['"`][^'"`\n]*\d?\s*\b(kg|kgs|lb|lbs|kilos?)\b[^'"`\n]*['"`]/i.test(codigo[a]));
   ok('ningún archivo del editor escribe «kg» o «lb» por su cuenta', conUnidadAMano, []);
   ok('los botones de unidad usan conUnidad', /conUnidad\(carga, u\)/.test(hoja), true);
-  ok('el renglón rápido usa leerRenglon, y pegar texto leerRutina',
-    [/leerRenglon\(/.test(codigo[`${dir}/RenglonRapido.tsx`]), /leerRutina\(/.test(codigo[`${dir}/PegarTexto.tsx`])], [true, true]);
-  ok('lo no entendido se muestra', /noEntendidas/.test(codigo[`${dir}/PegarTexto.tsx`]), true);
+  // Desde la 114, «Pegar texto» lee con `pegadoComoPlanilla` (con tabuladores
+  // pasa por el convertidor de planillas; sin, es `leerRutina` de siempre), y
+  // la revisión está en VistaLeida, que comparte con «Subir planilla». Lo
+  // pegado de una planilla muestra también el selector de semana y los avisos
+  // (ExtrasPlanilla): si no, las otras semanas y los datos no usados se
+  // perdían sin que el trainer lo viera.
+  ok('el renglón rápido usa leerRenglon, y pegar texto pegadoComoPlanilla',
+    [/leerRenglon\(/.test(codigo[`${dir}/RenglonRapido.tsx`]), /pegadoComoPlanilla\(/.test(codigo[`${dir}/PegarTexto.tsx`])], [true, true]);
+  ok('lo no entendido se muestra', /noEntendidas/.test(codigo[`${dir}/VistaLeida.tsx`]), true);
+  ok('«Pegar texto» y «Subir planilla» usan la misma revisión',
+    [/<VistaLeida/.test(codigo[`${dir}/PegarTexto.tsx`]), /<VistaLeida/.test(codigo[`${dir}/ImportarPlanilla.tsx`])], [true, true]);
+  ok('y los dos muestran las semanas y los avisos de la planilla (ExtrasPlanilla)',
+    [/<ExtrasPlanilla/.test(codigo[`${dir}/PegarTexto.tsx`]), /<ExtrasPlanilla/.test(codigo[`${dir}/ImportarPlanilla.tsx`]),
+      /datosNoUsados/.test(codigo[`${dir}/ExtrasPlanilla.tsx`]), /semanaElegida/.test(codigo[`${dir}/ExtrasPlanilla.tsx`])],
+    [true, true, true, true]);
   ok('el descanso ofrece 30 s, 60 s, 90 s, 2 min y 3 min', /DESCANSOS = \[30, 60, 90, 120, 180\]/.test(hoja), true);
 
   const localStorageSinTry = archivos.filter((a) => {

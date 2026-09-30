@@ -202,6 +202,20 @@ export const MENSAJES_PT: Record<string, string> = {
   'Anotá al menos una medida.': 'Anote pelo menos uma medida.',
   'La grasa corporal va con su método: balanza, plicómetro, cinta u otro.':
     'A gordura corporal vai com o método: balança, adipômetro, fita ou outro.',
+  // Los videos propios del trainer (113).
+  'Tu plan no incluye videos propios.': 'Seu plano não inclui vídeos próprios.',
+  'Un video puede durar hasta 60 segundos.': 'Um vídeo pode durar até 60 segundos.',
+  'El video pesa demasiado: hasta 15 MB.': 'O vídeo é pesado demais: até 15 MB.',
+  'Llegaste al tope de videos de tu cuenta. Quitá uno para subir otro.':
+    'Você chegou ao limite de vídeos da sua conta. Remova um para enviar outro.',
+  'En la prueba se pueden subir menos videos. Activá tu plan para subir más.':
+    'No teste dá para enviar menos vídeos. Ative seu plano para enviar mais.',
+  'Ese video no existe.': 'Esse vídeo não existe.',
+  'Ese video ya está puesto en un ejercicio.': 'Esse vídeo já está em um exercício.',
+  'El video no terminó de subir. Probá de nuevo.': 'O vídeo não terminou de enviar. Tente de novo.',
+  'El video tiene que ser MP4.': 'O vídeo precisa ser MP4.',
+  // Los links de video de una planilla, a la biblioteca (114).
+  'Esa lista de videos no es válida.': 'Essa lista de vídeos não é válida.',
   // Una persona por teléfono (099): el hermano del de la 058, para quien
   // está cargando a alguien nuevo con el número de otra persona que ya
   // tiene datos de entrenamiento en la ficha.

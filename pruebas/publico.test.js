@@ -349,6 +349,10 @@ function aceptado(nombre, resultado) {
     ok('la rutina del cliente se abre sin sesión', esPublica('/rutina/x'), true);
     ok('y su manifest para guardarla en el inicio también',
       esPublica('/rutina/00000000-0000-0000-0000-000000000000/manifest.webmanifest'), true);
+    // Las direcciones firmadas de los videos propios del trainer (113): las
+    // pide el celular del alumno, sin sesión. Solo firma a partir del token.
+    ok('y las direcciones de sus videos también',
+      esPublica('/rutina/00000000-0000-0000-0000-000000000000/videos'), true);
     ok('pero la sección de rutinas del trainer sigue privada',
       ['/rutinas', '/rutinas/x', '/rutinas/cliente/x'].filter((r) => esPublica(r)), []);
 

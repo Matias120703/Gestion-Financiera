@@ -235,10 +235,13 @@ export function normalizarReps(texto: string | null | undefined): string {
  * «descanso 2» es casi seguro 2 minutos, y en la duda no se adivina.
  * `porDefecto` es la unidad del encabezado de una planilla («Descanso
  * (min)»): ahí un número solo sí tiene unidad. Tope: 900 s, el de la base.
+ * «~3 min», «≈ 90 s», «aprox. 2 min», «cerca de 1 min», «unos 60 s» (114):
+ * el «más o menos» de las planillas de coach no cambia el descanso.
  */
 export function leerDescanso(texto: string | null | undefined, porDefecto: 's' | 'min' | null = null): number | null {
   const f = plegar((texto ?? '').trim()).replace(/[″“”„]/g, '"').replace(/[′‘’´`]/g, "'")
-    .replace(/\s+/g, ' ').replace(',', '.');
+    .replace(/\s+/g, ' ').replace(',', '.')
+    .replace(/^(?:~|≈|±|\+-|\+\/-|aprox\.?|approx\.?|aproximadamente|cerca de|unos|uns)\s*/, '');
   if (!f) return null;
   // «2-3 min», «60-90 segundos»: un rango no es UN descanso, y la base guarda
   // uno solo. Se toma el mayor: descansar de más no lastima; de menos, sí.
@@ -383,6 +386,13 @@ interface Campos {
   seriesEnRango: boolean;
   /** «1-2 series» sin repeticiones detrás: un rango suelto, que en una oración es prosa. */
   rangoSuelto: boolean;
+  /**
+   * La nota ya armada con las columnas de UNA fila de planilla (L3, 114):
+   * las piezas unidas con « · ». Lo que quede en `sobras` se suma detrás.
+   */
+  notaArmada?: string;
+  /** El link de la columna «Video» de una planilla (114). Nunca va a la nota. */
+  video?: string;
 }
 
 function camposVacios(): Campos {
@@ -773,14 +783,18 @@ function leerLinea(s: string): Campos {
 }
 
 function aEjercicio(c: Campos): EjercicioLeido {
+  const libre = c.sobras.join(' ');
+  const nota = c.notaArmada ? (libre ? `${c.notaArmada} ${libre}` : c.notaArmada) : libre;
   return {
     nombre: c.nombre,
     series: c.series,
     reps: c.reps,
     carga: c.carga,
     descanso_seg: c.descanso_seg,
-    nota: c.sobras.join(' '),
+    nota,
     junto_al_anterior: c.junto,
+    // Solo si hay: un ejercicio escrito a mano no lleva la clave (114).
+    ...(c.video ? { video: c.video } : {}),
   };
 }
 
@@ -850,7 +864,11 @@ type Renglon =
     }
   | { tipo: 'seccion'; texto: string; conTexto: boolean; original: string }
   /** «REGLAS GENERALES», «Notas:», «DICAS»: abre un bloque de indicaciones. */
-  | { tipo: 'bloqueNotas'; original: string }
+  | {
+      tipo: 'bloqueNotas'; original: string;
+      /** «OBSERVACIONES GENERALES», «REGRAS GERAIS»: al final, son de la rutina (L6, 114). */
+      general: boolean;
+    }
   /**
    * Una oración («Bajar la barra al pecho, sin rebotar.»): nunca un ejercicio.
    * `soloLarga`: lo es solo por el largo, y puede ser un nombre con los datos abajo.
@@ -900,9 +918,13 @@ const RE_SECCION_CON_DOS_PUNTOS = /^(?:estiramientos?|elongacion(?:es)?|alongame
 // y cada regla entraba a la biblioteca como un ejercicio. Con texto después
 // de los dos puntos («Nota: bajar despacio») es la nota de siempre.
 const RE_BLOQUE_NOTAS = /^(?:(?:notas?|indicaciones|indicacoes|recomendaciones|recomendacoes|reglas|regras|pautas|orientaciones|orientacoes|observaciones|observacoes|instrucciones|instrucoes|consideraciones|consideracoes|consejos|conselhos|dicas|tips?|aclaraciones|lembretes|avisos)(?:\s+(?:generales|gerais|basicas|basicos|importantes|previas|finales|finais|del\s+dia|do\s+dia|de\s+la\s+rutina|de\s+la\s+semana|do\s+treino|da\s+semana|de\s+entrenamiento|de\s+treino))?|obs\.?|importante|atencion|atencao|ojo|(?:cosas\s+)?a\s+tener\s+en\s+cuenta|tener\s+en\s+cuenta|antes\s+de\s+empezar|antes\s+de\s+comecar)\s*[:\-–—]*\s*$/;
+// Un bloque de indicaciones «generales» (L6, 114): si viene después del
+// último ejercicio, es de la rutina entera y no del último día.
+const RE_GENERALES = /\b(?:generales|gerais|general|geral)\b/;
 // «Rutina de gym», «Plan de 8 semanas», «Treino de hipertrofia»: un renglón
-// que dice ser la rutina. Al principio, es su nombre.
-const RE_NOMBRE_RUTINA = /^(?:(?:mi|tu|la|el|o|a|seu|sua|meu|minha|nueva|nova)\s+)?(?:rutina|treino|plan|programa|planificacion|planejamento)\b/;
+// que dice ser la rutina. Al principio, es su nombre. «Ficha de treino»,
+// «Planilla de…», «Mesociclo 1» (114): como se titulan las planillas.
+const RE_NOMBRE_RUTINA = /^(?:(?:mi|tu|la|el|o|a|seu|sua|meu|minha|nueva|nova)\s+)?(?:rutina|treino|plan|programa|planificacion|planejamento|ficha|planilla|planilha|mesociclo|microciclo|macrociclo)\b/;
 
 const RE_SUPERSERIE = /^(super\s*-?\s*serie|bi\s*-?\s*serie|bi\s*-?\s*set|tri\s*-?\s*serie|tri\s*-?\s*set|conjugado|biset|triset)s?\b\s*[:\-–—]?\s*/;
 const RE_CIRCUITO = /^(?:circuito|circuit|hiit|tabata|emom|amrap)\b/;
@@ -934,6 +956,22 @@ function esDia(texto: string): 'palabra' | 'letra' | null {
   const d = /^d\s*\d{1,2}\s*(?:[-–—:.)]\s*(\S.*))?$/.exec(f);
   if (d && !(d[1] && buscarBase(texto.slice(texto.length - d[1].length)))) return 'letra';
   return RE_DIA_LETRA_SOLA.test(texto) ? 'letra' : null;
+}
+
+/**
+ * Para el convertidor de planillas (rutina-planilla.ts, 114): ¿esta celda es
+ * un título de día dicho con palabras («DÍA 1», «Treino A», «LUNES – PECHO»)?
+ * Una letra sola («A - Pecho») no alcanza: en una fila de planilla es un dato.
+ */
+export function esTituloDeDia(texto: string): boolean {
+  const s = quitarFormato(limpiar(texto ?? ''));
+  return !!s && esDia(s) === 'palabra' && !RE_DIA_LIBRE.test(plegar(s));
+}
+
+/** Para el convertidor: cuántos datos de un ejercicio (series, repeticiones, carga, descanso) trae un texto. */
+export function datosEnTexto(texto: string): number {
+  const s = quitarFormato(limpiar(texto ?? ''));
+  return s ? leerLinea(s).datos : 0;
 }
 
 function limpiarTitulo(s: string): string {
@@ -1098,7 +1136,7 @@ function clasificarTexto(crudo: string, original: string): Renglon {
     const titulo = neg[1].replace(/\s+/g, ' ').trim();
     const dentro = quitarFormato(limpiar(neg[1]));
     const fd = plegar(dentro);
-    if (RE_BLOQUE_NOTAS.test(fd)) return { tipo: 'bloqueNotas', original };
+    if (RE_BLOQUE_NOTAS.test(fd)) return { tipo: 'bloqueNotas', original, general: RE_GENERALES.test(fd) };
     const numerado = quitarNumero(dentro);
     const lectura = leerLinea(numerado.texto);
     const ejercicio = lectura.datos > 0 && (numerado.numero || (!!lectura.nombre && !!buscarBase(lectura.nombre)));
@@ -1122,7 +1160,9 @@ function clasificarTexto(crudo: string, original: string): Renglon {
   // Un encabezado de indicaciones solo en el renglón («REGLAS GENERALES»,
   // «Notas:», «# Recomendaciones»): abre el bloque. Antes que «Nota:», que
   // con texto después es una nota, y sola no es nada.
-  if (RE_BLOQUE_NOTAS.test(plegar(quitarVineta(s).texto))) return { tipo: 'bloqueNotas', original };
+  if (RE_BLOQUE_NOTAS.test(plegar(quitarVineta(s).texto))) {
+    return { tipo: 'bloqueNotas', original, general: RE_GENERALES.test(plegar(s)) };
+  }
 
   if (RE_ETIQUETA_NOTA.exec(f)?.index === 0 && /^(?:notas?|obs|observaci|importante|ojo|tip|aclaracion)/.test(f)) {
     return nota(s, original, false);
@@ -1234,12 +1274,26 @@ function clasificarTexto(crudo: string, original: string): Renglon {
 
 // ── Planillas pegadas de Excel o de Google Sheets (columnas con tabulador) ──
 
-type Columna = 'ejercicio' | 'series' | 'reps' | 'carga' | 'descanso' | 'nota' | 'dia' | 'ignorar' | 'otra';
+/**
+ * Qué dice el encabezado de una columna de planilla. Además de los datos
+ * del ejercicio (114):
+ *   · `video`: el link va a `EjercicioLeido.video`, nunca a la nota;
+ *   · `grupo` («Grupo muscular») y `hecho` (la columna para tildar) se ignoran;
+ *   · `aproximacion` («Series de aproximación», «Aquecimento»): una pieza de
+ *     la nota, y NO las series del ejercicio («Series efectivas» sí lo son);
+ *   · `alternativa`: se juntan al final de la nota;
+ *   · `semana` («S1», «Semana 2»): la columna de la semana que eligió el
+ *     convertidor (rutina-planilla.ts), que se lee como un renglón suelto.
+ */
+export type Columna = 'ejercicio' | 'series' | 'reps' | 'carga' | 'descanso' | 'nota' | 'dia' | 'ignorar'
+  | 'video' | 'grupo' | 'aproximacion' | 'alternativa' | 'hecho' | 'semana' | 'otra';
 interface EstadoTabla { columnas: { tipo: Columna; titulo: string; unidad: 's' | 'min' | null }[] | null }
 
-function columnaDe(celda: string): Columna {
+export function tipoDeColumna(celda: string): Columna {
   const f = plegar(celda).replace(/[^a-z0-9#°º%()/ ]/g, '').trim();
   if (/^(?:ejercicios?|exercicios?|nombre|nome|movimientos?|movimentos?|exercises?)\b/.test(f)) return 'ejercicio';
+  // Antes que las series: «Series de aproximación» no son las del ejercicio.
+  if (/^(?:(?:series?|sets?)\s+(?:de\s+)?(?:aproximacion|aproximaciones|aquecimento|calentamiento|entrada\s+en\s+calor)|aproximacion|aproximaciones|aquecimento|calentamiento|warm\s*up)\b/.test(f)) return 'aproximacion';
   if (/^(?:series|serie|sets?|tandas)\b/.test(f)) return 'series';
   if (/^(?:reps?|repeticiones|repeticion|repeticoes|repeticao)\b/.test(f)) return 'reps';
   if (/^(?:peso|pesos|carga|cargas|kg|kilos?|lbs?|libras?)\b/.test(f)) return 'carga';
@@ -1247,7 +1301,34 @@ function columnaDe(celda: string): Columna {
   if (/^(?:notas?|obs|observaciones|observacion|observacoes|observacao|comentarios?|indicaciones|tecnica|detalles?)\b/.test(f)) return 'nota';
   if (/^(?:dias?|treinos?|sesion|sessao|day)\b/.test(f)) return 'dia';
   if (/^(?:#|n°|nº|n|nro|numero|orden|ordem)$/.test(f)) return 'ignorar';
+  if (/^(?:videos?|links?|enlaces?|demo|demostracion|demonstracao|youtube|tutorial)\b/.test(f)) return 'video';
+  if (/^(?:grupos?|musculos?|zona)\b/.test(f)) return 'grupo';
+  if (/^(?:alternativas?|sustitucion|sustituto|substituicao|substituto|substitution|substitute|reemplazo|opcion|opcao)\b/.test(f)) return 'alternativa';
+  if (/^(?:hecho|hecha|feito|feita|ok|check|listo|realizado|completado|done)$/.test(f)) return 'hecho';
+  if (/^(?:semana|sem|s|week|w|microciclo)\s*\d{1,2}\b/.test(f)) return 'semana';
   return 'otra';
+}
+
+/** Un link de video que se puede guardar en la biblioteca (el check de la 098). */
+function linkDeVideo(v: string): string | null {
+  const s = (v ?? '').trim();
+  return /^https:\/\/\S+$/i.test(s) && Array.from(s).length <= 300 ? s : null;
+}
+
+/**
+ * Las piezas de la nota de UNA fila de planilla, unidas con « · » (L3). Si
+ * pasan de las 200 letras de la base, se sacan piezas enteras desde el
+ * final: nunca se corta una palabra ni un link.
+ */
+function unirPiezas(piezas: string[]): string {
+  const p = piezas.map((x) => x.trim()).filter(Boolean);
+  while (p.length > 1 && Array.from(p.join(' · ')).length > LARGOS.nota) p.pop();
+  return p.join(' · ');
+}
+
+/** ¿Tiene una unidad de peso, placa o peso corporal? («60 kg», «placa 4», no «60»). */
+function cargaConUnidad(v: string): boolean {
+  return unidadDe(v) !== null || /\bplacas?\b|\bbanda\b|\bpeso corporal\b/i.test(normalizarCarga(v));
 }
 
 /** Las celdas de un renglón de planilla, o null si no lo es. */
@@ -1272,6 +1353,7 @@ function filaDeTabla(celdas: string[], tabla: EstadoTabla, original: string): Re
   const valores = celdas.map(limpiarCelda);
   const e = camposVacios();
   let dia: string | undefined;
+  let grupo: string | null = null;
 
   // La celda del nombre puede traer también los datos («Sentadilla 4x12»):
   // salen de ahí, y el nombre queda limpio. Si no, se creaba el ejercicio
@@ -1289,6 +1371,15 @@ function filaDeTabla(celdas: string[], tabla: EstadoTabla, original: string): Re
   };
 
   if (tabla.columnas) {
+    // Las piezas de la nota, en el orden de L3: primero la columna de notas
+    // del trainer, después lo que sobró de la celda del nombre, después las
+    // columnas con etiqueta en su orden («RIR: 2», «Tempo: 3-1-1») y al
+    // final las alternativas.
+    const deNotas: string[] = [];
+    const conEtiqueta: string[] = [];
+    const alternativas: string[] = [];
+    const etiquetada = (titulo: string, v: string) => conEtiqueta.push(`${titulo}: ${v}`);
+    const columnasAlternativa = tabla.columnas.filter((c) => c.tipo === 'alternativa');
     tabla.columnas.forEach((col, k) => {
       const v = valores[k] ?? '';
       if (!v) return;
@@ -1300,7 +1391,7 @@ function filaDeTabla(celdas: string[], tabla: EstadoTabla, original: string): Re
           if (c.series !== null && !c.nombre && !c.sobras.length) {
             e.series = c.series;
             if (c.reps && !e.reps) e.reps = c.reps;
-          } else e.sobras.push(`${col.titulo}: ${v}`);
+          } else etiquetada(col.titulo, v);
           break;
         }
         case 'reps': {
@@ -1311,26 +1402,88 @@ function filaDeTabla(celdas: string[], tabla: EstadoTabla, original: string): Re
             if (r.length <= LARGOS.reps) { e.series = +sr[1]; e.reps = r; break; }
           }
           const r = normalizarReps(v);
-          if (r.length <= LARGOS.reps) e.reps = r; else e.sobras.push(`${col.titulo}: ${v}`);
+          if (r.length <= LARGOS.reps) e.reps = r; else etiquetada(col.titulo, v);
           break;
         }
         case 'carga': {
           const cg = normalizarCarga(v);
-          if (cg.length <= LARGOS.carga) e.carga = cg; else e.sobras.push(`${col.titulo}: ${v}`);
+          if (cg.length <= LARGOS.carga) e.carga = cg; else etiquetada(col.titulo, v);
           break;
         }
         case 'descanso': {
           const s = leerDescanso(v, col.unidad);
-          if (s !== null) e.descanso_seg = s; else e.sobras.push(`${col.titulo}: ${v}`);
+          if (s !== null) e.descanso_seg = s; else etiquetada(col.titulo, v);
           break;
         }
-        case 'nota': e.sobras.push(v); break;
+        case 'nota': deNotas.push(v); break;
         case 'dia': dia = limpiarTitulo(v); break;
-        case 'ignorar': break;
-        default: e.sobras.push(`${col.titulo}: ${v}`);
+        // «2A», «2B», «A1», «A2» en la columna del número: la superserie (L2),
+        // como si estuvieran al principio del nombre.
+        case 'ignorar': {
+          const nl = /^(\d{1,2})\s*([a-f])$/i.exec(v);
+          const ln = /^([a-h])\s*(\d{1,2})$/i.exec(v);
+          if (nl) grupo = nl[1];
+          else if (ln) grupo = ln[1].toUpperCase();
+          break;
+        }
+        // El link de la celda tal cual (sin `limpiar`, que toca las «x» y los
+        // guiones): va a `video`, nunca a la nota. Lo que no es un link se descarta.
+        case 'video': {
+          const link = linkDeVideo(celdas[k] ?? '');
+          if (link && !e.video) e.video = link;
+          break;
+        }
+        case 'grupo':
+        case 'hecho':
+          break;
+        // «Aproximación: 2»; 0 es que no hay, y no se escribe.
+        case 'aproximacion': {
+          if (/^0+$/.test(v)) break;
+          const t = col.titulo.replace(/^(?:s[ée]ries?|sets?)\s+(?:de\s+)?/i, '').trim() || col.titulo;
+          etiquetada(t.charAt(0).toUpperCase() + t.slice(1), v);
+          break;
+        }
+        case 'alternativa': alternativas.push(v); break;
+        // La semana elegida, leída como un renglón suelto: con unidad de peso
+        // es la carga, con tiempo o «4x10» son las repeticiones. Un número
+        // solo no se sabe si son kilos o repeticiones: va a la nota.
+        // «4x8 60 kg» (o «4x8 @ 60kg», «4x8 - 60 kg»): primero las series y
+        // las repeticiones, y la carga es lo que sigue, como en el renglón
+        // «Sentadilla 4x8 60 kg». Antes iba la celda entera a la carga.
+        case 'semana': {
+          const cg = normalizarCarga(v);
+          const r = normalizarReps(v);
+          const sr = /^(\d{1,2})\s*[x×]\s*(\S.*)$/i.exec(v);
+          const todo = sr && e.series === null && !e.reps && +sr[1] >= 1 && +sr[1] <= 20 ? leerCampos(v) : null;
+          if (todo && !todo.nombre && todo.series !== null && todo.reps && todo.reps.length <= LARGOS.reps) {
+            e.series = todo.series;
+            e.reps = todo.reps;
+            // Ya hay una carga (otra columna): la de la semana va a la nota, no la pisa.
+            if (todo.carga && !e.carga && todo.carga.length <= LARGOS.carga) e.carga = todo.carga;
+            else if (todo.carga) etiquetada(col.titulo, todo.carga);
+            if (todo.descanso_seg !== null && e.descanso_seg === null) e.descanso_seg = todo.descanso_seg;
+            if (todo.sobras.length) etiquetada(col.titulo, todo.sobras.join(' '));
+          } else if (cargaConUnidad(v) && !e.carga && cg.length <= LARGOS.carga) e.carga = cg;
+          else if (sr && e.series === null && !e.reps && +sr[1] >= 1 && +sr[1] <= 20 && normalizarReps(sr[2]).length <= LARGOS.reps) {
+            e.series = +sr[1];
+            e.reps = normalizarReps(sr[2]);
+          } else if (/^\d+(?:[.,]\d+)?\s*(?:s|min)$|^\d{1,2}:\d{2}$/.test(r) && !e.reps) e.reps = r;
+          else etiquetada(col.titulo, v);
+          break;
+        }
+        default: etiquetada(col.titulo, v);
       }
     });
     valores.slice(tabla.columnas.length).filter(Boolean).forEach((v) => e.sobras.push(v));
+    const base = columnasAlternativa[0]?.titulo.replace(/[\s#.:-]*\d+$/, '').trim() ?? '';
+    const etiquetaAlt = columnasAlternativa.length > 1 && /a$/i.test(base) ? `${base}s` : base;
+    e.notaArmada = unirPiezas([
+      ...deNotas,
+      e.sobras.join(' '),
+      ...conEtiqueta,
+      alternativas.length ? `${etiquetaAlt}: ${alternativas.join(', ')}` : '',
+    ]);
+    e.sobras = [];
   } else {
     // Sin encabezado: el nombre es la primera celda con letras y los
     // números siguen el orden de siempre (series, repeticiones, carga).
@@ -1367,7 +1520,7 @@ function filaDeTabla(celdas: string[], tabla: EstadoTabla, original: string): Re
 
   if (!e.nombre || !tieneLetra(e.nombre) || e.nombre.length > LARGOS.ejercicio) return { tipo: 'otro', original };
   e.datos = (e.series !== null ? 1 : 0) + (e.reps ? 1 : 0) + (e.carga ? 1 : 0) + (e.descanso_seg !== null ? 1 : 0);
-  return { tipo: 'ejercicios', lista: [e], grupo: null, item: true, conocido: !!buscarBase(e.nombre), dia, original };
+  return { tipo: 'ejercicios', lista: [e], grupo, item: true, conocido: !!buscarBase(e.nombre), dia, original };
 }
 
 function clasificar(linea: string, tabla: EstadoTabla): Renglon {
@@ -1377,7 +1530,7 @@ function clasificar(linea: string, tabla: EstadoTabla): Renglon {
   if (celdas) {
     // La fila de guiones de una tabla en markdown.
     if (celdas.every((c) => /^\s*:?-{2,}:?\s*$/.test(c) || !c.trim())) return { tipo: 'nada' };
-    const tipos = celdas.map((c) => columnaDe(limpiarCelda(c)));
+    const tipos = celdas.map((c) => tipoDeColumna(limpiarCelda(c)));
     if (tipos.includes('ejercicio') && tipos.some((t) => t === 'series' || t === 'reps' || t === 'carga' || t === 'descanso')) {
       tabla.columnas = celdas.map((c, k) => {
         const titulo = limpiarCelda(c);
@@ -1469,6 +1622,9 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
   // Un bloque de indicaciones abierto («REGLAS GENERALES»), y si ya tiene algo.
   let enBloque = false;
   let bloqueConTexto = false;
+  // El bloque abierto es de la rutina entera: «OBSERVACIONES GENERALES»
+  // después del último ejercicio (L6). Sin esto iban a las notas del último día.
+  let bloqueDeRutina = false;
   // El último ejercicio está pegado (sin un renglón vacío en el medio): una
   // oración debajo es su técnica.
   let pegadoAlUltimo = false;
@@ -1487,7 +1643,10 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
   const notaDeRenglon = (original: string) =>
     textoDeNota(espacios(original).replace(/^>\s*/, '').replace(/^#{1,6}\s+/, ''));
   const alBloque = (t: string) => {
-    if (t) notaDeContexto(t);
+    if (t) {
+      if (bloqueDeRutina) notasRutina.push(t);
+      else notaDeContexto(t);
+    }
     bloqueConTexto = true;
   };
   const nombrarRutina = (n: string) => {
@@ -1569,6 +1728,10 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
       case 'bloqueNotas':
         enBloque = true;
         bloqueConTexto = false;
+        // «Generales» y sin ningún día ni ejercicio de verdad después: de la rutina.
+        bloqueDeRutina = r.general && huboEjercicio && !R.slice(i + 1).some((x) => x.tipo === 'titulo'
+          || (x.tipo === 'ejercicios' && (x.lista.length > 1 || x.lista[0].series !== null
+            || x.lista[0].seriesEnRango || !!x.bloque || x.dia !== undefined)));
         // Lo que sigue no es de ningún ejercicio: ni una «Nota:» ni un descanso suelto.
         ultimo = null;
         bloque = null;

@@ -88,6 +88,18 @@ function guardarTildes(token: string, tildes: Tildes): void {
   }
 }
 
+/**
+ * Borra lo tildado de este link en este celular: cuando el link ya no anda
+ * o cuando el alumno borra la copia (celular compartido). Ver sinSenal.ts.
+ */
+export function borrarTildes(token: string): void {
+  try {
+    localStorage.removeItem(clave(token));
+  } catch {
+    // Sin localStorage no había nada guardado.
+  }
+}
+
 /** Tilda o destilda un renglón hoy. Devuelve lo nuevo, ya guardado. */
 export function alternarTilde(
   token: string, actual: Tildes, ejercicioId: string, numeroDia: number, hoy: string,

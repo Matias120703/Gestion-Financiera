@@ -25,6 +25,38 @@ export interface EjercicioBiblioteca {
   activo: boolean;
   /** En cuántos renglones de rutinas está. */
   usos: number;
+  /** El video que subió el trainer (113), si está listo. Tapa al link en la página del alumno. */
+  video?: VideoPropio | null;
+}
+
+/**
+ * «Videos propios: N de T» (videos_de_la_cuenta). `topePlan`: el tope con la
+ * cuenta activa; en la prueba es más que `tope` (limite_videos_en_prueba).
+ */
+export interface CupoVideos {
+  usados: number;
+  tope: number;
+  topePlan?: number;
+}
+
+/** Un video propio del trainer en su biblioteca (113, `ejercicios_de`). */
+export interface VideoPropio {
+  id: string;
+  bytes: number;
+  /** Segundos, con un decimal. */
+  seg: number;
+  /** La ruta en el bucket privado `videos`: `<id>.mp4`. Solo la ve el equipo. */
+  ruta: string;
+}
+
+/**
+ * El video propio como lo ve el alumno (113, `rutina_por_token`): sin la
+ * ruta ni la empresa. La dirección firmada la pide aparte, con su token.
+ */
+export interface ClipPublico {
+  id: string;
+  bytes: number;
+  seg: number;
 }
 
 /** Un ejercicio dentro de un día de una rutina. */
@@ -199,6 +231,8 @@ export type RutinaPublica =
             video: string | null;
             /** «Cómo se hace», de la biblioteca. */
             como: string;
+            /** El video propio del trainer (113), si tiene uno listo. */
+            clip: ClipPublico | null;
           }[];
         }[];
       };
@@ -279,6 +313,12 @@ export interface EjercicioLeido {
   descanso_seg: number | null;
   nota: string;
   junto_al_anterior: boolean;
+  /**
+   * El link de la columna «Video» de una planilla (114). Nunca va a la nota:
+   * al guardar la rutina, pasa a la biblioteca solo si ese ejercicio no
+   * tiene ni link ni video propio (`completar_videos_de_ejercicios`).
+   */
+  video?: string;
 }
 
 export interface RutinaLeida {

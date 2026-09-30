@@ -112,6 +112,13 @@ export interface LimitesPlan {
    * se deduce de tipo_cuenta + plan.
    */
   gratis_personal: boolean;
+  /**
+   * Cuántos videos propios puede tener la cuenta (113, 30/09/2026): 100 en
+   * Básico, Pro y Negocio; 20 en la prueba (limite_videos_en_prueba); 0 en
+   * Gratis y en toda cuenta personal. Cuentan todos los que tiene, también
+   * los que se están subiendo o borrando.
+   */
+  videos: number;
 }
 
 export interface EstadoDelPlan {

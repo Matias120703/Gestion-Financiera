@@ -1,8 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useTextos } from '@/i18n/cliente';
 import { formatoDescanso } from '@/lib/rutina-texto';
+import { queVideoMostrar } from '@/lib/rutina-sin-senal';
 import type { RutinaPublica } from '@/lib/tipos-rutinas';
+import { VideoPropio } from './VideoPropio';
 
 type ConRutina = Extract<RutinaPublica, { existe: true }>;
 export type EjercicioPublico = NonNullable<ConRutina['rutina']>['dias'][number]['ejercicios'][number];
@@ -21,13 +24,20 @@ export type EjercicioPublico = NonNullable<ConRutina['rutina']>['dias'][number][
  * apuntar. La tarjeta hecha se atenúa pero no se tacha: se tiene que poder
  * leer igual si la quiere repasar.
  *
- * El video se abre afuera, en otra pestaña, sin incrustarlo, y sin decirle
- * a YouTube o a Instagram de qué link venía (`noreferrer`): la dirección
- * del link es la llave de la rutina.
+ * El video propio del entrenador (113) se ve acá mismo y queda guardado en
+ * el celular (VideoPropio). Si no hay propio y hay un link, el link se abre
+ * afuera, en otra pestaña, sin incrustarlo, y sin decirle a YouTube o a
+ * Instagram de qué link venía (`noreferrer`): la dirección del link es la
+ * llave de la rutina. Con los dos, solo el propio (queVideoMostrar).
+ *
+ * Sin señal, el link avisa que se abre en otra app y la necesita: el
+ * propio anda si quedó guardado, un link de YouTube nunca.
  */
 export function TarjetaEjercicio({
-  ejercicio: e, etiqueta, hecho, alAlternar,
+  token, ejercicio: e, etiqueta, hecho, alAlternar,
 }: {
+  /** El token del link: con él se piden y se guardan los videos propios. */
+  token: string;
   ejercicio: EjercicioPublico;
   /** «1», «2a», «2b». */
   etiqueta: string;
@@ -44,10 +54,12 @@ export function TarjetaEjercicio({
   const carga = (e.carga ?? '').trim();
   const nota = (e.nota ?? '').trim();
   const como = (e.como ?? '').trim();
-  // La base solo acepta videos que empiezan con https://; se vuelve a
-  // mirar acá porque es un link que se toca desde una página pública.
-  const video = e.video && /^https:\/\/\S+$/i.test(e.video) ? e.video : null;
+  // La base solo acepta videos que empiezan con https://; queVideoMostrar lo
+  // vuelve a mirar porque es un link que se toca desde una página pública.
+  const cual = queVideoMostrar(e);
+  const video = cual === 'link' ? e.video : null;
   const hayDescanso = e.descanso_seg !== null && e.descanso_seg !== undefined;
+  const sinSenal = useSinSenal(video !== null);
 
   return (
     <article className="tarjeta p-4">
@@ -87,6 +99,8 @@ export function TarjetaEjercicio({
 
         {nota && <p className="mt-3 whitespace-pre-line break-words text-[16px] leading-relaxed">{nota}</p>}
 
+        {cual === 'clip' && e.clip && <VideoPropio token={token} clip={e.clip} />}
+
         {video && (
           <a
             href={video}
@@ -97,6 +111,9 @@ export function TarjetaEjercicio({
             <span aria-hidden>▶</span>
             {c.acciones.verComoSeHace}
           </a>
+        )}
+        {video && sinSenal && (
+          <p className="mt-1.5 text-center text-[13px] text-tinta/55">{r.linkNecesitaSenal}</p>
         )}
 
         {como && (
@@ -124,4 +141,25 @@ export function TarjetaEjercicio({
       </button>
     </article>
   );
+}
+
+/**
+ * Si el celular dice que no tiene señal. Se lee después de montar (el
+ * servidor no lo sabe: la primera pintada tiene que ser igual a la suya) y
+ * se sigue con `online`/`offline`. Solo se escucha si hace falta (`activo`).
+ */
+function useSinSenal(activo: boolean): boolean {
+  const [sinSenal, setSinSenal] = useState(false);
+  useEffect(() => {
+    if (!activo) return;
+    const mirar = () => setSinSenal(navigator.onLine === false);
+    mirar();
+    window.addEventListener('online', mirar);
+    window.addEventListener('offline', mirar);
+    return () => {
+      window.removeEventListener('online', mirar);
+      window.removeEventListener('offline', mirar);
+    };
+  }, [activo]);
+  return activo && sinSenal;
 }
