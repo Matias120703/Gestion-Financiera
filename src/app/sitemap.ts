@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { SITIO_PUBLICO } from '@/lib/sitio-publico';
 
 /**
  * EL MAPA PARA LOS BUSCADORES (`/sitemap.xml`)
@@ -18,21 +19,10 @@ import type { MetadataRoute } from 'next';
  *
  * Ojo: el middleware tiene que dejar pasar `/sitemap.xml` sin sesión; si no,
  * al robot de Google le contesta con el login.
+ *
+ * Las direcciones van siempre con orden.com.py (lib/sitio-publico.ts), la
+ * misma de la línea `Sitemap:` de robots.txt y del `metadataBase` del layout.
  */
-
-/**
- * La dirección pública del sitio, la misma que usa `metadataBase` en el
- * layout: primero la que se configura a mano (`NEXT_PUBLIC_SITIO`, la de
- * `sitio()` en lib/pagos.ts); si no está, la de producción que Vercel pone
- * sola; y en la computadora, localhost.
- */
-function urlPublica(): string {
-  const aMano = process.env.NEXT_PUBLIC_SITIO;
-  if (aMano) return aMano.replace(/\/+$/, '');
-  const deVercel = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
-  if (deVercel) return `https://${deVercel.replace(/\/+$/, '')}`;
-  return 'http://localhost:3000';
-}
 
 // La última vez que cambió de verdad cada página. Se actualiza a mano cuando
 // se reescribe una: poner `new Date()` le diría a Google que todo cambió en
@@ -43,7 +33,7 @@ const INSTALAR = new Date('2026-09-21');
 const INGRESAR = new Date('2026-09-17');
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = urlPublica();
+  const base = SITIO_PUBLICO;
   return [
     { url: `${base}/`, lastModified: PORTADA, changeFrequency: 'weekly', priority: 1 },
     { url: `${base}/crear`, lastModified: PORTADA, changeFrequency: 'monthly', priority: 0.8 },

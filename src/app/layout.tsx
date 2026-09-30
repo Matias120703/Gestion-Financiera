@@ -7,27 +7,13 @@ import { RegistrarServiceWorker } from '@/components/RegistrarServiceWorker';
 import { CapturarRef } from '@/components/CapturarRef';
 import { SeguirTema } from '@/components/SeguirTema';
 import { GUION_TEMA } from '@/lib/tema';
+import { SITIO_PUBLICO } from '@/lib/sitio-publico';
 
 // Las dos letras de Orden, servidas desde el mismo dominio (next/font las
 // descarga al compilar): la de leer y la de los números grandes. El ancho de
 // Archivo es variable, y es lo que la deja angosta como la de Wise.
 const fuenteTexto = Inter({ subsets: ['latin'], variable: '--fuente-texto', display: 'swap' });
 const fuenteTitulo = Archivo({ subsets: ['latin'], axes: ['wdth'], variable: '--fuente-titulo', display: 'swap' });
-
-/**
- * La dirección pública del sitio. Sin ella, Next arma la de la foto del
- * enlace (`/opengraph-image`) con localhost, y WhatsApp no la puede bajar.
- * Primero la que se configura a mano (`NEXT_PUBLIC_SITIO`, la misma de
- * `sitio()` en lib/pagos.ts); si no está, la de producción que Vercel pone
- * sola; en la computadora, localhost. `sitemap.ts` hace la misma cuenta.
- */
-function urlPublica(): string {
-  const aMano = process.env.NEXT_PUBLIC_SITIO;
-  if (aMano) return aMano.replace(/\/+$/, '');
-  const deVercel = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
-  if (deVercel) return `https://${deVercel.replace(/\/+$/, '')}`;
-  return 'http://localhost:3000';
-}
 
 /**
  * Lo que leen Google y la vista previa de un enlace cuando una página no
@@ -59,7 +45,10 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await textos();
   const c = COMPARTIR[await idiomaActual()];
   return {
-    metadataBase: new URL(urlPublica()),
+    // Sin esto, Next arma la dirección de la foto del enlace
+    // (`/opengraph-image`) con localhost, y WhatsApp no la puede bajar.
+    // Siempre orden.com.py: ver lib/sitio-publico.ts.
+    metadataBase: new URL(SITIO_PUBLICO),
     title: t.pantallas.metaTitulo,
     description: c.descripcion,
     openGraph: {

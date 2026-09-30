@@ -230,6 +230,33 @@ function rechazado(nombre, res, frag) {
   rechazado('y la segunda vez que se toca, no',
     await como(P.uid, 'select public.dar_clase($1,1,null,$2,$3) j', [conTurno, 'dada', turno]), 'duplicate|unique|único');
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('7 · Eliminar a un alumno que solo tiene un paquete (112)');
+  // ═══════════════════════════════════════════════════════════
+  // Un paquete de regalo no deja venta, fiado ni reserva: para
+  // eliminar_cliente el alumno no tenía historia, intentaba borrarlo y
+  // chocaba con el RESTRICT de paquetes.cliente_id (088).
+  const soloPaquete = (await valor(P.uid,
+    'select public.guardar_cliente($1, $2, $3, $4, $5) id',
+    [P.empresaId, 'Ana Regalo', '0982333444', '', null])).id;
+  const suPaquete = (await vender(P.uid, [P.empresaId, soloPaquete, 'Clase de prueba', 1, 0, 'efectivo', null, null]))
+    .valor.rows[0].j.paquete;
+  const quitado = await como(P.uid, 'select public.eliminar_cliente($1) r', [soloPaquete]);
+  ok('eliminarlo no falla', quitado.ok ? true : quitado.error, true);
+  ok('lo archiva: el paquete es su historia', quitado.valor?.rows[0].r, 'archivado');
+  ok('y el paquete sigue ahí, a su nombre',
+    (await db.query('select cliente_id from public.paquetes where id=$1', [suPaquete])).rows[0]?.cliente_id, soloPaquete);
+  ok('si vuelve con el mismo teléfono, vuelve con su paquete',
+    [(await valor(P.uid, 'select public.guardar_cliente($1, $2, $3, $4, $5) id',
+      [P.empresaId, 'Ana', '0982333444', '', null])).id,
+    (await valor(P.uid, 'select public.paquetes_del_alumno($1,$2) j', [P.empresaId, soloPaquete])).j.length],
+    [soloPaquete, 1]);
+  const sinNada = (await valor(P.uid,
+    'select public.guardar_cliente($1, $2, $3, $4, $5) id',
+    [P.empresaId, 'Sin nada', '0982555666', '', null])).id;
+  ok('uno sin paquete ni nada se sigue borrando de verdad',
+    (await valor(P.uid, 'select public.eliminar_cliente($1) r', [sinNada])).r, 'borrado');
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DE PAQUETES FALLARON`);

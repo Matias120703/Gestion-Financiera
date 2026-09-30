@@ -1021,7 +1021,9 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
           {/* ---- cortar ----
               A una personal, «cortar» ya no la corta (110, 28/09/2026): la
               pasa al plan Gratis. La RPC es la misma; cambia lo que dice.
-              El texto del negocio queda como estaba (tarea aparte). */}
+              A un negocio le pone el candado total del 15/09 (CandadoCuenta
+              y los cuenta_activa_* de la base, completos desde la 111): ya
+              no ve nada salvo /plan, ni su historial ni el Excel. */}
           <div className="rounded-2xl border border-rojo/20 bg-rojo-claro/25 p-4">
             <p className="titulo-seccion mb-1 text-rojo">{esPersonal ? 'Pasar a Gratis' : 'Cortar el servicio'}</p>
             <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/60">
@@ -1029,8 +1031,9 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
                 'Pasa al plan Gratis: sigue anotando gastos e ingresos a mano; lo del Pro queda guardado y cerrado hasta que pague.'
               ) : (
                 <>
-                  Deja de poder cargar. Sigue entrando, viendo lo suyo y bajando su Excel:
-                  los datos son de esa persona, no nuestros.
+                  Le pone el candado: no puede usar nada, ni ver su historial ni bajar el Excel.
+                  Solo le queda la pantalla de planes para pagar. No se borra nada: cuando
+                  vuelve a pagar, encuentra todo como lo dejó.
                 </>
               )}
             </p>

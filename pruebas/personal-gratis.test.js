@@ -88,8 +88,9 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
 // Lo del Pro, con cómo se pide. `c` trae los ids armados en la prueba; `n`
 // cambia los nombres para que repetir la lista no choque con un «ya existe».
 // `candado`: su tabla tiene cuenta_activa_* (el negocio vencido lo tiene
-// cerrado desde la 018). Las otras (fiado, billetera) las cierra la 110 solo
-// para la personal en Gratis.
+// cerrado desde la 018). Las otras (fiado, billetera) la 110 las cierra para
+// la personal en Gratis; al negocio vencido se las cierra la 111, y eso se
+// prueba en candado-vencido.test.js.
 const LO_PAGO = [
   ['una deuda nueva', true, (c, n) => ["select public.crear_deuda($1,$2,'prestamo','Financiera',100000)", [c.empresaId, `Préstamo ${n}`]]],
   ['pagar una cuota', true, (c) => ['select public.registrar_pago_deuda($1,$2)', [c.deuda, 1000]]],
@@ -268,10 +269,9 @@ const LO_PAGO_CON_CANDADO = LO_PAGO.filter(([, candado]) => candado);
   // ═══════════════════════════════════════════════════════════
   grupo('5 · Un negocio vencido, igual que el 15/09');
   // ═══════════════════════════════════════════════════════════
-  // Fuera de esta prueba, a propósito: un negocio vencido todavía escribe
-  // fiado, clientes y la billetera por API, y no puede «Empezar de cero» con
-  // un pago de cuota. Son huecos previos a la 110, que no los toca para no
-  // tocar a los negocios: van como tareas aparte.
+  // Fiado, billetera y clases de un negocio vencido, y su «Empezar de cero»
+  // con un pago de cuota, los cierra la 111: se prueban en
+  // candado-vencido.test.js. `clientes` queda abierto a propósito (099).
   await vencer(db, N.empresaId);
   ok('la pantalla lo tapa entero y no es Gratis',
     claves(await limites(N), ['escritura', 'gratis_personal']), { escritura: false, gratis_personal: false });

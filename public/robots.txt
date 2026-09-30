@@ -47,5 +47,4 @@ Disallow: /turno/
 # Por dentro del servidor
 Disallow: /api
 
-# Cuando ande orden.com.py, cambiar esta dirección (tiene que ser completa).
-Sitemap: https://gestion-financiera-wheat.vercel.app/sitemap.xml
+Sitemap: https://orden.com.py/sitemap.xml
