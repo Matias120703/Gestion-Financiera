@@ -2,8 +2,10 @@
  * UN .XLSX COMO `LibroPlanilla` (114). SOLO EN EL SERVIDOR.
  *
  * exceljs pesa ~0,9 MB: no puede ir al celular del trainer (y menos al del
- * alumno). Lo llama únicamente la ruta /api/rutinas/importar; hay una prueba
- * que vigila que ningún componente ni la página del alumno lo importen.
+ * alumno). Lo llama únicamente `planillaDelPedido` (planilla-del-pedido.ts),
+ * desde las rutas /api/rutinas/importar y /api/productos/planilla (122); hay
+ * pruebas que vigilan que ningún componente ni la página del alumno lo
+ * importen.
  *
  * Antes de abrir el archivo se mira su firma y el directorio del zip
  * (planilla.ts): un Excel viejo o con contraseña, un LibreOffice, un Numbers
@@ -27,8 +29,10 @@
  * Las hojas ocultas (la lista de un desplegable, cálculos) y las columnas y
  * filas ocultas no se leen. Las celdas combinadas: la parte horizontal queda
  * vacía y la vertical repite el valor hacia abajo en la misma columna (así
- * «Peito» combinado en tres filas es el grupo de las tres). Las imágenes, las
- * validaciones y el formato condicional ni se cargan.
+ * «Peito» combinado en tres filas es el grupo de las tres); con `numeros`
+ * (la lista de productos), la que empieza una combinación a lo ancho queda
+ * marcada `combinada` (el subtítulo de grupo centrado sobre la tabla). Las
+ * imágenes, las validaciones y el formato condicional ni se cargan.
  *
  * El archivo no se guarda en ningún lado y su contenido no se escribe en
  * los logs (D3.12).
@@ -39,8 +43,26 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import {
   TOPES_PLANILLA, firmaDeArchivo, revisarZip,
-  type CeldaPlanilla, type ErrorPlanilla, type HojaPlanilla, type LibroPlanilla,
+  type CeldaPlanilla, type ErrorPlanilla, type HojaPlanilla, type LibroPlanilla, type TopesPlanilla,
 } from './planilla';
+
+/**
+ * Cómo leer (122). Sin opciones, exactamente lo de la rutina (114): sus
+ * topes, sin lo oculto y las celdas como texto.
+ *   · `topes`: la lista de productos pasa `TOPES_CATALOGO` (30.000 filas);
+ *   · `ocultas`: leer también las filas y columnas ocultas, y marcarlas
+ *     (`filasOcultas`, `columnasOcultas`). La hoja oculta sigue sin leerse:
+ *     es la lista de un desplegable o una configuración, no la lista;
+ *   · `numeros`: cada celda trae su número tal cual (`numero`) y la fórmula
+ *     sin resultado queda marcada (`sinCalcular`); el número con formato de
+ *     ceros trae el texto con sus ceros (000123), y la combinada a lo ancho,
+ *     su marca (`combinada`).
+ */
+export interface OpcionesXlsx {
+  topes?: TopesPlanilla;
+  ocultas?: boolean;
+  numeros?: boolean;
+}
 
 /** El flujo de una entrada del zip, pedazo a pedazo (JSZip lo tiene; sus tipos no lo nombran). */
 interface FlujoDeEntrada {
@@ -157,8 +179,12 @@ function formatoConAnio(numFmt: string | undefined): boolean {
   return /y/.test(String(numFmt || '').toLowerCase().replace(/\[[^\]]*\]/g, '').replace(/"[^"]*"/g, ''));
 }
 
-/** El valor de una celda como texto (y su link o su marca de fecha), o null si está vacía. */
-function valorComoCelda(v: unknown, numFmt: string | undefined): Omit<CeldaPlanilla, 'negrita'> | null {
+/**
+ * El valor de una celda como texto (y su link o su marca de fecha), o null si
+ * está vacía. Con `numeros` (122), el número va además tal cual y la fórmula
+ * sin resultado vuelve marcada, con el texto vacío.
+ */
+function valorComoCelda(v: unknown, numFmt: string | undefined, numeros = false): Omit<CeldaPlanilla, 'negrita'> | null {
   if (v === null || v === undefined) return null;
   if (v instanceof Date) {
     if (Number.isNaN(v.getTime())) return null;
@@ -168,7 +194,11 @@ function valorComoCelda(v: unknown, numFmt: string | undefined): Omit<CeldaPlani
   if (typeof v === 'number') {
     if (!Number.isFinite(v)) return null;
     if (/%/.test(numFmt || '')) return { texto: `${numeroComoTexto(+(v * 100).toFixed(2))}%` };
-    return { texto: numeroComoTexto(v) };
+    if (!numeros) return { texto: numeroComoTexto(v) };
+    // Con formato de ceros («000000»), como lo muestra Excel: 123 se ve
+    // 000123, y así lo exporta el sistema de caja (122).
+    const ceros = /^0+$/.test(String(numFmt || '')) && Number.isInteger(v) && v >= 0;
+    return { texto: ceros ? String(v).padStart(String(numFmt).length, '0') : numeroComoTexto(v), numero: v };
   }
   if (typeof v === 'string') return v.trim() ? { texto: v } : null;
   if (typeof v === 'boolean') return v ? { texto: '✓' } : null;
@@ -187,11 +217,15 @@ function valorComoCelda(v: unknown, numFmt: string | undefined): Omit<CeldaPlani
     if ('formula' in o || 'sharedFormula' in o) {
       const formula = String(o.formula ?? '');
       const hv = RE_HIPERVINCULO.exec(formula);
-      const resultado = valorComoCelda(o.result, numFmt);
+      const resultado = valorComoCelda(o.result, numFmt, numeros);
       if (hv) {
         const texto = resultado?.texto || hv[2] || hv[1];
         return { texto, link: hv[1].trim() };
       }
+      // Sin resultado guardado (122): la lista de productos quiere saberlo,
+      // para decir «abrila en Excel y guardala» y no «20 sin precio» a secas.
+      // Un resultado de error (#N/A, #DIV/0!) no es «sin calcular»: es vacía.
+      if (!resultado && numeros && (o.result === undefined || o.result === null)) return { texto: '', sinCalcular: true };
       // Marcada: una hoja «Resumen» cuyos ejercicios son fórmulas que copian
       // los de la rutina no es la rutina (rutina-planilla.ts).
       return resultado ? { ...resultado, formula: true } : null;
@@ -202,7 +236,7 @@ function valorComoCelda(v: unknown, numFmt: string | undefined): Omit<CeldaPlani
   return null;
 }
 
-function celdaDe(c: ExcelJS.Cell): CeldaPlanilla | null {
+function celdaDe(c: ExcelJS.Cell, numeros: boolean, row: ExcelJS.Row): CeldaPlanilla | null {
   // Combinadas: la de arriba a la izquierda manda. La parte horizontal queda
   // vacía; la vertical repite el valor hacia abajo en la misma columna.
   let fuente = c;
@@ -210,25 +244,36 @@ function celdaDe(c: ExcelJS.Cell): CeldaPlanilla | null {
     if (c.master.col !== c.col) return null;
     fuente = c.master;
   }
-  const leida = valorComoCelda(fuente.value, fuente.numFmt);
+  const leida: CeldaPlanilla | null = valorComoCelda(fuente.value, fuente.numFmt, numeros);
   if (!leida) return null;
-  const negrita = !!fuente.font?.bold;
-  return negrita ? { ...leida, negrita } : leida;
+  if (fuente.font?.bold) leida.negrita = true;
+  // La de arriba a la izquierda de una combinación A LO ANCHO (la que sigue a
+  // la derecha es parte de ella): la fila «Ferretería» combinada de A a F,
+  // centrada y con color, es un subtítulo aunque no esté en negrita (122).
+  if (numeros && c.isMerged && c.master?.address === c.address) {
+    const derecha = row.getCell(Number(c.col) + 1);
+    if (derecha.isMerged && derecha.master?.address === c.address) leida.combinada = true;
+  }
+  return leida;
 }
 
 /**
  * Lee un .xlsx o .xlsm. Devuelve las hojas visibles (hasta 20), con hasta
  * 500 filas (`recortada` si había más) y 40 columnas visibles cada una.
+ * Con `opciones` (122), los topes y lo oculto de la lista de productos.
  */
-export async function leerXlsx(bytes: Uint8Array): Promise<LibroPlanilla | { error: ErrorPlanilla }> {
-  if (bytes.length > TOPES_PLANILLA.bytes) return { error: 'muy_grande' };
+export async function leerXlsx(bytes: Uint8Array, opciones: OpcionesXlsx = {}): Promise<LibroPlanilla | { error: ErrorPlanilla }> {
+  const topes: TopesPlanilla = opciones.topes ?? TOPES_PLANILLA;
+  const ocultas = !!opciones.ocultas;
+  const numeros = !!opciones.numeros;
+  if (bytes.length > topes.bytes) return { error: 'muy_grande' };
   const firma = firmaDeArchivo(bytes);
   if (firma === 'xls_viejo') return { error: 'xls_viejo' };
   if (firma !== 'zip') return { error: 'no_es_planilla' };
-  const zip = revisarZip(bytes);
+  const zip = revisarZip(bytes, topes.descomprimido);
   if ('error' in zip) return zip;
   // Lo que dice el zip ya entra; ahora lo que ocupa de verdad (zip bomba que miente).
-  if (!(await entraDescomprimido(bytes, TOPES_PLANILLA.descomprimido))) return { error: 'no_es_planilla' };
+  if (!(await entraDescomprimido(bytes, topes.descomprimido))) return { error: 'no_es_planilla' };
 
   const wb = new ExcelJS.Workbook();
   try {
@@ -240,42 +285,61 @@ export async function leerXlsx(bytes: Uint8Array): Promise<LibroPlanilla | { err
   }
 
   const hojas: HojaPlanilla[] = [];
+  // Las filas que quedan, sumando las hojas (`filasEnTotal`, 122).
+  let quedan = topes.filasEnTotal ?? Infinity;
   for (const ws of wb.worksheets) {
-    if (hojas.length >= TOPES_PLANILLA.hojas) break;
+    if (hojas.length >= topes.hojas) break;
     if (!ws || ws.state !== 'visible') continue;
 
+    const topeFilas = Math.min(topes.filas, quedan);
     let recortada = false;
     let ultimaFila = 0;
     let ultimaColumna = 0;
+    let conAlgo = 0;
     ws.eachRow({ includeEmpty: false }, (row, n) => {
       // Con algo que se ve: una fila con fórmulas sin resultado («=E7*F7»
       // copiado hasta la fila 506 de un registro vacío) no cuenta, ni para
       // el tope de filas ni para el aviso de «leímos las primeras 500».
       const tieneAlgo = Array.isArray(row.values) && row.values.some((x) => valorComoCelda(x, undefined) !== null);
       if (!tieneAlgo) return;
-      if (n > TOPES_PLANILLA.filas) { recortada = true; return; }
+      if (n > topeFilas) { recortada = true; return; }
+      conAlgo++;
       ultimaFila = Math.max(ultimaFila, n);
       ultimaColumna = Math.max(ultimaColumna, row.cellCount);
     });
 
-    // Las columnas visibles, hasta 40.
+    // Las columnas visibles (o todas, con `ocultas`), hasta 40.
     const columnas: number[] = [];
-    for (let k = 1; k <= ultimaColumna && columnas.length < TOPES_PLANILLA.columnas; k++) {
-      if (!ws.getColumn(k).hidden) columnas.push(k);
+    const columnasOcultas: number[] = [];
+    for (let k = 1; k <= ultimaColumna && columnas.length < topes.columnas; k++) {
+      const oculta = !!ws.getColumn(k).hidden;
+      if (oculta && !ocultas) continue;
+      if (oculta) columnasOcultas.push(columnas.length);
+      columnas.push(k);
     }
 
     const filas: (CeldaPlanilla | null)[][] = [];
+    const filasOcultas: number[] = [];
     for (let n = 1; n <= ultimaFila; n++) {
       const row = ws.getRow(n);
-      if (row.hidden) continue;
-      filas.push(columnas.map((k) => celdaDe(row.getCell(k))));
+      if (row.hidden) {
+        if (!ocultas) continue;
+        filasOcultas.push(filas.length);
+      }
+      filas.push(columnas.map((k) => celdaDe(row.getCell(k), numeros, row)));
     }
-    // Sin filas vacías al final.
-    while (filas.length && filas[filas.length - 1].every((c) => !c)) filas.pop();
+    // Sin filas vacías al final (una fórmula sin calcular sola tampoco cuenta).
+    while (filas.length && filas[filas.length - 1].every((c) => !c || (!c.texto && !c.link))) filas.pop();
 
     const hoja: HojaPlanilla = { nombre: ws.name ?? '', filas };
     if (recortada) hoja.recortada = true;
+    if (ocultas) {
+      const quedaron = filasOcultas.filter((r) => r < filas.length);
+      if (quedaron.length) hoja.filasOcultas = quedaron;
+      if (columnasOcultas.length) hoja.columnasOcultas = columnasOcultas;
+    }
     hojas.push(hoja);
+    quedan = Math.max(0, quedan - conAlgo);
   }
   return { hojas };
 }

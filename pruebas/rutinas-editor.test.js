@@ -402,7 +402,7 @@ console.log('\n── 8 · Lo del celular sobre una versión que otro guardó (m
 // ═══════════════════════════════════════════════════════════
 console.log('\n── 9 · Los textos, en los dos idiomas ──');
 {
-  const { rutinasEditorEs: es, rutinasEditorPt: pt } = cargarTs('src/i18n/textos/rutinas-editor.ts');
+  const { rutinasEditorEs: es, rutinasEditorPt: pt } = cargarTs('src/i18n/textos/rutinas-editor.ts', { './planilla': cargarTs('src/i18n/textos/planilla.ts') });
   const hojas = (o, ruta = '') => Object.entries(o).flatMap(([k, v]) =>
     (v && typeof v === 'object' && !Array.isArray(v) ? hojas(v, `${ruta}${k}.`) : [[`${ruta}${k}`, v]]));
   const claves = (o) => hojas(o).map(([k]) => k).sort();

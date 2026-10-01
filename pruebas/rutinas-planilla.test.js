@@ -910,22 +910,38 @@ XLSX.prototype.load = function (...a) { aperturas++; return cargarOriginal.apply
   const raiz = path.join(__dirname, '..');
   const leerFuente = (r) => fs.readFileSync(path.join(raiz, r), 'utf8').replace(/\r\n/g, '\n');
   const sinComentarios = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+  // Lo de leer el pedido es de las dos rutas (la rutina y los productos, 122):
+  // vive en planilla-del-pedido.ts, y cada ruta pone su permiso y sus topes.
   const ruta = sinComentarios(leerFuente('src/app/api/rutinas/importar/route.ts'));
-  ok('la ruta de importar: nodejs, con sesión, solo para /rutinas, y sin console.log',
-    [/export const runtime = 'nodejs'/.test(ruta), /auth\.getUser\(\)/.test(ruta), /tieneSeccion\(/.test(ruta), /console\.log\(/.test(ruta)],
-    [true, true, true, false]);
-  ok('la ruta no guarda nada: ni storage, ni insert, ni rpc', /storage\.|\.insert\(|\.rpc\(|\.upsert\(/.test(ruta), false);
-  ok('la ruta lee con leerXlsx y trae de Google con exportDeSheets + bajarDeGoogle',
-    [/leerXlsx\(/.test(ruta), /exportDeSheets\(/.test(ruta), /bajarDeGoogle\(/.test(ruta)], [true, true, true]);
+  const pedido = sinComentarios(leerFuente('src/lib/planilla-del-pedido.ts'));
+  const rutaProductos = sinComentarios(leerFuente('src/app/api/productos/planilla/route.ts'));
+  ok('la ruta de importar: nodejs, con sesión (el ayudante), solo para /rutinas, y sin console.log',
+    [/export const runtime = 'nodejs'/.test(ruta), /auth\.getUser\(\)/.test(pedido), /planillaDelPedido\(/.test(ruta), /tieneSeccion\(/.test(ruta),
+      /console\.log\(/.test(ruta + pedido + rutaProductos)],
+    [true, true, true, true, false]);
+  ok('la ruta no guarda nada: ni storage, ni insert, ni rpc (ni el ayudante, ni la de productos)',
+    [ruta, pedido, rutaProductos].map((x) => /storage\.|\.insert\(|\.rpc\(|\.upsert\(|\.update\(|\.delete\(/.test(x)), [false, false, false]);
+  ok('el ayudante lee con leerXlsx y trae de Google con exportDeSheets + bajarDeGoogle',
+    [/leerXlsx\(bytes, opciones\)/.test(pedido), /exportDeSheets\(/.test(pedido), /bajarDeGoogle\(/.test(pedido)], [true, true, true]);
+  ok('la rutina se lee como siempre (sin opciones: 500 filas, sin lo oculto)', /opciones:/.test(ruta), false);
+  ok('la de productos: nodejs, el ayudante, sus topes, lo oculto, los números, en corto, y solo dueño o administración con Productos',
+    [/export const runtime = 'nodejs'/.test(rutaProductos), /planillaDelPedido\(/.test(rutaProductos),
+      /opciones: \{ topes: TOPES_CATALOGO, ocultas: true, numeros: true \}/.test(rutaProductos), /libroACompacto\(leido\.libro\)/.test(rutaProductos),
+      /fila\.rol === 'propietario' \|\| fila\.rol === 'admin'/.test(rutaProductos),
+      // La ficha del rubro; con la 121, la de la cuenta (con «También vendo productos»).
+      /tieneSeccion\(cuenta\.rubro, cuenta\.tipo_cuenta, '\/productos'\)|fichaDeLaCuenta\(cuenta\)\.secciones\['\/productos'\]/.test(rutaProductos)],
+    [true, true, true, true, true, true]);
   const recorrer = (dir) => fs.readdirSync(path.join(raiz, dir), { withFileTypes: true })
     .flatMap((d) => (d.isDirectory() ? recorrer(`${dir}/${d.name}`) : /\.(tsx?|js)$/.test(d.name) ? [`${dir}/${d.name}`] : []));
   const delCliente = [...recorrer('src/components'), ...recorrer('src/app/rutina')];
   ok('exceljs y planilla-xlsx solo en el servidor: ningún componente ni la página del alumno los importan',
     delCliente.filter((a) => /from ['"](?:exceljs|@\/lib\/planilla-xlsx|[./]+lib\/planilla-xlsx)['"]|require\(['"]exceljs/.test(leerFuente(a))), []);
   const importar = sinComentarios(leerFuente('src/components/rutinas/editor/ImportarPlanilla.tsx'));
-  ok('el navegador frena más de 4 MB antes de subir, y el CSV lo lee sin subirlo',
-    [/TOPES_PLANILLA\.bytes/.test(importar), /libroDesdeCsv\(/.test(importar), /'\/api\/rutinas\/importar'/.test(importar), /<form/.test(importar)],
-    [true, true, true, false]);
+  const elegir = sinComentarios(leerFuente('src/components/planilla/ElegirPlanilla.tsx'));
+  ok('el navegador frena más de 4 MB antes de subir, y el CSV lo lee sin subirlo (ElegirPlanilla, con los topes de cada uno)',
+    [/archivo\.size > topes\.bytes/.test(elegir), /libroDesdeCsv\(bytes, topes\)/.test(elegir), /<form/.test(elegir + importar)], [true, true, false]);
+  ok('la rutina elige con ElegirPlanilla, su ruta y sus topes',
+    [/<ElegirPlanilla/.test(importar), /'\/api\/rutinas\/importar'/.test(importar), /topes=\{TOPES_PLANILLA\}/.test(importar)], [true, true, true]);
   ok('la revisión usa planillaARutina y VistaLeida, y «Dar vuelta» usa darVueltaSeriesYReps',
     [/planillaARutina\(/.test(importar), /<VistaLeida/.test(importar), /darVueltaSeriesYReps\(/.test(importar)], [true, true, true]);
   const enlace = leerFuente('src/lib/enlace-sheets.ts');

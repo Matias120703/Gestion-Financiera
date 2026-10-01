@@ -22,9 +22,18 @@ import { ElegirCuenta, cuentaDelCobro, cuentasDelMetodo, useCuentasParaElegir } 
 import { tonoDeCuenta } from '@/lib/colores-cuenta';
 import type { CuentaParaElegir } from '@/lib/tipos';
 import { etiquetaCampana, type CampanaParaElegir } from '@/components/ListaMovimientos';
+import { codigoSinCeros } from '@/lib/codigo-producto';
 
 /** La última campaña elegida, por negocio: la misma que recuerda Gastos. */
 const claveCampana = (empresa: string) => `orden:campana:${empresa}`;
+
+/**
+ * ¿El código del producto es el buscado? (`q`: ya en minúsculas y sin los
+ * ceros de adelante). El lector de barras escanea 0012345678905 (el UPC de
+ * un importado) y el producto se guardó 12345678905, o al revés: es el mismo,
+ * como en la base (codigo_sin_ceros, 122).
+ */
+const mismoCodigo = (codigo: string | null | undefined, q: string) => !!codigo && !!q && codigoSinCeros(codigo.toLowerCase()) === q;
 
 /**
  * PANTALLA DE VENTA
@@ -182,23 +191,53 @@ export function PantallaVenta({
     return m;
   }, [frecuentes]);
 
-  const visibles = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-    const filtrados = productos.filter((p) => {
-      if (categoria !== 'todas' && (p.categoria || 'General') !== categoria) return false;
-      if (!q) return true;
-      return p.nombre.toLowerCase().includes(q) || (p.categoria ?? '').toLowerCase().includes(q);
-    });
+  // Cuántas tarjetas se dibujan (122). Con la lista de una planilla son
+  // miles: 20.000 botones trababan el celular. Arriba van los más vendidos,
+  // y buscar por nombre o código encuentra cualquiera.
+  const TARJETAS_POR_VEZ = 60;
 
-    // Lo que más vendés, arriba. Los que nunca se vendieron van después en
-    // orden alfabético, para que igual sean fáciles de encontrar.
-    return filtrados.sort((a, b) => {
+  // Lo que más vendés, arriba. Los que nunca se vendieron van después en
+  // orden alfabético, para que igual sean fáciles de encontrar. Se ordena una
+  // vez: con miles de productos de una planilla (122), ordenar en cada tecla
+  // se sentía.
+  const ordenados = useMemo(() => {
+    const comparar = new Intl.Collator('es').compare;
+    return [...productos].sort((a, b) => {
       const pa = posicion.get(a.id) ?? Number.MAX_SAFE_INTEGER;
       const pb = posicion.get(b.id) ?? Number.MAX_SAFE_INTEGER;
       if (pa !== pb) return pa - pb;
-      return a.nombre.localeCompare(b.nombre, 'es');
+      return comparar(a.nombre, b.nombre);
     });
-  }, [productos, busqueda, categoria, posicion]);
+  }, [productos, posicion]);
+
+  const visibles = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    const qCodigo = codigoSinCeros(q);
+    const filtrados = ordenados.filter((p) => {
+      if (categoria !== 'todas' && (p.categoria || 'General') !== categoria) return false;
+      if (!q) return true;
+      return p.nombre.toLowerCase().includes(q) || (p.categoria ?? '').toLowerCase().includes(q)
+        || (p.codigo ?? '').toLowerCase().includes(q) || mismoCodigo(p.codigo, qCodigo);
+    });
+    // El código exacto (122: lo escribe un lector de código de barras; los ceros de adelante no cuentan), primero.
+    const exacto = q ? filtrados.findIndex((p) => mismoCodigo(p.codigo, qCodigo)) : -1;
+    if (exacto > 0) filtrados.unshift(...filtrados.splice(exacto, 1));
+    return filtrados;
+  }, [ordenados, busqueda, categoria]);
+
+  /**
+   * El lector de código de barras escribe el número y Enter: si hay UN
+   * producto con ese código exacto, va directo al carrito (122).
+   */
+  function alEnterEnBusqueda() {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return;
+    const qCodigo = codigoSinCeros(q);
+    const conCodigo = productos.filter((p) => mismoCodigo(p.codigo, qCodigo));
+    if (conCodigo.length !== 1) return;
+    agregar(conCodigo[0]);
+    setBusqueda('');
+  }
 
   const subtotal = carrito.reduce((s, l) => s + l.cantidad * l.precio_unitario, 0);
   const costoTotal = carrito.reduce((s, l) => s + l.cantidad * l.costo_unitario, 0);
@@ -368,6 +407,7 @@ export function PantallaVenta({
             </svg>
             <input
               className="campo pl-10" placeholder={t.venta.buscarProducto}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); alEnterEnBusqueda(); } }}
               value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
@@ -423,14 +463,16 @@ export function PantallaVenta({
               detalle={t.venta.sinProductosDetalle}
             />
             <div className="px-6 pb-6 text-center">
-              <Link href="/productos" className="boton-principal">{t.venta.cargarProductos}</Link>
+              {/* Con ?subir=1 Productos abre «Subir planilla» directo (122). */}
+              <Link href="/productos?subir=1" className="boton-principal">{t.venta.cargarProductos}</Link>
             </div>
           </div>
         ) : visibles.length === 0 ? (
           <div className="tarjeta"><Vacio titulo={t.venta.nadaCoincide} detalle={t.venta.nadaCoincideDetalle} /></div>
         ) : (
+          <>
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
-            {visibles.map((p, i) => {
+            {visibles.slice(0, TARJETAS_POR_VEZ).map((p, i) => {
               const agotado = p.controla_stock && Number(p.stock) <= 0;
               const enCarrito = carrito.find((l) => l.producto_id === p.id);
               const esFrecuente = !busqueda && categoria === 'todas' && posicion.has(p.id) && i < 4;
@@ -466,6 +508,12 @@ export function PantallaVenta({
               );
             })}
           </div>
+          {visibles.length > TARJETAS_POR_VEZ && (
+            <p className="text-center text-[12.5px] text-tinta/55">
+              {t.venta.mostrando(numero(TARJETAS_POR_VEZ), numero(visibles.length))}
+            </p>
+          )}
+          </>
         )}
 
         {/* Aire para que la barra de cobro no tape el último producto. La

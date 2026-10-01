@@ -1,5 +1,7 @@
 import type { Textos } from './es';
 import { rutinasEditorPt } from './rutinas-editor';
+import { planillaPt } from './planilla';
+import { planillaProductosPt } from './planilla-productos';
 import { rutinasPanelPt } from './rutinas-panel';
 import { rutinaPublicaPt } from './rutina-publica';
 import { rutinasComunPt } from './rutinas-comun';
@@ -638,6 +640,7 @@ export const pt: Textos = {
     cargarProductos: 'Cadastrar produtos',
     nadaCoincide: 'Nada encontrado',
     nadaCoincideDetalle: 'Tente outra palavra ou mude de categoria.',
+    mostrando: (n: string, total: string) => `Mostrando ${n} de ${total}. Busque por nome ou código.`,
     estaVenta: 'Esta venda',
     carritoVacio: 'Sem produtos',
     carritoVacioDetalle: 'Toque em um produto pra adicionar.',
@@ -774,6 +777,13 @@ export const pt: Textos = {
     siEliminar: 'Sim, excluir',
     eliminarProducto: 'Excluir produto',
     eliminarServicio: 'Excluir serviço',
+
+    codigo: 'Código',
+    codigoAyuda: 'O de barras ou o seu. Opcional.',
+    codigoRepetido: 'Você já tem outro produto com esse código.',
+    mostrando: (n: string, total: string) => `Mostrando ${n} de ${total}. Busque por nome ou código para encontrar o resto.`,
+    verMas: 'Ver mais',
+    planilla: planillaProductosPt,
   },
 
   portada: {
@@ -2618,6 +2628,7 @@ export const pt: Textos = {
   rutinasPanel: rutinasPanelPt,
   rutinaPublica: rutinaPublicaPt,
   rutinasComun: rutinasComunPt,
+  planilla: planillaPt,
 
   campanas: campanasPt,
   gastosCampana: gastosCampanaPt,

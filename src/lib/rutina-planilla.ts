@@ -73,7 +73,7 @@ import {
   tipoDeColumna, unidadDe,
   type Columna, type RutinaLeidaConNotas,
 } from './rutina-texto';
-import { libroDesdeTexto, type CeldaPlanilla, type HojaPlanilla, type LibroPlanilla } from './planilla';
+import { libroDesdeTexto, plegar, textoDeCelda, type CeldaPlanilla, type HojaPlanilla, type LibroPlanilla } from './planilla';
 import { buscarBase, claveEjercicio } from './ejercicios-base';
 
 /** La semana que se usa sola (pregunta 12 de Matías): la primera. */
@@ -125,15 +125,9 @@ type Filas = Celda[][];
 
 // ─────────────────────────── utilidades ───────────────────────────
 
-/** Minúsculas y sin tildes. */
-function plegar(s: string): string {
-  return (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
-
-/** El texto de una celda en un renglón: sin saltos de línea ni tabuladores adentro. */
-function txt(c: Celda | undefined): string {
-  return (c?.texto ?? '').replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
+// `plegar` (minúsculas y sin tildes) y el texto de una celda en un renglón
+// viven en planilla.ts desde la 122: los usa también la lista de productos.
+const txt = (c: Celda | undefined): string => textoDeCelda(c);
 
 const llenas = (f: Filas[number]) => f.filter((c) => txt(c) !== '');
 const vacia = (f: Filas[number]) => llenas(f).length === 0;

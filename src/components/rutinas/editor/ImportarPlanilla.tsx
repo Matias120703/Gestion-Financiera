@@ -1,26 +1,17 @@
 'use client';
 
-import { useId, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { useTextos } from '@/i18n/cliente';
-import type { rutinasEditorEs } from '@/i18n/textos/rutinas-editor';
-import { TOPES_PLANILLA, firmaDeArchivo, libroDesdeCsv, type LibroPlanilla } from '@/lib/planilla';
+import { TOPES_PLANILLA, type LibroPlanilla } from '@/lib/planilla';
 import { darVueltaSeriesYReps, planillaARutina } from '@/lib/rutina-planilla';
 import { rutinaComoTexto, type RutinaLeidaConNotas } from '@/lib/rutina-texto';
 import type { EjercicioBiblioteca } from '@/lib/tipos-rutinas';
+import { ElegirPlanilla } from '@/components/planilla/ElegirPlanilla';
 import { Hoja } from '../panel/Piezas';
 import { ExtrasPlanilla } from './ExtrasPlanilla';
 import { PieLeida, VistaLeida, type ModoPegar } from './VistaLeida';
 
-type CodigoError = keyof typeof rutinasEditorEs.importar.errores;
-
-type Estado =
-  | { tipo: 'inicio' }
-  | { tipo: 'leyendo' }
-  | { tipo: 'error'; codigo: CodigoError }
-  | { tipo: 'libro'; libro: LibroPlanilla };
-
 const RUTA = '/api/rutinas/importar';
-const TIPOS = '.xlsx,.xlsm,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12';
 
 /** Lo que devolvió la ruta: un libro con hojas, o nada. */
 function libroValido(x: unknown): LibroPlanilla | null {
@@ -32,18 +23,14 @@ function libroValido(x: unknown): LibroPlanilla | null {
  * «SUBIR PLANILLA» (114): la rutina que el trainer tiene en Excel o en
  * Google Sheets.
  *
- * Tres caminos, y los tres terminan en la misma revisión de «Pegar texto»
- * (`VistaLeida`), con lo que la planilla suma arriba: las hojas que no se
- * usaron, la semana (si trae varias) y los avisos. Nada se guarda en la base
- * hasta tocar «Guardar» del editor (G6).
+ * Elegir el archivo o pegar el link es `ElegirPlanilla` (el mismo de la
+ * lista de productos, 122): el CSV se lee acá, el .xlsx y el link los lee el
+ * servidor (/api/rutinas/importar), y más de 4 MB o un .xls viejo se frenan
+ * antes de subir. Los tres caminos terminan en la misma revisión de «Pegar
+ * texto» (`VistaLeida`), con lo que la planilla suma arriba: las hojas que no
+ * se usaron, la semana (si trae varias) y los avisos. Nada se guarda en la
+ * base hasta tocar «Guardar» del editor (G6).
  *
- *   · .csv/.tsv: se lee acá, en el celular, sin subirlo (`libroDesdeCsv`);
- *   · .xlsx/.xlsm: lo lee el servidor (/api/rutinas/importar), porque exceljs
- *     pesa ~0,9 MB y no puede venir al celular. El archivo no se guarda;
- *   · un link de Google Sheets: el servidor baja el .xlsx que exporta Google.
- *
- * Más de 4 MB se frena ACÁ, antes de subir (Vercel corta en 4,5 MB). Un
- * Excel viejo (.xls) o con contraseña se reconoce por su firma, también acá.
  * Lo que se entendió se arma con `planillaARutina`, que es chico y puro: el
  * cambio de semana y «Dar vuelta» corren en el celular, sin volver a subir.
  */
@@ -60,10 +47,8 @@ export function ImportarPlanilla({
 }) {
   const t = useTextos();
   const i = t.rutinasEditor.importar;
-  const idLink = useId();
-  const entrada = useRef<HTMLInputElement>(null);
-  const [estado, setEstado] = useState<Estado>({ tipo: 'inicio' });
-  const [enlace, setEnlace] = useState('');
+  const [libro, setLibro] = useState<LibroPlanilla | null>(null);
+  const [leyendo, setLeyendo] = useState(false);
   const [semana, setSemana] = useState(1);
   // Las hojas que el trainer sumó o sacó a mano, por nombre (lo demás,
   // automático: solo la que parece la rutina). Se reinicia con otro
@@ -73,8 +58,8 @@ export function ImportarPlanilla({
   const [vueltas, setVueltas] = useState<{ dia: number; indice: number }[]>([]);
 
   const resultado = useMemo(
-    () => (estado.tipo === 'libro' ? planillaARutina(estado.libro, { semana, hojas }) : null),
-    [estado, semana, hojas],
+    () => (libro ? planillaARutina(libro, { semana, hojas }) : null),
+    [libro, semana, hojas],
   );
   const leida = useMemo(
     () => (resultado ? vueltas.reduce((l, v) => darVueltaSeriesYReps(l, v.dia, v.indice), resultado.leida) : null),
@@ -82,77 +67,22 @@ export function ImportarPlanilla({
   );
   const ejercicios = leida ? leida.dias.reduce((s, d) => s + d.ejercicios.length, 0) : 0;
 
-  const fallar = (codigo: CodigoError) => setEstado({ tipo: 'error', codigo });
-  const usarLibro = (libro: LibroPlanilla) => {
+  const usarLibro = (nuevo: LibroPlanilla) => {
     setSemana(1);
     setHojas({});
     setVueltas([]);
-    setEstado({ tipo: 'libro', libro });
+    setLibro(nuevo);
   };
 
-  /** El .xlsx o el link, al servidor. Sin sesión, el middleware redirige al login: eso también se entiende. */
-  async function pedir(cuerpo: FormData | { empresa: string; enlace: string }) {
-    setEstado({ tipo: 'leyendo' });
-    try {
-      const esArchivo = cuerpo instanceof FormData;
-      const r = await fetch(RUTA, {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        body: esArchivo ? cuerpo : JSON.stringify(cuerpo),
-        headers: esArchivo ? undefined : { 'Content-Type': 'application/json' },
-      });
-      if (r.redirected || r.status === 401) { fallar('sin_sesion'); return; }
-      let datos: { libro?: unknown; error?: unknown } | null = null;
-      try { datos = await r.json(); } catch { datos = null; }
-      const libro = libroValido(datos?.libro);
-      if (r.ok && libro) { usarLibro(libro); return; }
-      const codigo = typeof datos?.error === 'string' && datos.error in i.errores ? (datos.error as CodigoError) : 'error';
-      fallar(codigo);
-    } catch {
-      fallar('error');
-    }
-  }
-
-  async function alElegir(ev: ChangeEvent<HTMLInputElement>) {
-    const archivo = ev.target.files?.[0];
-    ev.target.value = '';
-    if (!archivo) return;
-    if (archivo.size > TOPES_PLANILLA.bytes) { fallar('muy_grande'); return; }
-    setEstado({ tipo: 'leyendo' });
-    try {
-      const bytes = new Uint8Array(await archivo.arrayBuffer());
-      const firma = firmaDeArchivo(bytes);
-      if (firma === 'xls_viejo') { fallar('xls_viejo'); return; }
-      if (firma === 'zip') {
-        const datos = new FormData();
-        datos.append('empresa', empresaId);
-        datos.append('archivo', archivo);
-        await pedir(datos);
-        return;
-      }
-      // Un CSV (o un TSV) se lee acá, sin subirlo.
-      if (/\.(csv|tsv|txt)$/i.test(archivo.name) || archivo.type.startsWith('text/')) { usarLibro(libroDesdeCsv(bytes)); return; }
-      fallar('no_es_planilla');
-    } catch {
-      fallar('error');
-    }
-  }
-
-  function traer() {
-    if (!enlace.trim()) return;
-    void pedir({ empresa: empresaId, enlace: enlace.trim() });
-  }
-
   function otroArchivo() {
-    setEstado({ tipo: 'inicio' });
+    setLibro(null);
     setVueltas([]);
     setSemana(1);
     setHojas({});
   }
 
-  const sinEjercicios = estado.tipo === 'libro' && ejercicios === 0;
-  const leyendo = estado.tipo === 'leyendo';
+  const sinEjercicios = !!libro && ejercicios === 0;
+  const conRevision = !!libro && !sinEjercicios;
 
   // Lo que la planilla suma arriba de la revisión (lo comparte con «Pegar texto»).
   const extra = resultado && leida ? (
@@ -178,45 +108,21 @@ export function ImportarPlanilla({
     <Hoja
       titulo={i.titulo} onCerrar={onCerrar} bloqueada={leyendo}
       // La revisión es larga (días lado a lado): ancha en la computadora.
-      tamano={estado.tipo === 'libro' && !sinEjercicios ? 'grande' : 'medio'}
-      pie={estado.tipo === 'libro' && !sinEjercicios ? (
+      tamano={conRevision ? 'grande' : 'medio'}
+      pie={conRevision ? (
         <PieLeida
           leida={leida} diasActuales={diasActuales} hayEjercicios={hayEjercicios}
           onUsar={(l, modo) => onUsar(l, modo, { semanas: resultado?.duracionSemanas ?? null })}
         />
       ) : null}
     >
-      {estado.tipo !== 'libro' || sinEjercicios ? (
-        <>
-          <p className="text-[13.5px] leading-relaxed text-tinta/65">{i.explicacion}</p>
-
-          <input ref={entrada} type="file" accept={TIPOS} hidden onChange={alElegir} />
-          <button
-            type="button" onClick={() => entrada.current?.click()} disabled={leyendo}
-            className="boton-principal mt-4 min-h-[48px] w-full"
-          >
-            {i.elegirArchivo}
-          </button>
-
-          <p className="mt-5 text-[13px] font-semibold text-tinta/60">{i.oLink}</p>
-          <label htmlFor={idLink} className="etiqueta mt-2">{i.linkCampo}</label>
-          <div className="flex gap-2">
-            <input
-              id={idLink} className="campo min-w-0 flex-1" type="url" inputMode="url" autoComplete="off" autoCapitalize="off"
-              spellCheck={false} value={enlace} placeholder={i.linkEjemplo} disabled={leyendo}
-              onChange={(ev) => setEnlace(ev.target.value)}
-              onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); traer(); } }}
-            />
-            <button type="button" onClick={traer} disabled={leyendo || !enlace.trim()} className="boton-suave min-h-[48px] shrink-0 px-5">
-              {i.traer}
-            </button>
-          </div>
-          <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{i.ayudaGoogle}</p>
-
-          {leyendo && <p role="status" className="mt-4 text-[13.5px] font-semibold text-verde-fuerte">{i.leyendo}</p>}
-          {estado.tipo === 'error' && <p role="alert" className="mt-4 text-[13px] font-medium text-rojo">{i.errores[estado.codigo]}</p>}
-          {sinEjercicios && <p role="alert" className="mt-4 text-[13px] font-medium text-rojo">{i.errores.sin_ejercicios}</p>}
-        </>
+      {!conRevision ? (
+        <ElegirPlanilla
+          empresaId={empresaId} ruta={RUTA} topes={TOPES_PLANILLA} leerRespuesta={libroValido}
+          errores={i.errores} onLibro={usarLibro} onLeyendo={setLeyendo}
+          explicacion={<p>{i.explicacion}</p>}
+          aviso={sinEjercicios ? i.errores.sin_ejercicios : undefined}
+        />
       ) : (
         <VistaLeida
           leida={leida} biblioteca={biblioteca} diasActuales={diasActuales} hayEjercicios={hayEjercicios} extra={extra}
