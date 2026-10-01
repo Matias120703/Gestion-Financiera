@@ -71,7 +71,9 @@ export const entrenamientoEs: Parcial<Textos> = {
     turnos: 'Sesiones',
     sinTurnos: 'Todavía no tiene sesiones.',
     visitas: (n: number, cuando: string) => `${n} ${n === 1 ? 'sesión' : 'sesiones'} · la última ${cuando}`,
-    turnoNoSeCancela: (cuando: string) => `Su sesión del ${cuando} no se cancela.`,
+    eliminarClasesPorVenir: (n: number) => (n === 1
+      ? 'Tiene 1 sesión de hoy en adelante: sale de tu agenda, esté pagada o no.'
+      : `Tiene ${n} sesiones de hoy en adelante: salen de tu agenda, estén pagadas o no.`),
     eliminarSinCobrar: (nombre: string, monto: string) =>
       `${nombre} tiene ${monto} sin cobrar: se anula y deja de figurar en Por cobrar, y las sesiones de eso que faltaban salen de tu agenda. Lo que ya te pagó queda en tu historial.`,
   },
@@ -154,7 +156,9 @@ export const entrenamientoPt: Parcial<Textos> = {
     turnos: 'Sessões',
     sinTurnos: 'Ainda não tem sessões.',
     visitas: (n: number, cuando: string) => `${n} ${n === 1 ? 'sessão' : 'sessões'} · a última ${cuando}`,
-    turnoNoSeCancela: (cuando: string) => `A sessão de ${cuando} não é cancelada.`,
+    eliminarClasesPorVenir: (n: number) => (n === 1
+      ? 'Tem 1 sessão de hoje em diante: sai da sua agenda, paga ou não.'
+      : `Tem ${n} sessões de hoje em diante: saem da sua agenda, pagas ou não.`),
     eliminarSinCobrar: (nombre: string, monto: string) =>
       `${nombre} tem ${monto} sem receber: é anulado e deixa de aparecer em A receber, e as sessões disso que faltavam saem da sua agenda. O que já te pagou fica no seu histórico.`,
   },

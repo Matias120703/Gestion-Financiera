@@ -235,7 +235,7 @@ export function PantallaClientes({
 /** Crear o editar un cliente. Con `c`, edita. */
 function FormularioCliente({
   empresaId, c, titulo, onCerrar, onListo,
-  puedeEliminar = false, conSalud = false, debe = 0, sinCobrar = 0, plata, proximo = '',
+  puedeEliminar = false, conSalud = false, debe = 0, sinCobrar = 0, plata, porVenir = 0, deAlumnos = false,
 }: {
   empresaId: string;
   c?: ClienteLista;
@@ -257,8 +257,13 @@ function FormularioCliente({
    */
   sinCobrar?: number;
   plata?: (n: number) => string;
-  /** Su próximo turno ya escrito, para avisar que no se cancela. */
-  proximo?: string;
+  /**
+   * Cuántas reservas tiene de hoy en adelante (120). Al eliminarlo salen
+   * todas de la agenda, haya pagado o no, y se dice antes, con el número.
+   */
+  porVenir?: number;
+  /** Un profe o un trainer: lo que sale de la agenda son clases o sesiones, no turnos. */
+  deAlumnos?: boolean;
 }) {
   const t = useTextos();
   const [nombre, setNombre] = useState(c?.nombre ?? '');
@@ -357,11 +362,15 @@ function FormularioCliente({
         confirmar ? (
           <div className="space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
             <p className="text-[13.5px] font-bold text-rojo">{t.clientes.eliminarPregunta(c.nombre)}</p>
-            <p className="text-[12.5px] leading-snug text-tinta/65">
-              {/* Con algo sin cobrar, su próxima clase puede ser de lo que se
-                  anula y salir de la agenda: «no se cancela» podría ser falso. */}
-              {t.clientes.eliminarDetalle(c.nombre)}{proximo && !(sinCobrar > 0) && ` ${t.clientes.turnoNoSeCancela(proximo)}`}
-            </p>
+            <p className="text-[12.5px] leading-snug text-tinta/65">{t.clientes.eliminarDetalle(c.nombre)}</p>
+            {/* (120) Todo lo suyo de hoy en adelante sale de la agenda, haya
+                pagado o no: se dice antes, con cuántas son. Es la misma
+                cuenta que hace la base (lista_clientes → por_venir). */}
+            {porVenir > 0 && (
+              <p className="text-[12.5px] font-semibold leading-snug text-tinta/80">
+                {deAlumnos ? t.clientes.eliminarClasesPorVenir(porVenir) : t.clientes.eliminarTurnosPorVenir(porVenir)}
+              </p>
+            )}
             {sinCobrar > 0 && (
               <p className="text-[12.5px] font-semibold leading-snug text-tinta/80">
                 {t.clientes.eliminarSinCobrar(c.nombre, plata ? plata(sinCobrar) : String(sinCobrar))}
@@ -571,7 +580,8 @@ function FilaCliente({
               debe={debe}
               sinCobrar={sinCobrar}
               plata={plata}
-              proximo={proximo}
+              porVenir={c.por_venir}
+              deAlumnos={deAlumnos}
             />
           ) : (
             <>

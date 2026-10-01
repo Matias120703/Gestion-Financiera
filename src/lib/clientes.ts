@@ -29,5 +29,7 @@ export async function traerClientes(empresaId: string): Promise<ClienteLista[]> 
     ultima_visita: c.ultima_visita ?? null,
     gastado: Number(c.gastado ?? 0),
     proximo_turno: c.proximo_turno ?? null,
+    // (120) Lo que eliminarlo le saca de la agenda.
+    por_venir: Number(c.por_venir ?? 0),
   }));
 }
