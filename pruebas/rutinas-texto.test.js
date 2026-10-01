@@ -1202,6 +1202,28 @@ ok('L6 · con otro día después, las generales siguen siendo del día donde est
   R.leerRutina('LUNES\nSentadilla 4x10\n\nNOTAS GENERALES\n- Tomar agua\n\nMARTES\nRemo 4x10').dias.map((d) => d.notas), ['Tomar agua', '']);
 
 // ═══════════════════════════════════════════════════════════
+console.log('\n── 4d · Días abreviados: «Dom. pronas» es un ejercicio, no el domingo (revisión 30/09) ──');
+// ═══════════════════════════════════════════════════════════
+// La planilla de varios días (30/09) sumó «LUN · Pierna», «MIÉ: Empuje»,
+// «Sáb.». La revisión encontró que la abreviatura con un punto o con un
+// separador convertía en día un ejercicio o un dato.
+ok('abreviaturas que SÍ son días: solas, con un separador fuerte, o con el punto en mayúsculas',
+  ['Mar', 'Dom.', 'SÁB', 'lun – pierna', 'MIÉ: Empuje', 'SEG · Pernas', 'Lun/Mié/Vie: Fullbody', 'SÁB. PIERNA', 'Qui - pernas']
+    .filter((t) => !R.esTituloDeDia(t)), []);
+ok('y las que NO: «Dom. pronas» (dominadas), «Seg: 45» (segundos), «Mar/Abr» y «Mar. 2026» (meses), «Sáb. pierna»',
+  ['Dom. pronas', 'Dom. supinas', 'Seg: 45', 'Seg - 30 s', 'Mar/Abr', 'Mar. 2026', 'Sáb. pierna'].filter((t) => R.esTituloDeDia(t)), []);
+ok('qué día de la semana es: lo mismo', ['Dom. pronas', 'Seg: 45', 'Mar/Abr', 'lun – pierna', 'SÁB. PIERNA', 'Mierc.'].map(R.diaDeLaSemana),
+  [null, null, null, 0, 5, 2]);
+const corta = (l) => [l.nombre, l.dias.map((d) => [d.nombre, d.ejercicios.map((e) => [e.nombre, e.series, e.reps])]), l.noEntendidas];
+ok('«Lunes / Dom. pronas / 4x8 / Remo 4x10»: un día, con las dominadas y sus series abajo (antes «Dom. pronas» era un día y «4x8» no se entendía)',
+  corta(R.leerRutina('Lunes\nDom. pronas\n4x8\nRemo con barra 4x10')),
+  [null, [['Lunes', [['Dom. pronas', 4, '8'], ['Remo con barra', 4, '10']]]], []]);
+ok('«Plancha / Seg: 45»: «Seg: 45» no crea un día', R.leerRutina('Plancha\nSeg: 45\nSentadilla 4x10').dias.length, 1);
+ok('«Mar/Abr» arriba no es un día', R.leerRutina('Mar/Abr\nSentadilla 4x10\nPress banca 4x8').dias.map((d) => d.nombre), ['']);
+ok('con los datos en el mismo renglón, igual que antes', corta(R.leerRutina('Día 1\nDom. pronas 4x8\nDom. supinas 3x10')),
+  [null, [['Día 1', [['Dom. pronas', 4, '8'], ['Dom. supinas', 3, '10']]]], []]);
+
+// ═══════════════════════════════════════════════════════════
 console.log('\n── 5 · Ida y vuelta: lo que exporta Orden vuelve igual ──');
 
 const e2 = (orden, nombre, series, reps, carga, descanso_seg, nota = '', junto_al_anterior = false) => ({

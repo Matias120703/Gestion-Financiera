@@ -70,8 +70,9 @@ export function RutinaVista({
           {dia.notas.trim() && (
             <p className="mt-1 whitespace-pre-line text-[13px] italic leading-relaxed text-tinta/60">{dia.notas.trim()}</p>
           )}
+          {/* Sin ejercicios pero con su nota (un día de MMA o de descanso): la nota alcanza. */}
           {dia.ejercicios.length === 0 ? (
-            <p className="mt-2 text-[13.5px] text-tinta/50">{v.sinEjercicios}</p>
+            !dia.notas.trim() && <p className="mt-2 text-[13.5px] text-tinta/50">{v.sinEjercicios}</p>
           ) : (
             <ListaEjercicios dia={dia} txt={txt} superserie={v.superserie} verComoSeHace={t.rutinasComun.acciones.verComoSeHace} />
           )}

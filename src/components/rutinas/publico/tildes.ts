@@ -138,16 +138,28 @@ export function alternarTilde(
  * El día se busca por el ejercicio tildado y no por su número: si el
  * trainer reordenó los días, el ejercicio sigue estando en el suyo. Si ese
  * ejercicio ya no está, se prueba con el número de día; si tampoco, el primero.
+ *
+ * Un día sin ejercicios («Martes – MMA», «Domingo – Descanso»: la semana de
+ * una planilla, 30/09) nunca es «el que le toca»: se salta hasta el próximo
+ * que tiene ejercicios. Después del lunes abre el miércoles.
  */
 export function diaParaAbrir(
   dias: { orden: number; ejercicios: { id: string }[] }[],
   tildes: Tildes,
 ): number {
+  const conEjercicios = (desde: number) => {
+    for (let k = 0; k < dias.length; k++) {
+      const j = (desde + k) % dias.length;
+      if (dias[j].ejercicios.length > 0) return j;
+    }
+    return desde % dias.length;
+  };
   const hoy = tildes.ultimo;
   const m = hoy ?? tildes.previo;
-  if (!m || dias.length === 0) return 0;
+  if (dias.length === 0) return 0;
+  if (!m) return conEjercicios(0);
   let i = dias.findIndex((d) => d.ejercicios.some((e) => e.id === m.id));
   if (i < 0) i = dias.findIndex((d) => d.orden === m.dia);
-  if (i < 0) return 0;
-  return hoy ? i : (i + 1) % dias.length;
+  if (i < 0) return conEjercicios(0);
+  return hoy ? i : conEjercicios(i + 1);
 }

@@ -90,7 +90,8 @@ export function VistaLeida({
                   <li key={i} className="rounded-xl border border-borde/70 px-3 py-2.5">
                     <p className="text-[14px] font-bold">{nombreDia(d.nombre, i)}</p>
                     {d.notas.trim() && <p className="mt-0.5 whitespace-pre-line text-[12.5px] italic text-tinta/55">{d.notas}</p>}
-                    <ol className="mt-1.5 space-y-1">
+                    {/* Un día sin ejercicios con su nota («Martes – MMA») se ve igual, con su nota. */}
+                    {d.ejercicios.length > 0 && <ol className="mt-1.5 space-y-1">
                       {d.ejercicios.map((e, j) => {
                         const resumen = resumenEjercicio({ clave: '', ...e }, t.rutinasComun.texto.series);
                         return (
@@ -105,7 +106,7 @@ export function VistaLeida({
                           </li>
                         );
                       })}
-                    </ol>
+                    </ol>}
                   </li>
                 );
               })}

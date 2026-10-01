@@ -65,12 +65,16 @@ export function ImportarPlanilla({
   const [estado, setEstado] = useState<Estado>({ tipo: 'inicio' });
   const [enlace, setEnlace] = useState('');
   const [semana, setSemana] = useState(1);
-  // «Dar vuelta» tocado en estos ejercicios (se deshace al cambiar de semana o de archivo).
+  // Las hojas que el trainer sumó o sacó a mano, por nombre (lo demás,
+  // automático: solo la que parece la rutina). Se reinicia con otro
+  // archivo; al cambiar de semana se mantiene.
+  const [hojas, setHojas] = useState<Record<string, boolean>>({});
+  // «Dar vuelta» tocado en estos ejercicios (se deshace al cambiar de semana, de hojas o de archivo).
   const [vueltas, setVueltas] = useState<{ dia: number; indice: number }[]>([]);
 
   const resultado = useMemo(
-    () => (estado.tipo === 'libro' ? planillaARutina(estado.libro, { semana }) : null),
-    [estado, semana],
+    () => (estado.tipo === 'libro' ? planillaARutina(estado.libro, { semana, hojas }) : null),
+    [estado, semana, hojas],
   );
   const leida = useMemo(
     () => (resultado ? vueltas.reduce((l, v) => darVueltaSeriesYReps(l, v.dia, v.indice), resultado.leida) : null),
@@ -81,6 +85,7 @@ export function ImportarPlanilla({
   const fallar = (codigo: CodigoError) => setEstado({ tipo: 'error', codigo });
   const usarLibro = (libro: LibroPlanilla) => {
     setSemana(1);
+    setHojas({});
     setVueltas([]);
     setEstado({ tipo: 'libro', libro });
   };
@@ -143,6 +148,7 @@ export function ImportarPlanilla({
     setEstado({ tipo: 'inicio' });
     setVueltas([]);
     setSemana(1);
+    setHojas({});
   }
 
   const sinEjercicios = estado.tipo === 'libro' && ejercicios === 0;
@@ -154,6 +160,7 @@ export function ImportarPlanilla({
       resultado={resultado} leida={leida}
       onSemana={(n) => { setSemana(n); setVueltas([]); }}
       onDarVuelta={(dia, indice) => setVueltas((v) => [...v, { dia, indice }])}
+      onHoja={(nombre, usar) => { setHojas((h) => ({ ...h, [nombre]: usar })); setVueltas([]); }}
     >
       <div className="flex flex-wrap gap-x-4">
         <button

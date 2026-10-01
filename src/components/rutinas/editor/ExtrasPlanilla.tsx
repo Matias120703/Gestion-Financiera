@@ -16,15 +16,22 @@ import type { RutinaLeidaConNotas } from '@/lib/rutina-texto';
  *
  * «12 × 3» (series al revés) se recalcula sobre lo que se ve, después de
  * cada «Dar vuelta». Sin nada que mostrar no dibuja nada.
+ *
+ * Las hojas (30/09): por defecto se usa solo la que parece la rutina; un
+ * registro, el progreso corporal, un resumen o una guía quedan afuera, y una
+ * línea lo dice. Las hojas con ejercicios son botones (`onHoja`): el trainer
+ * suma la que quiera o saca una (nunca la última que queda).
  */
 export function ExtrasPlanilla({
-  resultado, leida, onSemana, onDarVuelta, children,
+  resultado, leida, onSemana, onDarVuelta, onHoja, children,
 }: {
   resultado: ResultadoPlanilla;
   /** Lo que se ve: el resultado con los «Dar vuelta» ya tocados. */
   leida: RutinaLeidaConNotas;
   onSemana: (semana: number) => void;
   onDarVuelta: (dia: number, indice: number) => void;
+  /** Sumar o sacar esa hoja (por su nombre). Sin esto, las hojas solo se muestran. */
+  onHoja?: (nombre: string, usar: boolean) => void;
   /** Botones propios de quien lo usa («Editar como texto», «Elegir otro archivo»). */
   children?: ReactNode;
 }) {
@@ -34,19 +41,43 @@ export function ExtrasPlanilla({
   const lista = (nombres: string[]) => nombres.map((n) => `«${n}»`).join(', ');
   const chip = (encendido: boolean) => `${encendido ? 'chip-encendido' : 'chip-apagado'} px-3.5 text-[13px]`;
   const avisos = resultado.avisos.filter((a) => a.codigo !== 'series_raras');
+  const usadasConEjercicios = resultado.hojas.filter((h) => h.usada && h.conEjercicios).length;
+  const noUsadas = resultado.hojas.filter((h) => !h.usada && h.conEjercicios).map((h) => h.nombre);
+  // «No usamos las hojas Registro, Progreso, Resumen y Guía. Tocá una para sumarla.»
+  const lineaNoUsadas = !noUsadas.length ? '' : [
+    noUsadas.length === 1
+      ? i.hojaNoUsadaConEjercicios(noUsadas[0])
+      : i.hojasNoUsadas(noUsadas.slice(0, -1).join(', '), noUsadas[noUsadas.length - 1]),
+    onHoja ? (noUsadas.length === 1 ? i.tocalaParaSumarla : i.tocaUnaParaSumarla) : '',
+  ].filter(Boolean).join(' ');
 
   if (resultado.hojas.length <= 1 && !resultado.semanas && !avisos.length && !raras.length && !children) return null;
 
   return (
     <div className="space-y-2.5">
       {resultado.hojas.length > 1 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {resultado.hojas.map((h, k) => (
-            <li key={k} className={`rounded-full px-3 py-1 text-[12px] font-semibold ${h.usada ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/50'}`}>
-              {h.usada ? h.nombre : i.hojaNoUsada(h.nombre)}
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-1.5">
+          <ul className="flex flex-wrap gap-1.5" aria-label={i.hojas}>
+            {resultado.hojas.map((h, k) => (h.conEjercicios && onHoja ? (
+              <li key={k}>
+                <button
+                  type="button" aria-pressed={h.usada}
+                  // La última hoja que queda no se saca: sin ninguna no hay rutina.
+                  disabled={h.usada && usadasConEjercicios <= 1}
+                  onClick={() => onHoja(h.nombre, !h.usada)}
+                  className={`${chip(h.usada)} min-h-[40px] max-w-full`}
+                >
+                  <span className="truncate">{h.usada ? `✓ ${h.nombre}` : h.nombre}</span>
+                </button>
+              </li>
+            ) : (
+              <li key={k} className={`rounded-full px-3 py-1 text-[12px] font-semibold ${h.usada ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/50'}`}>
+                {h.usada || h.conEjercicios ? h.nombre : i.hojaNoUsada(h.nombre)}
+              </li>
+            )))}
+          </ul>
+          {lineaNoUsadas && <p className="text-[12.5px] leading-snug text-tinta/55">{lineaNoUsadas}</p>}
+        </div>
       )}
 
       {resultado.semanas && (

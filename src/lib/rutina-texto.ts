@@ -857,6 +857,12 @@ type Renglon =
   | { tipo: 'nada' }
   | { tipo: 'vacio' }
   | { tipo: 'otro'; original: string }
+  /**
+   * «MARTES: descanso», «*Domingo – Descanso*»: un día de descanso. Solo no
+   * es un día de la rutina; con su nota en itálica abajo (como escribe
+   * `rutinaComoTexto` un día sin ejercicios con su nota) sí lo es (30/09).
+   */
+  | { tipo: 'libre'; texto: string; original: string }
   | {
       tipo: 'titulo'; texto: string; dia: boolean; original: string;
       /** Una negrita con datos: lo que sería si no fuera un título. */
@@ -895,6 +901,44 @@ type Renglon =
 const RE_DIA_NUMERO = /^(?:dia|day|treino|entrenamiento|entreno|rutina|sesion|sessao|workout|ficha)\s*\d{1,2}(?!\d)(?![.,]\d)/;
 const RE_DIA_LETRA = /^(?:dia|day|treino|entrenamiento|entreno|rutina|sesion|sessao|workout|ficha)\s+([a-z])(?![a-z\d])/;
 const RE_DIA_SEMANA = /^(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|segunda|terca|quarta|quinta|sexta)(?:\s*-\s*feira)?(?![a-z])/;
+// «LUN · Pierna», «MIÉ: Empuje», «SEG – Pernas», «Sáb.» (30/09): la
+// abreviatura sola, o con un separador después (ver `abreviado`). Así
+// «Martillo», «Mar del Plata» o «Dominadas» nunca son días. Las más largas
+// primero: «mierc» antes que «mie».
+const RE_DIA_ABREVIADO = /^(mierc|mier|mie|lun|mar|jue|vie|sab|dom|seg|ter|qua|qui|sex)(\.)?\s*(?:([-–—:·|/)])\s*)?(.*)$/;
+const ABREVIATURAS: Record<string, number> = {
+  lun: 0, seg: 0, mar: 1, ter: 1, mie: 2, mier: 2, mierc: 2, qua: 2, jue: 3, qui: 3, vie: 4, sex: 4, sab: 5, dom: 6,
+};
+// Lo que, después de la abreviatura, dice que no es un día: un número solo
+// («Seg: 45» son segundos, «Mar. 2026» un mes) o un mes («Mar/Abr»).
+const RE_SOLO_NUMERO = /^\d+(?:[.,]\d+)?\s*(?:s|seg|segs|segundos?|min|mins|minutos?|h|hs|'|"|°|º)?\.?$/;
+const RE_MES = /^(?:ene|enero|feb|febrero|mar|marzo|abr|abril|may|mayo|jun|junio|jul|julio|ago|agosto|sep|sept|set|septiembre|setiembre|oct|octubre|nov|noviembre|dic|diciembre|jan|janeiro|fev|fevereiro|marco|mai|maio|junho|julho|setembro|out|outubro|novembro|dez|dezembro)\b/;
+
+/**
+ * Un día abreviado al principio del texto (30/09, revisión): qué día (0 el
+ * lunes) y lo que sigue, o null. Vale la abreviatura sola («Mar», «Dom.»,
+ * «SÁB»), con un separador fuerte («lun – pierna», «MIÉ: Empuje», «SEG ·
+ * Pernas», «Lun/Mié/Vie: Fullbody») o, con el punto solo, en mayúsculas
+ * («SÁB. PIERNA»). No vale «Dom. pronas» (dominadas pronas), «Seg: 45» ni
+ * «Mar/Abr».
+ */
+function abreviado(texto: string): { dia: number; resto: string } | null {
+  const original = texto.trim();
+  const m = RE_DIA_ABREVIADO.exec(plegar(original));
+  if (!m) return null;
+  const [, ab, punto, sep, cola] = m;
+  const r = cola.trim();
+  const dia = ABREVIATURAS[ab];
+  if (!r) return { dia, resto: '' };
+  if (!sep && !punto) return null;
+  if (RE_SOLO_NUMERO.test(r) || RE_MES.test(r)) return null;
+  if (!sep) {
+    const letras = original.slice(0, ab.length);
+    if (letras !== letras.toUpperCase()) return null;
+  }
+  return { dia, resto: original.slice(original.length - r.length) };
+}
+const DIAS_COMPLETOS = [/^(?:lunes|segunda)/, /^(?:martes|terca)/, /^(?:miercoles|quarta)/, /^(?:jueves|quinta)/, /^(?:viernes|sexta)/, /^sabado/, /^domingo/];
 // «A - Pecho», «B) Espalda»: una letra mayúscula sola al principio.
 const RE_DIA_LETRA_SOLA = /^([A-F])\s*[-–—:).]\s+\S/;
 // Un día de descanso no es un día de la rutina: «Martes: descanso», «Domingo - libre».
@@ -942,6 +986,9 @@ const RE_SEMANA = /^semanas?\s+\d/;
 function esDia(texto: string): 'palabra' | 'letra' | null {
   const f = plegar(texto);
   if (RE_DIA_NUMERO.test(f) || RE_DIA_SEMANA.test(f)) return 'palabra';
+  // «LUN · Pierna» sí; «LUN · Sentadilla 4x10» no (es un ejercicio de ese día).
+  const ab = abreviado(texto);
+  if (ab && (!ab.resto || leerLinea(ab.resto).datos === 0)) return 'palabra';
   const m = RE_DIA_LETRA.exec(f);
   if (m) {
     // «Rutina A» sí; «Rutina a seguir» no: la letra suelta tiene que ser
@@ -968,6 +1015,31 @@ export function esTituloDeDia(texto: string): boolean {
   return !!s && esDia(s) === 'palabra' && !RE_DIA_LIBRE.test(plegar(s));
 }
 
+/** Para el convertidor: «Martes: descanso», «Sábado - libre», «QUARTA-FEIRA: folga». Un día de descanso dicho solo. */
+export function esDiaLibre(texto: string): boolean {
+  const s = quitarFormato(limpiar(texto ?? ''));
+  return !!s && esDia(s) === 'palabra' && RE_DIA_LIBRE.test(plegar(s));
+}
+
+/**
+ * Qué día de la semana nombra el principio de un texto: 0 el lunes, 6 el
+ * domingo, null si no nombra ninguno. En español y portugués, con o sin
+ * tildes, entero («Miércoles», «Segunda-feira», «SEXTA – Costas») o
+ * abreviado («LUN», «Mié.», «SEG – Pernas»). Para la «Semana tipo» de una
+ * planilla (rutina-planilla.ts): empareja sus filas con los bloques de cada día.
+ */
+export function diaDeLaSemana(texto: string): number | null {
+  const s = quitarFormato(limpiar(texto ?? ''));
+  const f = plegar(s).trim();
+  if (!f) return null;
+  if (RE_DIA_SEMANA.test(f)) {
+    const i = DIAS_COMPLETOS.findIndex((re) => re.test(f));
+    return i >= 0 ? i : null;
+  }
+  const ab = abreviado(s);
+  return ab ? ab.dia : null;
+}
+
 /** Para el convertidor: cuántos datos de un ejercicio (series, repeticiones, carga, descanso) trae un texto. */
 export function datosEnTexto(texto: string): number {
   const s = quitarFormato(limpiar(texto ?? ''));
@@ -983,9 +1055,18 @@ function limpiarTitulo(s: string): string {
  * las cuenta PostgreSQL), en un espacio y no en medio de una palabra:
  * [lo que entra, lo que sobra]. Lo que sobra va a las notas.
  */
-function partirTitulo(texto: string, tope: number): [string, string] {
+export function partirTitulo(texto: string, tope: number): [string, string] {
   const letras = Array.from(texto.trim());
   if (letras.length <= tope) return [letras.join(''), ''];
+  // «MIÉRCOLES – Empuje (pecho, hombros, tríceps)» (30/09): si lo de antes
+  // del paréntesis del final entra, el paréntesis va entero a las notas, sin
+  // los paréntesis. Cortado en un espacio quedaba «…(pecho, hombros» y la
+  // nota «tríceps)».
+  const par = /^(.*?\S)\s*\(([^()]+)\)$/u.exec(texto.trim());
+  if (par) {
+    const cabeza = par[1].replace(/[\s\-–—:|·,;.+&/]+$/, '').trim();
+    if (cabeza && Array.from(cabeza).length <= tope) return [cabeza, par[2].trim()];
+  }
   let corte = letras.lastIndexOf(' ', tope);
   let cabeza = corte > 0 ? letras.slice(0, corte).join('').replace(/[\s\-–—:|·,;.+&/]+$/, '').trim() : '';
   if (!cabeza) {
@@ -1142,7 +1223,7 @@ function clasificarTexto(crudo: string, original: string): Renglon {
     const ejercicio = lectura.datos > 0 && (numerado.numero || (!!lectura.nombre && !!buscarBase(lectura.nombre)));
     if (dentro && Array.from(titulo).length <= LARGOS.nombreRutina && !ejercicio) {
       const diaDentro = esDia(dentro) === 'palabra';
-      if (diaDentro && RE_DIA_LIBRE.test(fd)) return { tipo: 'otro', original };
+      if (diaDentro && RE_DIA_LIBRE.test(fd)) return { tipo: 'libre', texto: titulo, original };
       if (RE_CHARLA.test(fd) && /[!?¡¿]/.test(dentro)) return { tipo: 'otro', original };
       // Con datos («*Fuerza 5x5*») también podría ser un ejercicio que
       // alguien puso en negrita: lo decide `leerRutina` mirando si arranca
@@ -1204,7 +1285,7 @@ function clasificarTexto(crudo: string, original: string): Renglon {
 
   const dia = esDia(s);
   if (dia === 'palabra' || (dia === 'letra' && !leerLinea(s).datos)) {
-    if (RE_DIA_LIBRE.test(f)) return { tipo: 'otro', original };
+    if (RE_DIA_LIBRE.test(f)) return { tipo: 'libre', texto: limpiarTitulo(s), original };
     return { tipo: 'titulo', texto: limpiarTitulo(s), dia: true, original };
   }
 
@@ -1659,7 +1740,7 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
     else notasRutina.push(t);
   };
   const saltable = (r: Renglon) => r.tipo === 'vacio' || r.tipo === 'nada' || r.tipo === 'nota' || r.tipo === 'oracion'
-    || r.tipo === 'otro' || r.tipo === 'superserie' || (r.tipo === 'seccion' && r.conTexto);
+    || r.tipo === 'otro' || r.tipo === 'libre' || r.tipo === 'superserie' || (r.tipo === 'seccion' && r.conTexto);
   const siguiente = (i: number): Renglon | undefined => {
     for (let j = i + 1; j < R.length; j++) if (!saltable(R[j])) return R[j];
     return undefined;
@@ -1722,6 +1803,19 @@ export function leerRutina(texto: string): RutinaLeidaConNotas {
         if (enBloque) alBloque(notaDeRenglon(r.original));
         else noEntendidas.push(r.original);
         break;
+      case 'libre': {
+        // «*Domingo – Descanso*» y abajo «_Dormir bien_»: el día sin
+        // ejercicios que escribió `rutinaComoTexto` (una semana armada desde
+        // una planilla). Sin su nota, un descanso no es un día.
+        const j = siguienteNoVacio(i);
+        const sig = j >= 0 ? R[j] : undefined;
+        if (sig && sig.tipo === 'nota' && sig.italica) {
+          enBloque = false;
+          nuevoDia(r.texto);
+        } else if (enBloque) alBloque(notaDeRenglon(r.original));
+        else noEntendidas.push(r.original);
+        break;
+      }
       case 'superserie':
         bloque = { quedan: r.cuantos, primero: true };
         break;

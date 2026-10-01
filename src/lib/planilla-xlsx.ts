@@ -16,7 +16,9 @@
  *     Excel en español queda guardado como 8 de octubre. Se vuelve a
  *     escribir en el orden del formato de la celda («8-10») y la celda se
  *     marca `fecha`, para avisarlo en la revisión (no se puede adivinar sin
- *     avisar: en un Excel en inglés el mismo «8-10» es el 10 de agosto);
+ *     avisar: en un Excel en inglés el mismo «8-10» es el 10 de agosto).
+ *     Una fecha con el año en el formato («dd/mm/yyyy», la de un registro o
+ *     la de inicio) es una fecha de verdad: no se marca (30/09);
  *   · una hora: «1:30» con formato h:mm es para Excel una hora y media, y
  *     para el trainer un minuto y medio de descanso. Vuelve como «1:30»;
  *   · un número con decimales, con coma («12,5», como lo vio el trainer), y
@@ -146,13 +148,22 @@ function textoEnriquecido(v: unknown): string {
 
 const RE_HIPERVINCULO = /^\s*=?\s*HYPERLINK\(\s*"([^"]+)"\s*(?:[,;]\s*"([^"]*)"\s*)?\)\s*$/i;
 
+/**
+ * ¿El formato muestra el año? «dd/mm/yyyy» es una fecha puesta a propósito
+ * (la del registro, la de inicio); «8-10» que Excel convirtió queda con
+ * d-mmm, sin año (30/09: antes toda fecha se avisaba como repeticiones).
+ */
+function formatoConAnio(numFmt: string | undefined): boolean {
+  return /y/.test(String(numFmt || '').toLowerCase().replace(/\[[^\]]*\]/g, '').replace(/"[^"]*"/g, ''));
+}
+
 /** El valor de una celda como texto (y su link o su marca de fecha), o null si está vacía. */
 function valorComoCelda(v: unknown, numFmt: string | undefined): Omit<CeldaPlanilla, 'negrita'> | null {
   if (v === null || v === undefined) return null;
   if (v instanceof Date) {
     if (Number.isNaN(v.getTime())) return null;
     const texto = fechaComoTexto(v, numFmt);
-    return esHora(v, numFmt) ? { texto } : { texto, fecha: true };
+    return esHora(v, numFmt) || formatoConAnio(numFmt) ? { texto } : { texto, fecha: true };
   }
   if (typeof v === 'number') {
     if (!Number.isFinite(v)) return null;
@@ -181,7 +192,9 @@ function valorComoCelda(v: unknown, numFmt: string | undefined): Omit<CeldaPlani
         const texto = resultado?.texto || hv[2] || hv[1];
         return { texto, link: hv[1].trim() };
       }
-      return resultado;
+      // Marcada: una hoja «Resumen» cuyos ejercicios son fórmulas que copian
+      // los de la rutina no es la rutina (rutina-planilla.ts).
+      return resultado ? { ...resultado, formula: true } : null;
     }
     // { error: '#N/A' } y compañía: nada.
     return null;
@@ -235,7 +248,10 @@ export async function leerXlsx(bytes: Uint8Array): Promise<LibroPlanilla | { err
     let ultimaFila = 0;
     let ultimaColumna = 0;
     ws.eachRow({ includeEmpty: false }, (row, n) => {
-      const tieneAlgo = Array.isArray(row.values) && row.values.some((x) => x !== null && x !== undefined && x !== '');
+      // Con algo que se ve: una fila con fórmulas sin resultado («=E7*F7»
+      // copiado hasta la fila 506 de un registro vacío) no cuenta, ni para
+      // el tope de filas ni para el aviso de «leímos las primeras 500».
+      const tieneAlgo = Array.isArray(row.values) && row.values.some((x) => valorComoCelda(x, undefined) !== null);
       if (!tieneAlgo) return;
       if (n > TOPES_PLANILLA.filas) { recortada = true; return; }
       ultimaFila = Math.max(ultimaFila, n);

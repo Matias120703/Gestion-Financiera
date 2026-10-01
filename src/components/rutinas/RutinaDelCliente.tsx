@@ -500,8 +500,11 @@ function VistaRutina({
             </div>
           )}
 
+          {/* Un día sin ejercicios pero con su nota («Martes – MMA: Técnica /
+              sparring», de la semana tipo de una planilla) es así a propósito:
+              la nota alcanza, sin «todavía no tiene ejercicios». */}
           {dia.ejercicios.length === 0 ? (
-            <p className="mt-4 text-[15px] text-tinta/55">{r.sinEjercicios}</p>
+            !dia.notas.trim() && <p className="mt-4 text-[15px] text-tinta/55">{r.sinEjercicios}</p>
           ) : (
             <div className="mt-4 space-y-3">
               {agrupar(dia.ejercicios).map((g) =>

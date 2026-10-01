@@ -14,7 +14,7 @@ import { Confirmar } from './panel/Piezas';
 import { primerNombre } from './panel/utiles';
 import {
   TOPES, agregarDia, agregarEjercicios, alternarJunto, cambiarDia, cantidadDeEjercicios, conNombre,
-  desdeLeido, desdeRutina, duplicarDia, duplicarEjercicio, firma, mezclar, moverDia, moverEjercicio, nuevaClave,
+  desdeLeido, desdeRutina, diasDesdeLeida, duplicarDia, duplicarEjercicio, firma, mezclar, moverDia, moverEjercicio, nuevaClave,
   paraGuardar, quitarDia, quitarEjercicio, reemplazarEjercicio, rutinaVacia, sinIds, validar, videosImportados,
   type DiaEditor, type Problema, type RutinaEditor,
 } from './editor/modelo';
@@ -328,7 +328,8 @@ export function EditorRutina({
   }
 
   /**
-   * Usar lo pegado: los días con algo adentro, cada ejercicio buscado en la
+   * Usar lo pegado: los días con algo adentro (`diasDesdeLeida`: todos, uno
+   * por uno, también un día con solo su nota), cada ejercicio buscado en la
    * biblioteca. Un día sin nombre queda vacío y se ve (y se guarda) con el
    * de su lugar: «Día A», «Día B».
    *
@@ -342,17 +343,7 @@ export function EditorRutina({
       setOtraSemana((SEMANAS as readonly number[]).includes(semanasLeidas) ? '' : String(semanasLeidas));
       cambiar((r) => (r.semanas === null ? { ...r, semanas: semanasLeidas } : r));
     }
-    const dias: DiaEditor[] = leida.dias
-      .filter((d) => d.ejercicios.length > 0 || d.notas.trim())
-      .map((d) => ({
-        clave: nuevaClave(),
-        nombre: d.nombre.trim().slice(0, LARGOS.nombreDia),
-        notas: d.notas.trim().slice(0, LARGOS.notasDia),
-        ejercicios: d.ejercicios.slice(0, TOPES.ejerciciosPorDia).map((x, j) => {
-          const ej = desdeLeido(x, biblioteca);
-          return j === 0 ? { ...ej, junto_al_anterior: false } : ej;
-        }),
-      }));
+    const dias: DiaEditor[] = diasDesdeLeida(leida, biblioteca);
     if (!dias.length) return;
     const antes = datos.dias.length;
     const notasLeidas = leida.notas.trim().slice(0, LARGOS.notasRutina);

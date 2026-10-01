@@ -248,6 +248,13 @@ export const rutinasEditorEs = {
     ayudaGoogle: 'En Google Sheets: Archivo → Descargar → Microsoft Excel (.xlsx), y subí ese archivo. O compartila con «Cualquier persona con el enlace» y pegá el link.',
     leyendo: 'Leyendo la planilla…',
     hojaNoUsada: (nombre: string) => `${nombre}: sin ejercicios, no se usa`,
+    /** Las hojas con ejercicios que no parecen la rutina (un registro, el progreso, una guía): se pueden sumar. */
+    hojas: 'Hojas de la planilla',
+    hojaNoUsadaConEjercicios: (nombre: string) => `No usamos la hoja ${nombre}.`,
+    /** «Registro, Progreso, Resumen» y «Guía». */
+    hojasNoUsadas: (primeras: string, ultima: string) => `No usamos las hojas ${primeras} y ${ultima}.`,
+    tocalaParaSumarla: 'Tocala para sumarla.',
+    tocaUnaParaSumarla: 'Tocá una para sumarla.',
     semana: 'Semana',
     semanaElegida: (n: number, total: number) => `Tu planilla tiene ${total} semanas. Usamos la semana ${n}:`,
     avisos: {
@@ -522,6 +529,11 @@ export const rutinasEditorPt: typeof rutinasEditorEs = {
     ayudaGoogle: 'No Google Sheets: Arquivo → Fazer download → Microsoft Excel (.xlsx) e envie esse arquivo. Ou compartilhe com «Qualquer pessoa com o link» e cole o link.',
     leyendo: 'Lendo a planilha…',
     hojaNoUsada: (nombre: string) => `${nombre}: sem exercícios, não é usada`,
+    hojas: 'Abas da planilha',
+    hojaNoUsadaConEjercicios: (nombre: string) => `Não usamos a aba ${nombre}.`,
+    hojasNoUsadas: (primeras: string, ultima: string) => `Não usamos as abas ${primeras} e ${ultima}.`,
+    tocalaParaSumarla: 'Toque nela para somá-la.',
+    tocaUnaParaSumarla: 'Toque numa para somá-la.',
     semana: 'Semana',
     semanaElegida: (n: number, total: number) => `Sua planilha tem ${total} semanas. Usamos a semana ${n}:`,
     avisos: {

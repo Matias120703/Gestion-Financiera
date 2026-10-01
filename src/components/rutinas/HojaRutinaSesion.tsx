@@ -261,8 +261,9 @@ export function HojaRutinaSesion({
               {vigente && dia.ejercicios.length > 0 && (
                 <p className="mt-1.5 text-[12.5px] leading-snug text-tinta/50">{r.ayuda}</p>
               )}
+              {/* Sin ejercicios pero con su nota (un día de MMA o de descanso): la nota alcanza. */}
               {dia.ejercicios.length === 0 ? (
-                <p className="mt-2 text-[14px] text-tinta/50">{t.rutinasPanel.vista.sinEjercicios}</p>
+                !dia.notas.trim() && <p className="mt-2 text-[14px] text-tinta/50">{t.rutinasPanel.vista.sinEjercicios}</p>
               ) : (
                 <ol className="mt-2 space-y-2">
                   {dia.ejercicios.map((e, i) => {

@@ -22,12 +22,16 @@
  * (pruebas/tsconfig.calculos.json).
  */
 
-/** Una celda, ya como texto. `link`: el de un hipervínculo. `fecha`: Excel la había convertido en fecha. */
+/**
+ * Una celda, ya como texto. `link`: el de un hipervínculo. `fecha`: Excel la
+ * había convertido en fecha. `formula`: es el resultado de una fórmula.
+ */
 export interface CeldaPlanilla {
   texto: string;
   link?: string;
   negrita?: boolean;
   fecha?: boolean;
+  formula?: boolean;
 }
 
 export interface HojaPlanilla {
@@ -209,12 +213,46 @@ export function libroDesdeCsv(bytes: Uint8Array): LibroPlanilla {
 }
 
 /**
+ * Una celda entre comillas, como copian Excel y Google Sheets la que tiene
+ * renglones, tabuladores o comillas adentro: «"Sentadilla 4x12⏎Prensa
+ * 3x12"», con «""» por cada comilla. Solo si cierra justo antes de un
+ * tabulador o del fin del renglón, y si adentro hay algo que la pedía: un
+ * «"Bajar lento"» escrito a mano queda como estaba.
+ */
+function celdaEntreComillas(t: string, i: number): { valor: string; fin: number } | null {
+  let valor = '';
+  let j = i + 1;
+  while (j < t.length) {
+    if (t[j] === '"') {
+      if (t[j + 1] === '"') { valor += '"'; j += 2; continue; }
+      const sig = t[j + 1];
+      return (sig === undefined || sig === '\t' || sig === '\n') && /[\n\t"]/.test(valor) ? { valor, fin: j + 1 } : null;
+    }
+    valor += t[j];
+    j++;
+  }
+  return null;
+}
+
+/**
  * Lo pegado en «Pegar texto»: un renglón por fila y las celdas por
- * tabulador. Sin tope de filas: «Pegar texto» nunca lo tuvo, y lo pegado ya
- * está en el celular.
+ * tabulador (una celda con renglones adentro viene entre comillas). Sin tope
+ * de filas: «Pegar texto» nunca lo tuvo, y lo pegado ya está en el celular.
  */
 export function libroDesdeTexto(texto: string): LibroPlanilla {
-  const filas = (texto ?? '').replace(/\r\n?/g, '\n').split('\n')
-    .map((l) => l.split('\t').slice(0, TOPES_PLANILLA.columnas).map(celda));
-  return { hojas: [{ nombre: '', filas }] };
+  const t = (texto ?? '').replace(/\r\n?/g, '\n');
+  const filas: string[][] = [];
+  let fila: string[] = [];
+  let i = 0;
+  for (;;) {
+    const q = t[i] === '"' ? celdaEntreComillas(t, i) : null;
+    let fin = i;
+    if (q) fin = q.fin;
+    else while (fin < t.length && t[fin] !== '\t' && t[fin] !== '\n') fin++;
+    fila.push(q ? q.valor : t.slice(i, fin));
+    if (fin >= t.length) { filas.push(fila); break; }
+    if (t[fin] === '\n') { filas.push(fila); fila = []; }
+    i = fin + 1;
+  }
+  return { hojas: [{ nombre: '', filas: filas.map((f) => f.slice(0, TOPES_PLANILLA.columnas).map(celda)) }] };
 }

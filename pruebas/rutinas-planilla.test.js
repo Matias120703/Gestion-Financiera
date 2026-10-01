@@ -351,8 +351,8 @@ XLSX.prototype.load = function (...a) { aperturas++; return cargarOriginal.apply
       ['Face pull', 3, '15', 'placa 4', 45, '', false],
       ['Abdominales', 3, '20', '', 30, 'Sin tirar del cuello', false]]]]);
   ok('F1 · «Medidas» no se usa; «Listas» (oculta) ni aparece', R1.hojas, [
-    { nombre: 'Lunes - Piernas', usada: true }, { nombre: 'Miércoles - Torso', usada: true },
-    { nombre: 'Viernes - Full body', usada: true }, { nombre: 'Medidas', usada: false }]);
+    { nombre: 'Lunes - Piernas', usada: true, conEjercicios: true }, { nombre: 'Miércoles - Torso', usada: true, conEjercicios: true },
+    { nombre: 'Viernes - Full body', usada: true, conEjercicios: true }, { nombre: 'Medidas', usada: false, conEjercicios: false }]);
   ok('F1 · avisos: fechas corregidas, cargas sin unidad con «(kg)» arriba, y las etiquetas (sin los valores)', R1.avisos, [
     { codigo: 'fecha_corregida', ejercicios: ['Sentadilla con barra', 'Press banca plano', 'Jalón al pecho'] },
     { codigo: 'cargas_sin_unidad' },
@@ -472,7 +472,7 @@ XLSX.prototype.load = function (...a) { aperturas++; return cargarOriginal.apply
     'Supino inclinado com halteres': 'https://www.youtube.com/watch?v=incl456',
     'Rosca direta': 'https://youtu.be/rosca789',
   });
-  ok('F4 · «Anamnese» no se usa', R4.hojas, [{ nombre: 'Ficha de Treino', usada: true }, { nombre: 'Anamnese', usada: false }]);
+  ok('F4 · «Anamnese» no se usa', R4.hojas, [{ nombre: 'Ficha de Treino', usada: true, conEjercicios: true }, { nombre: 'Anamnese', usada: false, conEjercicios: false }]);
   ok('F4 · avisos: las etiquetas de la persona y los videos', R4.avisos, [
     { codigo: 'datos_no_usados', etiquetas: ['Aluno(a)', 'Professor', 'Início'] }, { codigo: 'videos', cuantos: 3 }]);
   ok('F4 · nada de Maria, Carlos, la lesión ni los medicamentos: en ningún campo ni en lo no entendido',
@@ -572,7 +572,7 @@ XLSX.prototype.load = function (...a) { aperturas++; return cargarOriginal.apply
       ['Gemelos de pie', 4, '10-12', '', 60, 'Aproximación: 1 · RIR: 0 · Tempo: 2-1-1', false]]]]);
   ok('F6 · nombre, sin duración, dos semanas, «Instrucciones» sin usar, dos videos', [R6.leida.nombre, R6.duracionSemanas, R6.semanas, R6.hojas, R6.avisos, videos(R6)], [
     'PROGRAMA UPPER / LOWER – 8 SEMANAS', null, { cuantas: 2, elegida: 1, nombres: ['SEMANA 1', 'SEMANA 2'] },
-    [{ nombre: 'Programa', usada: true }, { nombre: 'Instrucciones', usada: false }], [{ codigo: 'videos', cuantos: 2 }],
+    [{ nombre: 'Programa', usada: true, conEjercicios: true }, { nombre: 'Instrucciones', usada: false, conEjercicios: false }], [{ codigo: 'videos', cuantos: 2 }],
     { 'Press banca': 'https://youtu.be/pb1', 'Elevaciones laterales': 'https://youtu.be/el1' }]);
   ok('F6 · nunca cuatro días; «SEMANA 1» no queda como no entendido; nada de «Instrucciones»',
     [R6.leida.dias.length, R6.leida.noEntendidas, /repeticiones en reserva|Cómo usar/.test(todoElTexto(R6))], [2, [], false]);
@@ -625,7 +625,7 @@ XLSX.prototype.load = function (...a) { aperturas++; return cargarOriginal.apply
   ok('F10 · la hoja «Semana 1»: nunca seis días', [dias(R10), R10.semanas, R10.hojas], [[
     ['DÍA A', [['Sentadilla', 4, '10', '60 kg', null, '', false], ['Press banca', 4, '10', '40 kg', null, '', false]]],
     ['DÍA B', [['Peso muerto', 3, '8', '70 kg', null, '', false], ['Remo', 4, '10', '35 kg', null, '', false]]]],
-  { cuantas: 3, elegida: 1, nombres: ['Semana 1', 'Semana 2', 'Semana 3'] }, [{ nombre: 'Semana 1', usada: true }]]);
+  { cuantas: 3, elegida: 1, nombres: ['Semana 1', 'Semana 2', 'Semana 3'] }, [{ nombre: 'Semana 1', usada: true, conEjercicios: true }]]);
   ok('F10 · con la semana 2', RP.planillaARutina(F10, { semana: 2 }).leida.dias[1].ejercicios.map(corto),
     [['Peso muerto', 3, '6', '75 kg', null, '', false], ['Remo', 4, '8', '37,5 kg', null, '', false]]);
 
@@ -636,7 +636,7 @@ XLSX.prototype.load = function (...a) { aperturas++; return cargarOriginal.apply
   const conceptos = ['Supermercado', 'Luz', 'Agua', 'Internet', 'Nafta'];
   for (let i = 0; i < 20; i++) fila(gastos, i + 2, 'A', [D(2026, 9, i + 1, 'dd/mm/yyyy'), conceptos[i % 5], 150000 + i * 1000]);
   const R5 = RP.planillaARutina(await leer(n5));
-  ok('N5 · un presupuesto: ningún ejercicio (la revisión dice sin_ejercicios)', [R5.leida.dias.length, R5.hojas, R5.leida.noEntendidas], [0, [{ nombre: 'Gastos', usada: false }], []]);
+  ok('N5 · un presupuesto: ningún ejercicio (la revisión dice sin_ejercicios)', [R5.leida.dias.length, R5.hojas, R5.leida.noEntendidas], [0, [{ nombre: 'Gastos', usada: false, conEjercicios: false }], []]);
   const n8 = new ExcelJS.Workbook();
   n8.addWorksheet('Hoja1');
   const R8 = RP.planillaARutina(await leer(n8));

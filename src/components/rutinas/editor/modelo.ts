@@ -26,7 +26,7 @@
 import type {
   EjercicioBiblioteca, EjercicioLeido, RutinaCompleta, RutinaParaGuardar,
 } from '@/lib/tipos-rutinas';
-import { LARGOS, formatoDescanso, normalizarCarga, unidadDe } from '@/lib/rutina-texto';
+import { LARGOS, formatoDescanso, normalizarCarga, unidadDe, type RutinaLeidaConNotas } from '@/lib/rutina-texto';
 import { claveEjercicio } from '@/lib/ejercicios-base';
 import { seriesPorReps } from '../panel/utiles';
 
@@ -320,6 +320,31 @@ export function desdeLeido(
     ...(leido.video ? { video_importado: leido.video } : {}),
   };
   return conNombre(base, leido.nombre, biblioteca);
+}
+
+/**
+ * Los días de «Pegar texto» o de una planilla como días del editor: TODOS,
+ * en su orden, uno por uno (nunca se juntan en uno). También los que no
+ * tienen ejercicios pero sí una nota: «Martes – MMA» o «Domingo – Descanso»
+ * de la «Semana tipo» de una planilla (30/09). Un día sin nada no se trae.
+ * Cada ejercicio se busca en la biblioteca, y el primero de un día nunca va
+ * «junto con el anterior».
+ */
+export function diasDesdeLeida(
+  leida: Pick<RutinaLeidaConNotas, 'dias'>,
+  biblioteca: readonly EjercicioBiblioteca[],
+): DiaEditor[] {
+  return leida.dias
+    .filter((d) => d.ejercicios.length > 0 || d.notas.trim())
+    .map((d) => ({
+      clave: nuevaClave(),
+      nombre: d.nombre.trim().slice(0, LARGOS.nombreDia),
+      notas: d.notas.trim().slice(0, LARGOS.notasDia),
+      ejercicios: d.ejercicios.slice(0, TOPES.ejerciciosPorDia).map((x, j) => {
+        const ej = desdeLeido(x, biblioteca);
+        return j === 0 ? { ...ej, junto_al_anterior: false } : ej;
+      }),
+    }));
 }
 
 /**
