@@ -460,6 +460,20 @@ export const MENSAJES_PT: Record<string, string> = {
   // segundo, quien quiere cambiar su tipo de cuenta sin ser administración.
   'Eso es del plan Pro. En el plan Gratis anotás tus gastos e ingresos a mano.': 'Isso é do plano Pro. No plano Grátis você lança suas despesas e entradas na mão.',
   'El tipo de cuenta solo lo cambia la administración de Orden.': 'O tipo de conta só pode ser mudado pela administração do Orden.',
+
+  // ---- 122 · los productos desde una planilla ----
+  // Los ve quien sube su lista en Productos: un vendedor que llega a la
+  // función por API, la cuenta personal, o una tanda que alguien armó a mano.
+  'Subir productos es del dueño o de un administrador.': 'Enviar produtos é do dono ou de um administrador.',
+  'Una cuenta personal no lleva productos.': 'Uma conta pessoal não tem produtos.',
+  'Las opciones de la importación no son válidas.': 'As opções da importação não são válidas.',
+  'No llegó ningún producto para cargar.': 'Não chegou nenhum produto para cadastrar.',
+  'Mandá hasta 1.000 productos por vez.': 'Envie até 1.000 produtos por vez.',
+  'La planilla llegó mal armada. Volvé a subirla.': 'A planilha chegou com problema. Envie de novo.',
+  'La fila % tiene un número que no se entiende.': 'A linha % tem um número que não dá pra entender.',
+  'La fila % tiene un monto negativo.': 'A linha % tem um valor negativo.',
+  'La fila % tiene un número demasiado grande.': 'A linha % tem um número grande demais.',
+  'La fila % no tiene nombre.': 'A linha % não tem nome.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */

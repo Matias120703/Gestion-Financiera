@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from 'react';
 import { useTextos } from '@/i18n/cliente';
 import { seriesRaras, type ResultadoPlanilla } from '@/lib/rutina-planilla';
 import type { RutinaLeidaConNotas } from '@/lib/rutina-texto';
+import { ChipsDeHojas } from '@/components/planilla/ChipsDeHojas';
 
 /**
  * LO QUE UNA PLANILLA SUMA ARRIBA DE LA REVISIÓN (114).
@@ -41,7 +42,6 @@ export function ExtrasPlanilla({
   const lista = (nombres: string[]) => nombres.map((n) => `«${n}»`).join(', ');
   const chip = (encendido: boolean) => `${encendido ? 'chip-encendido' : 'chip-apagado'} px-3.5 text-[13px]`;
   const avisos = resultado.avisos.filter((a) => a.codigo !== 'series_raras');
-  const usadasConEjercicios = resultado.hojas.filter((h) => h.usada && h.conEjercicios).length;
   const noUsadas = resultado.hojas.filter((h) => !h.usada && h.conEjercicios).map((h) => h.nombre);
   // «No usamos las hojas Registro, Progreso, Resumen y Guía. Tocá una para sumarla.»
   const lineaNoUsadas = !noUsadas.length ? '' : [
@@ -57,25 +57,12 @@ export function ExtrasPlanilla({
     <div className="space-y-2.5">
       {resultado.hojas.length > 1 && (
         <div className="space-y-1.5">
-          <ul className="flex flex-wrap gap-1.5" aria-label={i.hojas}>
-            {resultado.hojas.map((h, k) => (h.conEjercicios && onHoja ? (
-              <li key={k}>
-                <button
-                  type="button" aria-pressed={h.usada}
-                  // La última hoja que queda no se saca: sin ninguna no hay rutina.
-                  disabled={h.usada && usadasConEjercicios <= 1}
-                  onClick={() => onHoja(h.nombre, !h.usada)}
-                  className={`${chip(h.usada)} min-h-[40px] max-w-full`}
-                >
-                  <span className="truncate">{h.usada ? `✓ ${h.nombre}` : h.nombre}</span>
-                </button>
-              </li>
-            ) : (
-              <li key={k} className={`rounded-full px-3 py-1 text-[12px] font-semibold ${h.usada ? 'bg-verde-claro text-verde-fuerte' : 'bg-arena text-tinta/50'}`}>
-                {h.usada || h.conEjercicios ? h.nombre : i.hojaNoUsada(h.nombre)}
-              </li>
-            )))}
-          </ul>
+          {/* Los chips son los de toda planilla (122): la última hoja que
+              queda no se saca, sin ninguna no hay rutina. */}
+          <ChipsDeHojas
+            hojas={resultado.hojas.map((h) => ({ nombre: h.nombre, usada: h.usada, activable: h.conEjercicios }))}
+            etiqueta={t.planilla.hojas} noUsada={i.hojaNoUsada} onHoja={onHoja}
+          />
           {lineaNoUsadas && <p className="text-[12.5px] leading-snug text-tinta/55">{lineaNoUsadas}</p>}
         </div>
       )}

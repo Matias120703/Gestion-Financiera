@@ -2,9 +2,11 @@
  * PLANILLAS (114): una planilla como filas de celdas de texto, venga de
  * donde venga.
  *
- * Es genérico a propósito (módulos por problema, no por oficio): hoy lo usa
- * el trainer para subir su rutina de Excel o Google Sheets, y mañana lo
- * puede usar cualquier otra importación. Acá no hay nada de rutinas.
+ * Es genérico a propósito (módulos por problema, no por oficio): lo usa el
+ * trainer para subir su rutina de Excel o Google Sheets, y desde la 122 el
+ * negocio para subir su lista de productos (con sus topes, lo oculto y los
+ * números tal cual, y el libro en corto para la respuesta). Acá no hay nada
+ * de rutinas ni de productos.
  *
  * De dónde sale un `LibroPlanilla`:
  *   · un .xlsx/.xlsm: lo lee el SERVIDOR con exceljs (planilla-xlsx.ts), que
@@ -25,6 +27,19 @@
 /**
  * Una celda, ya como texto. `link`: el de un hipervínculo. `fecha`: Excel la
  * había convertido en fecha. `formula`: es el resultado de una fórmula.
+ *
+ * Con `numeros` (la lista de productos, 122) la celda trae además:
+ *   · `numero`: el número tal cual estaba en la celda (o el resultado de su
+ *     fórmula). El texto de un número sale con coma decimal («1234,567»), y
+ *     leído de nuevo como monto sería un millón: el número no pasa por ahí;
+ *   · `sinCalcular`: una fórmula SIN resultado guardado (la planilla la armó
+ *     un programa y nunca se abrió en Excel). Llega con el texto vacío, y la
+ *     revisión puede decir por qué falta el precio;
+ *   · `combinada`: es la de arriba a la izquierda de una combinación A LO
+ *     ANCHO (la fila «Ferretería» combinada de A a F, centrada y con color:
+ *     un subtítulo de grupo aunque no esté en negrita);
+ *   · el texto de un número con formato de ceros («000000») es el que muestra
+ *     Excel, con sus ceros: 123 se ve 000123, y así lo tiene el negocio.
  */
 export interface CeldaPlanilla {
   texto: string;
@@ -32,6 +47,9 @@ export interface CeldaPlanilla {
   negrita?: boolean;
   fecha?: boolean;
   formula?: boolean;
+  numero?: number;
+  sinCalcular?: boolean;
+  combinada?: boolean;
 }
 
 export interface HojaPlanilla {
@@ -39,6 +57,14 @@ export interface HojaPlanilla {
   filas: (CeldaPlanilla | null)[][];
   /** Tenía más filas que el tope y se leyeron las primeras. */
   recortada?: boolean;
+  /**
+   * Con `ocultas` (122): las filas (su lugar en `filas`) y las columnas que
+   * estaban ocultas en el Excel. Se leen igual y quedan marcadas: el costo
+   * escondido para imprimir la lista y la mitad de la lista tapada por un
+   * filtro no se pierden en silencio.
+   */
+  filasOcultas?: number[];
+  columnasOcultas?: number[];
 }
 
 export interface LibroPlanilla {
@@ -46,6 +72,16 @@ export interface LibroPlanilla {
 }
 
 export type ErrorPlanilla = 'muy_grande' | 'xls_viejo' | 'ods' | 'numbers' | 'no_es_planilla';
+
+/** Hasta dónde se lee. `filasEnTotal`: sumando todas las hojas (sin él, solo por hoja). */
+export interface TopesPlanilla {
+  readonly bytes: number;
+  readonly hojas: number;
+  readonly filas: number;
+  readonly columnas: number;
+  readonly descomprimido: number;
+  readonly filasEnTotal?: number;
+}
 
 /**
  * Los topes (D3.11). 4 MB: Vercel corta los pedidos en 4,5 MB. 40 MB
@@ -58,6 +94,41 @@ export const TOPES_PLANILLA = {
   columnas: 40,
   descomprimido: 40 * 1024 * 1024,
 } as const;
+
+/**
+ * LA LISTA DE PRODUCTOS (122). La del negocio de verdad tiene miles: 30.000
+ * filas sumando las hojas (20.000 productos son 784 KB de .xlsx y 1,5 MB de
+ * CSV, medido). Lo demás, como la rutina: el mismo archivo de 4 MB, las
+ * mismas 20 hojas, 40 columnas y el mismo control de descompresión.
+ */
+export const TOPES_CATALOGO: TopesPlanilla = {
+  ...TOPES_PLANILLA,
+  filas: 30000,
+  filasEnTotal: 30000,
+};
+
+/**
+ * Lo más que puede pesar la respuesta de la ruta con el libro en corto
+ * (`libroACompacto`). Vercel corta las respuestas en 4,5 MB; 20.000
+ * productos son ~1,7 MB.
+ */
+export const TOPE_RESPUESTA = 4 * 1024 * 1024;
+
+/** Las marcas de tilde que deja normalize('NFD'): U+0300 a U+036F (con fromCharCode: pegadas no se ven). */
+const RE_MARCAS = new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, 'g');
+
+/** Minúsculas y sin tildes (también la ñ y la ç: es para comparar títulos). */
+export function plegar(s: string): string {
+  return (s ?? '').normalize('NFD').replace(RE_MARCAS, '').toLowerCase();
+}
+
+/** El texto de una celda en un renglón: sin saltos de línea ni tabuladores adentro. */
+export function textoDeCelda(c: CeldaPlanilla | null | undefined): string {
+  const t = c?.texto ?? '';
+  // Lo de casi todas las celdas: nada que limpiar (20.000 filas lo agradecen).
+  if (!/\s\s|[\t\r\n]|^\s|\s$/.test(t)) return t;
+  return t.replace(/[\t\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
 /**
  * Qué es un archivo por sus primeros bytes. `xls_viejo`: la firma de los
@@ -85,7 +156,7 @@ const decodificarAscii = (bytes: Uint8Array, desde: number, largo: number): stri
  *   · más de 40 MB descomprimidos, sin `xl/workbook.xml`, o un zip roto →
  *     `no_es_planilla`.
  */
-export function revisarZip(bytes: Uint8Array): { ok: true } | { error: ErrorPlanilla } {
+export function revisarZip(bytes: Uint8Array, tope: number = TOPES_PLANILLA.descomprimido): { ok: true } | { error: ErrorPlanilla } {
   if (firmaDeArchivo(bytes) !== 'zip') return { error: 'no_es_planilla' };
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   // El fin del directorio central: está en los últimos 22 bytes, o antes si
@@ -115,7 +186,7 @@ export function revisarZip(bytes: Uint8Array): { ok: true } | { error: ErrorPlan
     const nombre = decodificarAscii(bytes, p + 46, largoNombre);
     if (tamano === 0xffffffff) return { error: 'no_es_planilla' };
     total += tamano;
-    if (total > TOPES_PLANILLA.descomprimido) return { error: 'no_es_planilla' };
+    if (total > tope) return { error: 'no_es_planilla' };
     if (nombre === 'xl/workbook.xml') libro = true;
     if (nombre === 'Index/Document.iwa' || nombre.startsWith('Index/')) numbers = true;
     if (nombre === 'mimetype') {
@@ -135,11 +206,12 @@ export function revisarZip(bytes: Uint8Array): { ok: true } | { error: ErrorPlan
 }
 
 /** Una hoja con los topes de filas y columnas. */
-function conTopes(nombre: string, filas: (CeldaPlanilla | null)[][]): HojaPlanilla {
-  const recortada = filas.length > TOPES_PLANILLA.filas;
+function conTopes(nombre: string, filas: (CeldaPlanilla | null)[][], topes: TopesPlanilla): HojaPlanilla {
+  const tope = Math.min(topes.filas, topes.filasEnTotal ?? Infinity);
+  const recortada = filas.length > tope;
   const hoja: HojaPlanilla = {
     nombre,
-    filas: filas.slice(0, TOPES_PLANILLA.filas).map((f) => f.slice(0, TOPES_PLANILLA.columnas)),
+    filas: filas.slice(0, tope).map((f) => f.slice(0, topes.columnas)),
   };
   if (recortada) hoja.recortada = true;
   return hoja;
@@ -147,26 +219,64 @@ function conTopes(nombre: string, filas: (CeldaPlanilla | null)[][]): HojaPlanil
 
 const celda = (t: string): CeldaPlanilla | null => (t.trim() ? { texto: t } : null);
 
+/** UTF-16 (`le`: el byte bajo primero) → texto. El de «big endian» se da vuelta y se lee igual. */
+function desdeUtf16(bytes: Uint8Array, le: boolean): string {
+  const largo = bytes.length - (bytes.length % 2);
+  let datos = bytes.subarray(0, largo);
+  if (!le) {
+    const vuelta = new Uint8Array(largo);
+    for (let i = 0; i < largo; i += 2) { vuelta[i] = datos[i + 1]; vuelta[i + 1] = datos[i]; }
+    datos = vuelta;
+  }
+  return new TextDecoder('utf-16le').decode(datos);
+}
+
+/**
+ * Los bytes de un CSV → texto (26). UTF-16 con su BOM (FF FE o FE FF: el
+ * «Texto Unicode» de Excel, el «Unicode» de LibreOffice) o sin él (muchos
+ * ceros en las posiciones pares o impares); si no, UTF-8 con o sin BOM; y
+ * si no es UTF-8, Windows-1252. Antes el UTF-16 se leía como Windows-1252,
+ * con un carácter nulo entre cada letra: «No encontré productos».
+ */
+function textoDeCsv(bytes: Uint8Array): string {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return desdeUtf16(bytes.subarray(2), true);
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return desdeUtf16(bytes.subarray(2), false);
+  const muestra = Math.min(bytes.length, 4000) & ~1;
+  if (muestra >= 8) {
+    let pares = 0;
+    let impares = 0;
+    for (let i = 0; i < muestra; i++) if (bytes[i] === 0) { if (i % 2) impares++; else pares++; }
+    const mitad = muestra / 2;
+    if (impares >= mitad * 0.3 && pares <= mitad * 0.05) return desdeUtf16(bytes, true);
+    if (pares >= mitad * 0.3 && impares <= mitad * 0.05) return desdeUtf16(bytes, false);
+  }
+  let datos = bytes;
+  if (datos.length >= 3 && datos[0] === 0xef && datos[1] === 0xbb && datos[2] === 0xbf) datos = datos.subarray(3);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(datos);
+  } catch {
+    return new TextDecoder('windows-1252').decode(datos);
+  }
+}
+
 /**
  * Un CSV como lo bajan Excel y Google Sheets:
  *   · con o sin BOM; en UTF-8 o, si no lo es, en Windows-1252 (el «CSV» de
- *     Excel en español: «Día» y «Última» salen bien);
+ *     Excel en español: «Día» y «Última» salen bien); en UTF-16 (el «Texto
+ *     Unicode» de Excel, un .txt separado por tabuladores, 122);
  *   · separado por «;» (Excel en español y portugués), «,» (Google Sheets) o
  *     tabulador: el que más aparece en el primer renglón con datos;
  *   · con comillas («"Última al fallo; con ayudante"», y «""» adentro);
  *   · con CRLF o LF.
  * Una sola hoja, sin nombre: el nombre del archivo suele traer el del alumno.
+ *
+ * `topes`: los de la rutina por defecto (500 filas); la lista de productos
+ * pasa `TOPES_CATALOGO` (122).
  */
-export function libroDesdeCsv(bytes: Uint8Array): LibroPlanilla {
-  let datos = bytes;
-  if (datos.length >= 3 && datos[0] === 0xef && datos[1] === 0xbb && datos[2] === 0xbf) datos = datos.subarray(3);
-  let texto: string;
-  try {
-    texto = new TextDecoder('utf-8', { fatal: true }).decode(datos);
-  } catch {
-    texto = new TextDecoder('windows-1252').decode(datos);
-  }
-  texto = texto.replace(/^﻿/, '');
+export function libroDesdeCsv(bytes: Uint8Array, topes: TopesPlanilla = TOPES_PLANILLA): LibroPlanilla {
+  const topeFilas = Math.min(topes.filas, topes.filasEnTotal ?? Infinity);
+  // Sin el BOM que quede y sin caracteres nulos (un UTF-16 mal cortado).
+  const texto = textoDeCsv(bytes).replace(/^﻿/, '').replace(/\x00/g, '');
 
   const primera = texto.split(/\r?\n/).find((l) => l.trim()) ?? '';
   const cuenta = (c: string) => {
@@ -200,7 +310,7 @@ export function libroDesdeCsv(bytes: Uint8Array): LibroPlanilla {
       filas.push(fila.map(celda));
       fila = [];
       actual = '';
-      if (filas.length > TOPES_PLANILLA.filas) break;
+      if (filas.length > topeFilas) break;
       continue;
     }
     actual += c;
@@ -209,7 +319,7 @@ export function libroDesdeCsv(bytes: Uint8Array): LibroPlanilla {
     fila.push(actual);
     filas.push(fila.map(celda));
   }
-  return { hojas: [conTopes('', filas)] };
+  return { hojas: [conTopes('', filas, topes)] };
 }
 
 /**
@@ -255,4 +365,132 @@ export function libroDesdeTexto(texto: string): LibroPlanilla {
     i = fin + 1;
   }
   return { hojas: [{ nombre: '', filas: filas.map((f) => f.slice(0, TOPES_PLANILLA.columnas).map(celda)) }] };
+}
+
+// ─────────────────────────── el libro en corto (122) ───────────────────────────
+
+/**
+ * EL LIBRO EN CORTO: lo que viaja de /api/productos/planilla al navegador.
+ *
+ * Con las celdas como objetos, 20.000 productos eran 2,8 MB de respuesta;
+ * así son ~1,7 MB (medido). Cada celda es su texto, su número (si era un
+ * número: el navegador lo usa tal cual), `null` (vacía) o `false` (una
+ * fórmula sin resultado guardado). Las filas pierden las celdas vacías del
+ * final. `negrita`: las filas cuya primera celda con algo está en negrita
+ * (un subtítulo «BEBIDAS»); `combinadas`: las que la tienen combinada a lo
+ * ancho (el subtítulo «Ferretería» de A a F). Las fechas y los links llegan
+ * como su texto: la lista de productos no los usa. Un número con sus ceros
+ * de adelante (formato «000000») llega como el texto que muestra Excel
+ * («000123»): es un código, y sin los ceros no lo encuentra el sistema de caja.
+ */
+export type CeldaCompacta = string | number | null | false;
+
+export interface HojaCompacta {
+  nombre: string;
+  filas: CeldaCompacta[][];
+  negrita?: number[];
+  combinadas?: number[];
+  ocultas?: number[];
+  columnasOcultas?: number[];
+  recortada?: true;
+}
+
+export interface LibroCompacto {
+  v: 1;
+  hojas: HojaCompacta[];
+}
+
+/** 12.5 → «12,5»: como lo muestra el Excel en español (igual que planilla-xlsx). */
+function numeroComoTextoCorto(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return String(+n.toFixed(10)).replace('.', ',');
+}
+
+const bytesDe = (s: string) => new TextEncoder().encode(s).length;
+
+/**
+ * El libro → en corto. Si en corto pasa de `tope` bytes (40 columnas de
+ * texto largo en 30.000 filas), se cortan las filas del final y la hoja
+ * queda `recortada`: mejor leer las primeras que no poder leer ninguna.
+ */
+export function libroACompacto(libro: LibroPlanilla, tope: number = TOPE_RESPUESTA): LibroCompacto {
+  const hojas: HojaCompacta[] = libro.hojas.map((h) => {
+    const negrita: number[] = [];
+    const combinadas: number[] = [];
+    const filas = h.filas.map((f, r) => {
+      const fila: CeldaCompacta[] = f.map((c) => {
+        if (!c) return null;
+        if (c.sinCalcular) return false;
+        // «000123» (formato de ceros): el texto, que es lo que ve el negocio (28).
+        if (typeof c.numero === 'number' && Number.isFinite(c.numero)) return /^0\d+$/.test(c.texto) ? c.texto : c.numero;
+        return c.texto === '' ? null : c.texto;
+      });
+      while (fila.length && fila[fila.length - 1] === null) fila.pop();
+      const primera = f.find((c) => c && (c.texto || c.sinCalcular));
+      if (primera?.negrita) negrita.push(r);
+      if (primera?.combinada) combinadas.push(r);
+      return fila;
+    });
+    const hoja: HojaCompacta = { nombre: h.nombre, filas };
+    if (negrita.length) hoja.negrita = negrita;
+    if (combinadas.length) hoja.combinadas = combinadas;
+    if (h.filasOcultas?.length) hoja.ocultas = h.filasOcultas;
+    if (h.columnasOcultas?.length) hoja.columnasOcultas = h.columnasOcultas;
+    if (h.recortada) hoja.recortada = true;
+    return hoja;
+  });
+  const compacto: LibroCompacto = { v: 1, hojas };
+  if (bytesDe(JSON.stringify(compacto)) <= tope) return compacto;
+
+  // Pasa del tope: las filas del final afuera, hoja por hoja en orden.
+  let usado = 200;
+  for (const h of hojas) {
+    usado += bytesDe(JSON.stringify(h.nombre)) + 64;
+    let r = 0;
+    for (; r < h.filas.length; r++) {
+      const peso = bytesDe(JSON.stringify(h.filas[r])) + 1;
+      if (usado + peso > tope * 0.9) break;
+      usado += peso;
+    }
+    if (r < h.filas.length) {
+      h.filas = h.filas.slice(0, r);
+      h.recortada = true;
+      if (h.negrita) h.negrita = h.negrita.filter((x) => x < r);
+      if (h.combinadas) h.combinadas = h.combinadas.filter((x) => x < r);
+      if (h.ocultas) h.ocultas = h.ocultas.filter((x) => x < r);
+    }
+  }
+  return compacto;
+}
+
+/** Lo que llegó de la ruta → el libro de siempre, o null si no tiene forma de libro. */
+export function compactoALibro(x: unknown): LibroPlanilla | null {
+  const c = x as LibroCompacto | null;
+  if (!c || c.v !== 1 || !Array.isArray(c.hojas)) return null;
+  const hojas: HojaPlanilla[] = [];
+  for (const h of c.hojas) {
+    if (!h || !Array.isArray(h.filas)) return null;
+    const negrita = new Set(Array.isArray(h.negrita) ? h.negrita : []);
+    const combinadas = new Set(Array.isArray(h.combinadas) ? h.combinadas : []);
+    const filas = h.filas.map((f, r) => {
+      if (!Array.isArray(f)) return [];
+      let marcada = !negrita.has(r);
+      let combinadaMarcada = !combinadas.has(r);
+      return f.map((v): CeldaPlanilla | null => {
+        let celdaLeida: CeldaPlanilla | null = null;
+        if (v === false) celdaLeida = { texto: '', sinCalcular: true };
+        else if (typeof v === 'number' && Number.isFinite(v)) celdaLeida = { texto: numeroComoTextoCorto(v), numero: v };
+        else if (typeof v === 'string' && v !== '') celdaLeida = { texto: v };
+        if (celdaLeida && !marcada) { celdaLeida.negrita = true; marcada = true; }
+        if (celdaLeida && !combinadaMarcada) { celdaLeida.combinada = true; combinadaMarcada = true; }
+        return celdaLeida;
+      });
+    });
+    const hoja: HojaPlanilla = { nombre: String(h.nombre ?? ''), filas };
+    if (h.recortada) hoja.recortada = true;
+    if (Array.isArray(h.ocultas) && h.ocultas.length) hoja.filasOcultas = h.ocultas.filter((n) => Number.isInteger(n));
+    if (Array.isArray(h.columnasOcultas) && h.columnasOcultas.length) hoja.columnasOcultas = h.columnasOcultas.filter((n) => Number.isInteger(n));
+    hojas.push(hoja);
+  }
+  return { hojas };
 }

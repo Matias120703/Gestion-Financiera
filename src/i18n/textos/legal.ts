@@ -352,7 +352,7 @@ export const legalEs: TextosLegal = {
           'Es el servicio: lo guardamos para mostrártelo. Depende de tu rubro:',
           {
             lista: [
-              '**Comercio:** ventas, gastos, productos con sus costos, precios y stock, fiado y clientes (nombre y teléfono, si los ponés).',
+              '**Comercio:** ventas, gastos, productos con sus costos, precios y stock, fiado y clientes (nombre y teléfono, si los ponés). Si subís tu lista de productos en una planilla (Excel, CSV o un link de Google Sheets), la lee Orden solo, sin inteligencia artificial: la planilla no se guarda, se lee y se descarta, y quedan solo los productos que guardás.',
               '**Servicios y oficios:** además, turnos con el nombre y el teléfono del cliente, los profesionales y cómo se reparte lo cobrado. Quien reserva por tu link escribe él mismo su nombre y su teléfono.',
               '**Clases y cursos:** alumnos, sus inscripciones (días, horario y precio), lo que te pagaron y las clases que se dieron.',
               '**Personal trainer:** lo de clases, más rutinas, medidas y notas de «Salud y lesiones». Tienen su propio apartado, [más abajo](/privacidad#trainer).',
@@ -765,7 +765,7 @@ export const legalPt: TextosLegal = {
           'É o serviço: guardamos pra mostrar pra você. Depende do seu ramo:',
           {
             lista: [
-              '**Comércio:** vendas, despesas, produtos com custos, preços e estoque, fiado e clientes (nome e telefone, se você colocar).',
+              '**Comércio:** vendas, despesas, produtos com custos, preços e estoque, fiado e clientes (nome e telefone, se você colocar). Se você envia sua lista de produtos numa planilha (Excel, CSV ou um link do Google Sheets), quem lê é o próprio Orden, sem inteligência artificial: a planilha não é guardada, é lida e descartada, e ficam só os produtos que você salva.',
               '**Serviços e ofícios:** além disso, horários com o nome e o telefone do cliente, os profissionais e como se divide o que foi recebido. Quem agenda pelo seu link escreve o próprio nome e telefone.',
               '**Aulas e cursos:** alunos, as matrículas (dias, horário e preço), o que te pagaram e as aulas dadas.',
               '**Personal trainer:** o mesmo das aulas, mais treinos, medidas e notas de «Saúde e lesões». Têm uma seção própria, [mais abaixo](/privacidad#trainer).',

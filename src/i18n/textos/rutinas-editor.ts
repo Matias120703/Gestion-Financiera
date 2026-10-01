@@ -13,6 +13,7 @@
  * Las palabras de la carga (kg, lb, Placa, Peso corporal) y de los grupos
  * de ejercicio están en `t.rutinasComun`: acá va solo lo del editor.
  */
+import { planillaEs, planillaPt } from './planilla';
 import type { EstadoRutina } from '../../lib/tipos-rutinas';
 
 /** «A», «B»… la letra de cada día, como se dice en el gimnasio. */
@@ -240,16 +241,8 @@ export const rutinasEditorEs = {
   importar: {
     titulo: 'Subir planilla',
     explicacion: 'Subí tu rutina de Excel o Google Sheets. La acomodamos en días y ejercicios, y antes de usarla te mostramos lo que entendimos.',
-    elegirArchivo: 'Elegir archivo (.xlsx o .csv)',
-    oLink: 'O pegá el link de Google Sheets',
-    linkCampo: 'Link de Google Sheets',
-    linkEjemplo: 'https://docs.google.com/spreadsheets/d/…',
-    traer: 'Traer',
-    ayudaGoogle: 'En Google Sheets: Archivo → Descargar → Microsoft Excel (.xlsx), y subí ese archivo. O compartila con «Cualquier persona con el enlace» y pegá el link.',
-    leyendo: 'Leyendo la planilla…',
     hojaNoUsada: (nombre: string) => `${nombre}: sin ejercicios, no se usa`,
     /** Las hojas con ejercicios que no parecen la rutina (un registro, el progreso, una guía): se pueden sumar. */
-    hojas: 'Hojas de la planilla',
     hojaNoUsadaConEjercicios: (nombre: string) => `No usamos la hoja ${nombre}.`,
     /** «Registro, Progreso, Resumen» y «Guía». */
     hojasNoUsadas: (primeras: string, ultima: string) => `No usamos las hojas ${primeras} y ${ultima}.`,
@@ -272,22 +265,12 @@ export const rutinasEditorEs = {
     editarComoTexto: 'Editar como texto',
     otroArchivo: 'Elegir otro archivo',
     videosNoGuardados: 'La rutina se guardó, pero no pudimos poner los links de video en tu lista.',
+    // Lo de elegir el archivo y por qué no se pudo leer es de todas las
+    // planillas (planilla.ts, 122). La rutina dice además «Pegar texto».
     errores: {
-      muy_grande: 'La planilla pesa más de 4 MB. Guardala sin imágenes o bajala como CSV.',
-      xls_viejo: 'Es un Excel viejo (.xls) o tiene contraseña. Abrilo y guardalo como «Libro de Excel (.xlsx)», sin contraseña.',
-      ods: 'Es de LibreOffice (.ods). Guardalo como .xlsx y subilo de nuevo.',
-      numbers: 'Es de Numbers. En Numbers: Archivo → Exportar a → Excel, y subí ese archivo.',
+      ...planillaEs.errores,
       no_es_planilla: 'No pudimos abrir ese archivo. Guardalo de nuevo como .xlsx, bajalo como CSV o usá «Pegar texto».',
       sin_ejercicios: 'No encontré ejercicios en esta planilla.',
-      enlace_invalido: 'Ese link no es de Google Sheets.',
-      no_es_sheets: 'Ese link es de un documento, no de una planilla.',
-      archivo_en_drive: 'Ese link es de Drive. Abrí la planilla con Google Sheets y copiá ese link, o descargala y subila.',
-      no_compartida: 'Esa planilla no está compartida. En Google Sheets: Compartir → Acceso general → «Cualquier persona con el enlace». O descargala como Excel y subila.',
-      no_existe: 'Esa planilla no existe o se borró.',
-      google_no_responde: 'Google no respondió. Probá de nuevo en un rato, o descargala como Excel y subila.',
-      sin_sesion: 'Tu sesión se cerró. Volvé a entrar y probá de nuevo.',
-      sin_acceso: 'No tenés acceso a esta cuenta.',
-      error: 'No se pudo leer la planilla. Probá de nuevo.',
     },
   },
 
@@ -521,15 +504,7 @@ export const rutinasEditorPt: typeof rutinasEditorEs = {
   importar: {
     titulo: 'Enviar planilha',
     explicacion: 'Envie seu treino do Excel ou do Google Sheets. A gente organiza em dias e exercícios e, antes de usar, mostra o que entendeu.',
-    elegirArchivo: 'Escolher arquivo (.xlsx ou .csv)',
-    oLink: 'Ou cole o link do Google Sheets',
-    linkCampo: 'Link do Google Sheets',
-    linkEjemplo: 'https://docs.google.com/spreadsheets/d/…',
-    traer: 'Buscar',
-    ayudaGoogle: 'No Google Sheets: Arquivo → Fazer download → Microsoft Excel (.xlsx) e envie esse arquivo. Ou compartilhe com «Qualquer pessoa com o link» e cole o link.',
-    leyendo: 'Lendo a planilha…',
     hojaNoUsada: (nombre: string) => `${nombre}: sem exercícios, não é usada`,
-    hojas: 'Abas da planilha',
     hojaNoUsadaConEjercicios: (nombre: string) => `Não usamos a aba ${nombre}.`,
     hojasNoUsadas: (primeras: string, ultima: string) => `Não usamos as abas ${primeras} e ${ultima}.`,
     tocalaParaSumarla: 'Toque nela para somá-la.',
@@ -552,21 +527,9 @@ export const rutinasEditorPt: typeof rutinasEditorEs = {
     otroArchivo: 'Escolher outro arquivo',
     videosNoGuardados: 'O treino foi salvo, mas não conseguimos colocar os links de vídeo na sua lista.',
     errores: {
-      muy_grande: 'A planilha tem mais de 4 MB. Salve sem imagens ou baixe como CSV.',
-      xls_viejo: 'É um Excel antigo (.xls) ou tem senha. Abra e salve como «Pasta de Trabalho do Excel (.xlsx)», sem senha.',
-      ods: 'É do LibreOffice (.ods). Salve como .xlsx e envie de novo.',
-      numbers: 'É do Numbers. No Numbers: Arquivo → Exportar para → Excel e envie esse arquivo.',
+      ...planillaPt.errores,
       no_es_planilla: 'Não conseguimos abrir esse arquivo. Salve de novo como .xlsx, baixe como CSV ou use «Colar texto».',
       sin_ejercicios: 'Não encontrei exercícios nesta planilha.',
-      enlace_invalido: 'Esse link não é do Google Sheets.',
-      no_es_sheets: 'Esse link é de um documento, não de uma planilha.',
-      archivo_en_drive: 'Esse link é do Drive. Abra a planilha no Google Sheets e copie esse link, ou baixe e envie.',
-      no_compartida: 'Essa planilha não está compartilhada. No Google Sheets: Compartilhar → Acesso geral → «Qualquer pessoa com o link». Ou baixe como Excel e envie.',
-      no_existe: 'Essa planilha não existe ou foi apagada.',
-      google_no_responde: 'O Google não respondeu. Tente de novo daqui a pouco, ou baixe como Excel e envie.',
-      sin_sesion: 'Sua sessão foi encerrada. Entre de novo e tente outra vez.',
-      sin_acceso: 'Você não tem acesso a esta conta.',
-      error: 'Não deu para ler a planilha. Tente de novo.',
     },
   },
 

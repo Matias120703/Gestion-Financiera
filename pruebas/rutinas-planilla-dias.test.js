@@ -57,7 +57,7 @@ function cargarTs(ruta, importaciones = {}) {
 const U = cargarTs('src/components/rutinas/panel/utiles.ts');
 const M = cargarTs('src/components/rutinas/editor/modelo.ts', { '@/lib/rutina-texto': R, '@/lib/ejercicios-base': E, '../panel/utiles': U });
 const T = cargarTs('src/components/rutinas/publico/tildes.ts');
-const { rutinasEditorEs: es, rutinasEditorPt: pt } = cargarTs('src/i18n/textos/rutinas-editor.ts');
+const { rutinasEditorEs: es, rutinasEditorPt: pt } = cargarTs('src/i18n/textos/rutinas-editor.ts', { './planilla': cargarTs('src/i18n/textos/planilla.ts') });
 const { rutinasComunEs } = cargarTs('src/i18n/textos/rutinas-comun.ts');
 
 // ─────────────────────────── cómo se arman las planillas ───────────────────────────
@@ -719,13 +719,18 @@ const DIAS_MATIAS = [
   // ═══════════════════════════════════════════════════════════
   const extras = leer('src/components/rutinas/editor/ExtrasPlanilla.tsx');
   const importar = leer('src/components/rutinas/editor/ImportarPlanilla.tsx');
+  // Los chips son de toda planilla desde la 122 (la lista de productos los usa también).
+  const chips = leer('src/components/planilla/ChipsDeHojas.tsx');
   ok('las hojas con ejercicios son botones (aria-pressed), y la última que queda no se saca',
-    [/aria-pressed=\{h\.usada\}/.test(extras), /disabled=\{h\.usada && usadasConEjercicios <= 1\}/.test(extras)], [true, true]);
+    [/aria-pressed=\{h\.usada\}/.test(chips), /disabled=\{h\.usada && usadasActivables <= 1\}/.test(chips),
+      /<ChipsDeHojas/.test(extras), /activable: h\.conEjercicios/.test(extras)], [true, true, true, true]);
   ok('ImportarPlanilla pasa las hojas elegidas, se reinician con otro archivo y se mantienen al cambiar de semana',
-    [/planillaARutina\(estado\.libro, \{ semana, hojas \}\)/.test(importar), (importar.match(/setHojas\(\{\}\)/g) || []).length,
+    [/planillaARutina\(libro, \{ semana, hojas \}\)/.test(importar), (importar.match(/setHojas\(\{\}\)/g) || []).length,
       /onSemana=\{\(n\) => \{ setSemana\(n\); setVueltas\(\[\]\); \}\}/.test(importar)], [true, 2, true]);
-  const textos = ['hojas', 'hojaNoUsadaConEjercicios', 'hojasNoUsadas', 'tocalaParaSumarla', 'tocaUnaParaSumarla'];
+  const textos = ['hojaNoUsadaConEjercicios', 'hojasNoUsadas', 'tocalaParaSumarla', 'tocaUnaParaSumarla'];
   ok('los textos nuevos, en es y pt', textos.filter((k) => !es.importar[k] || !pt.importar[k]), []);
+  const { planillaEs, planillaPt } = cargarTs('src/i18n/textos/planilla.ts');
+  ok('y el nombre de los chips, en los textos de toda planilla', [planillaEs.hojas, planillaPt.hojas], ['Hojas de la planilla', 'Abas da planilha']);
   ok('una sola hoja sin usar', [`${es.importar.hojaNoUsadaConEjercicios('Guía')} ${es.importar.tocalaParaSumarla}`, pt.importar.hojaNoUsadaConEjercicios('Dicas')],
     ['No usamos la hoja Guía. Tocala para sumarla.', 'Não usamos a aba Dicas.']);
 

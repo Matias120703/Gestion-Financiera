@@ -19,7 +19,7 @@
     "../src/lib/pagos.ts", "../src/lib/invitar-avisos.ts",
     "../src/lib/video-reglas.ts", "../src/lib/rutina-sin-senal.ts", "../src/lib/subida-storage.ts", "../src/lib/bajar-video.ts",
     "../src/lib/planilla.ts", "../src/lib/planilla-xlsx.ts", "../src/lib/enlace-sheets.ts", "../src/lib/rutina-planilla.ts",
-    "../src/lib/cuenta-del-cobro.ts", "../src/lib/calendario-agenda.ts"
+    "../src/lib/cuenta-del-cobro.ts", "../src/lib/calendario-agenda.ts", "../src/lib/catalogo-planilla.ts", "../src/lib/codigo-producto.ts"
   ],
   "include": ["../src/lib/reportes/*.ts"]
 }

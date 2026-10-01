@@ -302,6 +302,9 @@ html.hay-hoja.sin-senal .hoja-velo { padding-top: calc(env(safe-area-inset-top) 
   .tabla tbody td { @apply border-b border-borde/60 px-3 py-2.5 align-middle; }
   .tabla tbody tr:last-child td { @apply border-b-0; }
   .num { @apply text-right tabular-nums; }
+  /* El título de una columna de números, sobre sus números: `.tabla thead th`
+     lo dejaba a la izquierda (pesa más que `.num`) y los montos a la derecha. */
+  .tabla thead th.num { @apply text-right; }
 }
 
 /*

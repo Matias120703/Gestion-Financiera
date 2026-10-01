@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTextos } from '@/i18n/cliente';
 import { categoriaVisible } from '@/i18n/nombres';
@@ -11,6 +11,7 @@ import type { Producto } from '@/lib/tipos';
 import { Vacio, Indicador } from '@/components/Piezas';
 import { Hoja, PieHoja } from '@/components/Hoja';
 import { CampoMonto } from '@/components/CampoMonto';
+import { SubirPlanilla } from '@/components/productos/SubirPlanilla';
 import { mensajeDeError, verificarAfectados } from '@/lib/errores';
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -20,6 +21,8 @@ type Tipo = 'servicios' | 'productos';
 interface Borrador {
   id?: string;
   nombre: string;
+  /** El código de barras o el propio (122). Vacío = sin código. */
+  codigo: string;
   categoria: string;
   costo: number;
   precio: number;
@@ -30,9 +33,16 @@ interface Borrador {
 }
 
 const VACIO: Borrador = {
-  nombre: '', categoria: 'General', costo: 0, precio: 0,
+  nombre: '', codigo: '', categoria: 'General', costo: 0, precio: 0,
   stock: 0, stock_minimo: 0, controla_stock: true, activo: true,
 };
+
+/**
+ * Cuántas filas se dibujan de una vez (122). Con la lista subida de una
+ * planilla son miles: la tabla muestra las primeras y «Ver más»; buscar
+ * (por nombre, categoría o código) encuentra cualquiera.
+ */
+const FILAS_POR_VEZ = 100;
 
 /**
  * Qué es cada cosa. Un producto se compra para revender: tiene costo, margen
@@ -86,6 +96,13 @@ export function PantallaProductos({
   const [editando, setEditando] = useState<Borrador | null>(null);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
+  // «Subir planilla» (122). Desde el vacío de Vender se llega con ?subir=1.
+  const [subiendo, setSubiendo] = useState(false);
+  const [limite, setLimite] = useState(FILAS_POR_VEZ);
+  useEffect(() => {
+    if (puedeGestionar && new URLSearchParams(window.location.search).get('subir') === '1') setSubiendo(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const enServicios = conPestanas && pestana === 'servicios';
 
@@ -97,8 +114,13 @@ export function PantallaProductos({
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     if (!q) return deLaPestana;
-    return deLaPestana.filter((p) => p.nombre.toLowerCase().includes(q) || (p.categoria ?? '').toLowerCase().includes(q));
+    // El código exacto (un lector de código de barras) va primero.
+    const exactos = deLaPestana.filter((p) => p.codigo && p.codigo.toLowerCase() === q);
+    const resto = deLaPestana.filter((p) => !exactos.includes(p) && (p.nombre.toLowerCase().includes(q)
+      || (p.categoria ?? '').toLowerCase().includes(q) || (p.codigo ?? '').toLowerCase().includes(q)));
+    return [...exactos, ...resto];
   }, [deLaPestana, busqueda]);
+  const dibujados = visibles.slice(0, limite);
 
   // Los números de stock son de productos: un corte no se «repone» ni vale
   // nada en el depósito. Dan lo mismo que antes, porque un servicio siempre
@@ -145,7 +167,7 @@ export function PantallaProductos({
               type="button"
               role="tab"
               aria-selected={pestana === tp}
-              onClick={() => { setPestana(tp); setBusqueda(''); }}
+              onClick={() => { setPestana(tp); setBusqueda(''); setLimite(FILAS_POR_VEZ); }}
               className={`flex-1 rounded-lg px-3 py-2 text-[14px] font-bold transition ${
                 pestana === tp ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'
               }`}
@@ -188,22 +210,31 @@ export function PantallaProductos({
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-tinta/30" {...trazo}>
             <circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" />
           </svg>
-          <input className="campo pl-10" placeholder={t.productos.buscar} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+          <input
+            className="campo pl-10" placeholder={t.productos.buscar} value={busqueda}
+            onChange={(e) => { setBusqueda(e.target.value); setLimite(FILAS_POR_VEZ); }}
+          />
         </div>
         {puedeGestionar && (
-          // Cada pestaña crea lo suyo. Antes el botón arrancaba siempre como
-          // producto, también en la sección que se llamaba «Servicios».
-          <button
-            className="boton-principal shrink-0"
-            onClick={() => setEditando({ ...VACIO, controla_stock: !enServicios })}
-          >
-            {enServicios ? t.productos.nuevoServicio : t.productos.nuevoProducto}
-          </button>
+          <div className="flex gap-2">
+            {/* La lista entera de un Excel o de Google Sheets (122). */}
+            <button type="button" className="boton-suave min-h-[44px] flex-1 sm:flex-none" onClick={() => setSubiendo(true)}>
+              {t.productos.planilla.boton}
+            </button>
+            {/* Cada pestaña crea lo suyo. Antes el botón arrancaba siempre como
+                producto, también en la sección que se llamaba «Servicios». */}
+            <button
+              type="button" className="boton-principal min-h-[44px] flex-1 sm:flex-none"
+              onClick={() => setEditando({ ...VACIO, controla_stock: !enServicios })}
+            >
+              {enServicios ? t.productos.nuevoServicio : t.productos.nuevoProducto}
+            </button>
+          </div>
         )}
       </div>
 
@@ -235,12 +266,23 @@ export function PantallaProductos({
               detalle={deLaPestana.length === 0 ? t.productos.sinServiciosDetalle : t.productos.otraPalabra}
             />
           ) : (
-            <Vacio
-              titulo={deLaPestana.length === 0 ? t.productos.sinProductos : t.productos.nadaCoincide}
-              detalle={deLaPestana.length === 0 ? t.productos.sinProductosDetalle : t.productos.otraPalabra}
-            />
+            <>
+              <Vacio
+                titulo={deLaPestana.length === 0 ? t.productos.sinProductos : t.productos.nadaCoincide}
+                detalle={deLaPestana.length === 0 ? t.productos.sinProductosDetalle : t.productos.otraPalabra}
+              />
+              {/* Sin nada cargado es justo el momento del que tiene 3.000 en Excel (122). */}
+              {deLaPestana.length === 0 && puedeGestionar && (
+                <div className="-mt-6 px-6 pb-8 text-center">
+                  <button type="button" className="boton-suave min-h-[44px]" onClick={() => setSubiendo(true)}>
+                    {t.productos.planilla.vacioSubir}
+                  </button>
+                </div>
+              )}
+            </>
           )
         ) : (
+          <>
           <div className="overflow-x-auto">
             {/* En servicios no van costo, margen ni stock: para un corte son
                 columnas llenas de guiones, y un guion repetido veinte veces
@@ -257,7 +299,7 @@ export function PantallaProductos({
                 </tr>
               </thead>
               <tbody>
-                {visibles.map((p) => {
+                {dibujados.map((p) => {
                   const margen = Number(p.precio) > 0 ? ((Number(p.precio) - Number(p.costo ?? 0)) / Number(p.precio)) * 100 : 0;
                   const critico = p.controla_stock && Number(p.stock) <= Number(p.stock_minimo);
                   return (
@@ -265,7 +307,7 @@ export function PantallaProductos({
                       <td>
                         <span className="block font-semibold">{p.nombre}</span>
                         <span className="block text-[12px] text-tinta/45">
-                          {categoriaVisible(t, p.categoria)}{!p.activo && ` · ${t.productos.pausado}`}
+                          {categoriaVisible(t, p.categoria)}{p.codigo && ` · ${p.codigo}`}{!p.activo && ` · ${t.productos.pausado}`}
                         </span>
                       </td>
                       {verCostos && !enServicios && (
@@ -293,7 +335,7 @@ export function PantallaProductos({
                           {puedeGestionar && (
                           <button
                             onClick={() => setEditando({
-                              id: p.id, nombre: p.nombre, categoria: p.categoria,
+                              id: p.id, nombre: p.nombre, codigo: p.codigo ?? '', categoria: p.categoria,
                               costo: Number(p.costo ?? 0), precio: Number(p.precio),
                               stock: Number(p.stock), stock_minimo: Number(p.stock_minimo),
                               controla_stock: p.controla_stock, activo: p.activo,
@@ -326,8 +368,31 @@ export function PantallaProductos({
               </tbody>
             </table>
           </div>
+          {visibles.length > dibujados.length && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-borde/60 px-4 py-3">
+              <p className="text-[12.5px] text-tinta/55">{t.productos.mostrando(numero(dibujados.length), numero(visibles.length))}</p>
+              <button type="button" className="boton-suave min-h-[40px] px-4" onClick={() => setLimite((l) => l + FILAS_POR_VEZ * 5)}>
+                {t.productos.verMas}
+              </button>
+            </div>
+          )}
+          </>
         )}
       </div>
+
+      {subiendo && (
+        <SubirPlanilla
+          empresaId={empresaId} moneda={moneda} tipo={enServicios ? 'servicios' : 'productos'}
+          // La pantalla de cobrar de la barbería se llama «Cobrar».
+          irA={pestanaInicial === 'servicios' ? t.productos.planilla.irACobrar : t.productos.planilla.irAVender}
+          onGuardado={() => router.refresh()}
+          onCerrar={() => {
+            setSubiendo(false);
+            // Que recargar no la vuelva a abrir.
+            if (window.location.search.includes('subir=')) router.replace('/productos', { scroll: false });
+          }}
+        />
+      )}
 
       {editando && (
         <DialogoProducto
@@ -411,6 +476,8 @@ function DialogoProducto({
       const fila = {
         empresa_id: empresaId,
         nombre: b.nombre.trim(),
+        // El código, sin espacios en los bordes (la base lo exige); vacío = sin código (122).
+        codigo: b.codigo.trim().slice(0, 60) || null,
         categoria: b.categoria.trim() || 'General',
         costo: b.costo, precio: b.precio,
         stock: b.stock, stock_minimo: b.stock_minimo,
@@ -424,9 +491,11 @@ function DialogoProducto({
       onGuardado();
     } catch (e: any) {
       const msg: string = e?.message ?? '';
-      setError(/duplicate key|unique/i.test(msg)
-        ? t.productos.yaExiste(esProd)
-        : mensajeDeError(e, t.gastos.noSePudoGuardar));
+      setError(/productos_codigo_unico/i.test(msg)
+        ? t.productos.codigoRepetido
+        : /duplicate key|unique/i.test(msg)
+          ? t.productos.yaExiste(esProd)
+          : mensajeDeError(e, t.gastos.noSePudoGuardar));
     } finally {
       setGuardando(false);
     }
@@ -502,6 +571,18 @@ function DialogoProducto({
           <label className="block">
             <span className="etiqueta">{t.productos.nombre}</span>
             <input className="campo" autoFocus maxLength={120} value={b.nombre} onChange={(e) => set('nombre', e.target.value)} />
+          </label>
+
+          {/* El código (122): escribirlo o escanearlo. Con él, la planilla
+              encuentra el producto aunque el nombre esté escrito distinto. */}
+          <label className="block">
+            <span className="etiqueta">{t.productos.codigo}</span>
+            <input
+              className="campo tabular-nums" maxLength={60} autoComplete="off" spellCheck={false}
+              placeholder={t.productos.codigoAyuda} value={b.codigo} onChange={(e) => set('codigo', e.target.value)}
+              // El lector de código de barras termina con Enter: no es «Guardar».
+              onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+            />
           </label>
 
           <label className="block">

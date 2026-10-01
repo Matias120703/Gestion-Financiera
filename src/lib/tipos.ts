@@ -178,6 +178,14 @@ export interface Producto {
   controla_stock: boolean;
   activo: boolean;
   created_at: string;
+  /**
+   * El código de barras, el SKU o el interno (122): para buscarlo o
+   * escanearlo, y para que la planilla actualice el producto aunque el
+   * nombre esté escrito distinto. Opcional: sin la 122 en la base no llega.
+   */
+  codigo?: string | null;
+  /** kg, un, lt (122, de la planilla). */
+  unidad?: string | null;
 }
 
 export interface MovimientoItem {

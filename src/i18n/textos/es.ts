@@ -9,6 +9,8 @@
  *     en la pantalla: el orden de las palabras cambia con el idioma.
  */
 import { rutinasEditorEs } from './rutinas-editor';
+import { planillaEs } from './planilla';
+import { planillaProductosEs } from './planilla-productos';
 import { rutinasPanelEs } from './rutinas-panel';
 import { rutinaPublicaEs } from './rutina-publica';
 import { rutinasComunEs } from './rutinas-comun';
@@ -645,6 +647,8 @@ export const es = {
     cargarProductos: 'Cargar productos',
     nadaCoincide: 'Nada coincide',
     nadaCoincideDetalle: 'Probá con otra palabra o cambiá de categoría.',
+    // Con miles de productos (122): no se dibujan todos.
+    mostrando: (n: string, total: string) => `Mostrando ${n} de ${total}. Buscá por nombre o código.`,
     estaVenta: 'Esta venta',
     carritoVacio: 'Sin productos',
     carritoVacioDetalle: 'Tocá un producto para sumarlo.',
@@ -787,6 +791,16 @@ export const es = {
     siEliminar: 'Sí, eliminar',
     eliminarProducto: 'Eliminar producto',
     eliminarServicio: 'Eliminar servicio',
+
+    // El código (122): el de barras, el SKU o el interno. Opcional; con él,
+    // la planilla actualiza el producto aunque el nombre esté escrito distinto.
+    codigo: 'Código',
+    codigoAyuda: 'El de barras o el tuyo. Opcional.',
+    codigoRepetido: 'Ya tenés otro producto con ese código.',
+    mostrando: (n: string, total: string) => `Mostrando ${n} de ${total}. Buscá por nombre o código para encontrar el resto.`,
+    verMas: 'Ver más',
+    // «Subir planilla» (122): la lista entera de un Excel o de Google Sheets.
+    planilla: planillaProductosEs,
   },
 
   /**
@@ -2869,6 +2883,10 @@ export const es = {
   rutinasPanel: rutinasPanelEs,
   rutinaPublica: rutinaPublicaEs,
   rutinasComun: rutinasComunEs,
+
+  // Subir una planilla (114, compartido desde la 122): elegir el archivo, el
+  // link de Google Sheets y por qué no se pudo leer. La rutina y los productos.
+  planilla: planillaEs,
 
   // Campañas, cosechas y liquidaciones (100): la pantalla de campañas, lo
   // que ganan Gastos, Vender y el historial, y el panel del campo. Neutros
