@@ -261,16 +261,22 @@ function Nota({ texto }: { texto: string }) {
   );
 }
 
-function Interruptor({
-  titulo, detalle, encendido, alCambiar,
+/**
+ * El interruptor de Ajustes. Lo usan los avisos y, desde la 121, «También
+ * vendo productos» (VendoProductos.tsx): la misma pieza en los dos lados.
+ */
+export function Interruptor({
+  titulo, detalle, encendido, alCambiar, deshabilitado = false,
 }: {
   titulo: string;
   detalle: string;
   encendido: boolean;
   alCambiar: (v: boolean) => void;
+  /** Mientras se guarda, o para quien no puede cambiarlo. */
+  deshabilitado?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4">
+    <label className={`flex items-start justify-between gap-4 ${deshabilitado ? 'cursor-default opacity-60' : 'cursor-pointer'}`}>
       <span className="min-w-0">
         <span className="block text-[14px] font-semibold">{titulo}</span>
         <span className="mt-0.5 block text-[12.5px] leading-relaxed text-tinta/50">{detalle}</span>
@@ -280,10 +286,11 @@ function Interruptor({
           type="checkbox"
           className="peer sr-only"
           checked={encendido}
+          disabled={deshabilitado}
           onChange={(e) => alCambiar(e.target.checked)}
         />
         <span className="block h-6 w-11 rounded-full bg-borde transition peer-checked:bg-verde" />
-        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-superficie shadow transition peer-checked:translate-x-5" />
+        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-perilla shadow transition peer-checked:translate-x-5" />
       </span>
     </label>
   );

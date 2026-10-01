@@ -184,5 +184,16 @@ ok('el comercio sigue con productos',
 ok('al campo ya no se le anuncia día por día',
   hojasDelLibroDeHoy({ rubro: 'agricultura', tipo_cuenta: 'emprendedor' }, 'es').some((h) => h.nombre === 'Día por día'), false);
 
+// «También vendo productos» (121): el profe y el trainer que prenden el
+// catálogo siguen teniendo SU reporte. La agenda de alumnos manda antes que
+// el catálogo: no pasan a ver el del almacén.
+ok('el profe y el trainer con productos siguen con el reporte de alumnos',
+  ['clases', 'entrenamiento'].map((r) => varianteDeReporte(fichaDe(r, 'emprendedor', { vendeProductos: true }), 'emprendedor')),
+  ['alumnos', 'alumnos']);
+ok('y a los demás el interruptor no les cambia la variante',
+  ['comercio', 'servicios', 'ganaderia', 'agricultura'].map((r) =>
+    varianteDeReporte(fichaDe(r, 'emprendedor', { vendeProductos: true }), 'emprendedor') === varianteDeReporte(fichaDe(r, 'emprendedor'), 'emprendedor')),
+  [true, true, true, true]);
+
 console.log(`\n${corridas} comprobaciones, ${fallos} fallos`);
 process.exit(fallos > 0 ? 1 : 0);

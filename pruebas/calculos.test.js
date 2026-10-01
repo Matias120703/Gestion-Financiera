@@ -554,6 +554,174 @@ ok('la agenda de a uno es solo del profe y del trainer',
     .filter((r) => fichaDe(r, 'emprendedor').agendaDeAlumnos),
   ['clases', 'entrenamiento']);
 
+// --- «También vendo productos» (121, 01/10) ---
+//
+// Matías: «¿Qué pasa si un profesor de tenis vende raquetas, pelotas…? ¿Cómo
+// va a saber su ganancia de eso?». Un interruptor de Ajustes que entra por la
+// ficha y por ningún otro lado: `interruptores.vendeProductos` es la lista de
+// lo que SUMA, y solo el profe y el trainer la tienen. La matriz de arriba no
+// cambia: nace apagado. La base se prueba en vendo-productos.test.js.
+{
+  const { fichaDeLaCuenta, ofreceInterruptor } = require('../.compilado/rubros.js');
+  const TODOS = ['comercio', 'servicios', 'clases', 'entrenamiento', 'ganaderia', 'agricultura'];
+  const conInterruptor = TODOS.filter((r) => ofreceInterruptor(fichaDe(r, 'emprendedor'), 'vendeProductos'));
+  ok('se ofrece solo al profe y al trainer', conInterruptor, ['clases', 'entrenamiento']);
+  ok('que son los de agenda de alumnos', conInterruptor, TODOS.filter((r) => fichaDe(r, 'emprendedor').agendaDeAlumnos));
+  ok('nunca a una cuenta personal', ofreceInterruptor(fichaDe('clases', 'personal'), 'vendeProductos'), false);
+  ok('suma Productos y Vender, y nada más',
+    conInterruptor.map((r) => fichaDe(r, 'emprendedor').interruptores.vendeProductos), [['/productos', '/vender'], ['/productos', '/vender']]);
+  for (const r of conInterruptor) {
+    const apagado = fichaDe(r, 'emprendedor');
+    const prendido = fichaDe(r, 'emprendedor', { vendeProductos: true });
+    ok(`${r}: prendido gana Productos y Vender, y ninguna otra pantalla cambia`,
+      Object.keys(apagado.secciones).filter((s) => apagado.secciones[s] !== prendido.secciones[s]).sort(), ['/productos', '/vender']);
+    ok(`${r}: el fiado y el cierre siguen afuera (090, 091)`, [prendido.secciones['/fiado'], prendido.secciones['/cierre']], [false, false]);
+    ok(`${r}: la barra de abajo no cambia (Vender queda en «Más»)`, prendido.barra, apagado.barra);
+    ok(`${r}: apagado, sin decir o null es la ficha de siempre (el mismo objeto)`,
+      [fichaDe(r, 'emprendedor', { vendeProductos: false }), fichaDe(r, 'emprendedor', {}), fichaDe(r, 'emprendedor', { vendeProductos: null })]
+        .map((f) => f === apagado), [true, true, true]);
+    ok(`${r}: prenderlo en una cuenta no se le pega a la ficha del rubro`, fichaDe(r, 'emprendedor').secciones['/vender'], false);
+  }
+  ok('en los demás rubros y en la personal, prendido es exactamente lo mismo',
+    COLUMNAS.map(([r, t]) => JSON.stringify(fichaDe(r, t, { vendeProductos: true })) === JSON.stringify(fichaDe(r, t))),
+    [true, true, true, true, true]);
+  ok('el campo sigue sin catálogo aunque llegue prendido',
+    ['ganaderia', 'agricultura'].map((r) => fichaDe(r, 'emprendedor', { vendeProductos: true }).secciones['/productos']), [false, false]);
+  ok('tieneSeccion con el interruptor contesta igual que la ficha',
+    TODOS.every((r) => Object.keys(MATRIZ).every((ruta) => [true, false].every((v) =>
+      tieneSeccion(r, 'emprendedor', ruta, { vendeProductos: v }) === fichaDe(r, 'emprendedor', { vendeProductos: v }).secciones[ruta]))), true);
+  ok('fichaDeLaCuenta lee la columna de la cuenta (sin la 121, apagado)',
+    [{ vende_productos: true }, { vende_productos: false }, {}, { vende_productos: null }]
+      .map((e) => fichaDeLaCuenta({ rubro: 'clases', tipo_cuenta: 'emprendedor', ...e }).secciones['/vender']),
+    [true, false, false, false]);
+  ok('y la cuenta personal manda sobre el interruptor',
+    fichaDeLaCuenta({ rubro: 'clases', tipo_cuenta: 'personal', vende_productos: true }).secciones['/productos'], false);
+  ok('el trainer prendido tiene lo del profe prendido, más las rutinas',
+    JSON.stringify({ ...fichaDe('entrenamiento', 'emprendedor', { vendeProductos: true }).secciones, '/rutinas': false }),
+    JSON.stringify(fichaDe('clases', 'emprendedor', { vendeProductos: true }).secciones));
+
+  // Las pantallas, en la fuente (con CRLF normalizado: las worktrees lo traen).
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+  const ven = leer('src/app/(app)/vender/page.tsx');
+  const pro = leer('src/app/(app)/productos/page.tsx');
+  ok('Vender y Productos redirigen por la ficha de la cuenta, no solo a la personal',
+    [ven.includes('const ficha = fichaDeLaCuenta(ctx.empresa);'), /if \(!ficha\.secciones\['\/vender'\]\) redirect\('\/panel'\);/.test(ven),
+      pro.includes('const ficha = fichaDeLaCuenta(ctx.empresa);'), /if \(!ficha\.secciones\['\/productos'\]\) redirect\('\/panel'\);/.test(pro),
+      /tipo_cuenta === 'personal'\) redirect/.test(ven + pro)], [true, true, true, true, false]);
+  ok('Vender, sin fiado ni producto suelto para el profe',
+    [ven.includes("conFiado={ficha.secciones['/fiado']}"), ven.includes('conSuelto={!ficha.agendaDeAlumnos}')], [true, true]);
+  const pv = leer('src/components/PantallaVenta.tsx');
+  ok('la pantalla de cobrar saca «Fiado / crédito» y el suelto cuando no van',
+    [pv.includes("...(conFiado ? [{ valor: 'credito'"), (pv.match(/metodosDe\(t, (conFiado|props\.conFiado)\)/g) ?? []).length,
+      pv.includes('{conSuelto && (')], [true, 2, true]);
+  ok('el aviso de la agenda en Productos es de la barbería, no del profe',
+    pro.includes("tieneAgenda={ficha.secciones['/agenda'] && !ficha.agendaDeAlumnos}"), true);
+  const lay = leer('src/app/(app)/layout.tsx');
+  ok('el layout arma la ficha con el interruptor y se lo pasa a la barra',
+    [lay.includes('const ficha = fichaDeLaCuenta(ctx.empresa);'), lay.includes('vendeProductos={ctx.empresa.vende_productos ?? false}')], [true, true]);
+  const nav = leer('src/components/Navegacion.tsx');
+  ok('el menú, «Más», la barra y el título pasan las opciones a la ficha',
+    [(nav.match(/const ficha = fichaDe\(rubro, tipo, opciones\);/g) ?? []).length,
+      (nav.match(/\{ vendeProductos: empresa\.vende_productos \}/g) ?? []).length,
+      nav.includes('barraDe(tipo, rubro, esAdmin, gratisPersonal, opciones)'),
+      nav.includes('itemsDe(t, tipo, rubro, esAdmin, undefined, opciones)')], [2, 2, true, true]);
+  const aju = leer('src/app/(app)/ajustes/page.tsx');
+  ok('Ajustes muestra el interruptor solo donde prende algo, y al dueño',
+    [aju.includes("ofreceInterruptor(ficha, 'vendeProductos') && ctx.esAdmin"), aju.includes('{conVendoProductos && (')
+      && aju.includes('<VendoProductos')], [true, true]);
+  const vp = leer('src/components/VendoProductos.tsx');
+  ok('el interruptor se guarda como el nombre del negocio, y dice si no se guardó',
+    [vp.includes(".from('empresas')") && vp.includes('.update({ vende_productos: valor })'),
+      vp.includes('verificarAfectados(data, t.ajustes.soloAdminDatos)'), vp.includes('router.refresh()'),
+      vp.includes('setEncendido(!valor)'), vp.includes("import { Interruptor } from '@/components/Preferencias'")], [true, true, true, true, true]);
+  ok('el Interruptor de Ajustes es uno solo, exportado', leer('src/components/Preferencias.tsx').includes('export function Interruptor('), true);
+  const pan = leer('src/app/(app)/panel/page.tsx');
+  const pp = leer('src/components/PanelProfe.tsx');
+  ok('el panel del profe: la ficha con el interruptor, el resumen y la tarjeta de productos',
+    [pan.includes('const fichaProfe = fichaDeLaCuenta(ctx.empresa);'), pan.includes("vendeProductos={fichaProfe.secciones['/productos']}"),
+      pan.includes('resumen={resumenProfe}'), pan.includes('ficha={fichaProfe.secciones}'),
+      pp.includes('resumen && conResultado ? resumen.gananciaNeta : cobrado - gastado'), pp.includes('<TarjetaProductos')], [true, true, true, true, true, true]);
+  const ra = leer('src/components/reportes/ReporteAlumnos.tsx');
+  ok('el reporte: la sección de clases y productos',
+    [ra.includes('mostrarProductos(vendeProductos, alumnos.productos)'), ra.includes('<ClasesYProductos')], [true, true]);
+  const rep = leer('src/app/(app)/reportes/page.tsx');
+  const exc = leer('src/app/api/excel/route.ts');
+  ok('Reportes y el Excel eligen con la misma ficha (la hoja que anuncia la tarjeta es la que trae)',
+    [rep.includes('const ficha = fichaDeLaCuenta(ctx.empresa);'), exc.includes('const ficha = fichaDeLaCuenta(empresa);'),
+      exc.includes('vende_productos'), exc.includes('hojaProductos: conProductos(x.ficha)'), /fichaDe\(base\.empresa/.test(exc)],
+    [true, true, true, true, false]);
+  const cap = leer('src/app/api/capturar/route.ts');
+  const acc = leer('src/lib/acciones-servidor.ts');
+  ok('la captura: el catálogo viaja solo con Productos, y la acción «producto» por la misma ficha',
+    [cap.includes("tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/productos', { vendeProductos: empresa.vende_productos })"),
+      /!conCatalogo\s*\?\s*Promise\.resolve\(\{ data: \[\], error: null \}\)\s*:\s*supabase\.rpc\('listar_productos'/.test(cap),
+      cap.includes('vendeProductos: empresa.vende_productos,'), cap.includes('deAlumnosConProductos }'),
+      acc.includes('tieneSeccion(d.rubro, d.tipoCuenta, s, { vendeProductos: d.vendeProductos })')], [true, true, true, true, true]);
+  ok('los textos, enchufados en es y pt',
+    [leer('src/i18n/textos/es.ts').includes('vendoProductos: vendoProductosEs,'), leer('src/i18n/textos/pt.ts').includes('vendoProductos: vendoProductosPt,')],
+    [true, true]);
+
+  // El catálogo del profe y del trainer es solo de productos con stock: la
+  // base les guarda un servicio interno «Clase» a Gs. 0 (profe_y_clase, 091)
+  // que no es para vender. Se decide una vez, con la ficha (rubros.ts).
+  const { catalogoVisible, catalogoSoloConStock } = require('../.compilado/rubros.js');
+  ok('catálogo solo con stock: el profe y el trainer, prendido o apagado',
+    [true, false].map((v) => TODOS.filter((r) => catalogoSoloConStock(fichaDe(r, 'emprendedor', { vendeProductos: v })))),
+    [['clases', 'entrenamiento'], ['clases', 'entrenamiento']]);
+  ok('nunca en la personal', catalogoSoloConStock(fichaDe('clases', 'personal')), false);
+  const CATALOGO = [
+    { nombre: 'Clase', controla_stock: false }, { nombre: 'Raqueta', controla_stock: true }, { nombre: 'Corte', controla_stock: false },
+  ];
+  ok('al profe, sin la «Clase» interna ni servicios',
+    catalogoVisible(fichaDe('clases', 'emprendedor', { vendeProductos: true }), CATALOGO).map((p) => p.nombre), ['Raqueta']);
+  ok('a la barbería y al almacén, el catálogo entero (el mismo arreglo)',
+    ['servicios', 'comercio'].map((r) => catalogoVisible(fichaDe(r, 'emprendedor'), CATALOGO) === CATALOGO), [true, true]);
+  ok('Productos, Vender, Ajustes y la voz preguntan eso mismo',
+    [pro.includes('const productos = catalogoVisible(ficha, await traerProductos(ctx.empresa.id, false));'),
+      pro.includes('soloProductos={soloProductos}'), pro.includes('const soloProductos = catalogoSoloConStock(ficha);'),
+      ven.includes('productos={catalogoVisible(ficha, productos)}'),
+      aju.includes("if (catalogoSoloConStock(ficha)) consulta = consulta.eq('controla_stock', true);"),
+      /catalogo = catalogoVisible\(\s*fichaDe\(empresa\.rubro, empresa\.tipo_cuenta\),/.test(cap)],
+    [true, true, true, true, true, true]);
+  ok('y el formulario de Productos no pregunta «¿Servicio o producto?» donde no va',
+    leer('src/components/PantallaProductos.tsx').includes('{!soloProductos && ('), true);
+
+  // Reportes: la tabla de gastos sin la mercadería cuando va aparte (106),
+  // la misma cuenta que el comercio y que la hoja Gastos del Excel.
+  ok('el reporte de alumnos arma los gastos con gastosDelComercio',
+    [ra.includes('const { lista: gastos, mercaderia } = gastosDelComercio(categorias, r);'), ra.includes('{gastos.map((c) => ('),
+      /\{categorias\.map\(/.test(ra), ra.includes('gastosSinMercaderia(')], [true, true, false, true]);
+  // «Cobrado por clase» divide solo lo de las clases desde la 121.
+  const txa = leer('src/i18n/textos/reportes-alumnos.ts');
+  ok('«Cobrado por clase» dice que divide lo cobrado de clases (es y pt)',
+    [txa.includes('cobradoPorClaseDetalle: (p: PalabrasAlumnos) => `lo cobrado de ${p.clases} ÷ ${p.clases} dadas`'),
+      txa.includes('cobradoPorClaseDetalle: (p) => `o recebido das ${p.clases} ÷ ${p.clases} dadas`'),
+      /`lo cobrado ÷|`o recebido ÷/.test(txa + leer('src/lib/reportes/textos-alumnos.ts'))], [true, true, false]);
+
+  // TODO archivo de src que arma una ficha (fichaDe / tieneSeccion) y pregunta
+  // por Productos o Vender tiene que pasar el interruptor. Si mañana una
+  // pantalla nueva pregunta «¿tiene Vender?» sin él, al profe que vende se le
+  // escondería sin que nadie se entere.
+  const fuentes = [];
+  const recorrer = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const r = `${dir}/${e.name}`;
+      if (e.isDirectory()) recorrer(r);
+      else if (/\.(ts|tsx)$/.test(e.name) && r !== 'src/lib/rubros.ts') fuentes.push([r, sinComentarios(leer(r))]);
+    }
+  };
+  recorrer('src');
+  const preguntan = fuentes.filter(([, s]) => /'\/(productos|vender)'/.test(s) && /\b(fichaDe|fichaDeLaCuenta|tieneSeccion)\(/.test(s));
+  ok('las que arman la ficha y preguntan por Productos o Vender se encontraron', preguntan.length >= 6, true);
+  ok('y todas pasan el interruptor',
+    preguntan.filter(([, s]) => !/fichaDeLaCuenta\(|vendeProductos|vende_productos/.test(s)).map(([r]) => r), []);
+  ok('sin bg-white opaco ni dark: en lo nuevo',
+    ['src/components/VendoProductos.tsx', 'src/components/PanelProfe.tsx', 'src/components/reportes/ReporteAlumnos.tsx']
+      .filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+}
+
 // --- El personal trainer (097) ---
 //
 // Usa el motor del profe tal cual, con sus palabras. Lo que se comprueba:
@@ -2551,7 +2719,8 @@ ok('un rubro desconocido no rompe: cae en comercio',
 
   // El menú: la barra de la Gratis y lo del Pro abajo, en los dos menús.
   const nav = leer('src/components/Navegacion.tsx');
-  ok('la barra de abajo mira si es Gratis', nav.includes('barraDe(tipo, rubro, esAdmin, gratisPersonal)'), true);
+  // Con los interruptores de Ajustes al final (121).
+  ok('la barra de abajo mira si es Gratis', nav.includes('barraDe(tipo, rubro, esAdmin, gratisPersonal, opciones)'), true);
   ok('el menú lateral y «Más» agrupan lo del Pro',
     (nav.match(/seccionesCerradas\(gratisPersonal\)/g) ?? []).length, 2);
 }

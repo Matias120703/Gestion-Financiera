@@ -13,6 +13,8 @@ import { IndicadorVariacion } from '@/components/reportes/comunes/IndicadorVaria
 import type { PropsReporte } from '@/components/reportes/comunes/tipos';
 import type { PalabrasAlumnos } from '@/i18n/textos/reportes-alumnos';
 import type { ProgresoClientes } from '@/lib/tipos';
+import { conGanancia, mostrarProductos } from '@/lib/reportes/productos';
+import { gastosDelComercio } from '@/lib/reportes/comercio';
 
 /**
  * EL REPORTE DEL PROFE Y DEL PERSONAL TRAINER (23/09).
@@ -27,8 +29,8 @@ import type { ProgresoClientes } from '@/lib/tipos';
  *   · ¿Cuántas clases di y cuántas faltas hubo? (`reporte_alumnos`, que
  *     cuenta desde `clases_dadas` y no desde los turnos: `dar_clase` guarda
  *     clases sin turno y el panel las perdía);
- *   · ¿Cuánto me pagan por clase, de verdad? (cobrado ÷ clases dadas, de la
- *     base; sin clases dadas no hay número);
+ *   · ¿Cuánto me pagan por clase, de verdad? (lo cobrado de clases ÷ clases
+ *     dadas, de la base; sin clases dadas no hay número);
  *   · ¿Quién me debe? ¿A quién llamo para que renueve?
  *   · Y el trainer: ¿mis clientes mejoran? ¿A quién no medí? ¿Quién no
  *     tiene rutina?
@@ -39,6 +41,10 @@ import type { ProgresoClientes } from '@/lib/tipos';
  * Con las palabras del oficio: la jerga del trainer no conoce este reporte,
  * así que las frases reciben `palabras.trainer` («sesión», «cliente»,
  * «plan») o `palabras.profe`.
+ *
+ * Y si también vende productos (121), lo de las clases y lo de los productos
+ * por separado: cuánto cobró de clases, cuánto vendió del catálogo y cuánto
+ * le dejó cada producto. «Cobrado por clase» ya no cuenta la raqueta.
  */
 export async function ReporteAlumnos({
   empresaId, rubro, tipoCuenta, ficha, rango, resumen: r, resumenPrevio: rp, moneda: m, t, idioma, locale, permisos,
@@ -68,6 +74,12 @@ export async function ReporteAlumnos({
   const pct = asistenciaPct(alumnos.clases_dadas, alumnos.faltas);
   const cerrados = alumnos.paquetes.terminados + alumnos.paquetes.vencidos;
   const hayPaquetes = alumnos.paquetes.vendidos + cerrados > 0;
+  // (121) Con el interruptor prendido, o si en el período vendió del catálogo.
+  const vendeProductos = !!ficha.secciones['/productos'];
+  const conProductos = mostrarProductos(vendeProductos, alumnos.productos);
+  // Los gastos por categoría, sin la compra de mercadería cuando va aparte
+  // (106): la misma cuenta que el comercio y que la hoja Gastos del Excel.
+  const { lista: gastos, mercaderia } = gastosDelComercio(categorias, r);
 
   return (
     <>
@@ -115,6 +127,14 @@ export async function ReporteAlumnos({
           titulo={ta.activos(p)} valor={numero(alumnos.activos, locale)} detalle={ta.nuevos(alumnos.nuevos)}
         />
       </div>
+
+      {conProductos && (
+        <ClasesYProductos
+          alumnos={alumnos} vendeProductos={vendeProductos} verRent={verRent}
+          comprasMercaderia={verRent && r.mercaderiaAparte ? r.comprasMercaderia : 0}
+          p={p} m={m} t={t} locale={locale}
+        />
+      )}
 
       {alumnos.por_semana.length > 0 && (
         <Seccion titulo={ta.porSemana.titulo(p)}>
@@ -275,9 +295,11 @@ export async function ReporteAlumnos({
           )}
         </Seccion>
 
+        {/* (121) Sin la mercadería cuando va aparte (regla de la 106), como el
+            comercio: así la tabla suma lo mismo que «Gastos» de arriba. */}
         {verRent && (
           <Seccion titulo={t.pantallas.gastosPorCategoria}>
-            {categorias.length === 0 ? (
+            {gastos.length === 0 ? (
               <Vacio titulo={t.pantallas.sinGastos} detalle={t.pantallas.sinGastosDetalle} />
             ) : (
               <div className="overflow-x-auto">
@@ -290,7 +312,7 @@ export async function ReporteAlumnos({
                     </tr>
                   </thead>
                   <tbody>
-                    {categorias.map((c) => (
+                    {gastos.map((c) => (
                       <tr key={c.nombre}>
                         <td className="font-semibold">{categoriaVisible(t, c.nombre)}</td>
                         <td className="num font-semibold tabular-nums text-rojo">{dinero(c.monto, m, false)}</td>
@@ -301,10 +323,119 @@ export async function ReporteAlumnos({
                 </table>
               </div>
             )}
+            {r.mercaderiaAparte && mercaderia && (
+              <p className="px-4 pb-4 pt-2 text-[12px] leading-relaxed text-tinta/45">
+                {t.vendoProductos.reporte.gastosSinMercaderia(dinero(r.comprasMercaderia, m))}
+              </p>
+            )}
           </Seccion>
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * LO DE LAS CLASES Y LO DE LOS PRODUCTOS (121).
+ *
+ * Tres cuadros —cobrado de clases, productos vendidos y lo que ganó con
+ * ellos— y la tabla por producto, de `productos_del_periodo` (la misma
+ * lectura que el panel y el Excel). La ganancia solo con costos a la vista.
+ * Si compró mercadería en un período con costo cargado, se dice por qué no
+ * resta en «Te quedó» (regla de la 106).
+ */
+function ClasesYProductos({
+  alumnos, vendeProductos, verRent, comprasMercaderia, p, m, t, locale,
+}: {
+  alumnos: Awaited<ReturnType<typeof traerReporteAlumnos>>;
+  vendeProductos: boolean;
+  verRent: boolean;
+  comprasMercaderia: number;
+  p: PalabrasAlumnos;
+  m: PropsReporte['moneda'];
+  t: PropsReporte['t'];
+  locale: string;
+}) {
+  const tp = t.vendoProductos.reporte;
+  const prod = alumnos.productos;
+  const corto = (n: number) => dineroCorto(n, m, locale);
+  const conPlata = verRent && conGanancia(prod);
+  const cuadros: { titulo: string; valor: string; detalle: string; tono?: 'bueno' | 'malo' }[] = [
+    { titulo: tp.clases(p), valor: corto(alumnos.cobrado_clases), detalle: tp.clasesDetalle(alumnos.clases_dadas, p) },
+    { titulo: tp.vendidos, valor: corto(prod.vendido), detalle: tp.unidades(prod.unidades, numero(prod.unidades, locale)) },
+    ...(conPlata && prod.vendido > 0 ? [{
+      titulo: tp.ganaste,
+      valor: corto(prod.ganancia ?? 0),
+      detalle: prod.margen !== null ? tp.margen(porcentaje(prod.margen, 0, locale)) : tp.costoDetalle(corto(prod.costo ?? 0)),
+      tono: (prod.ganancia ?? 0) >= 0 ? 'bueno' as const : 'malo' as const,
+    }] : []),
+  ];
+
+  return (
+    <Seccion
+      titulo={tp.titulo(p)}
+      accion={vendeProductos ? <Link href="/productos" className="boton-texto">{t.vendoProductos.panel.verProductos}</Link> : undefined}
+    >
+      <div className="grid grid-cols-2 gap-2 px-4 pb-2 pt-3 lg:grid-cols-3">
+        {cuadros.map((c, i) => (
+          <div key={c.titulo} className={`rounded-xl px-3 py-2.5 ${
+            c.tono === 'bueno' ? 'bg-verde-claro' : c.tono === 'malo' ? 'bg-rojo-claro' : 'bg-arena'
+          } ${i === 2 ? 'col-span-2 lg:col-span-1' : ''}`}>
+            <p className={`text-[12px] font-semibold ${
+              c.tono === 'bueno' ? 'text-verde-fuerte' : c.tono === 'malo' ? 'text-rojo' : 'text-tinta/55'
+            }`}>{c.titulo}</p>
+            <p className={`mt-1 text-[20px] font-titulo font-extrabold tabular-nums leading-none ${
+              c.tono === 'bueno' ? 'text-verde-fuerte' : c.tono === 'malo' ? 'text-rojo' : ''
+            }`}>{c.valor}</p>
+            <p className="mt-1 text-[11.5px] text-tinta/55">{c.detalle}</p>
+          </div>
+        ))}
+      </div>
+
+      {prod.lista.length === 0 ? (
+        <Vacio titulo={tp.sinVentas} detalle={tp.sinVentasDetalle} />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>{tp.colProducto}</th>
+                {/* En el celular las unidades bajan a la línea gris del producto. */}
+                <th className="num hidden sm:table-cell">{tp.colUnidades}</th>
+                <th className="num">{tp.colVendido}</th>
+                {conPlata && <th className="num">{tp.colGanancia}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {prod.lista.map((x) => (
+                <tr key={x.producto_id ?? x.nombre}>
+                  <td>
+                    <span className="block font-semibold">{x.nombre}</span>
+                    <span className="block text-[12px] text-tinta/45 sm:hidden">
+                      {tp.unidades(x.unidades, numero(x.unidades, locale))}
+                    </span>
+                  </td>
+                  <td className="num hidden tabular-nums sm:table-cell">{numero(x.unidades, locale)}</td>
+                  <td className="num tabular-nums">{dinero(x.vendido, m, false)}</td>
+                  {conPlata && (
+                    <td className={`num font-semibold tabular-nums ${
+                      x.ganancia === null ? 'text-tinta/30' : x.ganancia >= 0 ? 'text-verde-fuerte' : 'text-rojo'
+                    }`}>
+                      {x.ganancia === null ? '—' : dinero(x.ganancia, m, false)}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="space-y-1 px-4 pb-4 pt-2 text-[12px] leading-relaxed text-tinta/45">
+        <p>{tp.soloConStock(p)}</p>
+        {comprasMercaderia > 0 && <p>{tp.mercaderia(dinero(comprasMercaderia, m))}</p>}
+      </div>
+    </Seccion>
   );
 }
 

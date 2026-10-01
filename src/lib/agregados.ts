@@ -3,6 +3,7 @@ import type {
   AhorroDelPeriodo, FilaCategoria, FilaDia, FilaProducto, Resumen,
 } from './calculos';
 import { exigir, exigirLista, recorrerPaginas } from './lectura';
+import { deClases, mapearProductos } from './reportes/productos';
 import type {
   FiadoDelPeriodo, Movimiento, ProgresoClientes, ReporteAlumnos, ReporteTurnos, TipoMovimiento,
   VentasDeVendedor,
@@ -426,13 +427,19 @@ export async function traerReporteTurnos(empresaId: string, desde: string, hasta
 
 export function mapearReporteAlumnos(j: any): ReporteAlumnos {
   const p = j?.paquetes ?? {};
+  // (121) Lo de los productos, aparte de las clases. Sin la 121 en la base
+  // no llega: sin productos, y lo de las clases es todo lo cobrado.
+  const productos = mapearProductos(j?.productos);
+  const cobrado = num(j?.cobrado);
   return {
     clases_dadas: num(j?.clases_dadas),
     faltas: num(j?.faltas),
     por_semana: lista<any>(j?.por_semana).map((f) => ({
       semana: String(f.semana), dadas: num(f.dadas), faltas: num(f.faltas),
     })),
-    cobrado: num(j?.cobrado),
+    cobrado,
+    cobrado_clases: deClases(j?.cobrado_clases, cobrado, productos),
+    productos,
     cobrado_por_clase: quizas(j?.cobrado_por_clase),
     por_cobrar: num(j?.por_cobrar),
     fiado_pendiente: num(j?.fiado_pendiente),

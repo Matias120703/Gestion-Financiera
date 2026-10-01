@@ -25,7 +25,7 @@ import { AvisoComision, type Novedad } from '@/components/AvisoComision';
 import { BilleteraPanel } from '@/components/BilleteraPanel';
 import { traerBilletera } from '@/lib/billetera';
 import { clienteServidor } from '@/lib/supabase/servidor';
-import { fichaDe, palabra, type Seccion as Ruta } from '@/lib/rubros';
+import { fichaDe, fichaDeLaCuenta, palabra, type Seccion as Ruta } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
 import { Bienvenida } from '@/components/Bienvenida';
@@ -260,10 +260,12 @@ async function ContenidoPanel({
    */
   if (fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos) {
     // Con las palabras del oficio (097): al trainer, «Tus sesiones de hoy».
-    const fichaProfe = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+    // Con lo que el dueño prendió en Ajustes (121): si también vende
+    // productos, su ficha trae Productos y Vender.
+    const fichaProfe = fichaDeLaCuenta(ctx.empresa);
     const t = conJerga(await textos(), fichaProfe.jerga, await idiomaActual());
     const rango = rangoDesdeParams(searchParams, ctx.zonaHoraria);
-    const [datosProfe, categoriasProfe, rachaProfe, billeteraProfe, descuentoProfe, rutinasHoy] = await Promise.all([
+    const [datosProfe, categoriasProfe, rachaProfe, billeteraProfe, descuentoProfe, rutinasHoy, resumenProfe] = await Promise.all([
       Promise.resolve(clienteServidor().rpc('panel_profe', {
         p_empresa: ctx.empresa.id, p_desde: rango.desde, p_hasta: rango.hasta,
       })).then((r) => { if (r.error) throw r.error; return r.data as PanelProfeDatos; }),
@@ -276,6 +278,13 @@ async function ContenidoPanel({
       fichaProfe.secciones['/rutinas']
         ? traerRutinasDeLaAgenda(ctx.empresa.id).catch((): RutinasDeLaAgenda => ({}))
         : Promise.resolve<RutinasDeLaAgenda>({}),
+      // «Te queda» con la regla de la 106 (121): lo cobrado, menos el costo
+      // de lo vendido y lo gastado, sin restar la compra de mercadería que
+      // ya descuenta ese costo. Solo administración ve costos; si falla,
+      // «Te queda» vuelve a cobrado − gastado, como antes.
+      ctx.esAdmin
+        ? traerResumen(ctx.empresa.id, rango.desde, rango.hasta).catch(() => null)
+        : Promise.resolve(null),
     ]);
     const locale = FICHA[(await idiomaActual())].locale;
     return (
@@ -284,10 +293,12 @@ async function ContenidoPanel({
         {billeteraProfe && <BilleteraPanel billetera={billeteraProfe} moneda={ctx.empresa.moneda} />}
         <Atajos
           etiqueta={t.billetera.atajos}
-          ficha={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).secciones}
+          ficha={fichaProfe.secciones}
           items={[
             { href: '/agenda', texto: t.nav.agenda },
             { href: '/clientes', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'clientes', t.nav.clientes, (await idiomaActual())) },
+            // Solo si vende productos (121): Atajos deja lo que la ficha tiene.
+            { href: '/vender', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'vender', t.nav.vender, (await idiomaActual())) },
             { href: '/gastos', texto: t.panel.cargarGasto },
             ...(ctx.esAdmin ? [{ href: '/billetera' as Ruta, texto: t.nav.billetera }] : []),
           ]}
@@ -302,6 +313,9 @@ async function ContenidoPanel({
           empresaId={ctx.empresa.id}
           rutinas={rutinasHoy}
           datos={datosProfe}
+          vendeProductos={fichaProfe.secciones['/productos']}
+          resumen={resumenProfe}
+          palabras={fichaProfe.jerga === 'entrenamiento' ? t.reportesAlumnos.palabras.trainer : t.reportesAlumnos.palabras.profe}
           categorias={categoriasProfe}
           moneda={ctx.vista}
           locale={locale}

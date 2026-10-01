@@ -14,6 +14,7 @@ import { reportesCampoPt } from './reportes-campo';
 import { reportesPersonalPt } from './reportes-personal';
 import { avisoVencimientoPt } from './aviso-vencimiento';
 import { planGratisPt } from './plan-gratis';
+import { vendoProductosPt } from './vendo-productos';
 import { singularPt } from './singular';
 
 /**
@@ -2637,4 +2638,6 @@ export const pt: Textos = {
   reportesCampo: reportesCampoPt,
   reportesPersonal: reportesPersonalPt,
   avisoVencimiento: avisoVencimientoPt,
+
+  vendoProductos: vendoProductosPt,
 };

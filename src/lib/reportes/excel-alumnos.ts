@@ -7,9 +7,11 @@ import {
 } from '../reporte';
 import { textosExcel } from '../reporte-textos';
 import type { FichaRubro } from '../rubros';
-import type { PorCobrarAlumnos, ProgresoClientes, ReporteAlumnos } from '../tipos';
+import type { PorCobrarAlumnos, ProductosDelPeriodo, ProgresoClientes, ReporteAlumnos } from '../tipos';
 import type { Conversor, DatosBaseLibro, HojaDelLibro } from './comun';
 import { textosAlumnosExcel } from './textos-alumnos';
+import { conGanancia, mostrarProductos } from './productos';
+import { gastosDelComercio } from './comercio';
 
 /**
  * EL EXCEL DEL PROFE Y DEL PERSONAL TRAINER (23/09).
@@ -37,6 +39,13 @@ import { textosAlumnosExcel } from './textos-alumnos';
  *   6. Gastos: por categoría y cada gasto.
  *   7. Progreso: solo el trainer (el que tiene rutinas y medidas).
  *
+ * Y si también vende productos (121, el interruptor de Ajustes), una hoja
+ * Productos después de Cobros (producto, unidades, vendido, costo, ganancia
+ * y margen), y en el Resumen lo de las clases aparte de lo de los productos,
+ * con el bloque «Tus productos». Con el interruptor apagado no hay hoja, pero
+ * si en el período vendió del catálogo el Resumen lo sigue separando: apagar
+ * no borra lo vendido.
+ *
  * Con las palabras del oficio: el trainer lee «sesiones», «clientes» y
  * «planes» (ver textos-alumnos.ts).
  *
@@ -55,6 +64,11 @@ export interface ExtrasAlumnos {
   porCobrar: PorCobrarAlumnos;
   /** `progreso_clientes` (106): solo el trainer. Null para el profe. */
   progreso: ProgresoClientes | null;
+  /**
+   * Si lleva la hoja Productos (121): `conProductos(ficha)` de la cuenta, la
+   * misma pregunta que `hojasAlumnos`. Sin el dato, no la lleva.
+   */
+  hojaProductos?: boolean;
 }
 
 /**
@@ -65,7 +79,19 @@ export function conProgreso(ficha: Pick<FichaRubro, 'secciones'>): boolean {
   return !!ficha.secciones['/rutinas'];
 }
 
-/** Las hojas que trae el libro, para la tarjeta de descarga. Todas salen siempre. */
+/**
+ * ¿Lleva la hoja de productos? La lleva el profe o el trainer que prendió
+ * «También vendo productos» (121): su ficha (`fichaDeLaCuenta`) tiene
+ * `/productos`. Se mira la sección, como `conProgreso`.
+ */
+export function conProductos(ficha: Pick<FichaRubro, 'secciones'>): boolean {
+  return !!ficha.secciones['/productos'];
+}
+
+/**
+ * Las hojas que trae el libro, para la tarjeta de descarga. Salen siempre,
+ * salvo Productos (con el interruptor prendido) y Progreso (el trainer).
+ */
 export function hojasAlumnos(ficha: Pick<FichaRubro, 'secciones' | 'jerga'>, idioma?: string): HojaDelLibro[] {
   const tx = textosExcel(idioma);
   const ta = textosAlumnosExcel(idioma, ficha.jerga);
@@ -73,6 +99,7 @@ export function hojasAlumnos(ficha: Pick<FichaRubro, 'secciones' | 'jerga'>, idi
     { nombre: tx.hojaResumen },
     { nombre: ta.hojaPorCobrar },
     { nombre: ta.hojaCobros },
+    ...(conProductos(ficha) ? [{ nombre: ta.hojaProductos }] : []),
     { nombre: ta.hojaAsistencia },
     { nombre: ta.hojaAlumnos },
     { nombre: tx.hojaGastos },
@@ -104,9 +131,13 @@ export function enLaVistaAlumnos(e: ExtrasAlumnos, c: Conversor): ExtrasAlumnos 
   if (!c.convierte) return e;
   const a = e.alumnos;
   return {
+    hojaProductos: e.hojaProductos,
     alumnos: {
       ...a,
       cobrado: c.x(a.cobrado),
+      // (121) Lo de las clases y lo de los productos: la plata, no las unidades ni el margen.
+      cobrado_clases: c.x(a.cobrado_clases),
+      productos: productosEnLaVista(a.productos, c),
       cobrado_por_clase: c.xn(a.cobrado_por_clase),
       por_cobrar: c.x(a.por_cobrar),
       fiado_pendiente: c.x(a.fiado_pendiente),
@@ -122,6 +153,17 @@ export function enLaVistaAlumnos(e: ExtrasAlumnos, c: Conversor): ExtrasAlumnos 
       lista: e.porCobrar.lista.map((f) => ({ ...f, monto: c.x(f.monto) })),
     },
     progreso: e.progreso,
+  };
+}
+
+/** Lo vendido del catálogo en la moneda de la vista (121). Lo que no se ve (null) sigue sin verse. */
+function productosEnLaVista(p: ProductosDelPeriodo, c: Conversor): ProductosDelPeriodo {
+  return {
+    ...p,
+    vendido: c.x(p.vendido),
+    costo: c.xn(p.costo),
+    ganancia: c.xn(p.ganancia),
+    lista: p.lista.map((f) => ({ ...f, vendido: c.x(f.vendido), costo: c.xn(f.costo), ganancia: c.xn(f.ganancia) })),
   };
 }
 
@@ -209,6 +251,12 @@ export function libroAlumnos(datos: DatosBaseLibro & ExtrasAlumnos): ExcelJS.Wor
   const fmtEntero = '#,##0';
   const periodo = textoPeriodo(desde, hasta, empresa, tx);
   const deben = loQueTeDeben(datos);
+  // (121) Lo de los productos: con el interruptor prendido, o si en el
+  // período vendió del catálogo. La hoja, solo con el interruptor (es lo que
+  // anuncia la tarjeta de descarga).
+  const prod = a.productos;
+  const conProductosEnResumen = mostrarProductos(!!datos.hojaProductos, prod);
+  const plataDeProductos = r.conCostos && conGanancia(prod);
 
   const libro = new ExcelJS.Workbook();
   libro.creator = 'Orden';
@@ -282,6 +330,12 @@ export function libroAlumnos(datos: DatosBaseLibro & ExtrasAlumnos): ExcelJS.Wor
 
     bloque(ta.plata);
     linea(ta.cobrado, r.ventas, { antes: rp.ventas, fuerte: true });
+    // (121) De qué es lo cobrado: clases y productos. Del período anterior
+    // no se leen, así que su columna queda vacía (no es cero).
+    if (conProductosEnResumen) {
+      linea(ta.deTusClases, a.cobrado_clases, { nota: ta.deTusClasesNota });
+      linea(ta.deProductos, prod.vendido, { nota: ta.deProductosNota });
+    }
     if (r.otrosIngresos > 0 || rp.otrosIngresos > 0) {
       linea(ta.otrosIngresos, r.otrosIngresos, { antes: rp.otrosIngresos, nota: ta.otrosIngresosNota });
       linea(ta.totalQueEntro, r.ingresosTotales, { antes: rp.ingresosTotales, fuerte: true, color: VERDE });
@@ -305,6 +359,26 @@ export function libroAlumnos(datos: DatosBaseLibro & ExtrasAlumnos): ExcelJS.Wor
     }
     f += 1;
 
+    // (121) Tus productos: cuánto vendiste, cuánto te costó y cuánto ganaste.
+    // La regla de la 106: la compra de mercadería no resta en «Te quedó»
+    // cuando lo vendido ya descuenta su costo, y se dice.
+    if (conProductosEnResumen) {
+      bloque(ta.tusProductos);
+      linea(ta.vendido, prod.vendido, { fuerte: !plataDeProductos });
+      if (plataDeProductos) {
+        linea(ta.costoDeLoVendido, prod.costo ?? 0, { color: ROJO });
+        linea(ta.gananciaProductos, prod.ganancia ?? 0, {
+          fuerte: true, color: (prod.ganancia ?? 0) >= 0 ? VERDE : ROJO, nota: ta.gananciaProductosNota,
+        });
+        if (prod.margen !== null) linea(ta.margen, prod.margen, { formato: fmtPorc });
+      }
+      linea(ta.unidades, prod.unidades, { formato: fmtEntero });
+      if (r.mercaderiaAparte && r.comprasMercaderia > 0) {
+        linea(ta.comprasMercaderia, r.comprasMercaderia, { nota: ta.mercaderiaAparteNota });
+      }
+      f += 1;
+    }
+
     bloque(ta.tusAlumnos);
     linea(ta.activos, a.activos, { formato: fmtEntero, nota: ta.aHoy });
     linea(ta.nuevos, a.nuevos, { formato: fmtEntero, nota: ta.nuevosNota });
@@ -327,6 +401,7 @@ export function libroAlumnos(datos: DatosBaseLibro & ExtrasAlumnos): ExcelJS.Wor
     if (r.ventas === 0) notas.push(ta.sinCobros);
     if (r.conCostos && r.gananciaNeta < 0) notas.push(ta.gastasteMasDeLoQueCobraste);
     if (a.cobrado_por_clase === null && r.ventas > 0) notas.push(ta.sinClasesNoHayPorClase);
+    if (conProductosEnResumen && plataDeProductos && (prod.ganancia ?? 0) < 0) notas.push(ta.perdisteConProductos);
     if (r.movimientosAnulados > 0) notas.push(ta.anulados(r.movimientosAnulados));
     if (notas.length > 0) {
       const t = h.getCell(`B${f}`);
@@ -422,6 +497,41 @@ export function libroAlumnos(datos: DatosBaseLibro & ExtrasAlumnos): ExcelJS.Wor
   }
 
   // ==========================================================
+  // 3 bis · PRODUCTOS (121, solo con «También vendo productos»)
+  // ==========================================================
+  if (datos.hojaProductos) {
+    const h = hojaNueva(ta.hojaProductos, false, 6);
+    h.columns = [{ width: 30 }, { width: 12 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 12 }];
+    encabezado(h, empresa.nombre, ta.productosTitulo, periodo, 6);
+    filaEncabezadoTabla(h, 6, ta.columnasProductos);
+
+    const formatos = { 2: fmtEntero, 3: fmt, 4: fmt, 5: fmt, 6: fmtPorc };
+    prod.lista.forEach((x, i) => {
+      const fila = h.getRow(7 + i);
+      // Sin permiso para ver costos, sus tres columnas quedan vacías (null).
+      fila.values = [
+        x.nombre, x.unidades, x.vendido, x.costo, x.ganancia,
+        x.ganancia !== null && x.vendido > 0 ? (x.ganancia / x.vendido) * 100 : null,
+      ];
+      pintarFila(fila, i, formatos);
+      fila.getCell(1).font = { name: FUENTE, size: 10, bold: true };
+      if (x.ganancia !== null) {
+        fila.getCell(5).font = { name: FUENTE, size: 10, bold: true, color: { argb: x.ganancia >= 0 ? VERDE : ROJO } };
+      }
+    });
+    const f = 7 + prod.lista.length;
+    if (prod.lista.length === 0) {
+      aclaracion(h, f, ta.sinProductos, 6);
+    } else {
+      // El total es el de la base, el mismo número de la pantalla y del Resumen.
+      const total = h.getRow(f);
+      total.values = [ta.total, prod.unidades, prod.vendido, prod.costo, prod.ganancia, prod.margen];
+      pintarTotal(total, formatos);
+    }
+    aclaracion(h, f + 2, ta.productosNota, 6);
+  }
+
+  // ==========================================================
   // 4 · ASISTENCIA
   // ==========================================================
   {
@@ -506,13 +616,41 @@ export function libroAlumnos(datos: DatosBaseLibro & ExtrasAlumnos): ExcelJS.Wor
     h.columns = [{ width: 13 }, { width: 32 }, { width: 20 }, { width: 16 }, { width: 18 }, { width: 16 }];
     encabezado(h, empresa.nombre, tx.enQueSeFueLaPlata, periodo, 6);
     filaEncabezadoTabla(h, 6, tx.columnasGastos);
-    tablaDeCategorias(h, categorias, r.gastos, fmt, fmtPorc, tx.nadaGastado);
+    // (121) La regla de la 106, como el comercio: con costo cargado en lo
+    // vendido, la compra de mercadería no es gasto. Sale de la tabla (los
+    // porcentajes se recalculan sobre el resto) y va aparte, así el TOTAL es
+    // la suma de las filas y el mismo «Gastos» del Resumen y de la pantalla.
+    const { lista: porCategoria, mercaderia } = gastosDelComercio(categorias, r);
+    tablaDeCategorias(h, porCategoria, r.gastos, fmt, fmtPorc, tx.nadaGastado);
+
+    let f = 7 + Math.max(porCategoria.length, 1) + 3;
+    if (r.mercaderiaAparte && mercaderia) {
+      subtitulo(h, f, ta.mercaderiaAparteTitulo);
+      f += 1;
+      filaEncabezadoTabla(h, f, ta.columnasMercaderia);
+      f += 1;
+      const fila = h.getRow(f);
+      fila.getCell(2).value = ta.mercaderia;
+      fila.getCell(3).value = r.comprasMercaderia;
+      fila.getCell(4).value = mercaderia.operaciones;
+      fila.height = 18;
+      [2, 3, 4].forEach((n) => {
+        const c = fila.getCell(n);
+        c.font = { name: FUENTE, size: 10, bold: n !== 4 };
+        c.border = bordeFino;
+        c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : 'right' };
+      });
+      fila.getCell(3).numFmt = fmt;
+      fila.getCell(4).numFmt = fmtEntero;
+      f += 1;
+      aclaracion(h, f, ta.mercaderiaAparteGastos, 6);
+      f += 3;
+    }
 
     const gastos = movimientos
       .filter((m) => m.tipo === 'gasto' && esValido(m))
       .sort((x, y) => (x.fecha < y.fecha ? -1 : x.fecha > y.fecha ? 1 : 0));
     if (gastos.length > 0) {
-      let f = 7 + Math.max(categorias.length, 1) + 3;
       subtitulo(h, f, ta.cadaGasto);
       f += 1;
       filaEncabezadoTabla(h, f, ta.columnasCadaGasto);

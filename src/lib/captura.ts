@@ -251,6 +251,11 @@ export function instrucciones(
     idioma?: string;
     /** Las campañas abiertas (100). Solo en una cuenta que tiene «/lotes». */
     campanas?: CampanaConocida[];
+    /**
+     * El profe o el trainer que también vende productos (121): sus cobros de
+     * clases van sin producto_id y lo del catálogo con el suyo.
+     */
+    deAlumnosConProductos?: boolean;
   } = {},
 ) {
   const tipos = new Set(extras.tipos ?? []);
@@ -369,6 +374,22 @@ ${esPersonal ? '' : `   Si además vendió productos ("le vendí tres yerbas fia
    - "monto": lo que debe (fiado) o lo que pagó (cobro_fiado).
    - "descripcion": por qué debe, si lo dice ("Plata que le presté"). Si no, "Fiado".
    - "categoria": "Fiado". "items" va vacío y todo el objeto "deuda" va en null.`;
+
+  /**
+   * EL PROFE O EL TRAINER QUE TAMBIÉN VENDE PRODUCTOS (121).
+   *
+   * Lo que separa sus clases de sus productos es el producto_id: la base
+   * cuenta como producto solo lo del catálogo con stock. Así que el cobro de
+   * una clase va suelto aunque se parezca a algo del catálogo, y lo que vende
+   * y no está cargado se avisa: sin costo, caería en lo de las clases y nunca
+   * sabría cuánto le dejó.
+   */
+  const bloqueClasesYProductos = extras.deAlumnosConProductos ? `
+   ESTE NEGOCIO DA CLASES Y TAMBIÉN VENDE PRODUCTOS.
+   - Lo que cobra de una clase, una sesión, una inscripción, un mes o un paquete es una "venta" con un ítem SIN producto_id (producto_id null, costo_unitario 0).
+   - Lo que vende del CATÁLOGO (una raqueta, un tubo de pelotas, una proteína) lleva su "producto_id" exacto: así se descuenta del stock y se sabe cuánto ganó.
+   - Si vende algo que parece un producto y NO está en el catálogo, dejalo con producto_id null y avisá en "aviso", ${enSuIdioma}, que eso no está en sus productos y que lo cargue para saber cuánto gana con él.
+` : '';
 
   // El costo NO va en el prompt: la base lo asigna sola al registrar la venta.
   // Mandarlo sería filtrarlo sin necesidad.
@@ -715,7 +736,7 @@ ${reglaFiado}
    - Si menciona un producto que NO está en el catálogo, dejá producto_id en null y costo_unitario en 0.
    - Si no dice el precio pero el producto está en el catálogo, usá el precio del catálogo.
    - Para gastos e ingresos, "items" va vacío: [].
-
+${bloqueClasesYProductos}
 5. FECHA
    - Sin referencia temporal → hoy (${hoy}).
    - "ayer", "anteayer", "el lunes" → calculá la fecha real en formato YYYY-MM-DD.

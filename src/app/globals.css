@@ -53,6 +53,10 @@
   --ambar:        183 121 31;
   --ambar-claro:  253 245 227;
 
+  /* La perilla de los interruptores de Ajustes (Preferencias.tsx): blanca
+     como la tarjeta en claro, y clara también en oscuro (abajo). */
+  --perilla:      255 255 255;
+
   /* El velo detrás de una ventana (components/Hoja), con su transparencia. */
   --velo:         18 18 18 / .45;
 }
@@ -73,6 +77,10 @@ html.oscuro {
   --rojo-claro:   64 32 29;
   --ambar:        232 176 82;
   --ambar-claro:  58 44 20;
+
+  /* Clara (01/10): con el color de la tarjeta, la perilla apagada era un
+     círculo oscuro sobre un riel casi igual y el interruptor no se veía. */
+  --perilla:      222 224 219;
 
   /* En oscuro, negro y más tupido (01/10): el casi negro de antes era el
      mismo color de la página y no oscurecía nada, y la ventana se perdía

@@ -10,7 +10,7 @@ import { Intro } from '@/components/Intro';
 import { BarraDeCarga } from '@/components/BarraDeCarga';
 import { textos } from '@/i18n';
 import { ProveedorJerga } from '@/i18n/cliente';
-import { fichaDe, seccionesCerradas } from '@/lib/rubros';
+import { fichaDeLaCuenta, seccionesCerradas } from '@/lib/rubros';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,8 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   // Vencida: no se puede cargar nada. Es la misma señal que ya usa
   // `AvisoCuenta` para la franja roja; acá además tapa el contenido.
   const bloqueada = !(ctx.limites?.escritura ?? true);
-  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  // La ficha de esta cuenta, con lo que el dueño prendió en Ajustes (121).
+  const ficha = fichaDeLaCuenta(ctx.empresa);
   // El trainer vencido puede apagar los links de rutina de sus clientes desde
   // el candado (098): siguen andando un tiempo, y todo lo demás está tapado.
   // Es del dueño o de un administrador, como lo exige la base.
@@ -99,7 +100,12 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
             gratisPersonal={ctx.gratisPersonal}
           />
         )}
-        <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} gratisPersonal={ctx.gratisPersonal} />
+        <NavInferior
+          tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin}
+          administraOrden={ctx.administraOrden} gratisPersonal={ctx.gratisPersonal}
+          // «También vendo productos» (121): Productos y Vender en «Más».
+          vendeProductos={ctx.empresa.vende_productos ?? false}
+        />
       </div>
     </div>
     </ProveedorJerga>
