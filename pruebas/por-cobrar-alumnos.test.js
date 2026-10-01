@@ -387,7 +387,12 @@ function ayudantes(db, P) {
   const zoe = await alumno('Zoe', '0983000010');
   const iZoe = await inscribir(zoe, { desde, hasta, total: 350000, pagado: true, dias: [1], de: '19:00', a: '20:00' });
   ok('Zoe pagó; al eliminarla, con un cobro, se archiva', (await eliminar(P.uid, zoe)).valor?.rows[0].r, 'archivado');
-  ok('su período pagado sigue en la agenda, como siempre', (await turnosPorVenir(iZoe.paquete)) > 0, true);
+  // Hasta la 120 su período pagado seguía abierto y en la agenda. Desde la
+  // 120 eliminar saca de la agenda todo lo suyo de hoy en adelante, pagado o
+  // no; lo pagado sigue abierto, como historia (ver
+  // eliminar-saca-de-la-agenda.test.js).
+  ok('su período pagado sigue abierto, pero sale de la agenda (120)',
+    [(await paquete(iZoe.paquete)).cerrado, await turnosPorVenir(iZoe.paquete)], [false, 0]);
   ok('se le devuelve la plata: se anula su cobro',
     (await como(P.uid, "select public.anular_movimiento($1,'Devolución')", [iZoe.movimiento])).ok, true);
   ok('sin clases, su período se borra', await paquete(iZoe.paquete), undefined);

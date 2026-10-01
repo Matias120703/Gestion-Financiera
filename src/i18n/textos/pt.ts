@@ -1212,7 +1212,12 @@ export const pt: Textos = {
     eliminarDetalle: (nombre: string) => `Deixa de aparecer na sua lista e na hora de escolher cliente. O que já aconteceu com ${nombre} fica no seu histórico; as anotações são apagadas.`,
     eliminarConSalud: (nombre: string) =>
       `Se ${nombre} tem treinos ou medidas, fica arquivado: as medidas, o consentimento e «Saúde e lesões» são apagados. Os treinos ficam como seu histórico e não aparecem em nenhum link.`,
-    turnoNoSeCancela: (cuando: string) => `O horário de ${cuando} não é cancelado.`,
+    eliminarTurnosPorVenir: (n: number) => (n === 1
+      ? 'Tem 1 horário de hoje em diante: é cancelado e sai da sua agenda.'
+      : `Tem ${n} horários de hoje em diante: são cancelados e saem da sua agenda.`),
+    eliminarClasesPorVenir: (n: number) => (n === 1
+      ? 'Tem 1 aula de hoje em diante: sai da sua agenda, paga ou não.'
+      : `Tem ${n} aulas de hoje em diante: saem da sua agenda, pagas ou não.`),
     eliminarSinCobrar: (nombre: string, monto: string) =>
       `${nombre} tem ${monto} sem receber: é anulado e deixa de aparecer em A receber, e as aulas disso que faltavam saem da sua agenda. O que já te pagou fica no seu histórico.`,
     no: 'Não',

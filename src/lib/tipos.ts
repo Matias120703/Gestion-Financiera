@@ -1461,6 +1461,11 @@ export interface ClienteLista {
   ultima_visita: string | null;
   gastado: number;
   proximo_turno: string | null;
+  /**
+   * Sus reservas pendientes o confirmadas de hoy en adelante (120): lo que
+   * eliminarlo le saca de la agenda, y lo que la confirmación avisa.
+   */
+  por_venir: number;
 }
 
 /** Un turno en la ficha de un cliente. */

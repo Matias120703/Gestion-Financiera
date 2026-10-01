@@ -1293,7 +1293,15 @@ export const es = {
     // El trainer (099): al archivar se borran los datos de salud; la rutina queda como historia.
     eliminarConSalud: (nombre: string) =>
       `Si ${nombre} tiene rutinas o medidas, queda archivado: se borran sus medidas, su consentimiento y «Salud y lesiones». Sus rutinas quedan como tu historia y no se ven en ningún link.`,
-    turnoNoSeCancela: (cuando: string) => `Su turno del ${cuando} no se cancela.`,
+    // Al eliminar, todo lo suyo de hoy en adelante sale de la agenda, haya
+    // pagado o no (120). Se dice antes, con cuántos son.
+    eliminarTurnosPorVenir: (n: number) => (n === 1
+      ? 'Tiene 1 turno de hoy en adelante: se cancela y sale de tu agenda.'
+      : `Tiene ${n} turnos de hoy en adelante: se cancelan y salen de tu agenda.`),
+    // Lo mismo para un profe: clases (el trainer dice sesiones, ver entrenamiento.ts).
+    eliminarClasesPorVenir: (n: number) => (n === 1
+      ? 'Tiene 1 clase de hoy en adelante: sale de tu agenda, esté pagada o no.'
+      : `Tiene ${n} clases de hoy en adelante: salen de tu agenda, estén pagadas o no.`),
     // Un alumno con un período sin cobrar (116): al eliminarlo se anula, y se
     // dice antes, con el monto.
     eliminarSinCobrar: (nombre: string, monto: string) =>
