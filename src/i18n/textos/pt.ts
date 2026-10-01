@@ -1122,6 +1122,14 @@ export const pt: Textos = {
     pagado: 'Pago',
     faltaCobrar: 'Falta receber',
     cobrado: (monto: string) => `Recebido: ${monto}.`,
+    editar: 'Editar',
+    montoCorrecto: 'Quanto você cobra por este período',
+    montoAyuda: 'Ainda não foi recebido: corrigir não mexe no seu dinheiro.',
+    noCobrar: 'Não vou cobrar',
+    noCobrarPregunta: (alumno: string, monto: string) => `Tirar os ${monto} de ${alumno} do que falta receber?`,
+    noCobrarSinClases: 'Ainda não teve aulas: esta inscrição é apagada, com as aulas dela da agenda. Se foi um erro, é só inscrever de novo.',
+    noCobrarConClases: 'Já teve aulas: fica na ficha dele como fechada e sem receber, e as que faltavam saem da sua agenda.',
+    siSacar: 'Sim, tirar',
   },
 
   cobro: {
@@ -1200,6 +1208,8 @@ export const pt: Textos = {
     eliminarConSalud: (nombre: string) =>
       `Se ${nombre} tem treinos ou medidas, fica arquivado: as medidas, o consentimento e «Saúde e lesões» são apagados. Os treinos ficam como seu histórico e não aparecem em nenhum link.`,
     turnoNoSeCancela: (cuando: string) => `O horário de ${cuando} não é cancelado.`,
+    eliminarSinCobrar: (nombre: string, monto: string) =>
+      `${nombre} tem ${monto} sem receber: é anulado e deixa de aparecer em A receber, e as aulas disso que faltavam saem da sua agenda. O que já te pagou fica no seu histórico.`,
     no: 'Não',
     eliminando: 'Excluindo…',
     siEliminar: 'Sim, excluir',

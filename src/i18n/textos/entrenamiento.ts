@@ -50,6 +50,8 @@ export const entrenamientoEs: Parcial<Textos> = {
     inscribir: 'Agendar',
     listo: (clases: number) => `Listo: ${clases} ${clases === 1 ? 'sesión' : 'sesiones'} en tu agenda.`,
     porCobrarDetalle: (n: number) => `${n} ${n === 1 ? 'cliente te debe' : 'clientes te deben'} su período`,
+    noCobrarSinClases: 'Todavía no tuvo sesiones: se borra este período, con sus sesiones de la agenda. Si fue un error, lo volvés a agendar.',
+    noCobrarConClases: 'Ya tuvo sesiones: queda en su ficha como cerrado y sin cobrar, y las que faltaban salen de tu agenda.',
   },
   paquetes: {
     nombreEjemplo: '8 sesiones',
@@ -70,6 +72,8 @@ export const entrenamientoEs: Parcial<Textos> = {
     sinTurnos: 'Todavía no tiene sesiones.',
     visitas: (n: number, cuando: string) => `${n} ${n === 1 ? 'sesión' : 'sesiones'} · la última ${cuando}`,
     turnoNoSeCancela: (cuando: string) => `Su sesión del ${cuando} no se cancela.`,
+    eliminarSinCobrar: (nombre: string, monto: string) =>
+      `${nombre} tiene ${monto} sin cobrar: se anula y deja de figurar en Por cobrar, y las sesiones de eso que faltaban salen de tu agenda. Lo que ya te pagó queda en tu historial.`,
   },
   panel: {
     clasesDeHoy: 'Tus sesiones de hoy',
@@ -122,6 +126,8 @@ export const entrenamientoPt: Parcial<Textos> = {
     inscribir: 'Agendar',
     listo: (clases: number) => `Pronto: ${clases} ${clases === 1 ? 'sessão' : 'sessões'} na sua agenda.`,
     porCobrarDetalle: (n: number) => `${n} ${n === 1 ? 'cliente te deve' : 'clientes te devem'} o período`,
+    noCobrarSinClases: 'Ainda não teve sessões: este período é apagado, com as sessões dele da agenda. Se foi um erro, é só agendar de novo.',
+    noCobrarConClases: 'Já teve sessões: fica na ficha dele como fechado e sem receber, e as que faltavam saem da sua agenda.',
   },
   paquetes: {
     nombreEjemplo: '8 sessões',
@@ -140,6 +146,8 @@ export const entrenamientoPt: Parcial<Textos> = {
     sinTurnos: 'Ainda não tem sessões.',
     visitas: (n: number, cuando: string) => `${n} ${n === 1 ? 'sessão' : 'sessões'} · a última ${cuando}`,
     turnoNoSeCancela: (cuando: string) => `A sessão de ${cuando} não é cancelada.`,
+    eliminarSinCobrar: (nombre: string, monto: string) =>
+      `${nombre} tem ${monto} sem receber: é anulado e deixa de aparecer em A receber, e as sessões disso que faltavam saem da sua agenda. O que já te pagou fica no seu histórico.`,
   },
   panel: {
     clasesDeHoy: 'Suas sessões de hoje',

@@ -1430,12 +1430,25 @@ export interface PaqueteAlumno {
   precio_hora: number | null;
   /** Si ya se cobró: tiene su venta, o no había nada que cobrar. */
   pagado: boolean;
+  /**
+   * Si ese período ya tuvo clases (116): «No lo voy a cobrar» lo cierra en
+   * vez de borrarlo. La misma respuesta que en Por cobrar.
+   */
+  tuvo_clases?: boolean;
 }
 
 /** Lo que falta cobrar de las inscripciones (091). */
 export interface PorCobrarAlumnos {
   total: number;
-  lista: { paquete: string; cliente_id: string; alumno: string; nombre: string; materia: string | null; monto: number; desde: string | null; hasta: string | null }[];
+  lista: {
+    paquete: string; cliente_id: string; alumno: string; nombre: string; materia: string | null;
+    monto: number; desde: string | null; hasta: string | null;
+    /**
+     * Si ese período ya tuvo clases (116): «No lo voy a cobrar» lo cierra en
+     * vez de borrarlo. Solo lo trae la base; el Excel no lo usa.
+     */
+    tuvo_clases?: boolean;
+  }[];
 }
 
 export interface ClienteLista {
