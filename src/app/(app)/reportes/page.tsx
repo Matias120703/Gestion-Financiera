@@ -8,7 +8,7 @@ import { hojasPersonal } from '@/lib/reportes/excel-personal';
 import { traerResumen } from '@/lib/agregados';
 import { hoyISO } from '@/lib/fechas';
 import { permisosDe } from '@/lib/permisos';
-import { fichaDe, type FichaRubro } from '@/lib/rubros';
+import { fichaDeLaCuenta, type FichaRubro } from '@/lib/rubros';
 import type { HojaDelLibro } from '@/lib/reportes/comun';
 import type { Idioma } from '@/i18n/idiomas';
 import { varianteDeReporte, type VarianteReporte } from '@/lib/reportes/variante';
@@ -63,7 +63,10 @@ export default async function PaginaReportes({
   if (!ctx.esAdmin) redirect('/panel');
 
   const idioma = await idiomaActual();
-  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  // Con lo que el dueño prendió en Ajustes (121): el profe que vende
+  // productos tiene su sección y su hoja de Excel. La variante no cambia
+  // (`agendaDeAlumnos` manda antes que el catálogo).
+  const ficha = fichaDeLaCuenta(ctx.empresa);
   const variante = varianteDeReporte(ficha, ctx.empresa.tipo_cuenta);
   const t = conJerga(await textos(), ficha.jerga, idioma);
   const locale = FICHA[idioma].locale;

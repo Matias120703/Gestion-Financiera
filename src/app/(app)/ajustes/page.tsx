@@ -12,7 +12,8 @@ import { TarjetaPlan } from '@/components/TarjetaPlan';
 import { ZonaPeligro } from '@/components/ZonaPeligro';
 import { esSuperadmin } from '@/lib/admin';
 import { conJerga } from '@/i18n/jergas';
-import { fichaDe, tieneSeccion } from '@/lib/rubros';
+import { catalogoSoloConStock, fichaDe, ofreceInterruptor, tieneSeccion } from '@/lib/rubros';
+import { VendoProductos } from '@/components/VendoProductos';
 import Link from 'next/link';
 import { MenuAjustes, CabeceraAjuste, SECCIONES_AJUSTES as SECCIONES, type SeccionAjustes as Clave } from '@/components/MenuAjustes';
 import type { Preferencias } from '@/lib/tipos';
@@ -41,8 +42,15 @@ export default async function PaginaAjustes({
   const supabase = clienteServidor();
   // Con la jerga del rubro, como plan/page.tsx: en agricultura la tabla de
   // permisos y los textos de costos dicen «Encargado» y no «Vendedor».
-  const t = conJerga(await textos(), fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).jerga, ctx.idioma);
+  const ficha = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta);
+  const t = conJerga(await textos(), ficha.jerga, ctx.idioma);
   const s = t.ajustes.secciones;
+  /**
+   * «También vendo productos» (121): solo donde el interruptor prende algo
+   * (el profe y el trainer, `interruptores` de su ficha) y a quien lo puede
+   * cambiar. El Básico de esos rubros es de una persona: el dueño.
+   */
+  const conVendoProductos = ofreceInterruptor(ficha, 'vendeProductos') && ctx.esAdmin;
 
   /**
    * Una cuenta personal es de una sola persona.
@@ -92,7 +100,7 @@ export default async function PaginaAjustes({
   // ---------------- La lista ----------------
   if (!ver) {
     const detalles: Record<Clave, string> = {
-      negocio: s.negocio,
+      negocio: conVendoProductos ? t.vendoProductos.ajustes.listaNegocio : s.negocio,
       moneda: s.moneda,
       equipo: s.equipoDetalle,
       plan: s.plan,
@@ -138,12 +146,41 @@ export default async function PaginaAjustes({
 
   async function contenido(ver: Clave) {
     switch (ver) {
-      case 'negocio':
+      case 'negocio': {
+        // Si ya cargó productos (de antes de la 090, o de una vez que lo
+        // tuvo prendido), el botón dice «Mis productos». Si la cuenta falla,
+        // dice «Cargar mi primer producto»: lleva al mismo lugar.
+        let hayProductos = false;
+        if (conVendoProductos) {
+          let consulta = supabase
+            .from('productos')
+            .select('id', { count: 'exact', head: true })
+            .eq('empresa_id', ctx.empresa.id)
+            .eq('activo', true);
+          // Cuenta lo mismo que muestra Productos (121): el servicio interno
+          // «Clase» que crea la base al inscribir no es un producto suyo.
+          if (catalogoSoloConStock(ficha)) consulta = consulta.eq('controla_stock', true);
+          const { count } = await consulta;
+          hayProductos = (count ?? 0) > 0;
+        }
         return (
-          <div className="p-5">
-            <EditorEmpresa empresa={ctx.empresa} puedeEditar={ctx.esAdmin} />
-          </div>
+          <>
+            <div className="p-5">
+              <EditorEmpresa empresa={ctx.empresa} puedeEditar={ctx.esAdmin} />
+            </div>
+            {conVendoProductos && (
+              <div className="border-t border-borde/70 p-5">
+                <VendoProductos
+                  empresaId={ctx.empresa.id}
+                  encendido={ctx.empresa.vende_productos ?? false}
+                  jerga={ficha.jerga}
+                  hayProductos={hayProductos}
+                />
+              </div>
+            )}
+          </>
         );
+      }
 
       // Va al lado de la moneda del negocio y no perdido en otra pantalla:
       // son la misma pregunta —«en qué moneda estoy mirando esto»—.

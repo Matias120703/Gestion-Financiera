@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { hoyISO } from '@/lib/fechas';
-import { tieneSeccion } from '@/lib/rubros';
+import { catalogoVisible, fichaDe, tieneSeccion } from '@/lib/rubros';
 import { transcribir } from '@/lib/transcribir';
 import type { Producto } from '@/lib/tipos';
 import {
@@ -64,7 +64,9 @@ export async function POST(request: Request) {
   // RLS se encarga: si no es miembro, no devuelve nada.
   const { data: empresa } = await supabase
     .from('empresas')
-    .select('id, moneda, tipo_cuenta, rubro, zona_horaria')
+    // `vende_productos` (121): si el profe o el trainer tienen catálogo. La
+    // migración va a producción antes que este código.
+    .select('id, moneda, tipo_cuenta, rubro, zona_horaria, vende_productos')
     .eq('id', empresaId)
     .maybeSingle();
   if (!empresa) return respuestaVacia(s.sinAccesoEmpresa, 403);
@@ -111,9 +113,21 @@ export async function POST(request: Request) {
    */
   const conCampanas = !esPersonal && tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/lotes');
 
+  /**
+   * El catálogo viaja solo si la cuenta lo tiene (121), con la misma
+   * pregunta que el menú: la ficha con sus interruptores. Al profe que
+   * prendió «También vendo productos», «vendí dos raquetas» le vincula la
+   * raqueta (costo y stock de la base); con el interruptor apagado, la voz
+   * no vincula productos escondidos ni descuenta su stock. Al campo, sin
+   * catálogo desde la fase 0, tampoco le llega: un novillo del catálogo
+   * restaba dos veces.
+   */
+  const conCatalogo = !esPersonal
+    && tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/productos', { vendeProductos: empresa.vende_productos });
+
   const [respCupo, respProductos, respDeudas, respCats, respFijos, respIngresos, respFiado, respLotes] = await Promise.all([
     supabase.rpc('consumir_credito_ia', { p_empresa: empresaId }),
-    esPersonal
+    !conCatalogo
       ? Promise.resolve({ data: [], error: null })
       : supabase.rpc('listar_productos', { p_empresa: empresaId, p_incluir_pausados: false }),
     supabase.rpc('listar_deudas', { p_empresa: empresaId, p_incluir_saldadas: false }),
@@ -157,14 +171,21 @@ export async function POST(request: Request) {
   // ---------- 2. Lo que llegó, ya sin esperas ----------
   // Por la puerta oficial: si quien captura es un vendedor, los costos
   // llegan en null y nunca entran al prompt. La base decide, no esta ruta.
-  // En una cuenta personal ni se pide: no hay catálogo que vincular.
+  // En una cuenta sin catálogo ni se pide: no hay nada que vincular.
   let catalogo: Producto[] = [];
-  if (!esPersonal) {
+  if (conCatalogo) {
     if (respProductos.error) {
       console.error('[capturar] catálogo', respProductos.error.message);
       return respuestaVacia(s.noSeLeyoCatalogo, 503);
     }
-    catalogo = (Array.isArray(respProductos.data) ? respProductos.data : []) as Producto[];
+    // El mismo catálogo que ve en Productos y en Vender (121): al profe y al
+    // trainer, solo lo que tiene stock. El servicio interno «Clase» a precio
+    // 0 no viaja, así un cobro de clase dictado no queda atado a él con
+    // «usá el precio del catálogo».
+    catalogo = catalogoVisible(
+      fichaDe(empresa.rubro, empresa.tipo_cuenta),
+      (Array.isArray(respProductos.data) ? respProductos.data : []) as Producto[],
+    );
   }
 
   /**
@@ -260,15 +281,21 @@ export async function POST(request: Request) {
   // Solo lee la agenda si el rubro la tiene; si falla, sigue sin turnos.
   const acciones = await contextoAcciones({
     empresaId, rubro: empresa.rubro, tipoCuenta: empresa.tipo_cuenta, hoy, catalogo,
+    vendeProductos: empresa.vende_productos,
   });
 
   // El idioma que eligió en Orden: con ese se escucha el audio y con ese
   // se le escriben la descripción y el aviso.
   const idioma = await idiomaActual();
 
+  // El profe o el trainer que también vende productos (121): lo de las
+  // clases va sin producto y lo del catálogo con el suyo, y lo que no está
+  // en el catálogo se avisa (sin costo, caería en lo de las clases).
+  const deAlumnosConProductos = conCatalogo && fichaDe(empresa.rubro, empresa.tipo_cuenta).agendaDeAlumnos;
+
   const sistema = instrucciones(
     hoy, empresa.moneda, catalogo, deudas, esPersonal, categorias, fijos, ingresos, deudores,
-    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos, idioma, campanas });
+    { tipos: acciones.tipos, bloqueTurnos: acciones.bloqueTurnos, idioma, campanas, deAlumnosConProductos });
 
   try {
     let textoUsuario = '';

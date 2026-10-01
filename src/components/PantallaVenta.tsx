@@ -64,13 +64,17 @@ const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLi
  *
  * Se arma con el diccionario: el código que se guarda es siempre el mismo,
  * lo que cambia con el idioma es cómo se lee en el botón.
+ *
+ * «Fiado / crédito» solo si la cuenta tiene fiado (121): el profe y el
+ * trainer que venden productos no lo tienen (091), y una venta fiada
+ * contaría como cobrado lo que todavía no entró.
  */
-function metodosDe(t: Textos): { valor: string; corto: string; largo: string }[] {
+function metodosDe(t: Textos, conFiado = true): { valor: string; corto: string; largo: string }[] {
   return [
     { valor: 'efectivo', corto: metodoVisible(t, 'efectivo'), largo: metodoVisible(t, 'efectivo') },
     { valor: 'transferencia', corto: t.venta.metodoTransferCorto, largo: metodoVisible(t, 'transferencia') },
     { valor: 'tarjeta', corto: metodoVisible(t, 'tarjeta'), largo: metodoVisible(t, 'tarjeta') },
-    { valor: 'credito', corto: t.venta.metodoFiadoCorto, largo: t.venta.metodoFiadoLargo },
+    ...(conFiado ? [{ valor: 'credito', corto: t.venta.metodoFiadoCorto, largo: t.venta.metodoFiadoLargo }] : []),
     { valor: 'otro', corto: metodoVisible(t, 'otro'), largo: metodoVisible(t, 'otro') },
   ];
 }
@@ -78,6 +82,7 @@ function metodosDe(t: Textos): { valor: string; corto: string; largo: string }[]
 export function PantallaVenta({
   empresaId, moneda, productos, frecuentes = [],
   campanas = [], esAgricultura = false, conCatalogo = true,
+  conFiado = true, conSuelto = true,
 }: {
   empresaId: string;
   moneda: string;
@@ -94,10 +99,18 @@ export function PantallaVenta({
   esAgricultura?: boolean;
   /** Si el rubro tiene catálogo (`ficha.secciones['/productos']`). Sin él, se vende con «suelto». */
   conCatalogo?: boolean;
+  /** Si la cuenta tiene fiado (`ficha.secciones['/fiado']`). Sin él, no se ofrece «Fiado / crédito» (121). */
+  conFiado?: boolean;
+  /**
+   * Si se ofrece «Producto suelto» (121). El profe y el trainer venden solo
+   * del catálogo: lo suelto no tiene costo ni stock, y caería en lo cobrado
+   * de las clases en vez de en sus productos.
+   */
+  conSuelto?: boolean;
 }) {
   const t = useTextos();
   const idioma = useIdioma();
-  const METODOS = metodosDe(t);
+  const METODOS = metodosDe(t, conFiado);
   const zona = useZona();
   const router = useRouter();
   const dec = decimalesDe(moneda);
@@ -371,9 +384,11 @@ export function PantallaVenta({
               value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
-          <button type="button" className="boton-suave min-h-[48px] shrink-0 px-4" onClick={() => setLibreAbierto(true)}>
-            {t.venta.suelto}
-          </button>
+          {conSuelto && (
+            <button type="button" className="boton-suave min-h-[48px] shrink-0 px-4" onClick={() => setLibreAbierto(true)}>
+              {t.venta.suelto}
+            </button>
+          )}
         </div>
 
         {/* El grano del silo no se vende acá: va por la liquidación de la
@@ -490,7 +505,7 @@ export function PantallaVenta({
             onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
             setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
             cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
-            campanas={campanas} loteId={loteId} setLoteId={elegirLote}
+            campanas={campanas} loteId={loteId} setLoteId={elegirLote} conFiado={conFiado}
           />
         </div>
       </aside>
@@ -623,7 +638,7 @@ export function PantallaVenta({
             onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
             setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
             cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
-            campanas={campanas} loteId={loteId} setLoteId={elegirLote}
+            campanas={campanas} loteId={loteId} setLoteId={elegirLote} conFiado={conFiado}
           />
         </Hoja>
       )}
@@ -657,10 +672,12 @@ function Carrito(props: {
   campanas: CampanaParaElegir[];
   loteId: string;
   setLoteId: (id: string) => void;
+  /** Sin fiado, «Fiado / crédito» no se ofrece (121). */
+  conFiado: boolean;
 }) {
   const t = useTextos();
   const idioma = useIdioma();
-  const METODOS = metodosDe(t);
+  const METODOS = metodosDe(t, props.conFiado);
   const {
     carrito, moneda, dec, total, subtotal, ganancia, verCostos, descuento, metodo, fecha,
     empresaId, elegido, setElegido,

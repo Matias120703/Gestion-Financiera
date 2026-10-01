@@ -68,6 +68,19 @@ export type Seccion =
   // Las rutinas y el progreso de cada cliente del personal trainer (098).
   | '/rutinas';
 
+/**
+ * LO QUE EL DUEÑO PRENDE O APAGA EN AJUSTES, POR CUENTA (121).
+ *
+ * Hoy es uno: «También vendo productos», del profe y del trainer. Se guarda
+ * en la cuenta (`empresas.vende_productos`) y entra a la ficha por
+ * `interruptores`, que dice qué pantallas suma: así el menú, la barra, «Más»
+ * y el guardia de cada página siguen preguntando una sola cosa, la ficha.
+ */
+export type Interruptor = 'vendeProductos';
+
+/** Cómo está cada interruptor en esta cuenta. Lo que falta, apagado. */
+export type OpcionesCuenta = Partial<Record<Interruptor, boolean | null | undefined>>;
+
 export interface FichaRubro {
   clave: Rubro;
   /** Cómo se llama al elegirlo. */
@@ -179,7 +192,26 @@ export interface FichaRubro {
    * no ofrece, lo sigue viendo como su plan actual.
    */
   planes: readonly PlanDeRubro[];
+  /**
+   * QUÉ PANTALLAS SUMA CADA INTERRUPTOR DE AJUSTES (121).
+   *
+   * Lista positiva, como `secciones`: un interruptor solo puede PRENDER lo
+   * que está acá, nunca otra cosa, y nunca apaga nada. «También vendo
+   * productos» le suma al profe y al trainer el catálogo y la pantalla de
+   * cobrar; el fiado y el cierre siguen afuera (090, 091).
+   *
+   * Vacía es que el interruptor no se le ofrece: el almacén y la barbería ya
+   * tienen catálogo, el campo lo apagó a propósito en la fase 0, una persona
+   * no vende.
+   *
+   * Obligatorio por lo mismo que `secciones`: un rubro nuevo no compila
+   * hasta que alguien diga qué le prende cada interruptor.
+   */
+  interruptores: Record<Interruptor, readonly Seccion[]>;
 }
+
+/** Ningún interruptor suma nada: lo de casi todos los rubros. */
+const SIN_INTERRUPTORES: Record<Interruptor, readonly Seccion[]> = { vendeProductos: [] };
 
 /**
  * Lo que tiene cualquier negocio, sea del rubro que sea.
@@ -233,6 +265,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     barra: null,
     // Un almacén puede ser uno solo o un local con cinco vendedores: los tres.
     planes: ['basico', 'pro', 'negocio'],
+    // Ya tiene catálogo y pantalla de cobrar: no hay nada que prender.
+    interruptores: SIN_INTERRUPTORES,
   },
 
   servicios: {
@@ -268,6 +302,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     barra: null,
     // Una barbería puede tener diez sillas: los tres.
     planes: ['basico', 'pro', 'negocio'],
+    // El shampoo que vende ya va en «Servicios y productos».
+    interruptores: SIN_INTERRUPTORES,
   },
 
   ganaderia: {
@@ -310,6 +346,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     barra: ['/panel', '/lotes', '/gastos', '/vender'],
     // Como el agricultor: el dueño solo o con un par de peones que cargan.
     planes: ['basico', 'pro'],
+    // Sin catálogo a propósito (arriba): un interruptor no lo devuelve.
+    interruptores: SIN_INTERRUPTORES,
   },
 
   /**
@@ -365,6 +403,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // El dueño solo, o el dueño con un par de encargados que cargan gastos y
     // cosecha. Premium es para un local lleno de vendedores.
     planes: ['basico', 'pro'],
+    // Sin catálogo a propósito, como el ganadero.
+    interruptores: SIN_INTERRUPTORES,
   },
 
   /**
@@ -390,6 +430,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // lo que es de un negocio que compra y vende —productos y stock, la
     // pantalla de cobrar, el cierre de caja— y queda lo que un profe mira:
     // su agenda, sus alumnos, lo que entra, lo que sale y lo que le deben.
+    //
+    // Salvo que prenda «También vendo productos» (121, abajo en
+    // `interruptores`): el profe de tenis que vende raquetas y pelotas.
     secciones: {
       ...NUCLEO,
       '/agenda': true,
@@ -430,6 +473,12 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // Un profe trabaja solo: el Básico es el negocio entero para una persona.
     // Pro y Premium venden sillas para vendedores que no va a tener.
     planes: ['basico'],
+    // «TAMBIÉN VENDO PRODUCTOS» (121). Matías, 01/10: «¿Qué pasa si un
+    // profesor de tenis vende raquetas, pelotas…? ¿Cómo va a saber su
+    // ganancia de eso?». Prendido en Ajustes, suma el catálogo (con costo,
+    // precio y stock) y la pantalla de cobrar. Nada más: sin fiado ni cierre
+    // del día, por lo mismo de arriba. Apagado, el profe queda como siempre.
+    interruptores: { vendeProductos: ['/productos', '/vender'] },
   },
 
   /**
@@ -481,6 +530,8 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // Como el profe: trabaja solo, así que el plan de uno solo. Pagar por
     // gente cargando a la vez sería pagar por nadie.
     planes: ['basico'],
+    // Como el profe (121): la proteína, los guantes, las bandas.
+    interruptores: { vendeProductos: ['/productos', '/vender'] },
   },
 };
 
@@ -576,6 +627,8 @@ export const PERSONAL: FichaRubro = {
   // persona. Ofrecerle el de un local con vendedores sería venderle algo que
   // no puede usar.
   planes: ['pro'],
+  // Una persona no vende: no hay nada que prender.
+  interruptores: SIN_INTERRUPTORES,
 };
 
 /**
@@ -606,13 +659,81 @@ export function seccionesCerradas(gratisPersonal: boolean): Seccion[] {
  * en cada lugar en vez de dejar que alguien se olvide en silencio.
  *
  * Nunca devuelve undefined: un rubro desconocido cae en comercio.
+ *
+ * LOS INTERRUPTORES DE AJUSTES (121) entran acá y en ningún otro lado: con
+ * `opciones` la ficha sale con las secciones que el dueño prendió sumadas
+ * (`interruptores` del rubro). Sin `opciones`, todo apagado: olvidarse de
+ * pasarlas esconde una pantalla, nunca muestra una de más. Lo que importa
+ * pasarlas lo controla una prueba de fuente (calculos.test.js): todo lugar
+ * que pregunta por Productos o Vender.
  */
 export function fichaDe(
   rubro: string | null | undefined,
   tipoCuenta: TipoCuenta,
+  opciones: OpcionesCuenta = {},
 ): FichaRubro {
-  if (tipoCuenta === 'personal') return PERSONAL;
-  return RUBROS[(rubro ?? 'comercio') as Rubro] ?? RUBROS.comercio;
+  const base = tipoCuenta === 'personal'
+    ? PERSONAL
+    : RUBROS[(rubro ?? 'comercio') as Rubro] ?? RUBROS.comercio;
+  const suma = (Object.keys(base.interruptores) as Interruptor[])
+    .filter((k) => opciones[k] === true)
+    .flatMap((k) => base.interruptores[k]);
+  // Sin nada prendido, la misma ficha de siempre (el mismo objeto).
+  if (suma.length === 0) return base;
+  const secciones = { ...base.secciones };
+  for (const s of suma) secciones[s] = true;
+  return { ...base, secciones };
+}
+
+/**
+ * La ficha de ESTA cuenta, con lo que el dueño prendió en Ajustes (121).
+ *
+ * Es lo que usan las pantallas que preguntan por algo que un interruptor
+ * puede prender: recibe la fila de `empresas` tal cual (`ctx.empresa`), así
+ * nadie arma las opciones a mano. Si la columna todavía no llegó (código
+ * nuevo con la base vieja), `undefined` es apagado.
+ */
+export function fichaDeLaCuenta(empresa: {
+  rubro: string | null | undefined;
+  tipo_cuenta: TipoCuenta;
+  vende_productos?: boolean | null;
+}): FichaRubro {
+  return fichaDe(empresa.rubro, empresa.tipo_cuenta, { vendeProductos: empresa.vende_productos });
+}
+
+/** ¿Se le ofrece este interruptor en Ajustes? Solo si prende algo en su rubro. */
+export function ofreceInterruptor(ficha: Pick<FichaRubro, 'interruptores'>, interruptor: Interruptor): boolean {
+  return ficha.interruptores[interruptor].length > 0;
+}
+
+/**
+ * ¿SU CATÁLOGO ES SOLO DE PRODUCTOS CON STOCK? (121)
+ *
+ * El profe y el trainer que prenden «También vendo productos» venden cosas
+ * (la raqueta, la proteína), no servicios: sus clases se cobran desde la
+ * agenda y los alumnos. Y la base les guarda en `productos` un servicio
+ * interno, «Clase» a precio 0, que crea sola la primera inscripción
+ * (`profe_y_clase`, 091) y que vuelve aunque se lo borre. Sin esto, al
+ * prender el interruptor esa «Clase» aparecía en Productos, en Vender, en
+ * el botón de Ajustes y en el catálogo de la voz, como si fuera suya.
+ *
+ * Esconder los servicios no cambia ningún número: lo vendido de un servicio
+ * cuenta como clases (`productos_del_periodo` mira `afecto_stock`). Se
+ * pregunta acá, con la ficha, y en ningún otro lado.
+ */
+export function catalogoSoloConStock(ficha: Pick<FichaRubro, 'agendaDeAlumnos'>): boolean {
+  return ficha.agendaDeAlumnos;
+}
+
+/**
+ * El catálogo que ve esta cuenta (Productos, Vender, la voz): todo, salvo
+ * donde es solo de productos con stock (`catalogoSoloConStock`).
+ */
+export function catalogoVisible<P extends { controla_stock: boolean }>(
+  ficha: Pick<FichaRubro, 'agendaDeAlumnos'>,
+  productos: P[],
+): P[] {
+  return catalogoSoloConStock(ficha) ? productos.filter((p) => p.controla_stock) : productos;
 }
 
 /**
@@ -622,13 +743,16 @@ export function fichaDe(
  * abajo y el guardia de cada página. Antes cada lugar escribía su propio
  * `.includes(...)` sobre la lista, y ahí es donde se cuelan las diferencias
  * entre lo que el menú esconde y lo que la URL igual abre.
+ *
+ * `opciones`: los interruptores de la cuenta (121), como en `fichaDe`.
  */
 export function tieneSeccion(
   rubro: string | null | undefined,
   tipoCuenta: TipoCuenta,
   seccion: Seccion,
+  opciones: OpcionesCuenta = {},
 ): boolean {
-  return fichaDe(rubro, tipoCuenta).secciones[seccion];
+  return fichaDe(rubro, tipoCuenta, opciones).secciones[seccion];
 }
 
 /**

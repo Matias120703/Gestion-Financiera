@@ -12,7 +12,11 @@
  *   · Por cobrar suma las filas (inscripciones + fiado) y nada más;
  *   · lo que falta queda vacío, nunca en cero (el alumno sin paquete activo,
  *     el cobrado por clase sin clases dadas);
- *   · la conversión a la moneda de la vista toca la plata y solo la plata.
+ *   · la conversión a la moneda de la vista toca la plata y solo la plata;
+ *   · «También vendo productos» (121): la hoja Productos sale solo con el
+ *     interruptor prendido (y la tarjeta la anuncia), el Resumen separa lo de
+ *     las clases de lo de los productos con el bloque «Tus productos», la
+ *     hoja suma lo vendido, y sin productos el libro es el de siempre.
  */
 const ExcelJS = require('exceljs');
 const path = require('path');
@@ -20,6 +24,7 @@ const { libroAlumnos, hojasAlumnos, enLaVistaAlumnos, mapearPorCobrar, asistenci
   require('../.compilado/reportes/excel-alumnos.js');
 const { coincidenLasHojas, conversorDe } = require('../.compilado/reportes/comun.js');
 const { fichaDe } = require('../.compilado/rubros.js');
+const { SIN_PRODUCTOS } = require('../.compilado/reportes/productos.js');
 const { resumir, gastosPorCategoria, serieDiaria } = require('../.compilado/calculos.js');
 const { diasDelRango } = require('../.compilado/fechas.js');
 
@@ -69,7 +74,9 @@ const reporte = {
     { semana: '2026-08-31', dadas: 4, faltas: 1 },
     { semana: '2026-09-07', dadas: 6, faltas: 1 },
   ],
-  cobrado: 650000, cobrado_por_clase: 65000,
+  cobrado: 650000, cobrado_clases: 650000, cobrado_por_clase: 65000,
+  // Sin productos (121): el profe de siempre.
+  productos: SIN_PRODUCTOS,
   por_cobrar: 300000, fiado_pendiente: 50000,
   activos: 2, nuevos: 1,
   paquetes: { vendidos: 2, terminados: 1, vencidos: 1, renovaron: 1 },
@@ -170,6 +177,12 @@ function filaCon(hoja, col, texto) {
   ok('Resumen: clases dadas', filaCon(res, 2, 'Clases dadas').getCell(3).value, 10);
   ok('Resumen: faltas', filaCon(res, 2, 'Faltas').getCell(3).value, 2);
   ok('Resumen: cobrado por clase (de la base)', filaCon(res, 2, 'Cobrado por clase').getCell(3).value, 65000);
+  // (121) Divide solo lo de las clases: con productos, «lo cobrado ÷ clases
+  // dadas» no daba el número que tenía al lado.
+  ok('Resumen: cobrado por clase dice qué divide', filaCon(res, 2, 'Cobrado por clase').getCell(5).value, 'lo cobrado de clases ÷ clases dadas');
+  ok('pt: «o recebido das aulas ÷ aulas dadas»',
+    filaCon(libroAlumnos(datosDe({ rubro: 'clases', idioma: 'pt', conProgreso: false })).getWorksheet('Resumo'), 2, 'Recebido por aula').getCell(5).value,
+    'o recebido das aulas ÷ aulas dadas');
   ok('Resumen: por cobrar = inscripciones + fiado', filaCon(res, 2, 'Total por cobrar').getCell(3).value, 350000);
   ok('Resumen: sin margen ni ticket ni unidades',
     [filaCon(res, 2, 'Ganancia bruta'), filaCon(res, 2, 'Ticket promedio'), filaCon(res, 2, 'Unidades vendidas')], [null, null, null]);
@@ -226,6 +239,8 @@ function filaCon(hoja, col, texto) {
   const lt = libroAlumnos(datosDe({ rubro: 'entrenamiento', idioma: 'es', conProgreso: true }));
   ok('trainer: «Sesiones dadas» en el Resumen', filaCon(lt.getWorksheet('Resumen'), 2, 'Sesiones dadas').getCell(3).value, 10);
   ok('trainer: «Cobrado por sesión»', filaCon(lt.getWorksheet('Resumen'), 2, 'Cobrado por sesión').getCell(3).value, 65000);
+  ok('trainer: «lo cobrado de sesiones ÷ sesiones dadas»',
+    filaCon(lt.getWorksheet('Resumen'), 2, 'Cobrado por sesión').getCell(5).value, 'lo cobrado de sesiones ÷ sesiones dadas');
   const prog = lt.getWorksheet('Progreso');
   const ana = filaCon(prog, 1, 'Ana Benítez');
   ok('Progreso: peso inicial, final y cambio', [3, 4, 5].map((c) => ana.getCell(c).value), [70, 68.5, -1.5]);
@@ -250,6 +265,160 @@ function filaCon(hoja, col, texto) {
   ok('las medidas no son plata', v.progreso.clientes[0].peso_final, 68.5);
   const igual = conversorDe({ moneda: 'PYG', propia: 'PYG', factor: 1 });
   ok('sin conversión, lo mismo', enLaVistaAlumnos({ alumnos: reporte, porCobrar, progreso: null }, igual).alumnos.cobrado, 650000);
+
+  // ---------------------------------------------------------------- también vende productos (121)
+  console.log('── También vendo productos (121) ──');
+  // El profe de tenis: 2 raquetas y 4 tubos de pelotas con 20.000 de
+  // descuento (los números de vendo-productos.test.js), y la compra de las
+  // raquetas como Mercadería.
+  const PRODUCTOS = {
+    vendido: 780000, unidades: 6, operaciones: 1, costo: 440000, ganancia: 340000, margen: (340000 / 780000) * 100,
+    lista: [
+      { producto_id: 'p1', nombre: 'Raqueta', unidades: 2, vendido: 682500, costo: 400000, ganancia: 282500 },
+      { producto_id: 'p2', nombre: 'Tubo de pelotas', unidades: 4, vendido: 97500, costo: 40000, ganancia: 57500 },
+    ],
+  };
+  const ventaProductos = { ...base, id: 'v4', tipo: 'venta', fecha: '2026-09-08', descripcion: '', categoria: 'Ventas',
+    subtotal: 800000, monto: 780000, descuento: 20000, costo_total: 440000, metodo_pago: 'Efectivo', cliente_nombre: 'Ana Benítez',
+    movimiento_items: [
+      { id: 'i4', producto_id: 'p1', nombre: 'Raqueta', cantidad: 2, precio_unitario: 350000, costo_unitario: 200000 },
+      { id: 'i5', producto_id: 'p2', nombre: 'Tubo de pelotas', cantidad: 4, precio_unitario: 25000, costo_unitario: 10000 },
+    ] };
+  const compra = { ...base, id: 'g3', tipo: 'gasto', fecha: '2026-09-07', descripcion: 'Raquetas', categoria: 'Mercadería',
+    subtotal: 1000000, monto: 1000000, metodo_pago: 'Efectivo' };
+  const movsProductos = [...movimientos, ventaProductos, compra];
+  const conProductos = (o) => ({
+    ...datosDe({ rubro: o.rubro ?? 'clases', idioma: o.idioma ?? 'es', conProgreso: o.rubro === 'entrenamiento' }),
+    resumen: resumir(movsProductos),
+    movimientos: movsProductos,
+    // Como `gastos_por_categoria` (106): la Mercadería viene siempre.
+    categorias: gastosPorCategoria(movsProductos),
+    alumnos: { ...reporte, cobrado: 1430000, cobrado_clases: 650000, productos: PRODUCTOS },
+    hojaProductos: o.prendido,
+  });
+
+  for (const idioma of ['es', 'pt']) {
+    for (const rubro of ['clases', 'entrenamiento']) {
+      const ficha = fichaDe(rubro, 'emprendedor', { vendeProductos: true });
+      const reales = libroAlumnos(conProductos({ rubro, idioma, prendido: true })).worksheets.map((h) => h.name);
+      ok(`${rubro}/${idioma} prendido: la tarjeta coincide con el libro`, coincidenLasHojas(hojasAlumnos(ficha, idioma), reales), true);
+      ok(`${rubro}/${idioma} prendido: la hoja Productos va después de Cobros`,
+        reales.indexOf(idioma === 'pt' ? 'Produtos' : 'Productos'), 3);
+    }
+  }
+  ok('profe prendido: sus hojas', hojasAlumnos(fichaDe('clases', 'emprendedor', { vendeProductos: true }), 'es').map((h) => h.nombre),
+    ['Resumen', 'Por cobrar', 'Cobros', 'Productos', 'Asistencia', 'Alumnos', 'Gastos']);
+  ok('apagado: la tarjeta no anuncia la hoja', hojasAlumnos(fichaDe('clases', 'emprendedor'), 'es').some((h) => h.nombre === 'Productos'), false);
+
+  const lp = libroAlumnos(conProductos({ prendido: true }));
+  const rp2 = resumir(movsProductos);
+  const resP = lp.getWorksheet('Resumen');
+  ok('la regla de la 106: la compra de las raquetas no está en los gastos',
+    [rp2.mercaderiaAparte, rp2.comprasMercaderia, rp2.gastos, rp2.costoMercaderia], [true, 1000000, 240000, 440000]);
+  ok('Resumen: Cobrado es todo lo vendido', filaCon(resP, 2, 'Cobrado').getCell(3).value, 1430000);
+  ok('Resumen: de tus clases y de productos, por separado',
+    [filaCon(resP, 2, 'De tus clases').getCell(3).value, filaCon(resP, 2, 'De productos').getCell(3).value], [650000, 780000]);
+  ok('sin el período anterior de productos: la columna queda vacía, no en cero',
+    filaCon(resP, 2, 'De productos').getCell(4).value, null);
+  ok('Tus productos: vendido, costo y ganancia',
+    ['Vendido', 'Costo de lo vendido', 'Ganaste con productos'].map((e) => filaCon(resP, 2, e).getCell(3).value), [780000, 440000, 340000]);
+  ok('Tus productos: margen y unidades',
+    [Math.round(filaCon(resP, 2, 'Margen').getCell(3).value * 10) / 10, filaCon(resP, 2, 'Unidades vendidas').getCell(3).value], [43.6, 6]);
+  ok('Tus productos: la compra de mercadería, con por qué no resta',
+    [filaCon(resP, 2, 'Compras de mercadería').getCell(3).value, /no resta/.test(filaCon(resP, 2, 'Compras de mercadería').getCell(5).value)],
+    [1000000, true]);
+  ok('Te quedó: lo cobrado y otros ingresos, menos el costo y los gastos (sin la compra)',
+    filaCon(resP, 2, 'Te quedó').getCell(3).value, 1430000 + 100000 - 440000 - 240000);
+
+  const hojaP = lp.getWorksheet('Productos');
+  const raq = filaCon(hojaP, 1, 'Raqueta');
+  ok('Productos: cada uno con unidades, vendido, costo, ganancia y margen',
+    [2, 3, 4, 5].map((c) => raq.getCell(c).value).concat(Math.round(raq.getCell(6).value * 10) / 10), [2, 682500, 400000, 282500, 41.4]);
+  const totP = filaCon(hojaP, 1, 'TOTAL');
+  ok('Productos: el total es lo vendido de la base', [totP.getCell(2).value, totP.getCell(3).value, totP.getCell(5).value], [6, 780000, 340000]);
+  ok('Productos: las filas suman el total',
+    PRODUCTOS.lista.map((x) => filaCon(hojaP, 1, x.nombre).getCell(3).value).reduce((s, n) => s + n, 0), 780000);
+  ok('Cobros: lista también la venta de productos y sigue sumando el Cobrado',
+    filaCon(lp.getWorksheet('Cobros'), 1, 'TOTAL COBRADO (sin anulados)').getCell(6).value, 1430000);
+
+  // Gastos: con costo cargado, la compra de mercadería no es gasto (106).
+  // Antes la tabla traía «Mercadería 1.000.000 (76,9 %)» y un TOTAL de
+  // 240.000 al 100 %: las filas no sumaban el total.
+  const filasDeCategoria = (hoja) => {
+    const filas = [];
+    hoja.eachRow((fila, n) => { if (n >= 7 && typeof fila.getCell(1).value === 'number') filas.push(fila); });
+    return filas;
+  };
+  const textoEnA = (hoja, re) => {
+    let hallado = null;
+    hoja.eachRow((fila) => { const v = fila.getCell(1).value; if (!hallado && typeof v === 'string' && re.test(v)) hallado = v; });
+    return hallado;
+  };
+  const gP = lp.getWorksheet('Gastos');
+  const catP = filasDeCategoria(gP);
+  ok('Gastos con productos: la tabla son las categorías sin la Mercadería',
+    catP.map((f) => f.getCell(2).value), gastosPorCategoria(movsProductos).map((x) => x.nombre).filter((n) => n !== 'Mercadería'));
+  ok('Gastos con productos: ninguna fila es la Mercadería', catP.some((f) => f.getCell(2).value === 'Mercadería'), false);
+  ok('el TOTAL es la suma de las filas y el «Gastos» del Resumen',
+    [filaCon(gP, 2, 'TOTAL').getCell(3).value, catP.reduce((s, f) => s + f.getCell(3).value, 0), filaCon(resP, 2, 'Gastos').getCell(3).value],
+    [240000, 240000, 240000]);
+  ok('y los porcentajes se recalculan sobre el resto (suman 100)', Math.round(catP.reduce((s, f) => s + f.getCell(5).value, 0) * 10) / 10, 100);
+  const filaAparte = filaCon(gP, 2, 'Mercadería');
+  ok('la compra va aparte: lo comprado y sus movimientos', filaAparte && [filaAparte.getCell(3).value, filaAparte.getCell(4).value], [1000000, 1]);
+  ok('con su título y su nota',
+    [textoEnA(gP, /^COMPRASTE MERCADERÍA · APARTE/), /«Costo de lo vendido», en el Resumen/.test(textoEnA(gP, /^No está en la tabla de arriba/) ?? '')],
+    ['COMPRASTE MERCADERÍA · APARTE, NO RESTA EN «TE QUEDÓ»', true]);
+  ok('y cada compra sigue en la lista de cada gasto, con su categoría', filaCon(gP, 2, 'Raquetas').getCell(3).value, 'Mercadería');
+  const gPpt = libroAlumnos(conProductos({ prendido: true, idioma: 'pt' })).getWorksheet('Despesas');
+  ok('pt: la Mercadoria aparte y el TOTAL igual a las filas',
+    [filaCon(gPpt, 2, 'Mercadoria')?.getCell(3).value, filaCon(gPpt, 2, 'TOTAL').getCell(3).value,
+      filasDeCategoria(gPpt).reduce((s, f) => s + f.getCell(3).value, 0)], [1000000, 240000, 240000]);
+  // Sin costo cargado (compró pero todavía no vendió nada del catálogo), la
+  // Mercadería es un gasto más: queda en la tabla y en el total, sin bloque.
+  const movsSoloCompra = [...movimientos, compra];
+  const soloCompra = libroAlumnos({
+    ...d, resumen: resumir(movsSoloCompra), movimientos: movsSoloCompra, categorias: gastosPorCategoria(movsSoloCompra),
+  }).getWorksheet('Gastos');
+  ok('sin costo cargado: la Mercadería queda en la tabla y en el total',
+    [resumir(movsSoloCompra).mercaderiaAparte, filaCon(soloCompra, 2, 'Mercadería')?.getCell(1).value, filaCon(soloCompra, 2, 'TOTAL').getCell(3).value,
+      filasDeCategoria(soloCompra).reduce((s, f) => s + f.getCell(3).value, 0)],
+    [false, 1, 1240000, 1240000]);
+  ok('y no hay bloque aparte', textoEnA(soloCompra, /^COMPRASTE MERCADERÍA/), null);
+  const vacia = libroAlumnos({ ...conProductos({ prendido: true }), alumnos: { ...reporte, productos: SIN_PRODUCTOS } });
+  ok('prendido y sin ventas: la hoja lo dice', vacia.getWorksheet('Productos').getCell('A7').value, 'No vendiste productos en este período.');
+  ok('y el Resumen igual muestra el bloque, en cero', filaCon(vacia.getWorksheet('Resumen'), 2, 'Vendido').getCell(3).value, 0);
+
+  // Apagado: no hay hoja, pero lo que vendió sigue separado en el Resumen.
+  const apagadoConVentas = libroAlumnos(conProductos({ prendido: false }));
+  ok('apagado con ventas del período: sin hoja Productos', apagadoConVentas.worksheets.some((h) => h.name === 'Productos'), false);
+  ok('pero el Resumen sigue separando clases y productos',
+    filaCon(apagadoConVentas.getWorksheet('Resumen'), 2, 'De productos').getCell(3).value, 780000);
+  // Sin productos y apagado: el libro de siempre, renglón por renglón.
+  const deSiempre = libroAlumnos(d);
+  ok('sin productos: ni «De tus clases» ni «Tus productos» en el Resumen',
+    ['De tus clases', 'De productos', 'Tus productos'.toUpperCase(), 'Vendido'].map((e) => filaCon(deSiempre.getWorksheet('Resumen'), 2, e)),
+    [null, null, null, null]);
+  ok('y las mismas hojas que antes', deSiempre.worksheets.map((h) => h.name), ['Resumen', 'Por cobrar', 'Cobros', 'Asistencia', 'Alumnos', 'Gastos']);
+
+  // El trainer, con sus palabras.
+  const ltp = libroAlumnos(conProductos({ rubro: 'entrenamiento', prendido: true }));
+  ok('trainer: «De tus sesiones»', filaCon(ltp.getWorksheet('Resumen'), 2, 'De tus sesiones').getCell(3).value, 650000);
+  const ltpPt = libroAlumnos(conProductos({ rubro: 'entrenamiento', idioma: 'pt', prendido: true }));
+  ok('trainer pt: «Das suas sessões» y «Ganhou com produtos»',
+    [filaCon(ltpPt.getWorksheet('Resumo'), 2, 'Das suas sessões').getCell(3).value,
+      filaCon(ltpPt.getWorksheet('Resumo'), 2, 'Ganhou com produtos').getCell(3).value], [650000, 340000]);
+
+  // En la moneda de la vista: la plata de los productos, no las unidades ni el margen.
+  const vp = enLaVistaAlumnos({ alumnos: conProductos({ prendido: true }).alumnos, porCobrar, progreso: null, hojaProductos: true }, c);
+  ok('se convierte lo de las clases y lo de los productos',
+    [vp.alumnos.cobrado_clases, vp.alumnos.productos.vendido, vp.alumnos.productos.costo, vp.alumnos.productos.ganancia],
+    [81.25, 97.5, 55, 42.5]);
+  ok('y cada producto', [vp.alumnos.productos.lista[0].vendido, vp.alumnos.productos.lista[0].ganancia], [85.3125, 35.3125]);
+  ok('las unidades y el margen no son plata', [vp.alumnos.productos.unidades, vp.alumnos.productos.margen], [6, PRODUCTOS.margen]);
+  ok('la hoja sigue anunciada', vp.hojaProductos, true);
+  ok('sin permiso, lo que no se ve sigue sin verse',
+    enLaVistaAlumnos({ alumnos: { ...reporte, productos: { ...PRODUCTOS, costo: null, ganancia: null } }, porCobrar, progreso: null }, c)
+      .alumnos.productos.costo, null);
 
   // ---------------------------------------------------------------- se abre
   const salida = path.join(__dirname, '..', '.compilado', 'reporte-alumnos.xlsx');

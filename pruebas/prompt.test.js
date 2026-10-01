@@ -312,6 +312,28 @@ grupo('7 · Las campañas: «gasté dos millones en semilla para el Norte»');
   ok('null no pasa', sanearCategoriaDeuda(null, AGRO), '');
 }
 
+// ═══════════════════════════════════════════════════════════
+grupo('El profe que también vende productos (121)');
+{
+  // Lo que separa sus clases de sus productos es el producto_id: el cobro de
+  // una clase va sin él, lo del catálogo con el suyo, y lo que no está
+  // cargado se avisa (sin costo, caería en lo de las clases).
+  const CATALOGO = [{ id: 'p-raq', nombre: 'Raqueta', precio: 350000 }, { id: 'p-pel', nombre: 'Tubo de pelotas', precio: 25000 }];
+  const conProductos = instrucciones(HOY, 'PYG', CATALOGO, [], false, [], [], [], [], { deAlumnosConProductos: true });
+  const sinProductos = instrucciones(HOY, 'PYG', CATALOGO, [], false, [], [], [], [], {});
+  ok('trae el bloque', conProductos.includes('ESTE NEGOCIO DA CLASES Y TAMBIÉN VENDE PRODUCTOS.'), true);
+  ok('el cobro de una clase va sin producto_id', /clase, una sesión, una inscripción, un mes o un paquete es una "venta" con un ítem SIN producto_id/.test(conProductos), true);
+  ok('lo del catálogo, con el suyo', conProductos.includes('lleva su "producto_id" exacto'), true);
+  ok('y lo que no está en el catálogo se avisa', /NO está en el catálogo, dejalo con producto_id null y avisá en "aviso"/.test(conProductos), true);
+  ok('el catálogo sigue en el prompt, sin costos', [conProductos.includes('- Raqueta | id=p-raq | precio=350000'), /costo=/.test(conProductos)], [true, false]);
+  ok('sin el interruptor, el bloque no está', sinProductos.includes('ESTE NEGOCIO DA CLASES'), false);
+  ok('y el resto del prompt es el mismo', conProductos.replace(/\n   ESTE NEGOCIO DA CLASES[\s\S]*?cuánto gana con él\.\n/, ''), sinProductos);
+  const enPt = instrucciones(HOY, 'PYG', CATALOGO, [], false, [], [], [], [], { deAlumnosConProductos: true, idioma: 'pt' });
+  ok('en portugués, el aviso en su idioma', enPt.includes('avisá en "aviso", en portugués de Brasil,'), true);
+  ok('una cuenta personal nunca lo trae',
+    instrucciones(HOY, 'PYG', [], [], true, [], [], [], [], { deAlumnosConProductos: true }).includes('ESTE NEGOCIO DA CLASES'), false);
+}
+
 console.log('\n' + '═'.repeat(62));
 if (fallos > 0) {
   console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL PROMPT FALLARON`);

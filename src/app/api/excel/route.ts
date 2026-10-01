@@ -16,7 +16,7 @@ import { conversorDe, type Conversor, type DatosBaseLibro } from '@/lib/reportes
 import { diaDeCobro } from '@/components/reportes/comunes/ciclo';
 import { conJerga } from '@/i18n/jergas';
 import { vistaDeEmpresa } from '@/lib/sesion';
-import { fichaDe } from '@/lib/rubros';
+import { fichaDeLaCuenta, type FichaRubro } from '@/lib/rubros';
 import { traerLote, traerLotes } from '@/lib/lotes';
 import type { Empresa, Lote, Producto } from '@/lib/tipos';
 import { esErrorDeLectura } from '@/lib/lectura';
@@ -29,7 +29,7 @@ import { hoyISO } from '@/lib/fechas';
 import { enLaVistaComercio, libroComercio, type LecturasComercio } from '@/lib/reportes/excel-comercio';
 import { traerReporteAlumnos, traerProgresoClientes } from '@/lib/agregados';
 import { exigir } from '@/lib/lectura';
-import { conProgreso, enLaVistaAlumnos, libroAlumnos, mapearPorCobrar } from '@/lib/reportes/excel-alumnos';
+import { conProductos, conProgreso, enLaVistaAlumnos, libroAlumnos, mapearPorCobrar } from '@/lib/reportes/excel-alumnos';
 import { enLaVistaCampo, libroCampo, type LeidoCampo } from '@/lib/reportes/excel-campo';
 import { enLaVistaPersonal, libroPersonal } from '@/lib/reportes/excel-personal';
 import { leerExtrasPersonal } from '@/components/reportes/ReportePersonal';
@@ -61,7 +61,9 @@ export async function GET(request: Request) {
   // RLS: si no es miembro de la empresa, esta consulta vuelve vacía.
   const { data: empresa } = await supabase
     .from('empresas')
-    .select('id, nombre, moneda, tipo_cuenta, rubro, moneda_vista, cotizacion, cotizacion_at')
+    // `vende_productos` (121): la hoja Productos del profe que vende. La
+    // migración va a producción antes que este código.
+    .select('id, nombre, moneda, tipo_cuenta, rubro, moneda_vista, cotizacion, cotizacion_at, vende_productos')
     .eq('id', empresaId)
     .maybeSingle();
   if (!empresa) return NextResponse.json({ error: s.sinAccesoEmpresa }, { status: 403 });
@@ -108,7 +110,8 @@ export async function GET(request: Request) {
   // La misma decisión que la pantalla (`varianteDeReporte`), y el mismo
   // período de comparación: el de ciclo para quien cobra un sueldo, que la
   // ruta reconoce por las fechas (ver `rangoPrevio`).
-  const ficha = fichaDe(empresa.rubro, empresa.tipo_cuenta);
+  // Con lo que el dueño prendió en Ajustes (121), como la pantalla.
+  const ficha = fichaDeLaCuenta(empresa);
   const variante = varianteDeReporte(ficha, empresa.tipo_cuenta);
   const dia = variante === 'personal' ? await diaDeCobro(empresa.id) : null;
   const previo = rangoPrevio({ desde, hasta }, dia);
@@ -204,7 +207,7 @@ export async function GET(request: Request) {
     };
 
     const libro = await libroDeLaVariante(variante, base, {
-      supabase, empresaId: empresa.id, conversor, leido: deHoy,
+      supabase, empresaId: empresa.id, conversor, leido: deHoy, ficha,
     });
 
     const buffer = await libro.xlsx.writeBuffer();
@@ -277,6 +280,11 @@ async function libroDeLaVariante(
     conversor: Conversor;
     /** Todo lo que la ruta leyó para el libro de hoy, ya en la moneda de la vista. */
     leido: DatosReporte;
+    /**
+     * La ficha de la cuenta, con sus interruptores (121). La misma que eligió
+     * la variante: una rama no la recalcula sin ellos.
+     */
+    ficha: FichaRubro;
   },
 ): Promise<ReturnType<typeof construirLibro>> {
   switch (variante) {
@@ -305,15 +313,19 @@ async function libroDeLaVariante(
     case 'alumnos': {
       // Lo del profe y el trainer: el período de sus alumnos (106), lo que
       // le deben a hoy (094) y, si toma medidas, el progreso de sus clientes.
-      // Las mismas lecturas que la pantalla (ReporteAlumnos).
-      const ficha = fichaDe(base.empresa.rubro, base.empresa.tipo_cuenta ?? 'emprendedor');
+      // Las mismas lecturas que la pantalla (ReporteAlumnos). Con la hoja
+      // Productos si prendió «También vendo productos» (121): la misma
+      // pregunta que la tarjeta de descarga (`hojasAlumnos`).
       const [alumnos, porCobrar, progreso] = await Promise.all([
         traerReporteAlumnos(x.empresaId, base.desde, base.hasta),
         x.supabase.rpc('por_cobrar_alumnos', { p_empresa: x.empresaId })
           .then((res) => mapearPorCobrar(exigir(res, 'por cobrar de los alumnos'))),
-        conProgreso(ficha) ? traerProgresoClientes(x.empresaId, base.desde, base.hasta) : Promise.resolve(null),
+        conProgreso(x.ficha) ? traerProgresoClientes(x.empresaId, base.desde, base.hasta) : Promise.resolve(null),
       ]);
-      return libroAlumnos({ ...base, ...enLaVistaAlumnos({ alumnos, porCobrar, progreso }, x.conversor) });
+      return libroAlumnos({
+        ...base,
+        ...enLaVistaAlumnos({ alumnos, porCobrar, progreso, hojaProductos: conProductos(x.ficha) }, x.conversor),
+      });
     }
     case 'campo': {
       // Las campañas, las liquidaciones del período y la campaña de cada

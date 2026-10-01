@@ -60,7 +60,7 @@ const esProducto = (p: { controla_stock: boolean }) => p.controla_stock;
  */
 export function PantallaProductos({
   empresaId, moneda, productos, puedeGestionar,
-  conPestanas = false, pestanaInicial = 'productos', tieneAgenda = false,
+  conPestanas = false, pestanaInicial = 'productos', tieneAgenda = false, soloProductos = false,
 }: {
   empresaId: string;
   moneda: string;
@@ -71,6 +71,12 @@ export function PantallaProductos({
   pestanaInicial?: Tipo;
   /** Para decir dónde se le da duración a un servicio y se vuelve reservable. */
   tieneAgenda?: boolean;
+  /**
+   * El catálogo es solo de productos con stock (121, `catalogoSoloConStock`:
+   * el profe y el trainer). El formulario no pregunta «¿Servicio o
+   * producto?»: un servicio no se vería en esta lista.
+   */
+  soloProductos?: boolean;
 }) {
   const t = useTextos();
   const router = useRouter();
@@ -325,7 +331,7 @@ export function PantallaProductos({
 
       {editando && (
         <DialogoProducto
-          empresaId={empresaId} moneda={moneda} dec={dec} borrador={editando}
+          empresaId={empresaId} moneda={moneda} dec={dec} borrador={editando} soloProductos={soloProductos}
           onCerrar={() => setEditando(null)}
           onGuardado={(mensaje) => {
             setEditando(null);
@@ -344,9 +350,11 @@ export function PantallaProductos({
 }
 
 function DialogoProducto({
-  empresaId, moneda, dec, borrador, onCerrar, onGuardado,
+  empresaId, moneda, dec, borrador, soloProductos, onCerrar, onGuardado,
 }: {
   empresaId: string; moneda: string; dec: number; borrador: Borrador;
+  /** Sin la pregunta «¿Servicio o producto?» (121). */
+  soloProductos: boolean;
   onCerrar: () => void;
   /** Con mensaje cuando hay algo que decir después de cerrar. */
   onGuardado: (mensaje?: string) => void;
@@ -469,7 +477,11 @@ function DialogoProducto({
 
               Antes era un tilde de «Controlar stock» más abajo, que había que
               saber interpretar. Ahora se pregunta con las palabras de todos
-              los días, y viene marcado según la pestaña desde donde se abrió. */}
+              los días, y viene marcado según la pestaña desde donde se abrió.
+
+              Donde el catálogo es solo de productos (121, el profe y el
+              trainer) no se pregunta: siempre es un producto. */}
+          {!soloProductos && (
           <div>
             <span className="etiqueta">{t.productos.queEs}</span>
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-arena p-1">
@@ -485,6 +497,7 @@ function DialogoProducto({
               </button>
             </div>
           </div>
+          )}
 
           <label className="block">
             <span className="etiqueta">{t.productos.nombre}</span>

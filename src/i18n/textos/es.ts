@@ -23,6 +23,7 @@ import { reportesCampoEs } from './reportes-campo';
 import { reportesPersonalEs } from './reportes-personal';
 import { avisoVencimientoEs } from './aviso-vencimiento';
 import { planGratisEs } from './plan-gratis';
+import { vendoProductosEs } from './vendo-productos';
 import { singularEs } from './singular';
 
 export const es = {
@@ -2892,6 +2893,10 @@ export const es = {
   reportesCampo: reportesCampoEs,
   reportesPersonal: reportesPersonalEs,
   avisoVencimiento: avisoVencimientoEs,
+
+  // «También vendo productos» (121): el interruptor de Ajustes, la tarjeta
+  // del panel y la sección del reporte del profe y del trainer.
+  vendoProductos: vendoProductosEs,
 };
 
 /**

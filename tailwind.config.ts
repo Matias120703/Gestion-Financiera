@@ -48,6 +48,9 @@ const config: Config = {
         /** El texto sobre un botón o una pastilla verde llena. */
         'sobre-verde': v('sobre-verde'),
 
+        /** La perilla de un interruptor: clara en los dos temas. */
+        perilla: v('perilla'),
+
         /*
          * Solo para la portada y las superficies que son oscuras siempre.
          *

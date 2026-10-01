@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { COOKIE_EMPRESA } from '@/lib/constantes';
 import type { Empresa, Rubro, TipoCuenta } from '@/lib/tipos';
-import { fichaDe, palabra, seccionesCerradas, type Seccion } from '@/lib/rubros';
+import { fichaDe, palabra, seccionesCerradas, type OpcionesCuenta, type Seccion } from '@/lib/rubros';
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 import { useBloquearFondo } from '@/lib/fondo';
@@ -191,6 +191,8 @@ export function itemsDe(
   rubro: Rubro = 'comercio',
   esAdmin: boolean = true,
   idioma: string = 'es',
+  /** Los interruptores de Ajustes de esta cuenta (121): «También vendo productos». */
+  opciones: OpcionesCuenta = {},
 ): ItemNav[] {
   const suPalabra = (clave: 'vender' | 'productos' | 'ventas' | 'clientes' | 'fiado', porDefecto: string) =>
     palabra(rubro, tipo, clave, porDefecto, idioma);
@@ -221,8 +223,10 @@ export function itemsDe(
   // cuenta y otro por rubro— y ahí estuvo el error que se arrastró meses: a
   // una cuenta personal se le guarda rubro 'comercio', así que el filtro por
   // rubro le daba la ficha de un almacén y le dejaba el cierre del día. La
-  // ficha ahora contesta las dos cosas junto; ver src/lib/rubros.ts.
-  const ficha = fichaDe(rubro, tipo);
+  // ficha ahora contesta las dos cosas junto; ver src/lib/rubros.ts. Con lo
+  // que el dueño prendió en Ajustes (121): al profe que vende raquetas le
+  // aparecen Productos y Vender, por la misma ficha.
+  const ficha = fichaDe(rubro, tipo, opciones);
   const visibles = todos.filter((i) => ficha.secciones[i.href]);
   // Una cuenta personal es de una sola persona (la 019 impide sumar gente),
   // así que este filtro nunca la afecta: solo achica el menú de un vendedor
@@ -268,8 +272,14 @@ export function barraDe(
   rubro: Rubro = 'comercio',
   esAdmin: boolean = true,
   gratisPersonal: boolean = false,
+  /**
+   * Los interruptores de Ajustes (121). Hoy no cambian la barra —la del profe
+   * es la de su ficha, y Vender queda a un toque en «Más»—, pero se pasan
+   * igual: la barra filtra con la misma ficha que el menú.
+   */
+  opciones: OpcionesCuenta = {},
 ) {
-  const ficha = fichaDe(rubro, tipo);
+  const ficha = fichaDe(rubro, tipo, opciones);
   // El rubro puede traer su propia barra: la del profe y la del trainer
   // ponen la agenda y sus clientes a un toque (ver `barra` en rubros.ts).
   // Un vendedor ve la misma, sin lo que es solo del dueño.
@@ -328,7 +338,7 @@ export function NavLateral({
 }) {
   const ruta = usePathname();
   const t = useTextos();
-  const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, esAdmin);
+  const ITEMS = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, esAdmin, undefined, { vendeProductos: empresa.vende_productos });
   // Para un negocio viene vacía y el menú queda como siempre.
   const cerradas = seccionesCerradas(gratisPersonal);
   const abiertos = ITEMS.filter((i) => !cerradas.includes(i.href));
@@ -536,10 +546,13 @@ function useLenteDeVidrio(columnas: number, alSoltar: (indice: number) => void) 
 
 export function NavInferior({
   tipo = 'emprendedor', rubro = 'comercio', esAdmin = true, administraOrden = false, gratisPersonal = false,
+  vendeProductos = false,
 }: {
   tipo?: TipoCuenta;
   rubro?: Rubro;
   esAdmin?: boolean;
+  /** «También vendo productos» (121): Productos y Vender en «Más». */
+  vendeProductos?: boolean;
   /**
    * El enlace al panel de Orden estaba SOLO en la barra lateral, que es
    * `lg:flex`: no existe en un celular. Quien administra desde el teléfono
@@ -568,8 +581,9 @@ export function NavInferior({
   useFocoDeDialogo(panelMas, abierto, botonMas);
   const empezoEnVelo = useRef(false);
 
-  const enBarra = barraDe(tipo, rubro, esAdmin, gratisPersonal);
-  const todos = itemsDe(t, tipo, rubro, esAdmin);
+  const opciones = { vendeProductos };
+  const enBarra = barraDe(tipo, rubro, esAdmin, gratisPersonal, opciones);
+  const todos = itemsDe(t, tipo, rubro, esAdmin, undefined, opciones);
   // Para un negocio viene vacía y «Más» queda como siempre.
   const cerradas = seccionesCerradas(gratisPersonal);
   const abiertos = todos.filter((i) => !cerradas.includes(i.href));
@@ -885,7 +899,7 @@ export function BarraSuperior({
   const [abierto, setAbierto] = useState(false);
   // Con el rubro de la cuenta: sin esto el título decía «Productos» aunque
   // el menú de al lado dijera «Hacienda», y parecían dos pantallas distintas.
-  const titulo = itemsDe(t, empresa.tipo_cuenta, empresa.rubro)
+  const titulo = itemsDe(t, empresa.tipo_cuenta, empresa.rubro, true, undefined, { vendeProductos: empresa.vende_productos })
     .find((i) => activo(ruta, i.href))?.texto
     ?? (activo(ruta, '/recomendar') ? t.nav.recomendar : 'Orden');
 

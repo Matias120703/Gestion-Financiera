@@ -76,6 +76,13 @@ export interface Empresa {
   tipo_cuenta: TipoCuenta;
   /** Solo tiene sentido en una cuenta de negocio. Ver src/lib/rubros.ts. */
   rubro: Rubro;
+  /**
+   * «También vendo productos» (121): el profe o el trainer que vende
+   * raquetas o proteína. Prende Productos y Vender por la ficha del rubro
+   * (`fichaDeLaCuenta`). Opcional: con la base sin la 121 llega `undefined`,
+   * que es apagado.
+   */
+  vende_productos?: boolean;
   creada_por: string;
   created_at: string;
 }
@@ -1306,6 +1313,39 @@ export interface PanelProfe {
   por_cobrar: number;
   deben: number;
   alumnos_activos: number;
+  /**
+   * Lo vendido del catálogo en el período (121, `productos_del_periodo`).
+   * Opcional: sin la 121 en la base no llega, y el panel sale como antes.
+   */
+  productos?: ProductosDelPeriodo;
+  /** Las ventas del período sin lo vendido del catálogo (121). */
+  cobrado_clases?: number;
+}
+
+/**
+ * LO VENDIDO DEL CATÁLOGO EN UN PERÍODO (121, `productos_del_periodo`).
+ *
+ * Solo las líneas de productos con stock (`afecto_stock`): la raqueta, la
+ * proteína. El cobro de una inscripción o de un paquete y los servicios no
+ * entran. `vendido` lleva el descuento repartido. Costo, ganancia y margen
+ * llegan en null a quien no es administración (047).
+ */
+export interface ProductosDelPeriodo {
+  vendido: number;
+  unidades: number;
+  operaciones: number;
+  costo: number | null;
+  ganancia: number | null;
+  /** En %, sobre lo vendido. Null sin ventas o sin permiso. */
+  margen: number | null;
+  lista: {
+    producto_id: string | null;
+    nombre: string;
+    unidades: number;
+    vendido: number;
+    costo: number | null;
+    ganancia: number | null;
+  }[];
 }
 
 export interface HorarioSemanal {
@@ -1526,7 +1566,11 @@ export interface AlumnoDelReporte {
   nombre: string;
   clases: number;
   faltas: number;
-  /** Ventas del alumno en el período (la misma base que el «Cobrado» del resumen). */
+  /**
+   * Lo cobrado de sus clases en el período: sus ventas sin lo que se le
+   * vendió del catálogo (121). Es parte de `cobrado_clases`, no de los
+   * productos.
+   */
   cobrado: number;
   /** HOY: inscripciones sin cobrar + saldo de fiado (las dos partes, abajo). */
   debe: number;
@@ -1547,9 +1591,17 @@ export interface ReporteAlumnos {
   clases_dadas: number;
   faltas: number;
   por_semana: { semana: string; dadas: number; faltas: number }[];
+  /** Todas las ventas del período (clases y productos). */
   cobrado: number;
-  /** cobrado ÷ clases dadas; null si no se dio ninguna. */
+  /**
+   * Lo cobrado de las clases (121): `cobrado` sin lo vendido del catálogo.
+   * Sin productos, el mismo número que `cobrado`.
+   */
+  cobrado_clases: number;
+  /** cobrado de las clases ÷ clases dadas; null si no se dio ninguna. */
   cobrado_por_clase: number | null;
+  /** Lo vendido del catálogo en el período (121). */
+  productos: ProductosDelPeriodo;
   /** Inscripciones sin cobrar, hoy (la regla de por_cobrar_alumnos). */
   por_cobrar: number;
   /**

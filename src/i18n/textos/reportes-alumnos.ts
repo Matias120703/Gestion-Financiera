@@ -57,7 +57,8 @@ export const reportesAlumnosEs = {
   faltasYAsistencia: (faltas: number, pct: string | null) =>
     `${faltas} ${uno(faltas, 'falta', 'faltas')}${pct ? ` · ${pct} de asistencia` : ''}`,
   cobradoPorClase: (p: PalabrasAlumnos) => `Cobrado por ${p.clase}`,
-  cobradoPorClaseDetalle: (p: PalabrasAlumnos) => `lo cobrado ÷ ${p.clases} dadas`,
+  // (121) Divide solo lo de las clases: la raqueta vendida no es una clase.
+  cobradoPorClaseDetalle: (p: PalabrasAlumnos) => `lo cobrado de ${p.clases} ÷ ${p.clases} dadas`,
   porCobrar: 'Por cobrar',
   porCobrarDetalle: (n: number, p: PalabrasAlumnos) =>
     n === 0 ? 'a hoy · nadie te debe' : `a hoy · ${n} ${uno(n, p.alumno, p.alumnos)}`,
@@ -158,7 +159,7 @@ export const reportesAlumnosPt: typeof reportesAlumnosEs = {
   faltasYAsistencia: (faltas, pct) =>
     `${faltas} ${uno(faltas, 'falta', 'faltas')}${pct ? ` · ${pct} de frequência` : ''}`,
   cobradoPorClase: (p) => `Recebido por ${p.clase}`,
-  cobradoPorClaseDetalle: (p) => `o recebido ÷ ${p.clases} dadas`,
+  cobradoPorClaseDetalle: (p) => `o recebido das ${p.clases} ÷ ${p.clases} dadas`,
   porCobrar: 'A receber',
   porCobrarDetalle: (n, p) =>
     n === 0 ? 'hoje · ninguém te deve' : `hoje · ${n} ${uno(n, p.alumno, p.alumnos)}`,

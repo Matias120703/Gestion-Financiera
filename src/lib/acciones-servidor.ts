@@ -39,10 +39,16 @@ export async function contextoAcciones(d: {
   tipoCuenta: TipoCuenta;
   hoy: string;
   catalogo: Producto[];
+  /**
+   * «También vendo productos» (121): con él prendido, el profe y el trainer
+   * pueden dictar «agregá la proteína, me cuesta 150 y la vendo a 220».
+   */
+  vendeProductos?: boolean | null;
 }): Promise<ContextoAcciones> {
   const esPersonal = d.tipoCuenta === 'personal';
+  // La misma ficha que el menú, con los interruptores de la cuenta (121).
   const hay = (s: '/agenda' | '/productos' | '/clientes') =>
-    !esPersonal && tieneSeccion(d.rubro, d.tipoCuenta, s);
+    !esPersonal && tieneSeccion(d.rubro, d.tipoCuenta, s, { vendeProductos: d.vendeProductos });
 
   let servicios: ServicioDictable[] = [];
   let profesionales: ProfesionalDictable[] = [];

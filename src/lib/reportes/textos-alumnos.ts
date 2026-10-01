@@ -63,6 +63,8 @@ function es(p: Palabras) {
     hojaAsistencia: 'Asistencia',
     hojaAlumnos: p.Alumnos,
     hojaProgreso: 'Progreso',
+    // «También vendo productos» (121): solo con el interruptor prendido.
+    hojaProductos: 'Productos',
 
     // ---- Resumen ----
     resumenTitulo: 'RESUMEN DEL PERÍODO',
@@ -80,7 +82,8 @@ function es(p: Palabras) {
     faltas: 'Faltas',
     asistencia: 'Asistencia',
     cobradoPorClase: `Cobrado por ${p.clase}`,
-    cobradoPorClaseNota: `lo cobrado ÷ ${p.clases} dadas`,
+    // (121) Divide solo lo de las clases: la raqueta vendida no es una clase.
+    cobradoPorClaseNota: `lo cobrado de ${p.clases} ÷ ${p.clases} dadas`,
     tusAlumnos: `Tus ${p.alumnos}`,
     activos: `${p.Alumnos} con ${p.paquete} activo`,
     aHoy: 'a hoy',
@@ -99,6 +102,29 @@ function es(p: Palabras) {
     sinCobros: 'No hubo cobros en este período.',
     anulados: (n: number) => `Se anularon ${n} movimiento(s): figuran en Orden pero no suman en ningún total.`,
     sinClasesNoHayPorClase: `Sin ${p.clases} dadas no hay «cobrado por ${p.clase}»: no se inventa.`,
+
+    // ---- Resumen: clases y productos (121) ----
+    deTusClases: `De tus ${p.clases}`,
+    deTusClasesNota: `${p.paquetes} y cobros sueltos, sin productos`,
+    deProductos: 'De productos',
+    deProductosNota: 'lo vendido del catálogo',
+    tusProductos: 'Tus productos',
+    vendido: 'Vendido',
+    costoDeLoVendido: 'Costo de lo vendido',
+    gananciaProductos: 'Ganaste con productos',
+    gananciaProductosNota: 'vendido − costo',
+    margen: 'Margen',
+    unidades: 'Unidades vendidas',
+    comprasMercaderia: 'Compras de mercadería',
+    mercaderiaAparteNota: 'no resta en «Te quedó»: lo vendido ya descuenta su costo',
+    perdisteConProductos: 'En este período vendiste productos por debajo de lo que te costaron.',
+
+    // ---- Productos (121) ----
+    productosTitulo: 'PRODUCTOS VENDIDOS EN EL PERÍODO',
+    columnasProductos: ['Producto', 'Unidades', 'Vendido', 'Costo', 'Ganancia', 'Margen'],
+    sinProductos: 'No vendiste productos en este período.',
+    productosNota: `Lo vendido del catálogo con stock, con el descuento de cada venta repartido. `
+      + `Lo cobrado de tus ${p.paquetes} y ${p.clases} está en Cobros y no se cuenta acá.`,
 
     // ---- Por cobrar ----
     porCobrarTitulo: `LO QUE TE DEBEN, A HOY · ${p.Paquetes.toUpperCase()} SIN COBRAR Y FIADO`,
@@ -136,6 +162,12 @@ function es(p: Palabras) {
     // ---- Gastos: el detalle, debajo de las categorías ----
     cadaGasto: 'CADA GASTO DEL PERÍODO',
     columnasCadaGasto: ['Fecha', 'Descripción', 'Categoría', 'Forma de pago', 'Cuenta', 'Monto'],
+    // (121) La compra de mercadería, aparte de la tabla (regla de la 106).
+    mercaderiaAparteTitulo: 'COMPRASTE MERCADERÍA · APARTE, NO RESTA EN «TE QUEDÓ»',
+    columnasMercaderia: ['', 'Categoría', 'Total comprado', 'Movimientos'],
+    mercaderia: 'Mercadería',
+    mercaderiaAparteGastos: 'No está en la tabla de arriba ni en «Gastos»: lo que vendiste ya descuenta lo que te costó '
+      + '(«Costo de lo vendido», en el Resumen). Cada compra está en la lista de abajo.',
 
     // ---- Progreso (solo el trainer) ----
     progresoTitulo: 'PROGRESO DE TUS CLIENTES EN EL PERÍODO',
@@ -162,6 +194,7 @@ function pt(p: Palabras): TextosAlumnos {
     hojaAsistencia: 'Frequência',
     hojaAlumnos: p.Alumnos,
     hojaProgreso: 'Progresso',
+    hojaProductos: 'Produtos',
 
     resumenTitulo: 'RESUMO DO PERÍODO',
     columnaAhora: 'Este período',
@@ -178,7 +211,7 @@ function pt(p: Palabras): TextosAlumnos {
     faltas: 'Faltas',
     asistencia: 'Frequência',
     cobradoPorClase: `Recebido por ${p.clase}`,
-    cobradoPorClaseNota: `o recebido ÷ ${p.clases} dadas`,
+    cobradoPorClaseNota: `o recebido das ${p.clases} ÷ ${p.clases} dadas`,
     tusAlumnos: `Seus ${p.alumnos}`,
     activos: `${p.Alumnos} com ${p.paquete} ativo`,
     aHoy: 'hoje',
@@ -197,6 +230,27 @@ function pt(p: Palabras): TextosAlumnos {
     sinCobros: 'Não houve recebimentos neste período.',
     anulados: (n: number) => `${n} movimento(s) cancelado(s): aparecem no Orden mas não entram em nenhum total.`,
     sinClasesNoHayPorClase: `Sem ${p.clases} dadas não há «recebido por ${p.clase}»: não se inventa.`,
+
+    deTusClases: `Das suas ${p.clases}`,
+    deTusClasesNota: `${p.paquetes} e recebimentos avulsos, sem produtos`,
+    deProductos: 'De produtos',
+    deProductosNota: 'o vendido do catálogo',
+    tusProductos: 'Seus produtos',
+    vendido: 'Vendido',
+    costoDeLoVendido: 'Custo do vendido',
+    gananciaProductos: 'Ganhou com produtos',
+    gananciaProductosNota: 'vendido − custo',
+    margen: 'Margem',
+    unidades: 'Unidades vendidas',
+    comprasMercaderia: 'Compras de mercadoria',
+    mercaderiaAparteNota: 'não desconta em «Sobrou»: o vendido já desconta o custo',
+    perdisteConProductos: 'Neste período você vendeu produtos abaixo do que custaram.',
+
+    productosTitulo: 'PRODUTOS VENDIDOS NO PERÍODO',
+    columnasProductos: ['Produto', 'Unidades', 'Vendido', 'Custo', 'Lucro', 'Margem'],
+    sinProductos: 'Você não vendeu produtos neste período.',
+    productosNota: `O vendido do catálogo com estoque, com o desconto de cada venda repartido. `
+      + `O recebido dos seus ${p.paquetes} e ${p.clases} está em Recebimentos e não entra aqui.`,
 
     porCobrarTitulo: `O QUE TE DEVEM, HOJE · ${p.Paquetes.toUpperCase()} SEM RECEBER E FIADO`,
     columnasPorCobrar: [p.Alumno, p.Paquete, p.Materia, 'Desde', 'Vence', 'Deve'],
@@ -229,6 +283,11 @@ function pt(p: Palabras): TextosAlumnos {
 
     cadaGasto: 'CADA DESPESA DO PERÍODO',
     columnasCadaGasto: ['Data', 'Descrição', 'Categoria', 'Forma de pagamento', 'Conta', 'Valor'],
+    mercaderiaAparteTitulo: 'VOCÊ COMPROU MERCADORIA · À PARTE, NÃO DESCONTA EM «SOBROU»',
+    columnasMercaderia: ['', 'Categoria', 'Total comprado', 'Lançamentos'],
+    mercaderia: 'Mercadoria',
+    mercaderiaAparteGastos: 'Não está na tabela de cima nem em «Despesas»: o que você vendeu já desconta o que custou '
+      + '(«Custo do vendido», no Resumo). Cada compra está na lista de baixo.',
 
     progresoTitulo: 'PROGRESSO DOS SEUS CLIENTES NO PERÍODO',
     columnasProgreso: [
