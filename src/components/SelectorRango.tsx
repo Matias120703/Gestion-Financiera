@@ -4,6 +4,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTextos } from '@/i18n/cliente';
 import { useState } from 'react';
 import { ETIQUETAS_RANGO, type ClaveRango } from '@/lib/fechas';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 
 const RAPIDOS: ClaveRango[] = ['hoy', 'ayer', 'semana', 'mes', 'mes_pasado', 'anio', 'siempre'];
 
@@ -32,10 +33,11 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
 
   return (
     <div className="space-y-2.5">
-      <div className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      {/* En el celular se desliza; con mouse va en varias líneas (01/10). */}
+      <FilaDeslizable enCompu="envolver" sangria="pagina" activo={clave} className="gap-2">
         {RAPIDOS.map((r) => (
           <button
-            key={r} type="button" onClick={() => aplicar(r)}
+            key={r} type="button" onClick={() => aplicar(r)} aria-pressed={clave === r}
             className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
               clave === r ? 'border-verde bg-verde text-sobre-verde' : 'border-borde bg-superficie text-tinta/60 hover:border-verde/50'
             }`}
@@ -44,14 +46,14 @@ export function SelectorRango({ clave, desde, hasta }: { clave: ClaveRango; desd
           </button>
         ))}
         <button
-          type="button" onClick={() => setAbierto((v) => !v)}
+          type="button" onClick={() => setAbierto((v) => !v)} aria-expanded={abierto}
           className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
             clave === 'personalizado' ? 'border-verde bg-verde text-sobre-verde' : 'border-borde bg-superficie text-tinta/60 hover:border-verde/50'
           }`}
         >
           {t.comun.elegirFechas}
         </button>
-      </div>
+      </FilaDeslizable>
 
       {abierto && (
         <div className="tarjeta flex flex-wrap items-end gap-3 p-3.5 aparecer">

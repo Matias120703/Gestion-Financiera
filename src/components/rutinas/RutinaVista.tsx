@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTextos } from '@/i18n/cliente';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import { formatoDescanso } from '@/lib/rutina-texto';
 import type { DiaDeRutina } from '@/lib/tipos-rutinas';
 import { etiquetasDelDia, seriesPorReps } from './panel/utiles';
@@ -48,20 +49,25 @@ export function RutinaVista({
 
       {ordenados.length === 0 && <p className="py-2 text-[13.5px] text-tinta/50">{v.sinDias}</p>}
 
-      {/* Pestañas: con un solo día no hace falta elegir. Se deslizan de
-          costado si son muchas, sin achicar la zona para tocar. */}
+      {/* Pestañas: con un solo día no hace falta elegir. En el celular se
+          deslizan de costado si son muchas, sin achicar la zona para tocar;
+          con mouse van en varias líneas y se ven todas (01/10). */}
       {ordenados.length > 1 && (
-        <div role="tablist" className="scroll-limpio -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        <FilaDeslizable
+          enCompu="envolver" rol="tablist" etiqueta={t.rutinasEditor.dias.titulo} teclado="pestanas"
+          activo={elegido} claseCaja="-mx-1" className="gap-1.5 px-1 pb-1"
+        >
           {ordenados.map((d, i) => (
             <button
-              key={d.id} type="button" role="tab" aria-selected={i === elegido}
+              key={d.id} type="button" role="tab" aria-selected={i === elegido} tabIndex={i === elegido ? 0 : -1}
               onClick={() => setElegido(i)}
-              className={`${i === elegido ? 'chip-encendido' : 'chip-apagado'} max-w-[220px]`}
+              // Con mouse van en varias líneas: el nombre entero, sin «…» (01/10).
+              className={`${i === elegido ? 'chip-encendido' : 'chip-apagado'} max-w-[220px] mouse:max-w-full`}
             >
               <span className="min-w-0 truncate">{d.nombre}</span>
             </button>
           ))}
-        </div>
+        </FilaDeslizable>
       )}
 
       {dia && (

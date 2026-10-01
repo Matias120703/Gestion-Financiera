@@ -83,7 +83,9 @@ export function ExtrasPlanilla({
       {resultado.semanas && (
         <div className="rounded-xl border border-borde/70 px-3 py-2.5">
           <p className="text-[13px] font-semibold">{i.semanaElegida(resultado.semanas.elegida, resultado.semanas.cuantas)}</p>
-          <div className="scroll-limpio -mx-3 mt-2 flex gap-2 overflow-x-auto px-3" role="group" aria-label={i.semana}>
+          {/* En varias líneas, como las hojas de arriba: con cinco semanas o
+              más, las últimas no se alcanzaban con mouse (01/10). */}
+          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={i.semana}>
             {resultado.semanas.nombres.map((nombre, k) => (
               <button
                 key={k} type="button" title={nombre} aria-pressed={resultado.semanas?.elegida === k + 1}

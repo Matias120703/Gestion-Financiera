@@ -26,7 +26,7 @@ const VACIO: ProductoDictado = {
  * guardar, porque escribir 10 donde había 4 sería perder los que ya estaban.
  */
 export function RevisionProducto({
-  borrador, moneda, empresaId, tipoCuenta, onCambio, onCancelar, onListo,
+  borrador, moneda, empresaId, tipoCuenta, onCambio, onCancelar, onListo, onOcupado,
 }: {
   borrador: CapturaInterpretada;
   moneda: string;
@@ -36,6 +36,8 @@ export function RevisionProducto({
   onCancelar: () => void;
   /** Guardado. Quien la abrió cierra y refresca. */
   onListo: () => void;
+  /** Mientras guarda, la captura no se cierra (ni Escape ni un toque afuera). */
+  onOcupado?: (ocupada: boolean) => void;
 }) {
   const t = useTextos();
   const dec = decimalesDe(moneda);
@@ -43,6 +45,9 @@ export function RevisionProducto({
   const p = borrador.producto ?? VACIO;
   const [catalogo, setCatalogo] = useState<Producto[] | null>(null);
   const [guardando, setGuardando] = useState(false);
+  // La captura no se cierra a mitad de un guardado (01/10).
+  useEffect(() => { onOcupado?.(guardando); }, [guardando, onOcupado]);
+  useEffect(() => () => onOcupado?.(false), [onOcupado]);
   const [error, setError] = useState('');
 
   // El catálogo, para elegir a cuál cambiarle el precio o el stock. Solo se
@@ -261,9 +266,10 @@ export function RevisionProducto({
         )}
       </div>
 
-      {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-      <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
+      {/* Pegado abajo de la tarjeta de la captura (globals.css, `.pie-captura`). */}
+      <div className="pie-captura">
         <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>{t.captura.atras}</button>
         <button className="boton-principal py-3" onClick={guardar} disabled={!puede}>
           {guardando ? t.comun.guardando : t.comun.guardar}

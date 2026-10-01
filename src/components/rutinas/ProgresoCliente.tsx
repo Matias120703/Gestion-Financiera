@@ -345,34 +345,37 @@ function HojaResumen({
   }
 
   return (
-    <Hoja titulo={r.titulo} onCerrar={onCerrar}>
-      <p className="text-[13px] leading-relaxed text-tinta/60">{r.ayuda}</p>
+    <Hoja
+      titulo={r.titulo} subtitulo={r.ayuda} onCerrar={onCerrar}
+      pie={(
+        <div className="grid gap-2.5">
+          {conTelefono ? (
+            whatsapp ? (
+              <a href={whatsapp} target="_blank" rel="noopener noreferrer" className="boton-principal min-h-[48px] w-full">
+                {t.rutinasComun.acciones.mandarWhatsapp}
+              </a>
+            ) : (
+              <button type="button" disabled className="boton-principal min-h-[48px] w-full">{t.rutinasComun.acciones.mandarWhatsapp}</button>
+            )
+          ) : (
+            <button type="button" onClick={compartir} disabled={!limpio} className="boton-principal min-h-[48px] w-full">
+              {r.compartir}
+            </button>
+          )}
+          <button type="button" onClick={copiar} disabled={!limpio} className="boton-suave min-h-[48px] w-full">
+            {r.copiar}
+          </button>
+        </div>
+      )}
+    >
       <textarea
-        className="campo mt-3 min-h-[220px] resize-y leading-relaxed" value={texto}
+        className="campo min-h-[220px] resize-y leading-relaxed" value={texto}
         onChange={(e) => { onCambiar(e.target.value); setAviso(''); setError(''); }}
         aria-label={r.titulo}
       />
       {aviso && <p role="status" className="mt-2 text-[13px] font-semibold text-verde-fuerte">✓ {aviso}</p>}
       <MensajeError texto={error} />
-      <div className="mt-4 grid gap-2.5">
-        {conTelefono ? (
-          whatsapp ? (
-            <a href={whatsapp} target="_blank" rel="noopener noreferrer" className="boton-principal min-h-[48px] w-full">
-              {t.rutinasComun.acciones.mandarWhatsapp}
-            </a>
-          ) : (
-            <button type="button" disabled className="boton-principal min-h-[48px] w-full">{t.rutinasComun.acciones.mandarWhatsapp}</button>
-          )
-        ) : (
-          <button type="button" onClick={compartir} disabled={!limpio} className="boton-principal min-h-[48px] w-full">
-            {r.compartir}
-          </button>
-        )}
-        <button type="button" onClick={copiar} disabled={!limpio} className="boton-suave min-h-[48px] w-full">
-          {r.copiar}
-        </button>
-        {!conTelefono && <p className="text-[12px] leading-snug text-tinta/50">{r.sinTelefono(pila)}</p>}
-      </div>
+      {!conTelefono && <p className="mt-3 text-[12px] leading-snug text-tinta/50">{r.sinTelefono(pila)}</p>}
     </Hoja>
   );
 }

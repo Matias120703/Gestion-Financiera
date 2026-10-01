@@ -7,6 +7,7 @@ import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import type { ComisionAdmin, ReferidoAdmin, RetiroAdmin, SocioAdmin } from '@/lib/tipos';
 import { CampoMonto } from '@/components/CampoMonto';
+import { Hoja, PieHoja } from '@/components/Hoja';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -736,29 +737,39 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
     }
   }
 
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={onCerrar}
-    >
-      <div
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie shadow-tarjeta aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
+  const pie = codigo ? (
+    <button type="button" onClick={onHecho} className="boton-principal min-h-[48px] w-full text-[14px]">
+      Listo
+    </button>
+  ) : socio && borrando ? (
+    <PieHoja columnas={2}>
+      <button
+        type="button" onClick={() => { setBorrando(false); setConfirma(''); }} disabled={guardando}
+        className="boton-suave min-h-[48px] text-[13.5px]"
       >
-        <div className="flex items-start justify-between gap-3 border-b border-borde px-5 py-4">
-          <h2 className="text-[17px] font-bold tracking-tight">
-            {socio ? socio.nombre : 'Nuevo socio'}
-          </h2>
-          <button
-            type="button" onClick={onCerrar} aria-label="Cerrar"
-            className="icono-toque shrink-0 text-tinta/40 hover:bg-arena"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
-          </button>
-        </div>
+        Mejor no
+      </button>
+      <button
+        type="button" onClick={borrar}
+        disabled={guardando || confirma.trim() !== socio.nombre}
+        className="boton-suave min-h-[48px] border-rojo/40 text-[13.5px] text-rojo hover:bg-rojo-claro disabled:opacity-40"
+      >
+        {guardando ? 'Borrando…' : 'Borrar'}
+      </button>
+    </PieHoja>
+  ) : (
+    <button
+      type="button" onClick={guardar} disabled={guardando || nombre.trim() === ''}
+      className="boton-principal min-h-[48px] w-full text-[14px]"
+    >
+      {guardando ? 'Guardando…' : socio ? 'Guardar' : 'Crear y darle su código'}
+    </button>
+  );
 
+  return (
+    <Hoja titulo={socio ? socio.nombre : 'Nuevo socio'} onCerrar={onCerrar} bloqueada={guardando} pie={pie}>
         {codigo ? (
-          <div className="space-y-3 p-5">
+          <div className="space-y-3">
             <p className="text-[14px] leading-relaxed text-tinta/70">
               Listo. Este es el código de <strong className="text-tinta">{nombre}</strong>. Pasáselo:
               cuando traiga un negocio, lo anotás con este código y la comisión sale sola.
@@ -767,12 +778,9 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
               <p className="text-[26px] font-black tracking-[0.2em] tabular-nums">{codigo}</p>
               <div className="mt-2 flex justify-center"><Codigo codigo={codigo} /></div>
             </div>
-            <button type="button" onClick={onHecho} className="boton-principal w-full py-2.5 text-[14px]">
-              Listo
-            </button>
           </div>
         ) : (
-          <div className="space-y-3 p-5">
+          <div className="space-y-3">
             <label className="block">
               <span className="etiqueta">Nombre</span>
               <input
@@ -833,21 +841,14 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
             )}
 
             {error && (
-              <p className="rounded-xl bg-rojo-claro px-3 py-2 text-[13px] font-medium text-rojo">{error}</p>
+              <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2 text-[13px] font-medium text-rojo">{error}</p>
             )}
-
-            <button
-              type="button" onClick={guardar} disabled={guardando || nombre.trim() === ''}
-              className="boton-principal w-full py-2.5 text-[14px]"
-            >
-              {guardando ? 'Guardando…' : socio ? 'Guardar' : 'Crear y darle su código'}
-            </button>
 
             {/* ---- borrar ----
                 Desactivar y borrar son cosas distintas y las dos hacen
                 falta: el que se fue pero trajo clientes se desactiva, y el
                 que se cargó por error se borra. Sin esto, la lista solo
-                crece. */}
+                crece. Los botones de la confirmación van en el pie. */}
             {socio && (
               borrando ? (
                 <div className="rounded-xl border border-rojo/30 bg-rojo-claro/30 p-3.5">
@@ -857,24 +858,9 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
                     <strong className="text-tinta">{socio.nombre}</strong> para confirmar.
                   </p>
                   <input
-                    className="campo mt-2.5 py-2.5 text-[14.5px]" value={confirma}
+                    className="campo mt-2.5 py-2.5 text-[14.5px]" value={confirma} autoFocus
                     onChange={(e) => setConfirma(e.target.value)} placeholder={socio.nombre}
                   />
-                  <div className="mt-2.5 flex gap-2">
-                    <button
-                      type="button" onClick={() => { setBorrando(false); setConfirma(''); }}
-                      className="boton-suave flex-1 py-2.5 text-[13.5px]"
-                    >
-                      Mejor no
-                    </button>
-                    <button
-                      type="button" onClick={borrar}
-                      disabled={guardando || confirma.trim() !== socio.nombre}
-                      className="boton-suave flex-1 border-rojo/40 py-2.5 text-[13.5px] text-rojo hover:bg-rojo-claro disabled:opacity-40"
-                    >
-                      {guardando ? 'Borrando…' : 'Borrar'}
-                    </button>
-                  </div>
                 </div>
               ) : (
                 <button
@@ -887,8 +873,7 @@ function FormularioSocio({ socio, onCerrar, onHecho }: {
             )}
           </div>
         )}
-      </div>
-    </div>
+    </Hoja>
   );
 }
 
@@ -980,31 +965,22 @@ function FichaSocio({ socio, traidos, comisiones, retiros, moneda, onCerrar, onE
   ].filter((d) => (d.valor ?? '').trim() !== '');
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={onCerrar}
+    <Hoja
+      titulo={<span className="block truncate">{socio.nombre}</span>}
+      subtitulo={(
+        <span className="flex items-center gap-2">
+          <span>socio desde {fechaCorta(socio.creado)}</span>
+          {!socio.activo && <span className="pastilla bg-arena text-tinta/55">desactivado</span>}
+        </span>
+      )}
+      onCerrar={onCerrar} tamano="grande"
+      pie={(
+        <button type="button" onClick={onEditar} className="boton-suave min-h-[48px] w-full text-[13.5px]">
+          Editar sus datos
+        </button>
+      )}
     >
-      <div
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie shadow-tarjeta aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-borde bg-superficie/95 px-5 py-4 backdrop-blur">
-          <div className="min-w-0">
-            <h2 className="truncate text-[18px] font-bold tracking-tight">{socio.nombre}</h2>
-            <p className="mt-0.5 flex items-center gap-2 text-[12.5px] text-tinta/55">
-              <span>socio desde {fechaCorta(socio.creado)}</span>
-              {!socio.activo && <span className="pastilla bg-arena text-tinta/55">desactivado</span>}
-            </p>
-          </div>
-          <button
-            type="button" onClick={onCerrar} aria-label="Cerrar"
-            className="icono-toque shrink-0 text-tinta/40 hover:bg-arena"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
-          </button>
-        </div>
-
-        <div className="space-y-4 p-5">
+        <div className="space-y-4 pt-1">
           {/* Cuánto se le debe: es lo primero que se viene a mirar acá. */}
           <div className="grid grid-cols-2 gap-3">
             <Tarjeta
@@ -1133,12 +1109,8 @@ function FichaSocio({ socio, traidos, comisiones, retiros, moneda, onCerrar, onE
             </div>
           )}
 
-          <button type="button" onClick={onEditar} className="boton-suave w-full py-2.5 text-[13.5px]">
-            Editar sus datos
-          </button>
         </div>
-      </div>
-    </div>
+    </Hoja>
   );
 }
 

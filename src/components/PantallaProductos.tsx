@@ -9,6 +9,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero, dineroQueEntra, decimalesDe, numero, porcentaje } from '@/lib/formato';
 import type { Producto } from '@/lib/tipos';
 import { Vacio, Indicador } from '@/components/Piezas';
+import { Hoja, PieHoja } from '@/components/Hoja';
 import { CampoMonto } from '@/components/CampoMonto';
 import { mensajeDeError, verificarAfectados } from '@/lib/errores';
 
@@ -427,19 +428,39 @@ function DialogoProducto({
     `rounded-lg px-3 py-2 text-left transition ${activa ? 'bg-superficie text-tinta shadow-sm' : 'text-tinta/50 hover:text-tinta'}`;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
-      <form
-        onSubmit={guardar}
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-[19px] font-bold tracking-tight">
-          {b.id
-            ? (esProd ? t.productos.editarProducto : t.productos.editarServicio)
-            : (esProd ? t.productos.nuevoProductoTitulo : t.productos.nuevoServicioTitulo)}
-        </h2>
-
-        <div className="mt-4 space-y-3">
+    <Hoja
+      titulo={b.id
+        ? (esProd ? t.productos.editarProducto : t.productos.editarServicio)
+        : (esProd ? t.productos.nuevoProductoTitulo : t.productos.nuevoServicioTitulo)}
+      onCerrar={onCerrar} bloqueada={guardando || eliminando}
+      formulario={{ onSubmit: guardar }}
+      pie={borrador.id && confirmar ? (
+        // Eliminar pregunta en el pie, donde estaba Guardar: a la vista, sin
+        // tener que bajar a buscar la pregunta.
+        <div className="space-y-2.5 aparecer">
+          <div className="rounded-xl bg-rojo-claro px-3.5 py-3">
+            <p className="text-[13.5px] font-bold text-rojo">{t.productos.eliminarPregunta(borrador.nombre)}</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-tinta/65">
+              {borrador.controla_stock ? t.productos.eliminarDetalleProducto : t.productos.eliminarDetalleServicio}
+            </p>
+          </div>
+          <PieHoja columnas={2}>
+            <button type="button" className="boton-suave min-h-[48px]" onClick={() => setConfirmar(false)} disabled={eliminando}>{t.productos.no}</button>
+            <button type="button" onClick={eliminar} disabled={eliminando} className="boton-peligro min-h-[48px]">
+              {eliminando ? t.productos.eliminando : t.productos.siEliminar}
+            </button>
+          </PieHoja>
+        </div>
+      ) : (
+        <PieHoja columnas={2}>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar} disabled={guardando}>{t.comun.cancelar}</button>
+          <button type="submit" className="boton-principal min-h-[48px]" disabled={guardando}>
+            {guardando ? t.comun.guardando : t.comun.guardar}
+          </button>
+        </PieHoja>
+      )}
+    >
+        <div className="space-y-3">
           {/* Qué es va PRIMERO: es la pregunta que decide todo lo demás. Un
               producto se compra para revender, así que tiene costo, margen y
               stock; un servicio —un corte, una sesión— no tiene «costo de
@@ -528,43 +549,18 @@ function DialogoProducto({
           )}
         </div>
 
-        {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-        <div className="mt-5 grid grid-cols-2 gap-2.5">
-          <button type="button" className="boton-suave py-3" onClick={onCerrar}>{t.comun.cancelar}</button>
-          <button type="submit" className="boton-principal py-3" disabled={guardando}>
-            {guardando ? t.comun.guardando : t.comun.guardar}
+        {/* Solo al editar: lo que todavía no existe no se elimina. La
+            pregunta sale en el pie. */}
+        {borrador.id && !confirmar && (
+          <button
+            type="button" onClick={() => setConfirmar(true)}
+            className="mt-3 w-full rounded-xl py-2.5 text-[13.5px] font-semibold text-rojo/80 hover:bg-rojo-claro hover:text-rojo"
+          >
+            {esProd ? t.productos.eliminarProducto : t.productos.eliminarServicio}
           </button>
-        </div>
-
-        {/* Solo al editar: lo que todavía no existe no se elimina. */}
-        {borrador.id && (
-          confirmar ? (
-            <div className="mt-4 space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
-              <p className="text-[13.5px] font-bold text-rojo">{t.productos.eliminarPregunta(borrador.nombre)}</p>
-              <p className="text-[12.5px] leading-snug text-tinta/65">
-                {borrador.controla_stock ? t.productos.eliminarDetalleProducto : t.productos.eliminarDetalleServicio}
-              </p>
-              <div className="grid grid-cols-2 gap-2.5">
-                <button type="button" className="boton-suave py-2.5" onClick={() => setConfirmar(false)}>{t.productos.no}</button>
-                <button
-                  type="button" onClick={eliminar} disabled={eliminando}
-                  className="rounded-xl bg-rojo py-2.5 text-[14px] font-bold text-white disabled:opacity-50"
-                >
-                  {eliminando ? t.productos.eliminando : t.productos.siEliminar}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button" onClick={() => setConfirmar(true)}
-              className="mt-3 w-full rounded-xl py-2.5 text-[13.5px] font-semibold text-rojo/80 hover:bg-rojo-claro hover:text-rojo"
-            >
-              {esProd ? t.productos.eliminarProducto : t.productos.eliminarServicio}
-            </button>
-          )
         )}
-      </form>
-    </div>
+    </Hoja>
   );
 }

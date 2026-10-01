@@ -9,7 +9,8 @@ import { dinero, decimalesDe } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { mismoNombre } from '@/lib/turno-voz';
 import { useTextos } from '@/i18n/cliente';
-import type { CapturaInterpretada, TipoCaptura, TipoCuenta } from '@/lib/tipos';
+import { ElegirCuentaOpcional } from '@/components/FormaDeCobro';
+import type { CapturaInterpretada, CuentaParaElegir, TipoCaptura, TipoCuenta } from '@/lib/tipos';
 
 type Deudor = { cliente_id: string; nombre: string; saldo: number };
 
@@ -31,16 +32,24 @@ const FORMAS_DE_COBRO = ['efectivo', 'transferencia', 'tarjeta', 'otro'];
  * ingreso (056): esa plata ya se contó cuando se vendió o se prestó.
  */
 export function RevisionFiado({
-  borrador, moneda, empresaId, tipoCuenta, onCambio, onCancelar, onListo,
+  borrador, moneda, empresaId, tipoCuenta, cuentas = [], onCambio, onCancelar, onListo, onOcupado,
 }: {
   borrador: CapturaInterpretada;
   moneda: string;
   empresaId: string;
   tipoCuenta: TipoCuenta;
+  /**
+   * Las cuentas de la billetera (01/10), para decir de cuál salió lo
+   * prestado o a cuál entró lo cobrado, como en la pantalla de Fiado (084).
+   * Vacía para quien no administra y en el Gratis personal: no se pregunta.
+   */
+  cuentas?: CuentaParaElegir[];
   onCambio: (c: CapturaInterpretada) => void;
   onCancelar: () => void;
   /** Guardado. Quien la abrió cierra y refresca. */
   onListo: () => void;
+  /** Mientras guarda, la captura no se cierra (ni Escape ni un toque afuera). */
+  onOcupado?: (ocupada: boolean) => void;
 }) {
   const t = useTextos();
   const dec = decimalesDe(moneda);
@@ -55,7 +64,16 @@ export function RevisionFiado({
   // Un cobro: tiene que ser alguien que ya debe. Se elige de los que deben.
   const [deudores, setDeudores] = useState<Deudor[] | null>(null);
   const [quien, setQuien] = useState(borrador.cliente_id ?? '');
+  /**
+   * La cuenta (084): '' = ninguna. Un préstamo dictado nunca bajaba el banco
+   * y un cobro dictado nunca lo subía. Arranca en «ninguna», como en Fiado:
+   * fiar mercadería no saca plata de ningún lado.
+   */
+  const [cuentaId, setCuentaId] = useState('');
   const [guardando, setGuardando] = useState(false);
+  // La captura no se cierra a mitad de un guardado (01/10).
+  useEffect(() => { onOcupado?.(guardando); }, [guardando, onOcupado]);
+  useEffect(() => () => onOcupado?.(false), [onOcupado]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -104,6 +122,7 @@ export function RevisionFiado({
         const { error: err } = await sb.rpc('cobrar_fiado', {
           p_empresa: empresaId, p_cliente: quien, p_monto: borrador.monto,
           p_metodo: forma, p_fecha: borrador.fecha || null,
+          p_cuenta: cuentaId || null,
         });
         if (err) throw err;
       } else {
@@ -112,6 +131,7 @@ export function RevisionFiado({
         const { error: err } = await sb.rpc('anotar_fiado', {
           p_empresa: empresaId, p_cliente: cliente, p_monto: borrador.monto,
           p_concepto: borrador.descripcion ?? '', p_fecha: borrador.fecha || null,
+          p_cuenta: cuentaId || null,
         });
         if (err) throw err;
       }
@@ -222,6 +242,21 @@ export function RevisionFiado({
             </select>
           </div>
         )}
+
+        <div className="col-span-2 empty:hidden">
+          {esCobro ? (
+            <ElegirCuentaOpcional
+              cuentas={cuentas} elegida={cuentaId} alElegir={setCuentaId} deshabilitado={guardando}
+              pregunta={t.fiado.enQueCuentaEntro} ninguna={t.fiado.noEntroEnNinguna}
+            />
+          ) : (
+            <ElegirCuentaOpcional
+              cuentas={cuentas} elegida={cuentaId} alElegir={setCuentaId} deshabilitado={guardando}
+              pregunta={t.fiado.salioDeTuBilletera} ninguna={t.fiado.noSalioPlata}
+              detalle={cuentaId === '' ? t.fiado.noSalioPlataDetalle : t.fiado.salioDetalle}
+            />
+          )}
+        </div>
       </div>
 
       <div className="mt-5 rounded-2xl bg-arena p-4">
@@ -243,9 +278,10 @@ export function RevisionFiado({
           : t.captura.fiadoNoEsIngreso(esPersonal ? t.nav.meDeben : t.nav.fiado)}
       </p>
 
-      {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-      <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
+      {/* Pegado abajo de la tarjeta de la captura (globals.css, `.pie-captura`). */}
+      <div className="pie-captura">
         <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>{t.captura.atras}</button>
         <button className="boton-principal py-3" onClick={guardar} disabled={!puede}>
           {guardando ? t.comun.guardando : t.comun.guardar}

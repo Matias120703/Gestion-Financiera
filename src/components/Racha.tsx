@@ -70,7 +70,7 @@ export function TarjetaRacha({ racha, t, destino = '/cierre' }: { racha: Racha; 
       }`}
     >
       <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${
-        enRiesgo ? 'bg-ambar text-white' : 'bg-verde-claro text-verde-fuerte'
+        enRiesgo ? 'bg-ambar text-noche' : 'bg-verde-claro text-verde-fuerte'
       }`}>
         {Llama}
       </span>

@@ -10,6 +10,7 @@ import {
   type UnidadCarga,
 } from '@/lib/rutina-texto';
 import type { EjercicioDeRutina, RutinaCompleta } from '@/lib/tipos-rutinas';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import { Hoja, MensajeError } from './panel/Piezas';
 import { etiquetasDelDia, seriesPorReps } from './panel/utiles';
 
@@ -183,7 +184,9 @@ export function HojaRutinaSesion({
   }
 
   return (
-    <Hoja titulo={rutina?.nombre || nombre} onCerrar={onCerrar} bloqueada={guardando}>
+    // Grande: en la computadora entran más días a lo ancho y los ejercicios
+    // no quedan en una columna angosta (01/10).
+    <Hoja titulo={rutina?.nombre || nombre} onCerrar={onCerrar} bloqueada={guardando} tamano="grande">
       {cargando && !rutina && <p className="py-4 text-[14px] text-tinta/50">{t.comun.cargando}</p>}
 
       {errorCarga && !rutina && (
@@ -237,19 +240,25 @@ export function HojaRutinaSesion({
 
           {dias.length === 0 && <p className="text-[14px] text-tinta/50">{t.rutinasPanel.vista.sinDias}</p>}
 
-          {/* Pestañas grandes que se deslizan de costado si son muchas. */}
+          {/* Pestañas grandes. En el celular se deslizan de costado si son
+              muchas; con mouse van en varias líneas y se ven todos los días
+              (01/10, la captura de Matías: no se llegaba al viernes). */}
           {dias.length > 1 && (
-            <div role="tablist" className="scroll-limpio -mx-5 flex gap-1.5 overflow-x-auto px-5 pb-1">
+            <FilaDeslizable
+              enCompu="envolver" sangria="hoja" rol="tablist" etiqueta={t.rutinasEditor.dias.titulo} teclado="pestanas"
+              activo={elegido} className="gap-1.5 pb-1"
+            >
               {dias.map((d, i) => (
                 <button
-                  key={d.id} type="button" role="tab" aria-selected={d === dia}
+                  key={d.id} type="button" role="tab" aria-selected={d === dia} tabIndex={d === dia ? 0 : -1}
                   onClick={() => { setElegido(i); setEditando(null); }}
-                  className={`${d === dia ? 'chip-encendido' : 'chip-apagado'} max-w-[220px]`}
+                  // Con mouse van en varias líneas: el nombre entero, sin «…» (01/10).
+                  className={`${d === dia ? 'chip-encendido' : 'chip-apagado'} max-w-[220px] mouse:max-w-full`}
                 >
                   <span className="min-w-0 truncate">{d.nombre}</span>
                 </button>
               ))}
-            </div>
+            </FilaDeslizable>
           )}
 
           {dia && (
@@ -512,7 +521,8 @@ function CambiarCarga({
             </button>
           )}
         </div>
-        <div className="scroll-limpio -mx-3 mt-2 flex gap-2 overflow-x-auto px-3" role="group" aria-label={h.carga}>
+        {/* En varias líneas: son cuatro, y en el celular «Peso corporal» quedaba afuera. */}
+        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={h.carga}>
           {UNIDADES_CARGA.map((u) => (
             <button key={u} type="button" onClick={() => tocarUnidad(u)} aria-pressed={unidad === u} className={chip(unidad === u)}>
               {t.rutinasComun.unidadesCarga[u]}

@@ -8,10 +8,15 @@ import { decimalesDe, dinero, fechaLegible } from '@/lib/formato';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
+import { ElegirCuenta, FormaDeCobro, cuentaDelCobro } from '@/components/FormaDeCobro';
+import { metodoVisible } from '@/i18n/nombres';
 import type {
   Profesional, Reparto, ResumenReparto, FilaLiquidacion, MisServicios,
-  Producto, Miembro,
+  Producto, Miembro, CuentaParaElegir,
 } from '@/lib/tipos';
+
+/** Cómo se le paga a alguien del equipo (117). Fiado no: lo que se le debe ya lo dice la liquidación. */
+const METODOS_DE_PAGO = ['efectivo', 'transferencia', 'tarjeta', 'otro'] as const;
 
 /**
  * EQUIPO Y REPARTO
@@ -30,6 +35,7 @@ type Equipo = Pick<Miembro, 'user_id' | 'nombre' | 'rol'>[];
 
 export function PantallaReparto({
   empresaId, moneda, profesionales, resumen, liquidacion, servicios, precios, equipo, desde, hasta,
+  cuentas = [],
 }: {
   empresaId: string;
   moneda: string;
@@ -41,6 +47,8 @@ export function PantallaReparto({
   equipo: Equipo;
   desde: string;
   hasta: string;
+  /** Las cuentas de la billetera (117): a cuál entra un cobro, de cuál sale un pago. */
+  cuentas?: CuentaParaElegir[];
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -139,12 +147,16 @@ export function PantallaReparto({
         precios={precios}
         moneda={moneda}
         ocupado={ocupado}
+        cuentas={cuentas}
         alCobrar={(d) => correr('cobrar', async () => sb().rpc('registrar_servicio', {
           p_empresa: empresaId,
           p_profesional: d.profesional,
           p_producto: d.servicio,
           p_precio: d.precio,
           p_cliente: d.cliente,
+          // Cómo pagó y a qué cuenta entró (117): antes, siempre efectivo.
+          p_metodo_pago: d.metodo,
+          p_cuenta: d.cuenta,
         }))}
       />
 
@@ -165,10 +177,14 @@ export function PantallaReparto({
                 fila={f}
                 moneda={moneda}
                 ocupado={ocupado}
-                alPagar={(monto) => correr('pagar', async () => sb().rpc('pagar_profesional', {
+                cuentas={cuentas}
+                alPagar={(d) => correr('pagar', async () => sb().rpc('pagar_profesional', {
                   p_empresa: empresaId,
                   p_profesional: f.id,
-                  p_monto: monto,
+                  p_monto: d.monto,
+                  // Cómo y de qué cuenta (117): antes, siempre efectivo y a la caja.
+                  p_metodo: d.metodo,
+                  p_cuenta: d.cuenta,
                 }))}
               />
             ))}
@@ -229,14 +245,18 @@ function Renglon({ etiqueta, detalle, valor }: { etiqueta: string; detalle: stri
 // y con la plata de otro, dudar una vez alcanza para no volver a usarlo.
 // ════════════════════════════════════════════════════════════
 function CobrarServicio({
-  profesionales, servicios, precios, moneda, ocupado, alCobrar,
+  profesionales, servicios, precios, moneda, ocupado, cuentas, alCobrar,
 }: {
   profesionales: Profesional[];
   servicios: Producto[];
   precios: { profesional_id: string; producto_id: string; precio: number }[];
   moneda: string;
   ocupado: boolean;
-  alCobrar: (d: { profesional: string; servicio: string; precio: number; cliente: string }) => void;
+  cuentas: CuentaParaElegir[];
+  alCobrar: (d: {
+    profesional: string; servicio: string; precio: number; cliente: string;
+    metodo: string; cuenta: string | null;
+  }) => void;
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -245,6 +265,10 @@ function CobrarServicio({
   const [servicio, setServicio] = useState(servicios[0]?.id ?? '');
   const [precio, setPrecio] = useState(0);
   const [cliente, setCliente] = useState('');
+  // Cómo pagó y a qué cuenta entró (117). Antes no se preguntaba: todo corte
+  // entraba como efectivo, a la caja, aunque te lo hayan transferido.
+  const [metodo, setMetodo] = useState('efectivo');
+  const [cuenta, setCuenta] = useState<string | null>(null);
 
   const plata = (n: number) => dinero(n, moneda, true, locale);
   const quien = profesionales.find((p) => p.id === profesional);
@@ -330,6 +354,16 @@ function CobrarServicio({
             </div>
           </div>
 
+          {/* Con alquiler de silla la plata no entra al local: no hay a qué
+              cuenta preguntar. */}
+          {quien && quien.reparto !== 'alquiler' && (
+            <FormaDeCobro
+              conPregunta cuentas={cuentas} metodo={metodo} elegida={cuenta} deshabilitado={ocupado}
+              alElegirMetodo={(m) => { setMetodo(m); setCuenta(null); }}
+              alElegirCuenta={setCuenta}
+            />
+          )}
+
           {quien && monto > 0 && (
             <div className="rounded-xl bg-arena px-3.5 py-3 text-[13px] leading-relaxed">
               {quien.reparto === 'alquiler' ? (
@@ -347,9 +381,15 @@ function CobrarServicio({
             type="button" className="boton-principal w-full py-2.5"
             disabled={ocupado || !valido}
             onClick={() => {
-              alCobrar({ profesional, servicio, precio, cliente: cliente.trim() });
+              const alquila = quien?.reparto === 'alquiler';
+              alCobrar({
+                profesional, servicio, precio, cliente: cliente.trim(),
+                metodo: alquila ? 'efectivo' : metodo,
+                cuenta: alquila ? null : cuentaDelCobro(cuentas, metodo, cuenta),
+              });
               setPrecio(0);
               setCliente('');
+              setCuenta(null);
               setAbierto(false);
             }}
           >
@@ -365,18 +405,23 @@ function CobrarServicio({
 // LA LIQUIDACIÓN
 // ════════════════════════════════════════════════════════════
 function FilaPersona({
-  fila, moneda, ocupado, alPagar,
+  fila, moneda, ocupado, cuentas, alPagar,
 }: {
   fila: FilaLiquidacion;
   moneda: string;
   ocupado: boolean;
-  alPagar: (monto: number) => void;
+  cuentas: CuentaParaElegir[];
+  alPagar: (d: { monto: number; metodo: string; cuenta: string | null }) => void;
 }) {
   const t = useTextos();
   const locale = useLocale();
   const [pagando, setPagando] = useState(false);
   const [monto, setMonto] = useState(0);
+  // Cómo le pagás y de qué cuenta sale (117): antes, siempre efectivo y a la caja.
+  const [metodo, setMetodo] = useState('efectivo');
+  const [cuenta, setCuenta] = useState<string | null>(null);
   const plata = (n: number) => dinero(n, moneda, true, locale);
+  const cerrar = () => { setPagando(false); setMonto(0); setMetodo('efectivo'); setCuenta(null); };
 
   const debe = Number(fila.le_debe);
 
@@ -406,8 +451,8 @@ function FilaPersona({
 
       {debe > 0 && (
         pagando ? (
-          <div className="mt-2.5 flex flex-wrap items-end gap-2">
-            <div className="min-w-[140px] flex-1">
+          <div className="mt-2.5 space-y-3 rounded-xl bg-arena/60 p-3">
+            <div>
               <label className="etiqueta">{t.reparto.cuantoLePagas}</label>
               <CampoMonto
                 className="campo py-2 text-[14px]" autoFocus
@@ -416,24 +461,48 @@ function FilaPersona({
                 valor={monto} alCambiar={setMonto}
               />
             </div>
-            <button
-              type="button" className="boton-suave px-3 py-2 text-[13px]"
-              onClick={() => { setPagando(false); setMonto(0); }} disabled={ocupado}
-            >
-              {t.comun.cancelar}
-            </button>
-            <button
-              type="button" className="boton-principal px-4 py-2 text-[13px]"
-              disabled={ocupado}
-              onClick={() => {
-                // Vacío es «le pago todo lo que le debo», que es lo normal.
-                alPagar(monto > 0 ? monto : debe);
-                setPagando(false);
-                setMonto(0);
-              }}
-            >
-              {t.comun.guardar}
-            </button>
+            <div>
+              <span className="etiqueta">{t.reparto.comoLePagas}</span>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {METODOS_DE_PAGO.map((m) => (
+                  <button
+                    key={m} type="button" disabled={ocupado} aria-pressed={metodo === m}
+                    // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+                    onClick={() => { setMetodo(m); setCuenta(null); }}
+                    className={`${metodo === m ? 'chip-encendido' : 'chip-apagado'} disabled:opacity-50`}
+                  >
+                    {metodoVisible(t, m)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ElegirCuenta
+              cuentas={cuentas} metodo={metodo} elegida={cuenta} alElegir={setCuenta}
+              deshabilitado={ocupado} sentido="sale"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button" className="boton-principal px-4 py-2 text-[13px]"
+                disabled={ocupado}
+                onClick={() => {
+                  // Vacío es «le pago todo lo que le debo», que es lo normal.
+                  alPagar({
+                    monto: monto > 0 ? monto : debe,
+                    metodo,
+                    cuenta: cuentaDelCobro(cuentas, metodo, cuenta),
+                  });
+                  cerrar();
+                }}
+              >
+                {t.comun.guardar}
+              </button>
+              <button
+                type="button" className="boton-suave px-3 py-2 text-[13px]"
+                onClick={cerrar} disabled={ocupado}
+              >
+                {t.comun.cancelar}
+              </button>
+            </div>
           </div>
         ) : (
           <button
@@ -732,7 +801,7 @@ function FormularioProfesional({
               </button>
               <button
                 type="button" onClick={alQuitar} disabled={ocupado}
-                className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
+                className="boton-peligro flex-1 px-4 py-2.5 text-[13.5px]"
               >
                 {t.reparto.siQuitar}
               </button>

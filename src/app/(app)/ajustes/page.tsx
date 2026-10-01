@@ -10,7 +10,6 @@ import { SelectorZona } from '@/components/SelectorZona';
 import { ListaEquipo, RotarCodigo } from '@/components/Equipo';
 import { TarjetaPlan } from '@/components/TarjetaPlan';
 import { ZonaPeligro } from '@/components/ZonaPeligro';
-import { Soporte } from '@/components/Soporte';
 import { esSuperadmin } from '@/lib/admin';
 import { conJerga } from '@/i18n/jergas';
 import { fichaDe, tieneSeccion } from '@/lib/rubros';
@@ -67,7 +66,6 @@ export default async function PaginaAjustes({
     estado: true,
     permisos: !esPersonal,
     calculos: true,
-    soporte: true,
     admin: administraOrden,
     peligro: true,
   };
@@ -87,7 +85,6 @@ export default async function PaginaAjustes({
     estado: t.pantallas.estadoSistema,
     permisos: t.pantallas.quienPuedeQue,
     calculos: t.pantallas.comoSeCalculan,
-    soporte: t.soporte.titulo,
     admin: t.pantallas.administracionOrden,
     peligro: t.zonaPeligro.titulo,
   };
@@ -104,7 +101,6 @@ export default async function PaginaAjustes({
       estado: s.estado,
       permisos: s.permisos,
       calculos: s.calculos,
-      soporte: s.soporte,
       admin: s.admin,
       peligro: s.peligro,
     };
@@ -113,7 +109,9 @@ export default async function PaginaAjustes({
     const grupos: Clave[][] = [
       ['negocio', 'moneda', 'equipo', 'plan'],
       ['idioma', 'avisos'],
-      ['estado', 'permisos', 'calculos', 'soporte'],
+      // Sin «Ayuda» (01/10, Matías): por la app nadie le escribe; para pagar
+      // está el WhatsApp de /plan.
+      ['estado', 'permisos', 'calculos'],
       ['admin'],
       ['peligro'],
     ];
@@ -349,9 +347,6 @@ export default async function PaginaAjustes({
           </div>
         );
 
-      case 'soporte':
-        return <Soporte />;
-
       // Solo llega acá quien administra Orden: para los demás la sección ni
       // figura en la lista, y la dirección a mano vuelve a la lista.
       case 'admin':
@@ -402,7 +397,7 @@ function Estado({
   return (
     <div className="flex items-start gap-3 rounded-2xl bg-arena p-3.5">
       <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
-        activo ? 'bg-verde text-sobre-verde' : 'bg-ambar text-white'
+        activo ? 'bg-verde text-sobre-verde' : 'bg-ambar text-noche'
       }`}>
         {activo ? '✓' : '!'}
       </span>

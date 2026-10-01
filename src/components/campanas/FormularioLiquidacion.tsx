@@ -271,12 +271,18 @@ export function FormularioLiquidacion({
   const simboloPapel = simboloDe(monedaPapel);
 
   return (
-    <Hoja titulo={canje ? l.entregueKilosPara : l.titulo} onCerrar={onCerrar} bloqueada={ocupado}>
-      <p className="-mt-1 text-[13px] leading-relaxed text-tinta/55">
-        {canje ? l.canjeDetalle : `${l.detalle} ${l.cuentaDetalle}`}
-      </p>
-
-      <div className="mt-4 space-y-4">
+    <Hoja
+      titulo={canje ? l.entregueKilosPara : l.titulo}
+      subtitulo={canje ? l.canjeDetalle : `${l.detalle} ${l.cuentaDetalle}`}
+      onCerrar={onCerrar} bloqueada={ocupado} tamano="grande"
+      pie={(
+        <button type="button" className="boton-principal min-h-[48px] w-full"
+          disabled={ocupado || bloqueado} onClick={guardar}>
+          {ocupado ? l.guardando : canje ? l.guardarCanje : l.guardar}
+        </button>
+      )}
+    >
+      <div className="space-y-4">
         {/* ---- fecha y quién ---- */}
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2 sm:col-span-1">
@@ -292,12 +298,13 @@ export function FormularioLiquidacion({
           </div>
         </div>
         {compradores.length > 0 && (
-          <div className="-mt-2 flex gap-2 overflow-x-auto scroll-limpio">
+          // En varias líneas (01/10): de costado, con mouse no se llegaba a los últimos.
+          <div className="-mt-2 flex flex-wrap gap-2">
             {compradores.map((d) => (
               <button key={d} type="button" disabled={ocupado}
-                className={comprador.trim() === d ? 'chip-encendido' : 'chip-apagado'}
+                className={`${comprador.trim() === d ? 'chip-encendido' : 'chip-apagado'} max-w-full`}
                 onClick={() => setComprador(d)}>
-                {d}
+                <span className="truncate">{d}</span>
               </button>
             ))}
           </div>
@@ -336,11 +343,11 @@ export function FormularioLiquidacion({
           {otrosDisponibles.length > 0 && partes.length < 10 && (
             <div className="mt-2">
               <span className="text-[12px] text-tinta/45">{l.sumarOtro}</span>
-              <div className="mt-1 flex gap-2 overflow-x-auto scroll-limpio">
+              <div className="mt-1 flex flex-wrap gap-2">
                 {otrosDisponibles.map((o) => (
-                  <button key={o.id} type="button" className="chip-apagado" disabled={ocupado}
+                  <button key={o.id} type="button" className="chip-apagado max-w-full" disabled={ocupado}
                     onClick={() => sumarParte(o)}>
-                    + {nombreLargo(o, idioma)}
+                    <span className="truncate">+ {nombreLargo(o, idioma)}</span>
                   </button>
                 ))}
               </div>
@@ -631,11 +638,6 @@ export function FormularioLiquidacion({
       </div>
 
       <MensajeError texto={error} />
-
-      <button type="button" className="boton-principal mt-5 min-h-[48px] w-full"
-        disabled={ocupado || bloqueado} onClick={guardar}>
-        {ocupado ? l.guardando : canje ? l.guardarCanje : l.guardar}
-      </button>
     </Hoja>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { useTextos } from '@/i18n/cliente';
@@ -15,7 +15,7 @@ import type { CapturaInterpretada, TipoCaptura, TipoCuenta } from '@/lib/tipos';
  * se actualiza el que estaba (052).
  */
 export function RevisionCliente({
-  borrador, empresaId, tipoCuenta, onCambio, onCancelar, onListo,
+  borrador, empresaId, tipoCuenta, onCambio, onCancelar, onListo, onOcupado,
 }: {
   borrador: CapturaInterpretada;
   empresaId: string;
@@ -24,6 +24,8 @@ export function RevisionCliente({
   onCancelar: () => void;
   /** Guardado. Quien la abrió cierra y refresca. */
   onListo: () => void;
+  /** Mientras guarda, la captura no se cierra (ni Escape ni un toque afuera). */
+  onOcupado?: (ocupada: boolean) => void;
 }) {
   const t = useTextos();
   const f = borrador.ficha;
@@ -31,6 +33,9 @@ export function RevisionCliente({
   const [telefono, setTelefono] = useState(f?.telefono ?? '');
   const [notas, setNotas] = useState(f?.notas ?? '');
   const [guardando, setGuardando] = useState(false);
+  // La captura no se cierra a mitad de un guardado (01/10).
+  useEffect(() => { onOcupado?.(guardando); }, [guardando, onOcupado]);
+  useEffect(() => () => onOcupado?.(false), [onOcupado]);
   const [error, setError] = useState('');
 
   const puede = nombre.trim() !== '' && !guardando;
@@ -109,9 +114,10 @@ export function RevisionCliente({
         </p>
       </div>
 
-      {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-      <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
+      {/* Pegado abajo de la tarjeta de la captura (globals.css, `.pie-captura`). */}
+      <div className="pie-captura">
         <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>{t.captura.atras}</button>
         <button className="boton-principal py-3" onClick={guardar} disabled={!puede}>
           {guardando ? t.comun.guardando : t.comun.guardar}

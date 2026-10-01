@@ -1644,6 +1644,253 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('y la captura también', cap.includes("? 'p-1'"), true);
 }
 
+// --- Una sola ventana para toda la app (01/10) ---
+//
+// Matías: «los cuadros, cuando abro algo, salen muy entrecortados; en
+// Registrar un pago la parte de abajo corta el botón; y eso va con todos».
+// Era la misma causa en las quince: cada pantalla armaba su propio velo
+// `fixed inset-0` y su panel, y copiaba los mismos errores (relleno de abajo
+// en 0, botones y título adentro del scroll, altura en vh). Ahora hay UNA,
+// components/Hoja.tsx. Esta guardia falla si alguien vuelve a armar un velo
+// propio fuera de ella. Las excepciones están contadas, con su razón: un
+// velo nuevo en esos archivos también falla.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  // Sin comentarios: lo que cuenta es el código, no el que explica la historia.
+  // Solo los que empiezan un renglón (o un {/* */} de JSX): un `/*` dentro de
+  // un texto, como accept="image/*", no es un comentario.
+  const sinComentarios = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/(^|\n)[ \t]*\/\*[\s\S]*?\*\//g, '$1')
+    .replace(/(^|\s)\/\/[^\n]*/g, '$1');
+
+  const EXCEPCIONES = {
+    // La ventana misma.
+    'src/components/Hoja.tsx': 1,
+    // El menú «Más» flota centrado sobre un velo oscuro, sin tarjeta detrás
+    // (lo eligió el dueño; las pruebas de arriba fijan esa forma), y el menú
+    // de la cuenta es un desplegable que cuelga del avatar: su velo es
+    // transparente y solo sirve para «tocar afuera cierra».
+    'src/components/Navegacion.tsx': 2,
+    // La captura con IA: el menú flota sin tarjeta y la grabación no se corta
+    // con un toque afuera; las pruebas de arriba fijan sus clases. Pasar su
+    // texto y su revisión al pie fijo es un paso aparte.
+    'src/components/CapturaInteligente.tsx': 1,
+  };
+
+  const archivos = [];
+  const mirar = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const ruta = path.join(dir, e.name).replace(/\\/g, '/');
+      if (e.isDirectory()) { mirar(ruta); continue; }
+      if (/\.(tsx|ts|jsx|js)$/.test(e.name)) archivos.push(ruta);
+    }
+  };
+  mirar('src');
+
+  // Un velo: una clase con `fixed` e `inset-0` juntas, en cualquier orden.
+  const velo = /["'`][^"'`]*\bfixed\b[^"'`]*\binset-0\b[^"'`]*["'`]|["'`][^"'`]*\binset-0\b[^"'`]*\bfixed\b[^"'`]*["'`]/g;
+  const conVelo = {};
+  for (const a of archivos) {
+    const n = (sinComentarios(leer(a)).match(velo) || []).length;
+    if (n > 0) conVelo[a] = n;
+  }
+  ok('ningún velo «fixed inset-0» fuera de la Hoja (salvo las excepciones contadas)',
+    Object.fromEntries(Object.entries(conVelo).sort()), Object.fromEntries(Object.entries(EXCEPCIONES).sort()));
+
+  // La ventana: portal, diálogo de verdad, cabecera, cuerpo y pie fijos.
+  const hoja = sinComentarios(leer('src/components/Hoja.tsx'));
+  ok('la Hoja se dibuja en el body (portal) y es un diálogo',
+    [hoja.includes('createPortal('), hoja.includes('document.body'), hoja.includes('role="dialog"'),
+      hoja.includes('aria-modal="true"'), hoja.includes('aria-labelledby')], [true, true, true, true, true]);
+  ok('el pie va fuera del scroll, con aire y la zona segura',
+    /shrink-0 border-t[^"]*pb-\[max\(1\.25rem,env\(safe-area-inset-bottom\)\)\]/.test(hoja), true);
+  ok('el cuerpo se desplaza adentro, y sin pie también tiene aire abajo',
+    [/min-h-0 overflow-y-auto overscroll-contain/.test(hoja), hoja.includes('pb-[max(1.25rem,env(safe-area-inset-bottom))]')], [true, true]);
+  ok('en el celular sube desde abajo, en la computadora va centrada con margen',
+    [/items-end justify-center[^"]*sm:items-center sm:p-6/.test(hoja), /rounded-t-3xl[^"]*sm:rounded-3xl/.test(hoja)], [true, true]);
+  ok('Escape y el velo cierran solo la de arriba, y nunca mientras guarda',
+    [/e\.key === 'Escape'/.test(hoja), /pila\[pila\.length - 1\] !== id/.test(hoja), hoja.includes('trabada.current'),
+      hoja.includes('empezoEnVelo.current && e.target === e.currentTarget')], [true, true, true, true]);
+  ok('el fondo no se mueve, el foco entra y Tab no se escapa',
+    [hoja.includes('useBloquearFondo(true)'), /\.focus\(\{ preventScroll: true \}\)/.test(hoja), /e\.key !== 'Tab'/.test(hoja)], [true, true, true]);
+  ok('una hoja sobre otra va encima (z-index que sube con la pila)', hoja.includes('zIndex: 60 + nivel'), true);
+  ok('se achica con el teclado', /visualViewport/.test(hoja), true);
+  ok('colores por variables: sin bg-white opaco ni dark:', /\bbg-white(?!\/)|\bdark:/.test(hoja), false);
+
+  const css = leer('src/app/globals.css');
+  ok('la altura de la hoja es lo visible (dvh) con vh de respaldo',
+    /\.hoja-panel \{\s*max-height: 92vh;\s*max-height: min\(100%, calc\(100dvh/.test(css), true);
+  ok('y en la computadora deja 24 px arriba y abajo', /max-height: min\(100%, calc\(100dvh - 48px\)\)/.test(css), true);
+  // El origen de «el botón pegado al borde»: suelta, la zona segura salía
+  // después de `.p-5` en el CSS final y le borraba el relleno de abajo.
+  ok('la zona segura vive en la capa de componentes (un p-5 al lado ya no se pierde)',
+    /@layer components \{\s*\.zona-segura-abajo \{/.test(css) && !/^\.zona-segura-abajo/m.test(css), true);
+  ok('sin conexión, la franja se muda arriba mientras hay una hoja',
+    [css.includes('html.hay-hoja .franja-sin-conexion'), leer('src/components/RegistrarServiceWorker.tsx').includes('franja-sin-conexion')], [true, true]);
+
+  // Lo de antes no vuelve: altura en vh, zona segura pisando el relleno, pies
+  // «sticky» armados a mano adentro del scroll.
+  const componentes = archivos.filter((a) => a.endsWith('.tsx'));
+  ok('nadie vuelve a max-h-[88vh] / [90vh]',
+    componentes.filter((a) => /max-h-\[(88|90)vh\]/.test(leer(a))), []);
+  ok('la zona segura no comparte clase con un p-/pb-/py- (se pisarían)',
+    componentes.filter((a) => /["'`][^"'`]*\bzona-segura-abajo\b[^"'`]*\b(p|pb|py)-[\d[]/.test(leer(a))
+      || /["'`][^"'`]*\b(p|pb|py)-[\d[][^"'`]*\bzona-segura-abajo\b/.test(leer(a))), []);
+  ok('ningún pie «sticky bottom-0» a mano dentro de una hoja de rutinas',
+    componentes.filter((a) => a.includes('/rutinas/') && /sticky bottom-0/.test(sinComentarios(leer(a)))), []);
+  ok('Piezas reexporta la Hoja (los usos de rutinas y campañas no cambian)',
+    leer('src/components/rutinas/panel/Piezas.tsx').includes("export { Hoja, Confirmar, MensajeError, PieHoja } from '@/components/Hoja'"), true);
+  // Las tres capturas de Matías, ya con el pie fijo.
+  ok('«Registrar un pago» y «Nueva deuda» con los botones en el pie',
+    (leer('src/components/PantallaDeudas.tsx').match(/formulario=\{\{ onSubmit: (guardar|pagar) \}\}\s*pie=\{/g) || []).length, 2);
+  ok('«Elegí una plantilla»: el buscador fijo arriba y «¿Copiar las notas?» en el pie',
+    [leer('src/components/rutinas/panel/Copiar.tsx').includes('fijoArriba={fijoArriba} pie={pie}'),
+      (leer('src/components/rutinas/panel/Copiar.tsx').match(/<PieCopia/g) || []).length], [true, 2]);
+  ok('la rutina de la sesión, ancha en la computadora',
+    leer('src/components/rutinas/HojaRutinaSesion.tsx').includes('tamano="grande"'), true);
+
+  // El bloqueo del fondo con varias hojas y con filas de costado.
+  const fondo = leer('src/lib/fondo.ts');
+  ok('el fondo se suelta cuando cierra la ÚLTIMA hoja (contador)',
+    [/pedidos \+= 1/.test(fondo), /if \(pedidos === 0 && soltar\)/.test(fondo)], [true, true]);
+  ok('y un gesto de costado sobre una fila que se desliza pasa (las pestañas de días)',
+    [/const deCostado = Math\.abs\(x - inicioX\) > Math\.abs\(y - inicioY\)/.test(fondo), /overflowX/.test(fondo)], [true, true]);
+}
+
+// --- Las filas de costado, también con mouse (01/10) ---
+//
+// Matías: «desde la computadora quiero ver los días de la rutina; en el
+// celular deslizo con el dedo, pero con la computadora no puedo: no veo que
+// hay viernes, sábado, domingo». Las filas usaban `.scroll-limpio`, que
+// esconde la barra: con un mouse común no había barra que arrastrar, la
+// ruedita bajaba la página y no había flechas. Ahora toda fila de costado es
+// components/FilaDeslizable (en varias líneas o con flechas, según la fila),
+// o directamente va en varias líneas. Esta guardia falla si alguien vuelve a
+// armar una fila con la barra escondida a mano.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/(^|\n)[ \t]*\/\*[\s\S]*?\*\//g, '$1')
+    .replace(/(^|\s)\/\/[^\n]*/g, '$1');
+
+  const tsx = [];
+  const mirar = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const ruta = path.join(dir, e.name).replace(/\\/g, '/');
+      if (e.isDirectory()) { mirar(ruta); continue; }
+      if (e.name.endsWith('.tsx')) tsx.push(ruta);
+    }
+  };
+  mirar('src');
+
+  // La combinación que deja la fila inalcanzable con mouse: barra escondida
+  // y desplazamiento de costado en la misma clase. Las tablas no esconden la
+  // barra y quedan afuera solas.
+  const escondida = /["'`][^"'`]*\bscroll-limpio\b[^"'`]*\boverflow-x-(auto|scroll)\b[^"'`]*["'`]|["'`][^"'`]*\boverflow-x-(auto|scroll)\b[^"'`]*\bscroll-limpio\b[^"'`]*["'`]/;
+  ok('ninguna fila de costado con la barra escondida fuera de FilaDeslizable',
+    tsx.filter((a) => a !== 'src/components/FilaDeslizable.tsx' && escondida.test(sinComentarios(leer(a)))), []);
+
+  const fila = sinComentarios(leer('src/components/FilaDeslizable.tsx'));
+  ok('FilaDeslizable: el desplazable, con la barra escondida, el degradé y la variante de mouse para envolver',
+    [fila.startsWith("'use client'"), /fila-desliza scroll-limpio flex overflow-x-auto/.test(fila),
+      fila.includes("'mouse:flex-wrap mouse:overflow-visible'"), fila.includes('data-izq=') && fila.includes('data-der=')],
+    [true, true, true, true]);
+  ok('la ruedita: nativa y no pasiva, sin tocar el trackpad ni Shift/Ctrl, y en la punta la suelta',
+    [fila.includes("addEventListener('wheel', alRodar, { passive: false })"), /e\.ctrlKey \|\| e\.shiftKey \|\| e\.deltaX !== 0/.test(fila),
+      /if \(d < 0 && f\.scrollLeft <= 0\) return;/.test(fila), /if \(d > 0 && f\.scrollLeft >= max - 1\) return;/.test(fila),
+      fila.includes('e.preventDefault()')], [true, true, true, true, true]);
+  ok('el elegido se trae a la vista moviendo solo la fila (nunca scrollIntoView)',
+    [fila.includes('scrollIntoView'), /f\.scrollTo\(\{ left:/.test(fila), fila.includes('[aria-selected="true"], [aria-pressed="true"]')],
+    [false, true, true]);
+  ok('las flechas: solo con mouse, fuera del Tab, con su texto y en los dos tonos',
+    [(fila.match(/hidden h-10 w-10[^"'`]*mouse:grid/g) || []).length, (fila.match(/tabIndex=\{-1\}/g) || []).length,
+      fila.includes('t.comun.verAnteriores') && fila.includes('t.comun.verMas'),
+      fila.includes('bg-superficie') && fila.includes('bg-noche/90'), /\bbg-white(?!\/)|\bdark:/.test(fila)],
+    [2, 2, true, true, false]);
+  ok('las pestañas con ←/→/Inicio/Fin', ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'", '[role="tab"]'].filter((x) => !fila.includes(x)), []);
+
+  ok('la variante `mouse:` es por cómo se toca, no por el ancho',
+    leer('tailwind.config.ts').includes("addVariant('mouse', '@media (hover: hover) and (pointer: fine)')"), true);
+  const css = leer('src/app/globals.css');
+  ok('el degradé es una máscara, solo con mouse',
+    /@media \(hover: hover\) and \(pointer: fine\) \{\s*\.fila-desliza\[data-der\] \{\s*-webkit-mask-image:/.test(css)
+      && css.includes('.fila-desliza[data-izq][data-der]'), true);
+
+  const comun = (archivo) => {
+    const s = leer(archivo);
+    const i = s.indexOf('  comun: {');
+    return i < 0 ? '' : s.slice(i, s.indexOf('\n  },', i));
+  };
+  ok('los textos de las flechas en es, pt y en',
+    ['src/i18n/textos/es.ts', 'src/i18n/textos/pt.ts', 'src/i18n/textos/en.ts']
+      .filter((a) => !/verAnteriores: '[^']+'/.test(comun(a)) || !/verMas: '[^']+'/.test(comun(a))), []);
+
+  // Los días de la rutina, los cuatro: en varias líneas con mouse (se ven
+  // todos) o, en la tira fija del alumno, con flechas y centrada. Pestañas
+  // de verdad: la elegida entra con Tab y las flechas del teclado pasan.
+  const dias = {
+    'src/components/rutinas/editor/PestanasDias.tsx': 'envolver',
+    'src/components/rutinas/RutinaVista.tsx': 'envolver',
+    'src/components/rutinas/HojaRutinaSesion.tsx': 'envolver',
+    'src/components/rutinas/RutinaDelCliente.tsx': 'flechas',
+  };
+  ok('los días de la rutina (editor, carpeta, «Ver» y la página del alumno) van en FilaDeslizable',
+    Object.entries(dias).filter(([a, modo]) => {
+      const s = sinComentarios(leer(a));
+      return !new RegExp(`<FilaDeslizable\\s+enCompu="${modo}"[^>]*rol="tablist"[^>]*teclado="pestanas"[^>]*activo=`).test(s)
+        || !/role="tab"[^>]*tabIndex=\{/.test(s.replace(/\n\s*/g, ' '));
+    }).map(([a]) => a), []);
+  ok('la del alumno centra la elegida', /<FilaDeslizable[^>]*enCompu="flechas"[^>]*\bcentrar\b/.test(leer('src/components/rutinas/RutinaDelCliente.tsx')), true);
+  ok('y el editor ya no mueve la fila por su cuenta', /useEffect|scrollLeft/.test(leer('src/components/rutinas/editor/PestanasDias.tsx')), false);
+
+  // Las de formularios y hojas, en varias líneas siempre.
+  ok('el carrito de la computadora muestra todas las formas de pago (Fiado / crédito y Otro)',
+    /<div className="flex flex-wrap gap-2">\s*\{METODOS\.map/.test(sinComentarios(leer('src/components/PantallaVenta.tsx'))), true);
+  ok('repeticiones, unidad y descanso del ejercicio, en varias líneas',
+    (sinComentarios(leer('src/components/rutinas/editor/HojaEjercicio.tsx')).match(/className="[^"]*\bflex flex-wrap gap-2"/g) || []).length >= 3, true);
+}
+
+// --- Lo que mostró el banco de pruebas visual (01/10) ---
+//
+// Cada ventana se miró en 375×667, 390×844, 1280×720 y 1366×600, en claro y
+// en oscuro, midiendo el botón principal y el aire de abajo. Quedaban cuatro
+// cosas, y estas reglas no las dejan volver.
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const css = leer('src/app/globals.css');
+
+  // La revisión de la captura: con cinco productos, Atrás y Guardar quedaban
+  // al fondo del scroll. Ahora van pegados abajo de la tarjeta, en las cuatro.
+  ok('la revisión de la captura lleva Atrás/Guardar pegados abajo, en las cuatro revisiones',
+    ['CapturaInteligente', 'RevisionFiado', 'RevisionProducto', 'RevisionCliente']
+      .filter((n) => !leer(`src/components/${n}.tsx`).includes('<div className="pie-captura">')), []);
+  ok('el pie de la captura es pegajoso, a lo ancho de la tarjeta y con aire abajo',
+    /\.pie-captura \{\s*@apply sticky -bottom-5 [^;]*-mx-5 -mb-5 [^;]*bg-superficie [^;]*pb-5/.test(css), true);
+
+  // La barra de desplazamiento clásica de Windows mordía la esquina de la ventana.
+  ok('la barra de desplazamiento de las ventanas es finita y del color del texto',
+    [/\.barra-fina \{\s*scrollbar-width: thin;\s*scrollbar-color: rgb\(var\(--tinta\)/.test(css),
+      leer('src/components/Hoja.tsx').includes('overscroll-contain barra-fina'),
+      leer('src/components/CapturaInteligente.tsx').includes('overscroll-contain barra-fina')], [true, true, true]);
+
+  // En oscuro el rojo es claro: el blanco encima no se leía (2,6 a 1).
+  ok('el botón de borrar lleva el texto del color de la tarjeta, no blanco fijo',
+    /\.boton-peligro\s*\{ @apply boton bg-rojo text-superficie/.test(css), true);
+
+  // Con mouse los días van en varias líneas: el nombre entero, sin «…».
+  ok('los días con mouse muestran el nombre entero',
+    [leer('src/components/rutinas/RutinaVista.tsx').includes('max-w-[220px] mouse:max-w-full'),
+      leer('src/components/rutinas/HojaRutinaSesion.tsx').includes('max-w-[220px] mouse:max-w-full'),
+      leer('src/components/rutinas/editor/PestanasDias.tsx').includes('max-w-[12rem] mouse:max-w-[18rem]')], [true, true, true]);
+}
+
 // --- La portada cuenta lo de recomendar, y deja elegir los colores ---
 //
 // El programa de socios no sirve de nada si la gente se entera adentro: el
@@ -1862,12 +2109,17 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // pregunta SIEMPRE que haya una cuenta. Antes solo con dos o más: con una
   // sola no se preguntaba, y si su forma de pago no coincidía, el gasto se
   // guardaba fuera de la billetera sin que nadie se enterara.
+  // Desde el 01/10 Gastos pregunta con la misma pieza que el resto
+  // (ElegirCuenta, en FormaDeCobro.tsx): lo que se fijaba acá se fija allá.
   const gas = fs.readFileSync('src/components/PantallaGastos.tsx', 'utf8');
-  ok('el gasto puede decir de qué cuenta salió', gas.includes('cuenta_id: cuentaId || null'), true);
+  const fdc = fs.readFileSync('src/components/FormaDeCobro.tsx', 'utf8').replace(/\r\n/g, '\n');
+  ok('el gasto puede decir de qué cuenta salió',
+    gas.includes("cuenta_id: cuentaDelCobro(cuentas, metodo, cuentaId, tipo === 'gasto' ? 'sale' : 'entra')") && gas.includes('<ElegirCuenta'), true);
   ok('y se pregunta desde la primera cuenta', gas.includes('cuentas.length > 0'), true);
-  // «Automática» sin decir a dónde es una apuesta, no una opción.
-  ok('«automática» dice a qué cuenta va a ir', gas.includes('t.gastos.iraA('), true);
-  ok('y avisa cuando no va a ir a ninguna', gas.includes('t.gastos.noVaANinguna'), true);
+  // Callar a dónde va es una apuesta, no una opción: con una sola cuenta
+  // posible lo dice, y cuando no va a ninguna, avisa.
+  ok('la pregunta dice a qué cuenta va a ir', fdc.includes('posibles.length === 1') && fdc.includes('t.cobro.vaASalir('), true);
+  ok('y avisa cuando no va a ir a ninguna', fdc.includes('t.cobro.ningunaSale'), true);
 
   // Lo que ya quedó fuera de la billetera se ve y se arregla (083).
   const bill = fs.readFileSync('src/components/PantallaBilletera.tsx', 'utf8');
@@ -1941,10 +2193,13 @@ ok('un rubro desconocido no rompe: cae en comercio',
     fs.readFileSync('src/components/PantallaOrganizacion.tsx', 'utf8').includes('t.organizacion.teQuedan'), true);
 
   // Las cuentas de la billetera se deslizan de costado (081): con seis
-  // cuentas en vertical, todo lo demás quedaba abajo del pliegue.
+  // cuentas en vertical, todo lo demás quedaba abajo del pliegue. Desde el
+  // 01/10 la fila es FilaDeslizable (con flechas para el mouse), y el
+  // `overflow-x-auto` vive en ella.
   const billeteraPanel = fs.readFileSync('src/components/BilleteraPanel.tsx', 'utf8');
   ok('la billetera del panel se desliza',
-    billeteraPanel.includes('snap-x') && billeteraPanel.includes('overflow-x-auto'), true);
+    billeteraPanel.includes('snap-x') && billeteraPanel.includes('<FilaDeslizable')
+      && fs.readFileSync('src/components/FilaDeslizable.tsx', 'utf8').includes('overflow-x-auto'), true);
 
   // La racha también en la cuenta personal (080). Llevaba siempre a /cierre,
   // que una cuenta personal no tiene, y por eso nunca se le mostraba.
@@ -1998,8 +2253,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // marcás tres días después, el sueldo sigue siendo del día que lo cobraste.
   ok('y lo acredita con la fecha del cobro, no con la de hoy',
     orgn.includes('fecha: resumen.desde'), true);
-  ok('en la cuenta donde se cobra, que ya estaba guardada',
-    orgn.includes('cuenta_id: f.cuenta_id || null'), true);
+  // La guardada solo si sigue en la billetera: una archivada se pregunta (01/10).
+  ok('en la cuenta donde se cobra, que ya estaba guardada (si sigue activa)',
+    orgn.includes('const guardada = cuentaActiva(f.cuenta_id);') && orgn.includes('acreditar(f, guardada)'), true);
+  // Y sin cuenta guardada ya no entra suelto sin decir nada (01/10).
+  ok('sin cuenta guardada, pregunta a cuál entró',
+    orgn.includes("acreditar(f, cuentaDelCobro(cuentas, 'otro', cuentaAcreditar))"), true);
 
   // Los montos se leen mientras se escriben (3.1). En guaraníes,
   // «1500000» y «150000» se distinguen contando ceros, y uno se equivoca en
@@ -2295,6 +2554,217 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('la barra de abajo mira si es Gratis', nav.includes('barraDe(tipo, rubro, esAdmin, gratisPersonal)'), true);
   ok('el menú lateral y «Más» agrupan lo del Pro',
     (nav.match(/seccionesCerradas\(gratisPersonal\)/g) ?? []).length, 2);
+}
+
+// --- De qué cuenta sale (o a cuál entra) cada pago (01/10, 117) ---
+//
+// Matías: «en Registrar un pago tengo dos bancos, elegí Transferencia, y no
+// me salen las opciones para elegir de cuál banco debitar». La base ya lo
+// recibía; la pantalla no lo preguntaba. Y había tres maneras distintas de
+// preguntarlo. Ahora una sola pieza (ElegirCuenta), y cada lugar que mueve
+// plata la usa y manda la cuenta. Las funciones de la base se prueban en
+// cuenta-de-cada-pago.test.js; esto mira que las pantallas lleguen.
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const fdc = leer('src/components/FormaDeCobro.tsx');
+  ok('la pieza pregunta de los dos lados: lo que entra y lo que sale',
+    [fdc.includes("sentido?: SentidoPlata"), fdc.includes('t.cobro.deQueCuenta'), fdc.includes('t.cobro.enQueCuenta')],
+    [true, true, true]);
+  ok('a quien no administra (lista vacía) y con lo que entra fiado no le pregunta',
+    fdc.includes('if (cuentas.length === 0 || esFiado(metodo, sentido)) return null;'), true);
+  ok('sin ninguna cuenta para esa forma de pago, ofrece todas para arreglarlo',
+    fdc.includes('const opciones = posibles.length > 0 ? posibles : cuentas;'), true);
+  ok('las reglas puras viven en lib (se prueban abajo) y FormaDeCobro las reexporta',
+    fdc.includes("export { cuentasDelMetodo, cuentaDelCobro, esFiado, type SentidoPlata } from '@/lib/cuenta-del-cobro';"), true);
+
+  // «Crédito» depende de para dónde va la plata (revisión del 01/10). Lo que
+  // entra a crédito es fiado; un gasto con «Crédito» (en Gastos es la
+  // tarjeta) sale de una cuenta y hay que poder elegirla. Antes valía la
+  // regla del fiado para los dos y el gasto se iba de la billetera sin
+  // pregunta ni aviso.
+  const { cuentasDelMetodo, cuentaDelCobro, esFiado } = require('../.compilado/cuenta-del-cobro.js');
+  const caja = { id: 'caja', nombre: 'Caja', tipo: 'efectivo', metodos: ['efectivo'] };
+  const ueno = { id: 'ueno', nombre: 'Crédito Ueno', tipo: 'banco', metodos: ['tarjeta'] };
+  const atlas = { id: 'atlas', nombre: 'Atlas', tipo: 'banco', metodos: ['transferencia'] };
+  const visa = { id: 'visa', nombre: 'Visa', tipo: 'banco', metodos: ['credito'] };
+  const master = { id: 'master', nombre: 'Master', tipo: 'banco', metodos: ['credito'] };
+  const ids = (l) => l.map((c) => c.id);
+  ok('lo que ENTRA a crédito es fiado: ninguna cuenta, no se pregunta',
+    [ids(cuentasDelMetodo([caja, ueno, visa], 'credito', 'entra')), cuentaDelCobro([caja, ueno, visa], 'credito', 'visa', 'entra'),
+      esFiado('credito', 'entra'), esFiado('credito')], [[], null, true, true]);
+  ok('por defecto (sin sentido) sigue siendo lo que entra: las pantallas de cobro no cambian',
+    [ids(cuentasDelMetodo([caja, visa], 'credito')), cuentaDelCobro([caja, visa], 'credito', null)], [[], null]);
+  ok('un gasto con crédito y la tarjeta que reclama «crédito»: esa, marcada',
+    [esFiado('credito', 'sale'), ids(cuentasDelMetodo([caja, atlas, visa], 'credito', 'sale')),
+      cuentaDelCobro([caja, atlas, visa], 'credito', null, 'sale')], [false, ['visa'], 'visa']);
+  ok('con dos tarjetas se puede elegir cuál',
+    [cuentaDelCobro([visa, master], 'credito', null, 'sale'), cuentaDelCobro([visa, master], 'credito', 'master', 'sale')],
+    ['visa', 'master']);
+  // El caso de Matías: su «Crédito Ueno» reclama solo «tarjeta». Ninguna
+  // reclama «crédito»: no hay posibles, ElegirCuenta ofrece todas con el
+  // aviso ámbar, y la tocada a mano vale.
+  ok('ninguna reclama «crédito»: sin marcada (el aviso), y la tocada a mano vale',
+    [ids(cuentasDelMetodo([caja, ueno, atlas], 'credito', 'sale')), cuentaDelCobro([caja, ueno, atlas], 'credito', null, 'sale'),
+      cuentaDelCobro([caja, ueno, atlas], 'credito', 'ueno', 'sale')], [[], null, 'ueno']);
+  ok('las demás formas de pago no cambian con el sentido',
+    [cuentaDelCobro([caja, atlas], 'transferencia', null, 'sale'), cuentaDelCobro([caja, atlas], 'transferencia', null, 'entra'),
+      cuentaDelCobro([caja, atlas], 'efectivo', null, 'sale'), ids(cuentasDelMetodo([caja, atlas], 'otro', 'sale'))],
+    ['atlas', 'atlas', 'caja', ['caja', 'atlas']]);
+  const gas = leer('src/components/PantallaGastos.tsx');
+  ok('Gastos manda la cuenta con el sentido (un gasto sale) y pregunta igual',
+    [gas.includes("cuenta_id: cuentaDelCobro(cuentas, metodo, cuentaId, tipo === 'gasto' ? 'sale' : 'entra')"),
+      gas.includes("sentido={tipo === 'gasto' ? 'sale' : 'entra'}"), gas.includes("'credito'")], [true, true, true]);
+
+  const deu = leer('src/components/PantallaDeudas.tsx');
+  ok('«Registrar un pago» pregunta de qué cuenta salió',
+    deu.includes('<ElegirCuenta') && deu.includes('sentido="sale"'), true);
+  ok('y la manda, solo si se anota el gasto (sin gasto no hay movimiento)',
+    deu.includes('p_cuenta: crearGasto ? cuentaDelCobro(cuentas, metodo, cuenta) : null'), true);
+  ok('la página le trae las cuentas', leer('src/app/(app)/deudas/page.tsx').includes('traerCuentasParaElegir(ctx.empresa.id)'), true);
+
+  const cap = leer('src/components/CapturaInteligente.tsx');
+  ok('la captura pregunta la cuenta y la manda en los tres caminos',
+    [cap.includes('<ElegirCuenta'), cap.includes('p_cuenta: crearGasto ? cuenta : null'),
+      cap.includes('p_cuenta: cuenta,'), cap.includes('cuenta_id: cuenta,')], [true, true, true, true]);
+  ok('solo a quien administra y fuera del Gratis',
+    cap.includes("useCuentasParaElegir(empresaId, esAdmin && !gratisPersonal && modo === 'revisar')")
+      && leer('src/app/(app)/layout.tsx').includes('gratisPersonal={ctx.gratisPersonal}'), true);
+  const rf = leer('src/components/RevisionFiado.tsx');
+  ok('lo dictado de fiado también dice la cuenta (null = no se mueve, 084)',
+    (rf.match(/p_cuenta: cuentaId \|\| null/g) || []).length, 2);
+
+  const rep = leer('src/components/PantallaReparto.tsx');
+  ok('cobrar un servicio pregunta cómo pagó y a qué cuenta entró',
+    rep.includes('p_metodo_pago: d.metodo') && rep.includes('p_cuenta: d.cuenta') && rep.includes('<FormaDeCobro'), true);
+  ok('pagarle al profesional, cómo y de qué cuenta',
+    rep.includes('p_metodo: d.metodo') && rep.includes('<ElegirCuenta'), true);
+  ok('«Atendido, cobrar» pregunta antes de cobrar',
+    leer('src/components/PantallaAgenda.tsx').includes('p_reserva: r.id, p_metodo: metodo, p_cuenta: cuenta'), true);
+  ok('vender un paquete manda la cuenta',
+    leer('src/components/PaquetesAlumno.tsx').includes('p_cuenta: d.precio > 0 ? cuentaDelCobro(cuentas, d.metodo, d.cuenta) : null'), true);
+  ok('y lo cobrado trabajando entra donde se diga',
+    leer('src/components/PantallaOrganizacion.tsx').includes("alTraer(tr.empresa_id, cuentaDelCobro(cuentas, 'otro', cuenta))"), true);
+
+  // Los textos nuevos, en los dos idiomas que se ofrecen.
+  const es = leer('src/i18n/textos/es.ts');
+  const pt = leer('src/i18n/textos/pt.ts');
+  ok('los textos de la pregunta están en español y en portugués',
+    ['deQueCuenta:', 'vaASalir:', 'vaAEntrar:', 'ningunaSale:', 'ningunaEntra:', 'elegiUnaSale:', 'elegiUnaEntra:', 'sinGastoNoMueve:', 'comoLePagas:']
+      .map((k) => es.includes(k) && pt.includes(k)), Array(9).fill(true));
+}
+
+// --- Lo que encontró la revisión de las ventanas y los pagos (01/10) ---
+//
+// Con los botones en el pie fijo, el error de guardar quedaba al fondo del
+// cuerpo, fuera de la vista; la captura se cerraba arrastrando una selección,
+// con Escape a mitad de un guardado, y su pie quedaba debajo del teclado; el
+// menú de la cuenta quedaba debajo de la barra y abierto al navegar; en
+// oscuro, texto blanco sobre rojo y ámbar claros, y un velo que no oscurecía;
+// «Ya lo cobré» a una cuenta archivada; «Atendido, cobrar» preguntando la
+// cuenta de una silla alquilada.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/(^|\n)[ \t]*\/\*[\s\S]*?\*\//g, '$1')
+    .replace(/(^|\s)\/\/[^\n]*/g, '$1');
+
+  // 1. El error, a la vista: una vez, en la Hoja (y en la tarjeta de la captura).
+  const hoja = sinComentarios(leer('src/components/Hoja.tsx'));
+  ok('la Hoja trae a la vista el error que aparece en su cuerpo',
+    [hoja.includes('useAlertaALaVista(cuerpo, montada)'), hoja.includes('new MutationObserver('),
+      hoja.includes("'[role=\"alert\"]'"), /c\.scrollTo\(\{ top: c\.scrollTop \+ delta/.test(hoja), hoja.includes('scrollIntoView')],
+    [true, true, true, true, false]);
+  ok('mirando lo que tapa el pie de la captura y sin sacar de la vista el campo donde se escribe',
+    [hoja.includes("c.querySelector<HTMLElement>('.pie-captura')"), hoja.includes("addEventListener('input', alEscribir, true)")],
+    [true, true]);
+  const conAlerta = ['CapturaInteligente', 'RevisionFiado', 'RevisionProducto', 'RevisionCliente']
+    .filter((n) => /\{error && <p className=/.test(leer(`src/components/${n}.tsx`)));
+  ok('los errores de la captura y sus revisiones son role="alert"', conAlerta, []);
+  ok('y el de la ficha del Panel de Orden, que se pinta arriba de todo',
+    leer('src/components/PanelAdmin.tsx').includes('<p role="alert" className="rounded-xl bg-rojo-claro px-3.5'), true);
+
+  // 2. La captura no se cierra sola ni queda debajo del teclado.
+  const cap = sinComentarios(leer('src/components/CapturaInteligente.tsx'));
+  ok('la captura no se cierra mientras guarda (ella o una de sus revisiones)',
+    [cap.includes('const ocupada = guardando || hijaOcupada;'),
+      cap.includes("const puedeCerrar = modo !== 'procesando' && modo !== 'audio' && !ocupada;"),
+      cap.includes('cerrarConEscape.current = () => { if (puedeCerrar) cerrar(); };'),
+      (cap.match(/onOcupado=\{setHijaOcupada\}/g) || []).length], [true, true, true, 3]);
+  ok('cada revisión avisa cuándo guarda',
+    ['RevisionFiado', 'RevisionProducto', 'RevisionCliente']
+      .filter((n) => !leer(`src/components/${n}.tsx`).includes('useEffect(() => { onOcupado?.(guardando); }, [guardando, onOcupado]);')), []);
+  ok('su velo cierra solo si el toque empezó en él',
+    [cap.includes('onPointerDown={(e) => { empezoEnVelo.current = e.target === e.currentTarget; }}'),
+      cap.includes('empezoEnVelo.current && e.target === e.currentTarget'), cap.includes('if (enElVelo && puedeCerrar) cerrar();')],
+    [true, true, true]);
+  ok('con el teclado, el velo se achica a lo visible y Guardar queda arriba de él',
+    [cap.includes('const vista = useVistaSinTeclado(abiertaCaptura);'), cap.includes("vista ? 'pb-3' : 'pb-24'"),
+      cap.includes("style={vista ? { top: vista.arriba, height: vista.alto, bottom: 'auto' } : undefined}")], [true, true, true]);
+  ok('el foco entra a la tarjeta y vuelve al cerrar; el error se trae a la vista',
+    [cap.includes('useFocoDeDialogo(tarjeta, abiertaCaptura)'), cap.includes('useAlertaALaVista(tarjeta, abiertaCaptura)'),
+      cap.includes('ref={tarjeta} tabIndex={-1}')], [true, true, true]);
+  ok('un gasto dictado con crédito pregunta la tarjeta (sale); una venta fiada no',
+    [cap.includes("return tipo === 'gasto' || tipo === 'pago_deuda' ? 'sale' : 'entra';"),
+      cap.includes('cuentaDelCobro(cuentas, borrador.metodo_pago, cuentaElegida, sentidoDe(borrador.tipo))'),
+      cap.includes('sentido={sentidoDe(borrador.tipo)}')], [true, true, true]);
+
+  // 3. Los menús de la navegación.
+  const nav = sinComentarios(leer('src/components/Navegacion.tsx'));
+  ok('«Más»: el foco entra al menú y vuelve al «Más», y el velo cierra solo si el toque empezó en él',
+    [nav.includes('useFocoDeDialogo(panelMas, abierto, botonMas)'), nav.includes('ref={botonMas}'),
+      nav.includes('ref={panelMas} tabIndex={-1}'), nav.includes('if (enElVelo) setAbierto(false);')], [true, true, true, true]);
+  ok('el menú de la cuenta se cierra al navegar (como «Más»)',
+    (nav.match(/useEffect\(\(\) => \{ setAbierto\(false\); \}, \[ruta\]\);/g) || []).length, 2);
+  ok('y abierto, la cabecera sube por encima de la barra de abajo y del micrófono',
+    nav.includes("zona-segura-arriba sticky top-0 ${abierto ? 'z-[60]' : 'z-30'}"), true);
+  ok('es un desplegable con aria-expanded, no un role="menu" a medias',
+    [nav.includes('role="menu"'), nav.includes("aria-controls={abierto ? 'menu-de-la-cuenta' : undefined}")], [false, true]);
+  ok('«Activá los avisos» sigue sin abrirse encima (ve el z-[60])',
+    leer('src/components/InvitarAvisos.tsx').includes(`document.querySelector('[class*="z-[60]"]')`), true);
+
+  // 4. Oscuro: ni blanco sobre rojo o ámbar llenos, y un velo que oscurece.
+  const tsx = [];
+  const mirar = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const ruta = path.join(dir, e.name).replace(/\\/g, '/');
+      if (e.isDirectory()) { mirar(ruta); continue; }
+      if (e.name.endsWith('.tsx')) tsx.push(ruta);
+    }
+  };
+  mirar('src');
+  const llenoConBlanco = /\bbg-(rojo|ambar)(?![-\w/])[^\n]*\btext-white\b|\btext-white\b[^\n]*\bbg-(rojo|ambar)(?![-\w/])/;
+  ok('ningún texto blanco fijo sobre rojo o ámbar llenos (en oscuro son claros)',
+    tsx.filter((a) => leer(a).split('\n').some((l) => llenoConBlanco.test(l))), []);
+  ok('los «Sí, eliminar» rojos son .boton-peligro (píldora, texto del color de la tarjeta)',
+    [['src/components/PantallaDeudas.tsx', 2], ['src/components/PantallaClientes.tsx', 1], ['src/components/PantallaReparto.tsx', 1],
+      ['src/components/ReservaPublica.cancelar.tsx', 1]]
+      .filter(([a, n]) => (leer(a).match(/className="boton-peligro flex-1/g) || []).length !== n).map(([a]) => a), []);
+  ok('el aviso de éxito de Gastos con el texto de cada fondo',
+    leer('src/components/PantallaGastos.tsx').includes("'bg-rojo text-superficie' : tonoExito === 'deuda' ? 'bg-ambar text-noche' : 'bg-verde text-sobre-verde'"), true);
+  const css = leer('src/app/globals.css');
+  ok('el velo de las ventanas es una variable, más tupida en oscuro, y el panel lleva borde',
+    [/:root \{[\s\S]*?--velo:\s+18 18 18 \/ \.45;[\s\S]*?\}/.test(css), /html\.oscuro \{[\s\S]*?--velo:\s+0 0 0 \/ \.62;[\s\S]*?\}/.test(css),
+      /\.hoja-velo \{[^}]*background-color: rgb\(var\(--velo\)\);/.test(css), hoja.includes('bg-noche/45'),
+      hoja.includes('rounded-t-3xl border border-borde/70 bg-superficie')], [true, true, true, false, true]);
+
+  // 5. La plata: cuenta archivada y silla alquilada.
+  const org = leer('src/components/PantallaOrganizacion.tsx');
+  ok('«Ya lo cobré» no manda una cuenta que ya no está en la billetera (pregunta)',
+    [org.includes('const guardada = cuentaActiva(f.cuenta_id);'), org.includes('if (guardada || cuentas.length === 0) acreditar(f, guardada);'),
+      org.includes('cuentaActiva(resumen.ingresos_fijos.find((f) => f.principal)?.cuenta_id)')], [true, true, true]);
+  ok('y la base la descarta igual (118)',
+    /c\.empresa_id = new\.empresa_id and c\.activa\) then\s+new\.cuenta_id := null;/.test(leer('supabase/migrations/118_cuenta_archivada_no_recibe.sql')), true);
+  const age = leer('src/components/PantallaAgenda.tsx');
+  ok('«Atendido» con la silla alquilada no pregunta cómo ni a qué cuenta',
+    [age.includes("alquila={profesionales.find((p) => p.id === r.profesional_id)?.reparto === 'alquiler'}"),
+      age.includes('? { p_reserva: r.id }'), age.includes('{alquila ? (') && age.includes('t.reparto.noEntraALaCaja'),
+      age.includes('alquila ? alCobrar(null, null)')], [true, true, true, true]);
+  ok('con su texto en es, pt y en',
+    ['es', 'pt', 'en'].filter((l) => !/marcarAtendido: '[^']+'/.test(leer(`src/i18n/textos/${l}.ts`))), []);
 }
 
 // Las comprobaciones que esperan algo (una función async) se anotan en

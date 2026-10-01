@@ -15,6 +15,7 @@ import { Vacio, Seccion } from '@/components/Piezas';
 import { puedeAnular } from '@/lib/permisos';
 import { mensajeDeError } from '@/lib/errores';
 import { DialogoAnular } from '@/components/DialogoAnular';
+import { ElegirCuenta, cuentaDelCobro } from '@/components/FormaDeCobro';
 import {
   CULTIVOS, NO_SON_DE_CAMPANA, avisoDolar, convertirDesde, cultivoPorNombre, otraMoneda, repartirPorHectareas,
 } from '@/lib/agricultura';
@@ -134,8 +135,11 @@ export function PantallaGastos({
   const [categoria, setCategoria] = useState(categoriaInicial);
   const [fecha, setFecha] = useState(hoyISO(zona));
   const [metodo, setMetodo] = useState('efectivo');
-  /** Vacío = la que reciba esa forma de pago, como hasta ahora (074). */
-  const [cuentaId, setCuentaId] = useState('');
+  /**
+   * La cuenta tocada a mano (075). Null = la de siempre para esa forma de
+   * pago, que es la que `ElegirCuenta` muestra marcada (01/10).
+   */
+  const [cuentaId, setCuentaId] = useState<string | null>(null);
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
@@ -182,17 +186,6 @@ export function PantallaGastos({
   // de una persona es un chip; en la de un negocio queda escrito aparte.
   const rapidas = tipo === 'gasto' ? rapidasGasto : (rapidasPersonal?.ingreso ?? RAPIDAS_INGRESO);
 
-  /**
-   * A dónde va a parar la plata si se deja «automática» (083).
-   *
-   * Es la misma regla que aplica el trigger de la base: la cuenta que
-   * reclama esa forma de pago. Si no hay ninguna, el movimiento se guarda
-   * igual pero queda FUERA de la billetera, y eso hay que decirlo antes de
-   * guardar y no descubrirlo tres semanas después mirando un total que no
-   * cierra.
-   */
-  const destino = cuentas.find((c) => (c.metodos ?? []).includes(metodo)) ?? null;
-
   // A una persona tampoco se le sugiere «Mercadería» ni «Impuestos» al escribir.
   const categorias = Array.from(new Set([
     ...categoriasUsadas, ...rapidasGasto, ...(rapidasPersonal ? [] : SUGERIDAS),
@@ -236,6 +229,8 @@ export function PantallaGastos({
 
   function elegirMetodo(v: string) {
     setMetodo(v);
+    // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+    setCuentaId(null);
     if (v === A_COSECHA) {
       setRepartir(false);
       if (!vence) setVence(venceSugerido(loteId));
@@ -347,8 +342,10 @@ export function PantallaGastos({
         metodo_pago: metodo,
         contraparte: '',
         notas: notas.trim(),
-        // Vacío deja que el disparador la deduzca de la forma de pago (074).
-        cuenta_id: cuentaId || null,
+        // La marcada en «¿De qué cuenta salió?»: la tocada, la de siempre o
+        // la única posible. Null (ninguna) deja que el disparador decida (074).
+        // Un gasto con «Crédito» es la tarjeta: sale, y se pregunta cuál (01/10).
+        cuenta_id: cuentaDelCobro(cuentas, metodo, cuentaId, tipo === 'gasto' ? 'sale' : 'entra'),
         origen: 'manual',
       };
 
@@ -473,19 +470,35 @@ export function PantallaGastos({
     </div>
   );
 
+  /*
+    DE QUÉ CUENTA SALIÓ, O A CUÁL ENTRÓ (075, 083; 01/10 la misma pieza que
+    en todos lados). Desde la primera cuenta: con una sola dice a dónde va,
+    con dos bancos deja elegir cuál, y si ninguna recibe esa forma de pago lo
+    avisa antes de guardar. Una deuda a cosecha no sale de ninguna cuenta.
+  */
+  const bloqueCuenta = cuentas.length > 0 && !aCosecha ? (
+    <ElegirCuenta
+      cuentas={cuentas} metodo={metodo} elegida={cuentaId} alElegir={setCuentaId}
+      sentido={tipo === 'gasto' ? 'sale' : 'entra'}
+    />
+  ) : null;
+
   return (
     <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
       {exito && (
         <div className="fixed inset-x-0 top-[60px] z-50 px-3 lg:top-24" role="status" aria-live="polite">
-          <div className={`destello mx-auto flex max-w-md items-center gap-3 rounded-2xl px-4 py-3.5 text-white shadow-[0_12px_34px_-8px_rgba(13,27,22,.5)] ${
-            tonoExito === 'gasto' ? 'bg-rojo' : tonoExito === 'deuda' ? 'bg-ambar' : 'bg-verde'
+          {/* El texto, del color que se lee sobre cada fondo en los dos temas
+              (01/10): el blanco fijo no se leía sobre el rojo y el ámbar del
+              oscuro, que son claros, ni nunca sobre el verde vivo. */}
+          <div className={`destello mx-auto flex max-w-md items-center gap-3 rounded-2xl px-4 py-3.5 shadow-[0_12px_34px_-8px_rgba(13,27,22,.5)] ${
+            tonoExito === 'gasto' ? 'bg-rojo text-superficie' : tonoExito === 'deuda' ? 'bg-ambar text-noche' : 'bg-verde text-sobre-verde'
           }`}>
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/20">
               <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo} strokeWidth={2.4}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
             </span>
             <div className="min-w-0">
               <p className="text-[15.5px] font-bold leading-tight">{exito}</p>
-              {exitoDetalle && <p className="mt-0.5 text-[12.5px] leading-snug text-white/85">{exitoDetalle}</p>}
+              {exitoDetalle && <p className="mt-0.5 text-[12.5px] leading-snug opacity-90">{exitoDetalle}</p>}
             </div>
           </div>
         </div>
@@ -669,8 +682,10 @@ export function PantallaGastos({
           )}
 
           {/* Con campañas, la forma de pago va a la vista: «A cosecha» cambia
-              lo que se guarda, y no puede quedar escondido en un plegado. */}
+              lo que se guarda, y no puede quedar escondido en un plegado. La
+              cuenta va con ella: es la otra mitad de la misma pregunta. */}
           {conCampanas && bloqueFormaDePago}
+          {conCampanas && bloqueCuenta}
 
           <button
             type="button" onClick={() => setMasOpciones((v) => !v)}
@@ -708,49 +723,7 @@ export function PantallaGastos({
               </label>
 
               {!conCampanas && bloqueFormaDePago}
-
-              {/*
-                DE QUÉ CUENTA SALIÓ (075).
-
-                Con una sola cuenta no se pregunta: la forma de pago ya la
-                encuentra sola. Con dos bancos sí, porque «transferencia» no
-                dice a cuál de los dos. «Automática» deja el reparto de la 074.
-                Una deuda a cosecha no sale de ninguna cuenta: no se pregunta.
-              */}
-              {cuentas.length > 0 && !aCosecha && (
-                <div>
-                  <span className="etiqueta">{tipo === 'gasto' ? t.gastos.deQueCuenta : t.gastos.aQueCuenta}</span>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button" onClick={() => setCuentaId('')}
-                      className={cuentaId === '' ? 'chip-encendido' : 'chip-apagado'}
-                    >
-                      {t.gastos.automatica}
-                    </button>
-                    {cuentas.map((c) => (
-                      <button
-                        key={c.id} type="button" onClick={() => setCuentaId(c.id)}
-                        className={cuentaId === c.id ? 'chip-encendido' : 'chip-apagado'}
-                      >
-                        {c.nombre}
-                      </button>
-                    ))}
-                  </div>
-                  {cuentaId === '' && (
-                    destino
-                      ? (
-                        <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">
-                          {t.gastos.iraA(destino.nombre)}
-                        </p>
-                      )
-                      : (
-                        <p className="mt-1.5 text-[12px] leading-snug font-medium text-ambar">
-                          {t.gastos.noVaANinguna}
-                        </p>
-                      )
-                  )}
-                </div>
-              )}
+              {!conCampanas && bloqueCuenta}
 
               <div className="grid gap-3.5 sm:grid-cols-2">
                 {!aCosecha && (

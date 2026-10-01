@@ -10,6 +10,7 @@ import { fichaDe, palabra, seccionesCerradas, type Seccion } from '@/lib/rubros'
 import { useTextos } from '@/i18n/cliente';
 import { Marca } from '@/components/Marca';
 import { useBloquearFondo } from '@/lib/fondo';
+import { useFocoDeDialogo } from '@/components/Hoja';
 import type { Textos } from '@/i18n/diccionarios';
 
 export interface ItemNav { href: Seccion; texto: string; icono: React.ReactNode }
@@ -559,6 +560,14 @@ export function NavInferior({
   // Mientras el menú está adelante, la página de atrás no se mueve.
   useBloquearFondo(abierto);
 
+  // El foco (01/10): al abrir, la barra se esconde y con ella el botón «Más»
+  // que lo tenía; sin esto caía al body. Entra al menú, Tab no se escapa y al
+  // cerrar vuelve al «Más». Y el velo cierra solo si el toque empezó en él.
+  const panelMas = useRef<HTMLDivElement>(null);
+  const botonMas = useRef<HTMLButtonElement>(null);
+  useFocoDeDialogo(panelMas, abierto, botonMas);
+  const empezoEnVelo = useRef(false);
+
   const enBarra = barraDe(tipo, rubro, esAdmin, gratisPersonal);
   const todos = itemsDe(t, tipo, rubro, esAdmin);
   // Para un negocio viene vacía y «Más» queda como siempre.
@@ -591,6 +600,16 @@ export function NavInferior({
   // a la que acabás de entrar.
   useEffect(() => { setAbierto(false); }, [ruta]);
 
+  // Escape cierra, como la ✕ (una tablet con teclado). El menú «Más» no usa
+  // components/Hoja a propósito: flota centrado sobre un velo oscuro, sin
+  // tarjeta detrás, y las pruebas fijan esa forma (calculos.test.js).
+  useEffect(() => {
+    if (!abierto) return;
+    const alTeclado = (e: KeyboardEvent) => { if (e.key === 'Escape') setAbierto(false); };
+    document.addEventListener('keydown', alTeclado);
+    return () => document.removeEventListener('keydown', alTeclado);
+  }, [abierto]);
+
   return (
     <>
       {abierto && (
@@ -600,7 +619,12 @@ export function NavInferior({
             paddingTop: 'max(1rem, env(safe-area-inset-top))',
             paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
           }}
-          onClick={() => setAbierto(false)}
+          onPointerDown={(e) => { empezoEnVelo.current = e.target === e.currentTarget; }}
+          onClick={(e) => {
+            const enElVelo = empezoEnVelo.current && e.target === e.currentTarget;
+            empezoEnVelo.current = false;
+            if (enElVelo) setAbierto(false);
+          }}
         >
           {/*
             La hoja se desliza. En un celular chico, o en un idioma con
@@ -610,7 +634,9 @@ export function NavInferior({
             desplaza adentro.
           */}
           <div
-            className="flex max-h-full w-full max-w-sm flex-col aparecer"
+            ref={panelMas} tabIndex={-1}
+            role="dialog" aria-modal="true" aria-label={t.nav.todasLasSecciones}
+            className="outline-none flex max-h-full w-full max-w-sm flex-col aparecer"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex shrink-0 items-center justify-between gap-3 px-1 pb-3">
@@ -827,6 +853,7 @@ export function NavInferior({
           })}
 
           <button
+            ref={botonMas}
             type="button"
             onClick={() => setAbierto((v) => !v)}
             aria-expanded={abierto}
@@ -868,6 +895,18 @@ export function BarraSuperior({
     router.refresh();
   }
 
+  // Al navegar se cierra (01/10): tocar una pestaña de abajo lo dejaba
+  // abierto encima de la pantalla nueva.
+  useEffect(() => { setAbierto(false); }, [ruta]);
+
+  // Escape cierra el menú de la cuenta, como tocar afuera.
+  useEffect(() => {
+    if (!abierto) return;
+    const alTeclado = (e: KeyboardEvent) => { if (e.key === 'Escape') setAbierto(false); };
+    document.addEventListener('keydown', alTeclado);
+    return () => document.removeEventListener('keydown', alTeclado);
+  }, [abierto]);
+
   async function salir() {
     const supabase = clienteNavegador();
     await supabase.auth.signOut();
@@ -876,7 +915,11 @@ export function BarraSuperior({
   }
 
   return (
-    <header className="zona-segura-arriba sticky top-0 z-30">
+    // Con el menú abierto la cabecera sube por encima de la barra de abajo y
+    // del micrófono (01/10): su velo vive adentro de ella, y en z-30 la barra
+    // (z-50) y el micrófono (z-40) quedaban encima, tocables. En z-[60]
+    // también la ve «Activá los avisos», que no se abre encima.
+    <header className={`zona-segura-arriba sticky top-0 ${abierto ? 'z-[60]' : 'z-30'}`}>
       {/* El vidrio va en una capa aparte y no en el header: un header con
           backdrop-filter se vuelve el marco de sus hijos «fixed», y el velo
           que cierra el menú al tocar afuera cubría solo el header. */}
@@ -888,7 +931,7 @@ export function BarraSuperior({
           <button
             type="button" onClick={() => setAbierto((v) => !v)}
             aria-label={nombreUsuario || t.nav.miCuenta}
-            aria-expanded={abierto}
+            aria-expanded={abierto} aria-controls={abierto ? 'menu-de-la-cuenta' : undefined}
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-superficie text-[14px] font-bold text-tinta ring-1 ring-borde transition active:scale-95"
           >
             {iniciales(nombreUsuario)}
@@ -897,8 +940,17 @@ export function BarraSuperior({
 
           {abierto && (
             <>
+              {/* Velo transparente de un menú que cuelga del avatar: no es una
+                  hoja (components/Hoja), es el «tocar afuera cierra». */}
               <div className="fixed inset-0 z-40" onClick={() => setAbierto(false)} />
-              <div className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-3xl border border-borde bg-superficie shadow-[0_18px_40px_-18px_rgba(0,0,0,.35)] aparecer">
+              {/* Con varios negocios el menú crecía más que la pantalla y
+                  «Salir» quedaba cortado: ahora se desplaza adentro (01/10). */}
+              {/* Un desplegable con aria-expanded, no un role="menu": sus
+                  renglones son botones y enlaces comunes, con Tab. */}
+              <div
+                id="menu-de-la-cuenta" role="group" aria-label={nombreUsuario || t.nav.miCuenta}
+                className="barra-fina absolute left-0 top-full z-50 mt-2 max-h-[calc(100dvh-5rem)] w-64 overflow-y-auto overscroll-contain rounded-3xl border border-borde bg-superficie shadow-[0_18px_40px_-18px_rgba(0,0,0,.35)] aparecer"
+              >
                 <div className="border-b border-borde px-4 py-3">
                   <p className="text-[13px] font-bold">{nombreUsuario || t.nav.miCuenta}</p>
                   <p className="mt-0.5 truncate text-[12px] text-tinta/50">{empresa.nombre}</p>
@@ -940,9 +992,13 @@ export function BarraSuperior({
                   </Link>
                 </div>
 
-                <button onClick={salir} className="w-full px-4 py-2.5 text-left text-[13.5px] font-semibold text-rojo hover:bg-rojo-claro">
-                  {t.nav.salir}
-                </button>
+                {/* Con el mismo aire que el bloque de arriba: pegado al borde
+                    redondeado, el fondo rojo al pasar el mouse quedaba mordido. */}
+                <div className="py-1.5">
+                  <button onClick={salir} className="w-full px-4 py-2.5 text-left text-[13.5px] font-semibold text-rojo hover:bg-rojo-claro">
+                    {t.nav.salir}
+                  </button>
+                </div>
               </div>
             </>
           )}

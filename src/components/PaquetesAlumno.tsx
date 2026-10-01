@@ -10,9 +10,9 @@ import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import { CampoMonto } from '@/components/CampoMonto';
 import { InscribirAlumno } from '@/components/InscribirAlumno';
-import { FormaDeCobro, cuentaDelCobro, useCuentasParaElegir } from '@/components/FormaDeCobro';
+import { ElegirCuenta, FormaDeCobro, cuentaDelCobro, useCuentasParaElegir } from '@/components/FormaDeCobro';
 import { CorregirPorCobrar } from '@/components/CorregirPorCobrar';
-import type { PaqueteAlumno, PorCobrarAlumnos as DatosPorCobrar } from '@/lib/tipos';
+import type { CuentaParaElegir, PaqueteAlumno, PorCobrarAlumnos as DatosPorCobrar } from '@/lib/tipos';
 
 /** Las formas de pago de un paquete. `credito` es el fiado (055). */
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito'] as const;
@@ -141,12 +141,16 @@ export function PaquetesAlumno({
           moneda={moneda}
           zona={zona}
           ocupado={ocupado}
+          cuentas={cuentas}
           alCancelar={() => setVendiendo(false)}
           alGuardar={async (d) => {
             const listo = await correr(() => sb().rpc('vender_paquete', {
               p_empresa: empresaId, p_cliente: clienteId, p_nombre: d.nombre,
               p_clases: d.clases, p_precio: d.precio, p_metodo: d.metodo,
               p_fecha: null, p_vence: d.vence || null,
+              // A qué cuenta entró (117). Sin precio no hay venta, y lo fiado
+              // no entra en ninguna: cuentaDelCobro da null.
+              p_cuenta: d.precio > 0 ? cuentaDelCobro(cuentas, d.metodo, d.cuenta) : null,
             }));
             if (listo) setVendiendo(false);
           }}
@@ -312,12 +316,14 @@ export function PaquetesAlumno({
 }
 
 function FormularioPaquete({
-  moneda, zona, ocupado, alGuardar, alCancelar,
+  moneda, zona, ocupado, cuentas, alGuardar, alCancelar,
 }: {
   moneda: string;
   zona: string;
   ocupado: boolean;
-  alGuardar: (d: { nombre: string; clases: number; precio: number; metodo: string; vence: string }) => void;
+  /** Para decir a qué cuenta entró (117). Vacía para quien no administra. */
+  cuentas: CuentaParaElegir[];
+  alGuardar: (d: { nombre: string; clases: number; precio: number; metodo: string; vence: string; cuenta: string | null }) => void;
   alCancelar: () => void;
 }) {
   const t = useTextos();
@@ -326,6 +332,7 @@ function FormularioPaquete({
   const [clases, setClases] = useState('8');
   const [precio, setPrecio] = useState(0);
   const [metodo, setMetodo] = useState<string>('efectivo');
+  const [cuenta, setCuenta] = useState<string | null>(null);
   const [vence, setVence] = useState('');
 
   const numClases = Number(clases.replace(',', '.'));
@@ -357,7 +364,9 @@ function FormularioPaquete({
         <span className="etiqueta">{p.comoPago}</span>
         <div className="mt-1 flex flex-wrap gap-2">
           {METODOS.map((m) => (
-            <button key={m} type="button" onClick={() => setMetodo(m)}
+            <button key={m} type="button" aria-pressed={metodo === m}
+              // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+              onClick={() => { setMetodo(m); setCuenta(null); }}
               className={metodo === m ? 'chip-encendido' : 'chip-apagado'}>
               {/* En una venta, 'credito' es FIADO (055), no la tarjeta. La
                   pantalla de venta lo dice «Fiado»; acá también, para que
@@ -367,6 +376,12 @@ function FormularioPaquete({
           ))}
         </div>
       </div>
+
+      {/* A qué cuenta entró (117), con la misma pieza que el resto. Sin
+          precio no entra plata: no se pregunta. */}
+      {precio > 0 && (
+        <ElegirCuenta cuentas={cuentas} metodo={metodo} elegida={cuenta} alElegir={setCuenta} deshabilitado={ocupado} />
+      )}
 
       <label className="block">
         <span className="etiqueta">{p.vence}</span>
@@ -379,7 +394,7 @@ function FormularioPaquete({
 
       <div className="flex gap-2">
         <button type="button" className="boton-principal flex-1 py-2.5" disabled={ocupado || !valido}
-          onClick={() => alGuardar({ nombre: nombre.trim(), clases: numClases, precio, metodo, vence })}>
+          onClick={() => alGuardar({ nombre: nombre.trim(), clases: numClases, precio, metodo, vence, cuenta })}>
           {ocupado ? t.comun.guardando : p.vender}
         </button>
         <button type="button" className="boton-suave px-4 py-2.5" onClick={alCancelar} disabled={ocupado}>

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { dinero } from '@/lib/formato';
-import { Hoja, MensajeError } from '@/components/rutinas/panel/Piezas';
+import { Hoja, MensajeError, PieHoja } from '@/components/rutinas/panel/Piezas';
 import { useAccion } from '@/components/rutinas/panel/useAccion';
 import { fechaCorta } from '@/components/rutinas/panel/utiles';
 import type { Liquidacion, MovimientoDeLote } from '@/lib/tipos';
@@ -129,11 +129,32 @@ export function ListaLiquidaciones({
         })}
       </ul>
 
-      {/* No es el `Confirmar` de las rutinas: ese tiene el «no» fijo en
-          t.comun.cancelar, y en pt «anular» también se dice «Cancelar».
-          Acá el «no» y el «sí» dicen cosas distintas en los dos idiomas. */}
+      {/* No es el `Confirmar` de las rutinas: lleva el motivo adentro, y
+          el «no» y el «sí» dicen cosas distintas en los dos idiomas (en pt
+          «anular» también se dice «Cancelar»). */}
       {anulando && (
-        <Hoja titulo={l.tituloAnular} onCerrar={() => setAnulando(null)} bloqueada={ocupado}>
+        <Hoja
+          titulo={l.tituloAnular} onCerrar={() => setAnulando(null)} bloqueada={ocupado} tamano="chico"
+          pie={(
+            <PieHoja columnas={2}>
+              <button type="button" className="boton-suave min-h-[48px]" disabled={ocupado}
+                onClick={() => setAnulando(null)}>
+                {l.noAnular}
+              </button>
+              <button
+                type="button" className="boton-peligro min-h-[48px]" disabled={ocupado}
+                onClick={async () => {
+                  const r = await correr(() => clienteNavegador().rpc('anular_liquidacion', {
+                    p_empresa: empresaId, p_grupo: anulando.grupo_id, p_motivo: motivo.trim(),
+                  }));
+                  if (r.ok) { setAnulando(null); onCambio(l.anuladaListo); }
+                }}
+              >
+                {ocupado ? t.comun.guardando : l.siAnular}
+              </button>
+            </PieHoja>
+          )}
+        >
           <div className="space-y-3 text-[14px] leading-relaxed text-tinta/70">
             <p>{l.confirmarAnular(fechaCorta(anulando.fecha, locale, hoy))}</p>
             <div>
@@ -143,23 +164,6 @@ export function ListaLiquidaciones({
             </div>
           </div>
           <MensajeError texto={error} />
-          <div className="mt-5 grid grid-cols-2 gap-2.5">
-            <button type="button" className="boton-suave min-h-[48px]" disabled={ocupado}
-              onClick={() => setAnulando(null)}>
-              {l.noAnular}
-            </button>
-            <button
-              type="button" className="boton-peligro min-h-[48px]" disabled={ocupado}
-              onClick={async () => {
-                const r = await correr(() => clienteNavegador().rpc('anular_liquidacion', {
-                  p_empresa: empresaId, p_grupo: anulando.grupo_id, p_motivo: motivo.trim(),
-                }));
-                if (r.ok) { setAnulando(null); onCambio(l.anuladaListo); }
-              }}
-            >
-              {ocupado ? t.comun.guardando : l.siAnular}
-            </button>
-          </div>
         </Hoja>
       )}
     </>

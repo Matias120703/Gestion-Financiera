@@ -196,8 +196,11 @@ const debe = (estado, historial, ahora = AHORA, yaEnEstaSesion = false) =>
   ok('Ajustes usa el mismo hook', pref.includes('usePush()') && !pref.includes('requestPermission'), true);
   ok('el permiso se pide en un solo lugar', push.includes('Notification.requestPermission()'), true);
   ok('la hoja pide con el mismo activar()', hoja.includes('usePush()') && hoja.includes('await activar()'), true);
-  ok('la hoja sigue la regla de las hojas (z-60, 88vh, zona segura)',
-    hoja.includes('fixed inset-0 z-[60]') && hoja.includes('max-h-[88vh]') && hoja.includes('zona-segura-abajo'), true);
+  // Desde el 01/10 la regla de las hojas (z-60, altura en dvh, pie con la
+  // zona segura, Escape, fondo quieto) vive en components/Hoja.tsx: esta la usa.
+  ok('la hoja sigue la regla de las hojas (usa la Hoja de todas)',
+    hoja.includes("from '@/components/Hoja'") && hoja.includes('<Hoja') && !hoja.includes('fixed inset-0'), true);
+  ok('y no se abre encima de otra hoja', hoja.includes("classList.contains('hay-hoja')"), true);
   ok('sin fondo blanco opaco', /\bbg-white\b/.test(hoja), false);
   ok('localStorage solo en las dos funciones con try/catch', (hoja.match(/window\.localStorage\./g) || []).length, 2);
   ok('en iPhone muestra la guía', hoja.includes('<GuiaInstalar compacta />'), true);

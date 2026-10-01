@@ -7,7 +7,7 @@ import { darVueltaSeriesYReps, pegadoComoPlanilla } from '@/lib/rutina-planilla'
 import type { EjercicioBiblioteca } from '@/lib/tipos-rutinas';
 import { Hoja } from '../panel/Piezas';
 import { ExtrasPlanilla } from './ExtrasPlanilla';
-import { VistaLeida, type ModoPegar } from './VistaLeida';
+import { PieLeida, VistaLeida, type ModoPegar } from './VistaLeida';
 
 export type { ModoPegar } from './VistaLeida';
 
@@ -60,7 +60,15 @@ export function PegarTexto({
   }, [resultado, vueltas, diferido]);
 
   return (
-    <Hoja titulo={p.titulo} onCerrar={onCerrar}>
+    <Hoja
+      titulo={p.titulo} onCerrar={onCerrar} tamano="grande"
+      pie={(
+        <PieLeida
+          leida={leida} diasActuales={diasActuales} hayEjercicios={hayEjercicios}
+          onUsar={(l, modo) => onUsar(l, modo, { semanas: resultado?.duracionSemanas ?? null })}
+        />
+      )}
+    >
       <p className="text-[13.5px] leading-relaxed text-tinta/65">{p.explicacion}</p>
 
       <label htmlFor={id} className="etiqueta mt-4">{p.campo}</label>
@@ -83,7 +91,6 @@ export function PegarTexto({
             }))}
           />
         ) : undefined}
-        onUsar={(l, modo) => onUsar(l, modo, { semanas: resultado?.duracionSemanas ?? null })}
       />
     </Hoja>
   );

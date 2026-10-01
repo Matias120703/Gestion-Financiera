@@ -9,6 +9,7 @@ import { fichaDe } from '@/lib/rubros';
 import { PantallaReparto } from '@/components/PantallaReparto';
 import { MisServiciosPantalla } from '@/components/PantallaReparto';
 import { clienteServidor } from '@/lib/supabase/servidor';
+import { traerCuentasParaElegir } from '@/lib/billetera';
 import type { Miembro, Producto } from '@/lib/tipos';
 
 export const dynamic = 'force-dynamic';
@@ -60,13 +61,17 @@ export default async function PaginaReparto({
   // consulta la filtra RLS: solo vuelven los de esta empresa.
   const supabase = clienteServidor();
 
-  const [profesionales, resumen, liquidacion, productos, precios, gente] = await Promise.all([
+  // Las cuentas de la billetera (117): a cuál entra un corte cobrado y de
+  // cuál sale lo que se le paga a cada uno. Si falla, llega vacía y todo va,
+  // como siempre, a la cuenta de su forma de pago.
+  const [profesionales, resumen, liquidacion, productos, precios, gente, cuentas] = await Promise.all([
     traerProfesionales(ctx.empresa.id),
     traerResumenReparto(ctx.empresa.id, rango.desde, rango.hasta),
     traerLiquidacion(ctx.empresa.id, rango.desde, rango.hasta),
     traerProductos(ctx.empresa.id),
     traerPreciosPropios(ctx.empresa.id),
     supabase.from('miembros').select('user_id, nombre, rol').eq('empresa_id', ctx.empresa.id),
+    traerCuentasParaElegir(ctx.empresa.id),
   ]);
 
   return (
@@ -81,6 +86,7 @@ export default async function PaginaReparto({
       equipo={(gente.data ?? []) as Pick<Miembro, 'user_id' | 'nombre' | 'rol'>[]}
       desde={rango.desde}
       hasta={rango.hasta}
+      cuentas={cuentas}
     />
   );
 }

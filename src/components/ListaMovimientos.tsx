@@ -15,6 +15,8 @@ import { puedeAnular } from '@/lib/permisos';
 import { mensajeDeError } from '@/lib/errores';
 import { Adjuntos } from './Adjuntos';
 import { DialogoAnular } from '@/components/DialogoAnular';
+import { Hoja, PieHoja } from '@/components/Hoja';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import type { Cursor } from '@/lib/agregados';
 
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -208,36 +210,12 @@ export function HojaCampana({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={() => !trabajando && onCerrar()}
-    >
-      <div
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />
-        <h2 className="text-[18px] font-bold tracking-tight">{t.gastosCampana.historial.asignar}</h2>
-        <p className="mt-1 truncate text-[13.5px] text-tinta/55">{titulo}</p>
-        <p className="mt-2 text-[12.5px] font-semibold text-tinta/45">
-          {nombreActual ? t.gastosCampana.historial.deLote(nombreActual) : t.gastosCampana.historial.sinLote}
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {campanas.map((c) => (
-            <button
-              key={c.id} type="button" disabled={trabajando} onClick={() => elegir(c.id)}
-              aria-pressed={actual === c.id}
-              className={`${actual === c.id ? 'chip-encendido' : 'chip-apagado'} min-h-[44px]`}
-            >
-              {etiquetaCampana(c, idioma)}
-            </button>
-          ))}
-        </div>
-
-        {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
-
-        <div className={`mt-5 grid gap-2.5 ${actual ? 'grid-cols-2' : 'grid-cols-1'}`}>
+    <Hoja
+      titulo={t.gastosCampana.historial.asignar}
+      subtitulo={<span className="block truncate">{titulo}</span>}
+      onCerrar={onCerrar} bloqueada={trabajando} tamano="chico"
+      pie={(
+        <PieHoja columnas={actual ? 2 : 1}>
           <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar} disabled={trabajando}>
             {t.comun.cerrar}
           </button>
@@ -249,9 +227,27 @@ export function HojaCampana({
               {t.gastosCampana.historial.sacar}
             </button>
           )}
-        </div>
+        </PieHoja>
+      )}
+    >
+      <p className="text-[12.5px] font-semibold text-tinta/45">
+        {nombreActual ? t.gastosCampana.historial.deLote(nombreActual) : t.gastosCampana.historial.sinLote}
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {campanas.map((c) => (
+          <button
+            key={c.id} type="button" disabled={trabajando} onClick={() => elegir(c.id)}
+            aria-pressed={actual === c.id}
+            className={`${actual === c.id ? 'chip-encendido' : 'chip-apagado'} min-h-[44px]`}
+          >
+            {etiquetaCampana(c, idioma)}
+          </button>
+        ))}
       </div>
-    </div>
+
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+    </Hoja>
   );
 }
 
@@ -437,10 +433,11 @@ export function ListaMovimientos({
           <input className="campo pl-10" placeholder={t.pantallas.buscarMovimiento}
             value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         </div>
-        <div className="scroll-limpio flex gap-2 overflow-x-auto">
+        {/* En el celular se desliza; con mouse va en varias líneas (01/10). */}
+        <FilaDeslizable enCompu="envolver" activo={filtro} claseCaja="min-w-0" className="gap-2">
           {FILTROS.filter((f) => conVentas || f.valor !== 'venta').map((f) => (
             <button
-              key={f.valor} type="button" onClick={() => setFiltro(f.valor)}
+              key={f.valor} type="button" onClick={() => setFiltro(f.valor)} aria-pressed={filtro === f.valor}
               className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
                 filtro === f.valor ? 'border-verde bg-verde text-sobre-verde' : 'border-borde bg-superficie text-tinta/60'
               }`}
@@ -448,7 +445,7 @@ export function ListaMovimientos({
               {t.movimientos[f.texto]}
             </button>
           ))}
-        </div>
+        </FilaDeslizable>
       </div>
 
       <label className="flex cursor-pointer items-center gap-2 text-[13px] font-semibold text-tinta/55">

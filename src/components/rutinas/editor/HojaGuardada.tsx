@@ -39,20 +39,26 @@ export function HojaGuardada({
     // Hasta que llega la rutina guardada no se vuelve a editar: sin los ids
     // nuevos, el próximo guardado borraría y volvería a crear lo recién
     // agregado (y el cliente perdería sus tildes).
-    <Hoja titulo={`✓ ${g.titulo}`} onCerrar={onSeguir} bloqueada={!listaParaSeguir}>
+    <Hoja
+      titulo={`✓ ${g.titulo}`} onCerrar={onSeguir} bloqueada={!listaParaSeguir} tamano="chico"
+      pie={(
+        <div className="grid gap-2">
+          <button type="button" onClick={onVolver} className="boton-suave min-h-[48px] w-full">{g.volver}</button>
+          <button
+            type="button" onClick={onSeguir} disabled={!listaParaSeguir}
+            className="boton-texto min-h-[44px] w-full disabled:opacity-50"
+          >
+            {listaParaSeguir ? g.seguir : t.comun.cargando}
+          </button>
+        </div>
+      )}
+    >
       <p className="text-[14.5px] leading-relaxed text-tinta/75">{nueva ? g.nueva(pila) : g.cambios(pila)}</p>
-      <div className="mt-4 space-y-2.5">
+      <div className="mt-4">
         <MandarRutina
           empresaId={empresaId} clienteId={cliente.id} nombre={cliente.nombre}
           telefono={cliente.telefono} zona={zona} token={token} activo={activo}
         />
-        <button type="button" onClick={onVolver} className="boton-suave min-h-[48px] w-full">{g.volver}</button>
-        <button
-          type="button" onClick={onSeguir} disabled={!listaParaSeguir}
-          className="boton-texto min-h-[44px] w-full disabled:opacity-50"
-        >
-          {listaParaSeguir ? g.seguir : t.comun.cargando}
-        </button>
       </div>
     </Hoja>
   );

@@ -24,7 +24,10 @@ import { useIdioma, useTextos } from '@/i18n/cliente';
 import { ingresoDeCampana } from '@/lib/agricultura';
 import { cultivoVisible } from '@/components/campanas/utiles';
 import { useBloquearFondo } from '@/lib/fondo';
+import { useAlertaALaVista, useFocoDeDialogo, useVistaSinTeclado } from '@/components/Hoja';
 import { CampoMonto } from '@/components/CampoMonto';
+import { ElegirCuenta, cuentaDelCobro, useCuentasParaElegir, type SentidoPlata } from '@/components/FormaDeCobro';
+import type { CuentaParaElegir } from '@/lib/tipos';
 
 type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
 
@@ -58,6 +61,15 @@ function faltaCampana(b: CapturaDeVoz): boolean {
   return vaACampana(b) && !!b.lote_dudoso && !b.lote_id;
 }
 
+/**
+ * Para dónde va la plata de lo dictado: un gasto o el pago de una deuda
+ * salen; lo demás entra. Con «crédito», lo que sale es una tarjeta (se
+ * pregunta cuál) y lo que entra es fiado (no va a ninguna cuenta).
+ */
+function sentidoDe(tipo: TipoCaptura): SentidoPlata {
+  return tipo === 'gasto' || tipo === 'pago_deuda' ? 'sale' : 'entra';
+}
+
 const trazo = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
 function mimeSoportado(): string {
@@ -70,6 +82,7 @@ function mimeSoportado(): string {
 
 export function BotonCaptura({
   empresaId, moneda, guardaComprobantes = false, tipoCuenta = 'emprendedor', conIA = true,
+  esAdmin = false, gratisPersonal = false,
 }: {
   empresaId: string;
   moneda: string;
@@ -90,6 +103,13 @@ export function BotonCaptura({
    * La base igual lo frena (`consumir_credito_ia` con tope 0).
    */
   conIA?: boolean;
+  /**
+   * Para preguntar de qué cuenta salió o a cuál entró (01/10). Elegir la
+   * cuenta es de quien administra (la base le contesta con un error al
+   * resto), y en el Gratis personal no hay billetera: ahí no se pregunta.
+   */
+  esAdmin?: boolean;
+  gratisPersonal?: boolean;
 }) {
   const router = useRouter();
   const ruta = usePathname();
@@ -118,6 +138,13 @@ export function BotonCaptura({
    */
   const [elegido, setElegido] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
   const [guardando, setGuardando] = useState(false);
+  /**
+   * La revisión de fiado, de producto o de cliente está guardando (01/10).
+   * Cada una lleva su propio `guardando`; con esto la captura se entera y,
+   * como la Hoja con `bloqueada`, no se cierra a mitad de camino.
+   */
+  const [hijaOcupada, setHijaOcupada] = useState(false);
+  const ocupada = guardando || hijaOcupada;
   const [paso, setPaso] = useState('');
   const [origen, setOrigen] = useState<Origen>('texto');
   const [sinCupo, setSinCupo] = useState(false);
@@ -136,6 +163,13 @@ export function BotonCaptura({
    * se anota el gasto. Quien lleva la contabilidad fina lo desmarca.
    */
   const [crearGasto, setCrearGasto] = useState(true);
+  /**
+   * De qué cuenta salió o a cuál entró (01/10): lo dictado no lo dice, y con
+   * dos bancos «transferencia» no alcanza. Las cuentas se piden recién al
+   * revisar. Null = la de siempre para esa forma de pago.
+   */
+  const cuentas = useCuentasParaElegir(empresaId, esAdmin && !gratisPersonal && modo === 'revisar');
+  const [cuentaElegida, setCuentaElegida] = useState<string | null>(null);
 
   // Con la hoja adelante, el panel de atrás se queda quieto.
   useBloquearFondo(modo !== 'cerrado');
@@ -156,10 +190,39 @@ export function BotonCaptura({
 
   useEffect(() => () => { if (cronometro.current) clearInterval(cronometro.current); }, []);
 
+  // Escape cierra como tocar afuera, y con las mismas excepciones: grabando,
+  // procesando o guardando no se corta (01/10). Cerrar mientras guarda
+  // perdía el comprobante y el error, y la persona no sabía si se guardó.
+  // La captura no usa components/Hoja: el menú flota sin tarjeta y las
+  // pruebas fijan su forma (calculos.test.js).
+  const abiertaCaptura = modo !== 'cerrado';
+  const puedeCerrar = modo !== 'procesando' && modo !== 'audio' && !ocupada;
+  const cerrarConEscape = useRef<() => void>(() => {});
+  cerrarConEscape.current = () => { if (puedeCerrar) cerrar(); };
+  // El velo cierra solo si el toque EMPEZÓ y terminó en él (como la Hoja):
+  // arrastrar una selección desde el monto hacia afuera no borra lo dictado.
+  const empezoEnVelo = useRef(false);
+  // Con el teclado abierto, el velo se achica a lo que queda a la vista y
+  // Atrás/Guardar quedan arriba del teclado (como la Hoja).
+  const vista = useVistaSinTeclado(abiertaCaptura);
+  // El foco entra a la tarjeta, Tab no se escapa y al cerrar vuelve al
+  // micrófono; y un error de guardar fuera de la vista se trae a la vista.
+  const tarjeta = useRef<HTMLDivElement>(null);
+  useFocoDeDialogo(tarjeta, abiertaCaptura);
+  useAlertaALaVista(tarjeta, abiertaCaptura);
+  useEffect(() => {
+    if (!abiertaCaptura) return;
+    const alTeclado = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrarConEscape.current(); };
+    document.addEventListener('keydown', alTeclado);
+    return () => document.removeEventListener('keydown', alTeclado);
+  }, [abiertaCaptura]);
+
   function cerrar() {
     fotoRef.current = null;
+    setHijaOcupada(false);
     setDeudas([]);
     setCrearGasto(true);
+    setCuentaElegida(null);
     setModo('cerrado');
     setTexto('');
     setError('');
@@ -223,6 +286,7 @@ export function BotonCaptura({
       }
 
       setBorrador(interpretado);
+      setCuentaElegida(null);
       // Si la persona dijo «fiado a Juan», la IA ya sabe que es Juan. Dejar
       // el campo vacío la obligaba a escribir de nuevo algo que acababa de
       // decir, y si tocaba Guardar sin darse cuenta, la venta no salía.
@@ -409,6 +473,10 @@ export function BotonCaptura({
       // La campaña solo viaja donde corresponde: si cambió el tipo a mano a
       // uno sin campaña, se queda en la pantalla y no llega a la base.
       const loteId = vaACampana(borrador) ? borrador.lote_id ?? null : null;
+      // La cuenta marcada en «¿De qué cuenta salió?» (01/10). Sin lista
+      // (quien no administra, el Gratis personal) queda null y decide la
+      // forma de pago, como siempre. Lo fiado no va a ninguna.
+      const cuenta = cuentaDelCobro(cuentas, borrador.metodo_pago, cuentaElegida, sentidoDe(borrador.tipo));
 
       if (borrador.tipo === 'deuda') {
         /**
@@ -452,6 +520,8 @@ export function BotonCaptura({
           p_crear_gasto: crearGasto,
           p_metodo: borrador.metodo_pago,
           p_nota: borrador.transcripcion ?? '',
+          // Sin el gasto no hay movimiento: la base no la usaría.
+          p_cuenta: crearGasto ? cuenta : null,
         });
         if (error) throw error;
         // Si se creó el gasto, el comprobante se cuelga de ahí.
@@ -503,6 +573,7 @@ export function BotonCaptura({
           p_notas: borrador.transcripcion ?? '',
           p_origen: origen,
           p_descuento: descuento,
+          p_cuenta: cuenta,
         });
         if (error) throw error;
         idGuardado = typeof data === 'string' ? data : null;
@@ -532,6 +603,8 @@ export function BotonCaptura({
           contraparte: borrador.contraparte ?? '',
           notas: borrador.transcripcion ?? '',
           origen,
+          // Null deja que el disparador la deduzca de la forma de pago (074).
+          cuenta_id: cuenta,
           // En el insert mismo, no después: la policy lo deja pasar y así no
           // hay un segundo viaje que pueda fallar a medias.
           ...(loteId ? { lote_id: loteId } : {}),
@@ -599,12 +672,27 @@ export function BotonCaptura({
       </button>
 
       {abierto && (
-        <div className={`fixed inset-0 z-[60] flex touch-none justify-center overscroll-none bg-noche/70 px-4 pb-24 backdrop-blur-sm sm:items-center sm:pb-6 sm:pt-6 ${
-          // Al escribir, arriba: centrado, el teclado le tapaba Atrás e Interpretar.
-          modo === 'texto' ? 'items-start pt-[calc(env(safe-area-inset-top)+16px)]' : 'items-center pt-6'
-        }`} onClick={() => modo !== 'procesando' && modo !== 'audio' && cerrar()}>
+        <div
+          className={`fixed inset-0 z-[60] flex touch-none justify-center overscroll-none bg-noche/70 px-4 backdrop-blur-sm sm:items-center sm:pb-6 sm:pt-6 ${
+            // Con el teclado abierto el velo ya termina arriba de él: el aire
+            // de abajo (el de la barra) sobra y le comía lugar a la tarjeta.
+            vista ? 'pb-3' : 'pb-24'
+          } ${
+            // Al escribir, arriba: centrado, el teclado le tapaba Atrás e Interpretar.
+            modo === 'texto' ? 'items-start pt-[calc(env(safe-area-inset-top)+16px)]' : 'items-center pt-6'
+          }`}
+          style={vista ? { top: vista.arriba, height: vista.alto, bottom: 'auto' } : undefined}
+          onPointerDown={(e) => { empezoEnVelo.current = e.target === e.currentTarget; }}
+          onClick={(e) => {
+            const enElVelo = empezoEnVelo.current && e.target === e.currentTarget;
+            empezoEnVelo.current = false;
+            if (enElVelo && puedeCerrar) cerrar();
+          }}
+        >
           <div
-            className={`max-h-full w-full max-w-md touch-pan-y overflow-y-auto overscroll-contain aparecer ${
+            ref={tarjeta} tabIndex={-1}
+            role="dialog" aria-modal="true" aria-label={t.captura.registrarRapido}
+            className={`max-h-full w-full max-w-md touch-pan-y overflow-y-auto overscroll-contain barra-fina outline-none aparecer ${
               modo === 'menu'
                 ? 'p-1'
                 : 'rounded-3xl border border-borde bg-superficie p-5 shadow-tarjeta'
@@ -651,7 +739,7 @@ export function BotonCaptura({
                 )}
 
                 {error && (
-                  <div className={`mt-4 rounded-xl px-3 py-2.5 text-[13px] font-medium ${
+                  <div role="alert" className={`mt-4 rounded-xl px-3 py-2.5 text-[13px] font-medium ${
                     sinCupo ? 'bg-ambar-claro text-ambar' : 'bg-rojo-claro text-rojo'
                   }`}>
                     <p>{error}</p>
@@ -742,7 +830,7 @@ export function BotonCaptura({
                   autoFocus placeholder={t.captura.ejemploLargo}
                   value={texto} onChange={(e) => setTexto(e.target.value)}
                 />
-                {error && <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+                {error && <p role="alert" className="mt-3 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
                 <div className="mt-4 grid grid-cols-2 gap-2.5">
                   <button className="boton-suave py-3" onClick={() => setModo('menu')}>{t.captura.atras}</button>
                   <button className="boton-principal py-3" onClick={enviarTexto}>{t.captura.interpretar}</button>
@@ -767,20 +855,24 @@ export function BotonCaptura({
               borrador.tipo === 'fiado' || borrador.tipo === 'cobro_fiado' ? (
                 <RevisionFiado
                   borrador={borrador} moneda={moneda} empresaId={empresaId} tipoCuenta={tipoCuenta}
+                  cuentas={cuentas}
                   onCambio={setBorrador} onCancelar={() => setModo('menu')}
                   onListo={() => { cerrar(); router.refresh(); }}
+                  onOcupado={setHijaOcupada}
                 />
               ) : borrador.tipo === 'producto' ? (
                 <RevisionProducto
                   borrador={borrador} moneda={moneda} empresaId={empresaId} tipoCuenta={tipoCuenta}
                   onCambio={setBorrador} onCancelar={() => setModo('menu')}
                   onListo={() => { cerrar(); router.refresh(); }}
+                  onOcupado={setHijaOcupada}
                 />
               ) : borrador.tipo === 'cliente' ? (
                 <RevisionCliente
                   borrador={borrador} empresaId={empresaId} tipoCuenta={tipoCuenta}
                   onCambio={setBorrador} onCancelar={() => setModo('menu')}
                   onListo={() => { cerrar(); router.refresh(); }}
+                  onOcupado={setHijaOcupada}
                 />
               ) : (
                 <Revision
@@ -789,6 +881,7 @@ export function BotonCaptura({
                   deudas={deudas} crearGasto={crearGasto} onCrearGasto={setCrearGasto}
                   onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
                   empresaId={empresaId} elegido={elegido} setElegido={setElegido}
+                  cuentas={cuentas} cuentaElegida={cuentaElegida} onElegirCuenta={setCuentaElegida}
                 />
               )
             )}
@@ -842,6 +935,7 @@ function Opcion({
 function Revision({
   borrador, moneda, error, guardando, paso, tipoCuenta, deudas, crearGasto, onCrearGasto,
   onCambio, onCancelar, onGuardar, empresaId, elegido, setElegido,
+  cuentas, cuentaElegida, onElegirCuenta,
 }: {
   borrador: CapturaDeVoz;
   moneda: string;
@@ -859,6 +953,10 @@ function Revision({
   onCambio: (c: CapturaDeVoz) => void;
   onCancelar: () => void;
   onGuardar: () => void;
+  /** Para «¿De qué cuenta salió?» (01/10). Vacía: no se pregunta. */
+  cuentas: CuentaParaElegir[];
+  cuentaElegida: string | null;
+  onElegirCuenta: (cuenta: string | null) => void;
 }) {
   const t = useTextos();
   const idioma = useIdioma();
@@ -1002,7 +1100,11 @@ function Revision({
         {!esDeuda && (
           <div>
             <label className="etiqueta">{t.captura.campoCobroPago}</label>
-            <select className="campo" value={borrador.metodo_pago} onChange={(e) => set('metodo_pago', e.target.value)}>
+            <select
+              className="campo" value={borrador.metodo_pago}
+              // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+              onChange={(e) => { set('metodo_pago', e.target.value); onElegirCuenta(null); }}
+            >
               <option value="efectivo">{t.captura.metodoEfectivo}</option>
               <option value="transferencia">{t.captura.metodoTransferencia}</option>
               <option value="tarjeta">{t.captura.metodoTarjeta}</option>
@@ -1024,6 +1126,19 @@ function Revision({
               etiqueta={t.captura.aQuienSeLoFias}
               pedirTelefono
               obligatorio
+            />
+          </div>
+        )}
+
+        {/* De qué cuenta salió o a cuál entró (01/10), con la misma pieza que
+            Gastos y Deudas. Un pago sin «anotarlo como gasto» no mueve
+            ninguna cuenta: ahí no se pregunta. */}
+        {!esDeuda && !(esPago && !crearGasto) && (
+          <div className="col-span-2 empty:hidden">
+            <ElegirCuenta
+              cuentas={cuentas} metodo={borrador.metodo_pago} elegida={cuentaElegida}
+              alElegir={onElegirCuenta} deshabilitado={guardando}
+              sentido={sentidoDe(borrador.tipo)}
             />
           </div>
         )}
@@ -1235,9 +1350,11 @@ function Revision({
         <p className="mt-1.5 text-[13px] text-tinta/50">{dinero(borrador.monto, moneda)}</p>
       </div>
 
-      {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-      <div className="mt-5 grid grid-cols-2 gap-2.5 pb-1">
+      {/* Pegado abajo de la tarjeta: con varios productos, Guardar no queda
+          al fondo del scroll (globals.css, `.pie-captura`). */}
+      <div className="pie-captura">
         <button className="boton-suave py-3" onClick={onCancelar} disabled={guardando}>{t.captura.atras}</button>
         <button className="boton-principal py-3" onClick={onGuardar} disabled={guardando || borrador.monto <= 0 || faltaElegirDeuda || dudaCampana}>
           {guardando ? paso || t.comun.guardando : t.comun.guardar}

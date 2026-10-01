@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import plugin from 'tailwindcss/plugin';
 
 /**
  * LOS COLORES SON VARIABLES, NO NÚMEROS FIJOS.
@@ -72,6 +73,17 @@ const config: Config = {
       borderRadius: { xl2: '1.25rem' },
     },
   },
-  plugins: [],
+  plugins: [
+    /*
+     * `mouse:` — con mouse o trackpad, no con el dedo (01/10). Las filas que
+     * se deslizan de costado (components/FilaDeslizable.tsx) se acomodan en
+     * varias líneas o muestran flechas solo así: se decide por cómo se toca,
+     * no por el ancho. Un celular acostado sigue deslizando con el dedo, y
+     * una computadora con la ventana angosta igual tiene de dónde agarrar.
+     */
+    plugin(({ addVariant }) => {
+      addVariant('mouse', '@media (hover: hover) and (pointer: fine)');
+    }),
+  ],
 };
 export default config;

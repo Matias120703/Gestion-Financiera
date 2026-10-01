@@ -6,7 +6,7 @@ import Link from 'next/link';
  */
 export const SECCIONES_AJUSTES = [
   'negocio', 'moneda', 'equipo', 'plan', 'idioma', 'avisos',
-  'estado', 'permisos', 'calculos', 'soporte', 'admin', 'peligro',
+  'estado', 'permisos', 'calculos', 'admin', 'peligro',
 ] as const;
 export type SeccionAjustes = (typeof SECCIONES_AJUSTES)[number];
 
@@ -81,7 +81,6 @@ const ICONOS: Record<SeccionAjustes, React.ReactNode> = {
   estado: <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 3.5 19.5 6v5.5c0 4.4-3.1 7.9-7.5 9-4.4-1.1-7.5-4.6-7.5-9V6Z" /><path d="m8.8 12 2.2 2.2 4.2-4.4" /></svg>,
   permisos: <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><rect x="5" y="10.5" width="14" height="10" rx="2.2" /><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" /></svg>,
   calculos: <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><rect x="5" y="3.5" width="14" height="17" rx="2.5" /><path d="M8.5 7.5h7M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15v2.5" /></svg>,
-  soporte: <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12Z" /><path d="M8.5 12h.01M12 12h.01M15.5 12h.01" /></svg>,
   admin: <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><circle cx="12" cy="12" r="7.5" /><path d="M12 8.5v7" /></svg>,
   peligro: <svg viewBox="0 0 24 24" className="h-5 w-5" {...trazo}><path d="M12 4 21 19.5H3Z" /><path d="M12 10v4M12 17h.01" /></svg>,
 };

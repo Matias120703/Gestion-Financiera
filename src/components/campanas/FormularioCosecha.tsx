@@ -91,13 +91,21 @@ export function FormularioCosecha({
   }
 
   return (
-    <Hoja titulo={c.titulo} onCerrar={onCerrar} bloqueada={ocupado}>
-      <p className="-mt-1 text-[13px] leading-relaxed text-tinta/55">{c.detalle}</p>
+    <Hoja
+      titulo={c.titulo} subtitulo={c.detalle}
+      onCerrar={onCerrar} bloqueada={ocupado}
+      pie={(
+        <button type="button" className="boton-principal min-h-[48px] w-full"
+          disabled={ocupado || bloqueado} onClick={guardar}>
+          {ocupado ? t.comun.guardando : c.guardar}
+        </button>
+      )}
+    >
       {lote.estado === 'cerrado' && (
-        <p className="mt-2 rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] font-medium text-ambar">{c.enLoteCerrado}</p>
+        <p className="mb-2 rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] font-medium text-ambar">{c.enLoteCerrado}</p>
       )}
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-2 space-y-4">
         {/* ---- lo que importa: los kilos acreditados, grandes ---- */}
         <div>
           <label className="etiqueta" htmlFor="cosecha-netos">{c.kgNetos}</label>
@@ -171,12 +179,13 @@ export function FormularioCosecha({
             <div>
               <label className="etiqueta" htmlFor="cosecha-destino">{c.destino}</label>
               {destinosUnicos.length > 0 && (
-                <div className="mb-2 flex gap-2 overflow-x-auto scroll-limpio">
+                // En varias líneas (01/10): de costado, con mouse no se llegaba a los últimos.
+                <div className="mb-2 flex flex-wrap gap-2">
                   {destinosUnicos.map((d) => (
                     <button key={d} type="button" disabled={ocupado}
-                      className={destino.trim() === d ? 'chip-encendido' : 'chip-apagado'}
+                      className={`${destino.trim() === d ? 'chip-encendido' : 'chip-apagado'} max-w-full`}
                       onClick={() => setDestino(d)}>
-                      {d}
+                      <span className="truncate">{d}</span>
                     </button>
                   ))}
                 </div>
@@ -202,11 +211,6 @@ export function FormularioCosecha({
       </div>
 
       <MensajeError texto={error} />
-
-      <button type="button" className="boton-principal mt-5 min-h-[48px] w-full"
-        disabled={ocupado || bloqueado} onClick={guardar}>
-        {ocupado ? t.comun.guardando : c.guardar}
-      </button>
     </Hoja>
   );
 }

@@ -9,7 +9,7 @@ import { LARGOS } from '@/lib/rutina-texto';
 import { limpiarVideosPendientes } from '@/lib/video';
 import { Vacio } from '@/components/Piezas';
 import type { CupoVideos, EjercicioBiblioteca, GrupoEjercicio } from '@/lib/tipos-rutinas';
-import { Confirmar, Hoja, MensajeError, MensajeListo } from './panel/Piezas';
+import { Confirmar, Hoja, MensajeError, MensajeListo, PieHoja } from './panel/Piezas';
 import { useAccion } from './panel/useAccion';
 import { VideoDelEjercicio } from './VideoDelEjercicio';
 
@@ -254,7 +254,20 @@ function HojaEjercicio({
   }
 
   return (
-    <Hoja titulo={ejercicio ? ejercicio.nombre : b.nuevoTitulo} onCerrar={onCerrar} bloqueada={ocupado}>
+    <Hoja
+      titulo={ejercicio ? ejercicio.nombre : b.nuevoTitulo} onCerrar={onCerrar} bloqueada={ocupado}
+      pie={(
+        <PieHoja columnas={2}>
+          <button type="button" onClick={onCerrar} disabled={ocupado} className="boton-suave min-h-[48px]">{t.comun.cancelar}</button>
+          {/* Quieto mientras el video trabaja, pero «Guardando…» solo cuando
+              guarda: con la pregunta de quitar el video abierta encima decía
+              «Guardando…» sin que nadie hubiera tocado Guardar. */}
+          <button type="button" onClick={alGuardar} disabled={ocupado} className="boton-principal min-h-[48px]">
+            {ocupadoBase ? t.comun.guardando : t.comun.guardar}
+          </button>
+        </PieHoja>
+      )}
+    >
       <div className="space-y-4">
         <label className="block">
           <span className="etiqueta">{b.nombre}</span>
@@ -336,13 +349,6 @@ function HojaEjercicio({
         )}
 
         <MensajeError texto={error} />
-
-        <div className="grid grid-cols-2 gap-2.5">
-          <button type="button" onClick={onCerrar} disabled={ocupado} className="boton-suave min-h-[48px]">{t.comun.cancelar}</button>
-          <button type="button" onClick={alGuardar} disabled={ocupado} className="boton-principal min-h-[48px]">
-            {ocupado ? t.comun.guardando : t.comun.guardar}
-          </button>
-        </div>
 
         {ejercicio && esAdmin && ejercicio.usos === 0 && (
           <button

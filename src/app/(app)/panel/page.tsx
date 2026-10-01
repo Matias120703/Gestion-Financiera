@@ -9,6 +9,7 @@ import { rangoAnterior, diasDelRango, diffDias, hoyISO, resolverRango } from '@/
 import { variacion } from '@/lib/calculos';
 import { dinero, dineroCorto, porcentaje, numero, fechaLegible, dineroQuizas } from '@/lib/formato';
 import { SelectorRango } from '@/components/SelectorRango';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import { Indicador, GraficoDiario, Barra, Vacio, Seccion } from '@/components/Piezas';
 import { permisosDe } from '@/lib/permisos';
 import { textos, idiomaActual, FICHA } from '@/i18n';
@@ -847,17 +848,21 @@ function Atajos({
 }) {
   const visibles = items.filter((i) => ficha[i.href]);
   if (visibles.length < 2) return null;
+  // En el celular se deslizan de costado; con mouse van en varias líneas,
+  // por si la ventana es angosta (01/10, FilaDeslizable).
   return (
-    <nav aria-label={etiqueta} className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
-      {visibles.map((a, i) => (
-        <Link
-          key={a.href}
-          href={a.href}
-          className={`${i === 0 ? 'boton-principal' : 'boton-suave'} shrink-0 px-5 py-2.5 text-[14px]`}
-        >
-          {a.texto}
-        </Link>
-      ))}
+    <nav aria-label={etiqueta}>
+      <FilaDeslizable enCompu="envolver" sangria="pagina" className="gap-2">
+        {visibles.map((a, i) => (
+          <Link
+            key={a.href}
+            href={a.href}
+            className={`${i === 0 ? 'boton-principal' : 'boton-suave'} shrink-0 px-5 py-2.5 text-[14px]`}
+          >
+            {a.texto}
+          </Link>
+        ))}
+      </FilaDeslizable>
     </nav>
   );
 }

@@ -6,6 +6,7 @@ import { useOcultarMontos } from '@/lib/ocultar-montos';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { BotonOjo } from '@/components/PantallaBilletera';
 import { TarjetaCuenta } from '@/components/TarjetaCuenta';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import type { Billetera } from '@/lib/tipos';
 
 /**
@@ -68,8 +69,17 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
           Por eso el `pb-6 -mb-4` (la sombra de la tarjeta baja unos 22px y
           sin ese aire se cortaba en seco) y el `pt-1` con los 4px a los
           costados en pantalla grande: son para que el recuadro de foco del
-          teclado se vea entero. */}
-      <div className="scroll-limpio -mx-4 -mb-4 mt-2 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-6 pt-1 lg:-mx-1 lg:scroll-px-1 lg:px-1">
+          teclado se vea entero.
+
+          Con mouse, flechas a los costados y el encaje igual (01/10): con
+          cinco cuentas o más, en la computadora no se llegaba a las últimas.
+          Sin ruedita: la fila es alta y, al bajar la página con la rueda,
+          quedaría enganchada en las tarjetas. */}
+      <FilaDeslizable
+        enCompu="flechas" rueda={false}
+        claseCaja="-mx-4 -mb-4 mt-2 lg:-mx-1"
+        className="snap-x snap-mandatory scroll-px-4 gap-3 px-4 pb-6 pt-1 lg:scroll-px-1 lg:px-1"
+      >
         {cuentas.map((c) => (
           <Link
             key={c.id}
@@ -82,7 +92,7 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
             <TarjetaCuenta cuenta={c} tipo={b.tipos[c.tipo]} saldo={plata(Number(c.saldo))} />
           </Link>
         ))}
-      </div>
+      </FilaDeslizable>
     </section>
   );
 }

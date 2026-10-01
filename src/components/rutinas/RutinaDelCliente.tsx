@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { useTextos } from '@/i18n/cliente';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import { rutinaComoTexto } from '@/lib/rutina-texto';
 import { clipsDeLaRutina, esCopiaVieja } from '@/lib/rutina-sin-senal';
 import type { ClipPublico, RutinaPublica } from '@/lib/tipos-rutinas';
@@ -386,9 +387,9 @@ function VistaRutina({
   const hechosDelDia = dia.ejercicios.filter((e) => hechos.has(e.id)).length;
 
   // Al cambiar de día, si ya bajó, se vuelve al principio del día (las
-  // pestañas quedan fijas arriba) y la pestaña elegida se centra en la tira.
+  // pestañas quedan fijas arriba). La pestaña elegida se centra en la tira:
+  // lo hace FilaDeslizable con `centrar`.
   const ancla = useRef<HTMLDivElement>(null);
-  const tira = useRef<HTMLDivElement>(null);
   function elegir(i: number) {
     setElegido(i);
     const a = ancla.current;
@@ -396,12 +397,6 @@ function VistaRutina({
     const y = a.getBoundingClientRect().top + window.scrollY;
     if (window.scrollY > y) window.scrollTo({ top: y });
   }
-  useEffect(() => {
-    const cont = tira.current;
-    const boton = cont?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!cont || !boton) return;
-    cont.scrollTo({ left: boton.offsetLeft - (cont.clientWidth - boton.offsetWidth) / 2, behavior: 'smooth' });
-  }, [actual]);
 
   // Las fechas: «desde» es un día (sin hora) y se lee igual en todos lados;
   // «actualizada» es un momento, y el día depende de la zona. El servidor
@@ -427,7 +422,7 @@ function VistaRutina({
 
   return (
     <div className="min-h-screen bg-arena">
-      <main className="zona-segura-abajo mx-auto max-w-md px-4 pb-16">
+      <main className="mx-auto max-w-md px-4 pb-[max(4rem,env(safe-area-inset-bottom))]">
         <header className="zona-segura-arriba">
           {aviso && <div className="pt-4">{aviso}</div>}
           <div className={aviso ? 'pt-5' : 'pt-8'}>
@@ -452,11 +447,12 @@ function VistaRutina({
         <div ref={ancla} className="mt-5" />
         {dias.length > 1 && (
           <nav className="zona-segura-arriba sticky top-0 z-30 -mx-4 border-b border-borde/70 bg-arena/95 px-4 backdrop-blur">
-            <div
-              ref={tira}
-              role="tablist"
-              aria-label={r.diasDeLaRutina}
-              className="scroll-limpio relative flex gap-2 overflow-x-auto py-2.5"
+            {/* En una línea siempre: es una barra fija, y en varias taparía
+                media pantalla al bajar. Con mouse, flechas y ruedita (01/10):
+                en la computadora no se llegaba a los últimos días. */}
+            <FilaDeslizable
+              enCompu="flechas" rol="tablist" etiqueta={r.diasDeLaRutina} teclado="pestanas"
+              activo={actual} centrar className="gap-2 py-2.5"
             >
               {dias.map((d, i) => (
                 <button
@@ -465,6 +461,7 @@ function VistaRutina({
                   role="tab"
                   id={`dia-${d.orden}`}
                   aria-selected={i === actual}
+                  tabIndex={i === actual ? 0 : -1}
                   aria-controls="dia-elegido"
                   onClick={() => elegir(i)}
                   className={`${i === actual ? 'chip-encendido' : 'chip-apagado'} min-h-[48px] max-w-[75vw] gap-1.5 text-[15px]`}
@@ -473,7 +470,7 @@ function VistaRutina({
                   {completo(d) && <span aria-hidden>✓</span>}
                 </button>
               ))}
-            </div>
+            </FilaDeslizable>
           </nav>
         )}
 

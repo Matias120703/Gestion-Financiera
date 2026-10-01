@@ -9,7 +9,9 @@ import { decimalesDe, dinero, fechaLegible } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { Vacio } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
-import type { Deuda, PagoDeuda, ResumenDeudas, TipoDeuda } from '@/lib/tipos';
+import { Hoja, PieHoja } from '@/components/Hoja';
+import { ElegirCuenta, cuentaDelCobro } from '@/components/FormaDeCobro';
+import type { CuentaParaElegir, Deuda, PagoDeuda, ResumenDeudas, TipoDeuda } from '@/lib/tipos';
 
 /**
  * Nombre traducible del tipo de deuda.
@@ -46,13 +48,15 @@ const trazo = {
  * dice la verdad.
  */
 export function PantallaDeudas({
-  empresaId, moneda, deudas, resumen, puedeEditar,
+  empresaId, moneda, deudas, resumen, puedeEditar, cuentas = [],
 }: {
   empresaId: string;
   moneda: string;
   deudas: Deuda[];
   resumen: ResumenDeudas;
   puedeEditar: boolean;
+  /** Las cuentas de la billetera, para decir de cuál salió cada pago (01/10). */
+  cuentas?: CuentaParaElegir[];
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -144,6 +148,7 @@ export function PantallaDeudas({
         <FormularioPago
           deuda={pagando}
           moneda={moneda}
+          cuentas={cuentas}
           onCerrar={() => setPagando(null)}
           onListo={(mensaje) => { setAviso(mensaje); setTimeout(() => setAviso(''), 6000); }}
         />
@@ -303,7 +308,7 @@ function EliminarDeuda({ deuda }: { deuda: Deuda }) {
         </button>
         <button
           type="button" onClick={eliminar} disabled={eliminando}
-          className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
+          className="boton-peligro flex-1 px-4 py-2.5 text-[13.5px]"
         >
           {t.deudas.siEliminar}
         </button>
@@ -440,7 +445,7 @@ function DeshacerPago({ pago, alDeshacer }: { pago: PagoDeuda; alDeshacer: () =>
         </button>
         <button
           type="button" onClick={deshacer} disabled={trabajando}
-          className="flex-1 rounded-xl bg-rojo px-3 py-2 text-[13px] font-bold text-white disabled:opacity-50"
+          className="boton-peligro flex-1 px-3 py-2 text-[13px]"
         >
           {trabajando ? t.comun.cargando : t.deudas.siDeshacer}
         </button>
@@ -511,10 +516,19 @@ function FormularioDeuda({
   ];
 
   return (
-    <Hoja onCerrar={onCerrar}>
-      <form onSubmit={guardar} className="space-y-3.5">
-        <h2 className="text-[19px] font-bold tracking-tight">{t.deudas.nueva}</h2>
-
+    <Hoja
+      titulo={t.deudas.nueva} onCerrar={onCerrar} bloqueada={guardando}
+      formulario={{ onSubmit: guardar }}
+      pie={(
+        <PieHoja columnas={2}>
+          <button type="button" onClick={onCerrar} disabled={guardando} className="boton-suave min-h-[48px]">{t.comun.cancelar}</button>
+          <button type="submit" className="boton-principal min-h-[48px]" disabled={!puede || guardando}>
+            {guardando ? t.comun.guardando : t.deudas.guardar}
+          </button>
+        </PieHoja>
+      )}
+    >
+      <div className="space-y-3.5">
         <div className="flex flex-wrap gap-2">
           {TIPOS.map(([v, etiqueta]) => (
             <button
@@ -579,26 +593,30 @@ function FormularioDeuda({
         </label>
 
         {error && (
-          <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
+          <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
         )}
-
-        <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onCerrar} className="boton-suave flex-1">{t.comun.cancelar}</button>
-          <button className="boton-principal flex-1" disabled={!puede || guardando}>
-            {guardando ? t.comun.guardando : t.deudas.guardar}
-          </button>
-        </div>
-      </form>
+      </div>
     </Hoja>
   );
 }
 
-/** Registrar un pago. */
+/**
+ * Registrar un pago.
+ *
+ * DE QUÉ CUENTA SALIÓ (01/10). Matías: «tengo dos bancos, elegí
+ * Transferencia, y no me salen las opciones para elegir de cuál banco
+ * debitar». La base ya lo recibía (`p_cuenta`, 100) y la pantalla no lo
+ * preguntaba: el pago caía siempre en el banco que reclama «transferencia».
+ * Ahora se pregunta con la misma pieza que Gastos y Vender. Sin «Anotarlo
+ * también como gasto» no hay movimiento y ninguna cuenta baja: ahí la
+ * pregunta se esconde y se dice que la billetera no se mueve.
+ */
 function FormularioPago({
-  deuda, moneda, onCerrar, onListo,
+  deuda, moneda, cuentas, onCerrar, onListo,
 }: {
   deuda: Deuda;
   moneda: string;
+  cuentas: CuentaParaElegir[];
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
 }) {
@@ -608,6 +626,8 @@ function FormularioPago({
   // Se propone la cuota si la deuda las tiene: es lo que se paga casi siempre.
   const [monto, setMonto] = useState(Number(deuda.monto_cuota) || 0);
   const [metodo, setMetodo] = useState('efectivo');
+  /** La cuenta tocada a mano; null = la de siempre para esa forma de pago. */
+  const [cuenta, setCuenta] = useState<string | null>(null);
   const [crearGasto, setCrearGasto] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
@@ -627,6 +647,8 @@ function FormularioPago({
         p_crear_gasto: crearGasto,
         p_metodo: metodo,
         p_nota: '',
+        // Sin el gasto la base no la usa: no se manda.
+        p_cuenta: crearGasto ? cuentaDelCobro(cuentas, metodo, cuenta) : null,
       });
       if (err) throw err;
 
@@ -649,15 +671,21 @@ function FormularioPago({
     .map((codigo) => [codigo, metodoVisible(t, codigo)]);
 
   return (
-    <Hoja onCerrar={onCerrar}>
-      <form onSubmit={pagar} className="space-y-3.5">
-        <div>
-          <h2 className="text-[19px] font-bold tracking-tight">{t.deudas.pagar}</h2>
-          <p className="mt-0.5 text-[13.5px] text-tinta/55">
-            {deuda.nombre} · {t.deudas.saldo} {plata(Number(deuda.saldo))}
-          </p>
-        </div>
-
+    <Hoja
+      titulo={t.deudas.pagar}
+      subtitulo={<>{deuda.nombre} · {t.deudas.saldo} {plata(Number(deuda.saldo))}</>}
+      onCerrar={onCerrar} bloqueada={guardando}
+      formulario={{ onSubmit: pagar }}
+      pie={(
+        <PieHoja columnas={2}>
+          <button type="button" onClick={onCerrar} disabled={guardando} className="boton-suave min-h-[48px]">{t.comun.cancelar}</button>
+          <button type="submit" className="boton-principal min-h-[48px]" disabled={monto <= 0 || guardando}>
+            {guardando ? t.comun.guardando : t.deudas.pagar}
+          </button>
+        </PieHoja>
+      )}
+    >
+      <div className="space-y-3.5">
         <label className="block">
           <span className="etiqueta">{t.deudas.cuantoPagaste} ({moneda})</span>
           <CampoMonto className="campo" required autoFocus decimales={decimalesDe(moneda)}
@@ -669,7 +697,9 @@ function FormularioPago({
           <div className="flex flex-wrap gap-2">
             {METODOS.map(([v, etiqueta]) => (
               <button
-                key={v} type="button" onClick={() => setMetodo(v)}
+                key={v} type="button" aria-pressed={metodo === v}
+                // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
+                onClick={() => { setMetodo(v); setCuenta(null); }}
                 className={metodo === v ? 'chip-encendido' : 'chip-apagado'}
               >
                 {etiqueta}
@@ -677,6 +707,13 @@ function FormularioPago({
             ))}
           </div>
         </div>
+
+        {crearGasto && (
+          <ElegirCuenta
+            cuentas={cuentas} metodo={metodo} elegida={cuenta} alElegir={setCuenta}
+            deshabilitado={guardando} sentido="sale"
+          />
+        )}
 
         {/* La casilla está marcada por defecto porque, para quien usa Orden,
             esa plata salió de su bolsillo y espera verla en sus gastos.
@@ -691,41 +728,18 @@ function FormularioPago({
             <span className="mt-0.5 block text-[12.5px] leading-relaxed text-tinta/50">
               {t.deudas.crearGastoDetalle}
             </span>
+            {!crearGasto && cuentas.length > 0 && (
+              <span className="mt-1 block text-[12.5px] font-medium leading-relaxed text-ambar">
+                {t.deudas.sinGastoNoMueve}
+              </span>
+            )}
           </span>
         </label>
 
         {error && (
-          <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
+          <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
         )}
-
-        <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onCerrar} className="boton-suave flex-1">{t.comun.cancelar}</button>
-          <button className="boton-principal flex-1" disabled={monto <= 0 || guardando}>
-            {guardando ? t.comun.guardando : t.deudas.pagar}
-          </button>
-        </div>
-      </form>
-    </Hoja>
-  );
-}
-
-/**
- * La hoja emergente, con las reglas de globals.css: por encima de la barra
- * (z-60) y con altura máxima para que se pueda deslizar.
- */
-function Hoja({ children, onCerrar }: { children: React.ReactNode; onCerrar: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={onCerrar}
-    >
-      <div
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 shadow-tarjeta aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde sm:hidden" />
-        {children}
       </div>
-    </div>
+    </Hoja>
   );
 }

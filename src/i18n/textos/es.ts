@@ -52,6 +52,9 @@ export const es = {
     verVideo: (titulo: string) => `Ver el video: ${titulo}`,
     planLoDefineElSistema: 'El plan lo determina el sistema de suscripciones mirando el estado y el periodo pagado. No se puede cambiar desde la aplicación.',
     lemaOrden: 'Tu gestión financiera',
+    // Las flechas de una fila que se desliza de costado, con mouse (FilaDeslizable).
+    verAnteriores: 'Ver anteriores',
+    verMas: 'Ver más',
   },
 
   /**
@@ -1046,15 +1049,11 @@ export const es = {
     menosDetalles: 'Menos detalles',
     masDetalles: 'Agregar detalle, fecha o forma de pago',
     siNoPonesNada: (categoria: string) => `Si no ponés nada, queda «${categoria}»`,
-    // Con dos bancos, «transferencia» no dice a cuál (075).
-    automatica: 'Automática',
-    deQueCuenta: '¿De qué cuenta salió?',
+    // Con dos bancos, «transferencia» no dice a cuál (075). Desde el 01/10
+    // Gastos pregunta con la misma pieza que el resto: sus textos están en
+    // `cobro` (vaASalir, ningunaSale…).
     aQueCuenta: '¿A qué cuenta entró?',
     porFormaDePago: 'La que recibe esa forma de pago',
-    // «Automática» tiene que decir a dónde va, o no es una opción: es una
-    // apuesta (083).
-    iraA: (cuenta: string) => `Va a salir de ${cuenta}`,
-    noVaANinguna: 'Ninguna cuenta recibe esa forma de pago: si lo dejás así, no se va a descontar de tu saldo. Elegí una.',
     ejemploGasto: 'Ej. Combustible para el reparto',
     ejemploIngreso: 'Ej. Aporte de socio',
     guardarMonto: (monto: string) => `Guardar ${monto}`,
@@ -1203,11 +1202,22 @@ export const es = {
     siSacar: 'Sí, sacarlo',
   },
 
-  /** CÓMO TE PAGÓ Y A QUÉ CUENTA ENTRÓ (095). */
+  /** CÓMO TE PAGÓ Y A QUÉ CUENTA ENTRÓ (095), O DE CUÁL SALIÓ (01/10). */
   cobro: {
     comoTePago: '¿Cómo te pagó?',
     enQueCuenta: '¿A qué cuenta entró?',
+    // La misma pregunta del lado de lo que sale: pagar una deuda, un gasto,
+    // pagarle al equipo (01/10).
+    deQueCuenta: '¿De qué cuenta salió?',
     enQueCuentaDetalle: 'Así tu billetera en Orden queda igual que la de tu banco.',
+    // Con una sola cuenta posible no hay nada que elegir, pero se dice a dónde
+    // va: callarlo es la apuesta que la 083 sacó de Gastos.
+    vaAEntrar: (cuenta: string) => `Va a entrar en ${cuenta}`,
+    vaASalir: (cuenta: string) => `Va a salir de ${cuenta}`,
+    ningunaEntra: 'Ninguna cuenta recibe esa forma de pago: si lo dejás así, no se va a sumar a tu saldo. Elegí una.',
+    ningunaSale: 'Ninguna cuenta recibe esa forma de pago: si lo dejás así, no se va a descontar de tu saldo. Elegí una.',
+    elegiUnaEntra: 'Elegí una: si no, no se va a sumar a tu saldo.',
+    elegiUnaSale: 'Elegí una: si no, no se va a descontar de tu saldo.',
     confirmar: (monto: string) => `Cobrar ${monto}`,
   },
 
@@ -2127,6 +2137,9 @@ export const es = {
     comoPagaste: 'Cómo lo pagaste',
     crearGasto: 'Anotarlo también como gasto',
     crearGastoDetalle: 'Recomendado: esa plata salió de tu bolsillo y así la vas a ver en tus números.',
+    // Sin el gasto no hay movimiento, y sin movimiento ninguna cuenta baja
+    // (100): se dice, para que nadie elija un banco que después no se debita.
+    sinGastoNoMueve: 'Sin anotarlo como gasto, tu billetera no se mueve.',
     pagoListo: (saldo: string) => `Listo. Te quedan ${saldo}.`,
     pagoSaldada: '¡Listo, terminaste de pagarla!',
     sobrante: (monto: string) => `Pagaste ${monto} de más. Se aplicó solo lo que faltaba.`,
@@ -2248,6 +2261,8 @@ export const es = {
     colLeDebe: 'Le debés',
     pagar: 'Registrar pago',
     cuantoLePagas: 'Cuánto le pagás',
+    // Cómo y de qué cuenta (117): antes iba siempre como efectivo, a la caja.
+    comoLePagas: 'Cómo le pagás',
     pagarDetalle: 'Queda registrado como un gasto del negocio, con su nombre.',
     alDia: 'al día',
 
@@ -2327,6 +2342,8 @@ export const es = {
     porElLink: 'por el link',
     atender: 'Atendido, cobrar',
     atendido: 'Cobrado',
+    // Alquila la silla: la plata es suya, el local no cobra nada (01/10).
+    marcarAtendido: 'Listo, atendido',
     noVino: 'No vino',
     // La clase de un profe (092): ya está cobrada, solo se marca si pasó.
     claseDada: 'Clase dada',

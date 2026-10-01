@@ -324,7 +324,8 @@ console.log('\n── 7 · Lo que se comprueba leyendo el código ──');
   // Lo que encontró la revisión de las pantallas, para que no vuelva.
   const tarjeta = codigo[`${dir}/TarjetaEjercicio.tsx`];
   const pegar = codigo[`${dir}/PegarTexto.tsx`];
-  const piezas = sinComentarios(leer('src/components/rutinas/panel/Piezas.tsx'));
+  // La hoja se mudó a components/Hoja.tsx (01/10); Piezas la reexporta.
+  const piezas = sinComentarios(leer('src/components/Hoja.tsx'));
   ok('la hoja del ejercicio no es un <form>: el «siguiente» del iPhone no la envía', /<form/.test(hoja), false);
   ok('el Enter pasa al campo que sigue, y en el nombre elige la sugerencia',
     [/onKeyDown=\{enterPasaAlSiguiente\}/.test(hoja), /onKeyDown=\{enterEnNombre\}/.test(hoja), /setNombre\(sugerencias\[0\]\.nombre\)/.test(hoja)],

@@ -694,7 +694,9 @@ export function EditorRutina({
 
           <div>
             <p className="etiqueta" id="rutina-semanas">{e.datos.semanas}</p>
-            <div className="scroll-limpio -mx-4 flex items-center gap-2 overflow-x-auto px-4" role="group" aria-labelledby="rutina-semanas">
+            {/* En varias líneas (01/10): con «Otra» escrita lo último quedaba
+                afuera, y con mouse no había cómo llegar. */}
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby="rutina-semanas">
               <button type="button" onClick={() => elegirSemanas(null)} className={chip(datos.semanas === null && !otraSemana)}>
                 {e.datos.semanasNo}
               </button>

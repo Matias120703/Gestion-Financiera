@@ -16,9 +16,10 @@ import { InscribirAlumno } from '@/components/InscribirAlumno';
 import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO, type TurnoRespuesta } from '@/lib/turno-voz';
 import { RutinaDeLaSesion } from '@/components/rutinas/HojaRutinaSesion';
 import { primerNombre } from '@/components/rutinas/panel/utiles';
+import { FormaDeCobro, cuentaDelCobro, useCuentasParaElegir } from '@/components/FormaDeCobro';
 import type {
   Profesional, TurnoDelDia, HorarioSemanal, ServicioAgenda, LinkPublico, Producto, HuecoLibre,
-  Excepcion,
+  Excepcion, CuentaParaElegir,
 } from '@/lib/tipos';
 import type { RutinasDeLaAgenda } from '@/lib/tipos-rutinas';
 
@@ -76,6 +77,10 @@ export function PantallaAgenda({
   // Qué turno se está moviendo. Uno solo a la vez: dos formularios de
   // horario abiertos compitiendo por el mismo hueco es pedir un choque.
   const [moviendo, setMoviendo] = useState<string | null>(null);
+  // El turno que se está cobrando (117): cómo pagó y a qué cuenta entró.
+  const [cobrandoTurno, setCobrandoTurno] = useState<string | null>(null);
+  // Las cuentas, solo para quien administra: al resto la base no se las da.
+  const cuentas = useCuentasParaElegir(empresaId, esAdmin);
   // Cómo se mira la agenda: el día, o un calendario de semana, mes o fechas (072).
   const [vista, setVista] = useState<VistaAgenda>('dia');
   // El formulario de inscribir a un alumno, en la agenda de un profe (091).
@@ -420,13 +425,32 @@ export function PantallaAgenda({
                   </div>
                 )}
 
-                {(r.estado === 'pendiente' || r.estado === 'confirmada') && !(deAlumnos && r.paquete_id) && (
+                {/* «ATENDIDO, COBRAR» PREGUNTA CÓMO PAGÓ (117). Antes cobraba al
+                    toque y siempre en efectivo, a la caja, aunque te lo hayan
+                    transferido. Ahora se elige cómo pagó y, con dos bancos, a
+                    cuál entró, y se confirma: un toque de más, y ningún cobro
+                    en la cuenta equivocada (como Cobrar en la ficha, 095). */}
+                {cobrandoTurno === r.id && (r.estado === 'pendiente' || r.estado === 'confirmada') && (
+                  <CobrarTurno
+                    turno={r} empresaId={empresaId} cuentas={cuentas} plata={plata} ocupado={ocupado}
+                    alquila={profesionales.find((p) => p.id === r.profesional_id)?.reparto === 'alquiler'}
+                    alCancelar={() => setCobrandoTurno(null)}
+                    alCobrar={async (metodo, cuenta) => {
+                      if (await correr('atender', async () => sb().rpc('atender_reserva', metodo === null
+                        // Alquila la silla: no hay venta del local, no se dice cómo ni a dónde.
+                        ? { p_reserva: r.id }
+                        : { p_reserva: r.id, p_metodo: metodo, p_cuenta: cuenta },
+                      ))) setCobrandoTurno(null);
+                    }}
+                  />
+                )}
+
+                {(r.estado === 'pendiente' || r.estado === 'confirmada') && !(deAlumnos && r.paquete_id) && cobrandoTurno !== r.id && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       type="button" className="boton-principal px-3 py-1.5 text-[13px]"
                       disabled={ocupado}
-                      onClick={() => correr('atender', async () =>
-                        sb().rpc('atender_reserva', { p_reserva: r.id }))}
+                      onClick={() => { setMoviendo(null); setCobrandoTurno(r.id); }}
                     >
                       {t.agenda.atender}
                     </button>
@@ -552,6 +576,78 @@ export function PantallaAgenda({
             p_motivo: mot,
           }))}
       />}
+    </div>
+  );
+}
+
+/**
+ * Cobrar un turno atendido (117): cómo pagó y, con dos bancos, a cuál entró.
+ * El precio es el del servicio para ese profesional (el propio, o el del
+ * catálogo), el mismo que va a cobrar la base: se pide para mostrarlo en el
+ * botón antes de confirmar. Si no llega, el botón dice «Atendido, cobrar».
+ *
+ * Si el profesional alquila la silla (01/10), la plata es de él y no entra
+ * al local: la base no crea ninguna venta y la cuenta elegida se ignoraba
+ * sin avisar. Ahí no se pregunta cómo pagó ni a qué cuenta (como en Reparto):
+ * se dice que no entra a la caja y el botón queda en «Atendido», sin monto.
+ */
+function CobrarTurno({
+  turno, empresaId, cuentas, plata, ocupado, alquila = false, alCancelar, alCobrar,
+}: {
+  turno: TurnoDelDia;
+  empresaId: string;
+  cuentas: CuentaParaElegir[];
+  plata: (n: number) => string;
+  ocupado: boolean;
+  alquila?: boolean;
+  alCancelar: () => void;
+  /** Con alquiler de silla llega sin forma de pago ni cuenta (null, null). */
+  alCobrar: (metodo: string | null, cuenta: string | null) => void;
+}) {
+  const t = useTextos();
+  const [metodo, setMetodo] = useState('efectivo');
+  const [cuenta, setCuenta] = useState<string | null>(null);
+  const [precio, setPrecio] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (alquila) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const { data } = await clienteNavegador().rpc('precio_de_servicio', {
+          p_profesional: turno.profesional_id, p_producto: turno.producto_id,
+        });
+        const n = Number(data);
+        if (vivo && Number.isFinite(n) && n > 0) setPrecio(n);
+      } catch { /* sin el número, el botón lo dice sin monto */ }
+    })();
+    return () => { vivo = false; };
+  }, [empresaId, turno.profesional_id, turno.producto_id, alquila]);
+
+  return (
+    <div className="mt-2 space-y-3 rounded-xl bg-arena/60 p-3 aparecer">
+      {alquila ? (
+        <p className="text-[13px] font-medium leading-snug text-ambar">{t.reparto.noEntraALaCaja}</p>
+      ) : (
+        <FormaDeCobro
+          conPregunta cuentas={cuentas} metodo={metodo} elegida={cuenta} deshabilitado={ocupado}
+          alElegirMetodo={(m) => { setMetodo(m); setCuenta(null); }}
+          alElegirCuenta={setCuenta}
+        />
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button" disabled={ocupado} className="boton-principal px-4 py-2.5 text-[13.5px]"
+          onClick={() => (alquila ? alCobrar(null, null) : alCobrar(metodo, cuentaDelCobro(cuentas, metodo, cuenta)))}
+        >
+          {ocupado ? t.comun.guardando
+            : alquila ? t.agenda.marcarAtendido
+            : precio ? t.cobro.confirmar(plata(precio)) : t.agenda.atender}
+        </button>
+        <button type="button" onClick={alCancelar} disabled={ocupado} className="boton-suave px-4 py-2.5 text-[13px]">
+          {t.comun.cancelar}
+        </button>
+      </div>
     </div>
   );
 }

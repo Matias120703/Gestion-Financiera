@@ -1,15 +1,17 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import { useTextos } from '@/i18n/cliente';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import type { DiaEditor } from './modelo';
 
 /**
  * LOS DÍAS, EN PESTAÑAS GRANDES (098).
  *
- * Una fila que se desliza de costado, con el nombre de cada día y cuántos
- * ejercicios tiene, y «+ Día» al final. La pestaña elegida se trae a la
- * vista: con cinco días en un celular, la quinta queda fuera de la pantalla.
+ * El nombre de cada día y cuántos ejercicios tiene, y «+ Día» al final. En
+ * el celular, una fila que se desliza de costado, con la elegida traída a la
+ * vista: con cinco días, la quinta queda fuera de la pantalla. Con mouse, en
+ * varias líneas (01/10): «en la computadora no veo que hay viernes, sábado,
+ * domingo». Lo hace FilaDeslizable.
  */
 export function PestanasDias({
   dias, activo, onElegir, onAgregar, puedeAgregar,
@@ -22,34 +24,25 @@ export function PestanasDias({
 }) {
   const t = useTextos();
   const d = t.rutinasEditor.dias;
-  const fila = useRef<HTMLDivElement>(null);
-  const elegida = useRef<HTMLButtonElement>(null);
-
-  // Solo de costado, y a mano: `scrollIntoView` también movía la página
-  // entera hasta las pestañas apenas se abría el editor.
-  useEffect(() => {
-    const f = fila.current;
-    const b = elegida.current;
-    if (!f || !b) return;
-    const rf = f.getBoundingClientRect();
-    const rb = b.getBoundingClientRect();
-    if (rb.left < rf.left) f.scrollLeft -= rf.left - rb.left + 16;
-    else if (rb.right > rf.right) f.scrollLeft += rb.right - rf.right + 16;
-  }, [activo, dias.length]);
 
   return (
-    <div
-      ref={fila} role="tablist" aria-label={d.titulo}
-      className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:px-0"
+    <FilaDeslizable
+      enCompu="envolver" sangria="pagina" rol="tablist" etiqueta={d.titulo} teclado="pestanas"
+      // También con la cantidad: al subir una planilla la elegida sigue
+      // siendo la primera, pero la fila es otra.
+      activo={`${activo}/${dias.length}`}
+      className="gap-2 pb-1"
     >
       {dias.map((dia, i) => {
         const esta = i === activo;
         return (
           <button
-            key={dia.clave} ref={esta ? elegida : undefined}
-            type="button" role="tab" aria-selected={esta} onClick={() => onElegir(i)}
-            className={`min-h-[52px] max-w-[12rem] shrink-0 rounded-2xl px-4 py-2 text-left transition active:scale-[.98] ${
-              esta ? 'bg-verde text-sobre-verde' : 'border border-borde bg-superficie text-tinta/70'
+            key={dia.clave}
+            type="button" role="tab" aria-selected={esta} tabIndex={esta ? 0 : -1} onClick={() => onElegir(i)}
+            // Con mouse van en varias líneas: hay lugar para el nombre entero
+            // («Miércoles · Espalda y bíceps» se cortaba en «Miércoles · Espalda …»).
+            className={`min-h-[52px] max-w-[12rem] mouse:max-w-[18rem] shrink-0 rounded-2xl px-4 py-2 text-left transition active:scale-[.98] ${
+              esta ? 'bg-verde text-sobre-verde' : 'border border-borde bg-superficie text-tinta/70 hover:border-verde/50'
             }`}
           >
             <span className="block truncate text-[14.5px] font-bold leading-tight">{dia.nombre.trim() || d.porDefecto(i)}</span>
@@ -67,6 +60,6 @@ export function PestanasDias({
           {d.agregar}
         </button>
       )}
-    </div>
+    </FilaDeslizable>
   );
 }

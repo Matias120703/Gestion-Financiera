@@ -52,6 +52,9 @@
   --rojo-claro:   253 236 235;
   --ambar:        183 121 31;
   --ambar-claro:  253 245 227;
+
+  /* El velo detrás de una ventana (components/Hoja), con su transparencia. */
+  --velo:         18 18 18 / .45;
 }
 
 html.oscuro {
@@ -70,6 +73,11 @@ html.oscuro {
   --rojo-claro:   64 32 29;
   --ambar:        232 176 82;
   --ambar-claro:  58 44 20;
+
+  /* En oscuro, negro y más tupido (01/10): el casi negro de antes era el
+     mismo color de la página y no oscurecía nada, y la ventana se perdía
+     contra las tarjetas de atrás. */
+  --velo:         0 0 0 / .62;
 }
 
 html, body { height: 100%; }
@@ -79,9 +87,20 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Respeta el notch del iPhone cuando está instalada como app */
-.zona-segura-abajo { padding-bottom: env(safe-area-inset-bottom); }
-.zona-segura-arriba { padding-top: env(safe-area-inset-top); }
+/*
+ * Respeta el notch del iPhone cuando está instalada como app.
+ *
+ * VAN EN LA CAPA DE COMPONENTES (01/10). Estaban sueltas, y lo suelto sale
+ * en el CSS final DESPUÉS de las utilidades: en `zona-segura-abajo p-5`
+ * ganaba esta, y el relleno de abajo pasaba a ser la zona segura, que en la
+ * computadora y en Android vale 0. Era el botón pegado al borde de todas las
+ * hojas. En la capa, un `pb-*`/`p-*` al lado manda; y para tener las dos
+ * cosas se escribe `pb-[max(1rem,env(safe-area-inset-bottom))]`.
+ */
+@layer components {
+  .zona-segura-abajo { padding-bottom: env(safe-area-inset-bottom); }
+  .zona-segura-arriba { padding-top: env(safe-area-inset-top); }
+}
 
 /*
  * ============================================================
@@ -94,21 +113,93 @@ body {
  * tapándole el botón de abajo a cada hoja. La hoja se deslizaba igual, pero
  * al llegar al fondo el botón «Cobrar» seguía escondido.
  *
- *   z-30   barra superior (pegajosa, se queda mientras se hace scroll)
+ *   z-30   barra superior (pegajosa, se queda mientras se hace scroll). Con
+ *          el menú de la cuenta abierto sube a z-60: su velo vive adentro
+ *          de ella y tiene que tapar la barra de abajo y el micrófono.
  *   z-40   menú «Más» de la barra inferior. VA DEBAJO de la barra a
  *          propósito: es el menú de la barra, y que la barra siga visible
  *          muestra dónde estás parado.
  *   z-40   botón verde flotante de captura
  *   z-50   barra de navegación de abajo
  *   z-60   TODA hoja o diálogo emergente. Va por encima de la barra porque
- *          mientras hay un diálogo abierto, la barra no se puede tocar.
+ *          mientras hay un diálogo abierto, la barra no se puede tocar. Una
+ *          hoja abierta sobre otra suma uno (61, 62…): lo hace components/Hoja.
  *   z-70   franja de «sin conexión». Siempre visible: si se pierde la señal
  *          en medio de una venta, hay que enterarse antes de tocar guardar.
+ *          Con una hoja abierta se muda ARRIBA: abajo tapaba los botones.
  *
- * REGLA PARA UNA HOJA NUEVA: overlay `fixed inset-0 z-[60]`, y adentro
- * `max-h-[88vh] overflow-y-auto overscroll-contain zona-segura-abajo`.
- * Sin el max-h no se desliza y el contenido largo queda cortado.
+ * REGLA PARA UNA HOJA NUEVA (01/10): no se arma a mano. Se usa `Hoja` de
+ * components/Hoja.tsx, que trae el velo, la cabecera fija, el cuerpo con su
+ * scroll, el pie fijo para los botones, la altura en dvh y el teclado. Una
+ * prueba de pruebas/calculos.test.js falla si aparece otro `fixed inset-0`.
  */
+
+@layer components {
+  /*
+   * La altura de la hoja: lo que se ve de verdad. Primero el `vh` de respaldo
+   * (Safari viejo no entiende `dvh` y descarta la línea de abajo); después
+   * `dvh`, que con la barra del navegador a la vista mide lo visible y no la
+   * pantalla entera. El `100%` es el velo: con el teclado abierto el velo se
+   * achica a lo que queda a la vista, y la hoja con él.
+   */
+  .hoja-panel {
+    max-height: 92vh;
+    max-height: min(100%, calc(100dvh - env(safe-area-inset-top) - 12px));
+    animation: subir .2s ease-out both;
+  }
+  .hoja-velo {
+    padding-top: calc(env(safe-area-inset-top) + 12px);
+    background-color: rgb(var(--velo));
+  }
+  @media (min-width: 640px) {
+    /* Centrada, con 24 px de margen a los cuatro lados (sm:p-6 del velo). */
+    .hoja-panel {
+      max-height: 88vh;
+      max-height: min(100%, calc(100dvh - 48px));
+      animation-name: aparecer;
+    }
+    .hoja-velo { padding-top: 1.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hoja-panel { animation: none; }
+  }
+
+  /*
+   * La barra de desplazamiento de las ventanas, finita y del color del texto
+   * (01/10, banco de pruebas). En Windows la barra clásica, gruesa y con
+   * flechitas, quedaba pegada al borde redondeado de la ventana y la esquina
+   * se veía mordida. En el celular no cambia nada: ahí la barra flota sola.
+   */
+  .barra-fina {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--tinta) / .22) transparent;
+  }
+
+  /*
+   * Atrás / Guardar de la revisión de la captura, siempre a la vista (01/10).
+   * La captura no es una Hoja (su menú flota sin tarjeta y la grabación no se
+   * corta con un toque afuera), pero la revisión es el formulario más largo
+   * de la app: con cinco productos, Guardar quedaba al fondo del scroll. Se
+   * pega abajo de la tarjeta, que es la que se desplaza: los márgenes
+   * negativos le comen el p-5 de la tarjeta, y lleva su propio aire abajo.
+   */
+  .pie-captura {
+    @apply sticky -bottom-5 z-10 -mx-5 -mb-5 mt-5 grid grid-cols-2 gap-2.5 border-t border-borde/70 bg-superficie px-5 pb-5 pt-3;
+  }
+}
+
+/*
+ * Sin conexión y con una hoja abierta: la franja va arriba (abajo están los
+ * botones del pie) y la hoja deja su lugar. Fuera de las capas y con dos
+ * clases a propósito: tiene que ganarle a `bottom-0` y al relleno del velo.
+ */
+html.hay-hoja .franja-sin-conexion {
+  top: 0;
+  bottom: auto;
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-bottom: 0.5rem;
+}
+html.hay-hoja.sin-senal .hoja-velo { padding-top: calc(env(safe-area-inset-top) + 3rem); }
 
 @layer components {
   /* Como Wise: la tarjeta se separa del fondo por el color, no por la
@@ -124,7 +215,9 @@ body {
   }
   .boton-principal { @apply boton bg-verde text-sobre-verde hover:brightness-95; }
   .boton-suave     { @apply boton bg-verde-claro text-verde-fuerte hover:brightness-95; }
-  .boton-peligro   { @apply boton bg-rojo text-white hover:opacity-90; }
+  /* El texto, del color de la tarjeta: blanco en claro y casi negro en
+     oscuro, donde el rojo es claro y el blanco encima no se leía (01/10). */
+  .boton-peligro   { @apply boton bg-rojo text-superficie hover:opacity-90; }
   .boton-texto     { @apply text-sm font-semibold text-verde-fuerte hover:underline; }
 
   /*
@@ -163,9 +256,36 @@ body {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold;
   }
 
-  /* Oculta la barra de scroll pero deja el desplazamiento */
+  /* Oculta la barra de scroll pero deja el desplazamiento. Para una fila de
+     costado NO se usa suelta: con mouse no habría de dónde agarrarla. Va
+     adentro de components/FilaDeslizable (lo cuida pruebas/calculos.test.js). */
   .scroll-limpio { scrollbar-width: none; -ms-overflow-style: none; }
   .scroll-limpio::-webkit-scrollbar { display: none; }
+
+  /*
+   * «Hay más de este lado», en las filas de costado con mouse (01/10, ver
+   * components/FilaDeslizable.tsx). El borde se desvanece donde queda algo
+   * escondido, y debajo de ese desvanecido va la flecha.
+   *
+   * Es una máscara y no un degradé pintado: solo usa la transparencia, así
+   * que sirve igual sobre la página, una tarjeta, la barra oscura de cobro y
+   * la tira fija del alumno, en claro y en oscuro, sin saber qué fondo hay.
+   * Solo con mouse: en el celular la fila queda como siempre.
+   */
+  @media (hover: hover) and (pointer: fine) {
+    .fila-desliza[data-der] {
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+      mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+    }
+    .fila-desliza[data-izq] {
+      -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
+      mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
+    }
+    .fila-desliza[data-izq][data-der] {
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+      mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+    }
+  }
 
   .tabla { @apply w-full border-collapse text-sm; }
   .tabla thead th {

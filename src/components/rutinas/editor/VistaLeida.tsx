@@ -23,27 +23,15 @@ export type ModoPegar = 'reemplazar' | 'agregar';
  * llevan al editor, y ahí queda «sin guardar» hasta tocar Guardar.
  *
  * `extra`: lo que la planilla suma arriba de la vista (hojas, semanas, avisos).
+ *
+ * Los botones («Agregar», «Reemplazar», «Usar») son `PieLeida`, aparte: van
+ * en el pie de la Hoja (01/10), fijos abajo y fuera de lo que se desplaza.
+ * Las dos piezas sacan las mismas cuentas de `useEstadoLeida`.
  */
-export function VistaLeida({
-  leida, biblioteca, diasActuales, hayEjercicios, extra, onUsar,
-}: {
-  leida: RutinaLeidaConNotas | null;
-  biblioteca: readonly EjercicioBiblioteca[];
-  /** Cuántos días tiene la rutina ahora (para no pasar de 10 al agregar). */
-  diasActuales: number;
-  /** Si la rutina ya tiene algo: entonces se elige entre reemplazar y agregar. */
-  hayEjercicios: boolean;
-  extra?: ReactNode;
-  onUsar: (leida: RutinaLeidaConNotas, modo: ModoPegar) => void;
-}) {
+function useEstadoLeida(leida: RutinaLeidaConNotas | null, diasActuales: number, hayEjercicios: boolean) {
   const t = useTextos();
   const p = t.rutinasEditor.pegar;
-
   const ejercicios = leida ? leida.dias.reduce((s, d) => s + d.ejercicios.length, 0) : 0;
-  const nuevos = useMemo(
-    () => (leida ? nombresNuevos(leida.dias.flatMap((d) => d.ejercicios.map((e) => e.nombre)), biblioteca) : []),
-    [leida, biblioteca],
-  );
   const nombreDia = (nombre: string, i: number) => nombre.trim() || t.rutinasEditor.dias.porDefecto(i);
   const diaLleno = leida?.dias.findIndex((d) => d.ejercicios.length > TOPES.ejerciciosPorDia) ?? -1;
   const diasAl = (modo: ModoPegar) => (leida ? leida.dias.length + (modo === 'agregar' ? diasActuales : 0) : 0);
@@ -58,6 +46,27 @@ export function VistaLeida({
   const puedeAgregar = hayEjercicios && listo && diasAl('agregar') <= TOPES.dias;
   // Reemplazar entra y agregar no: se dice por qué ese botón no anda.
   const avisoAgregar = hayEjercicios && listo && !puedeAgregar ? p.demasiadosDias(diasAl('agregar')) : '';
+  return { ejercicios, nombreDia, problema, listo, puedeAgregar, avisoAgregar };
+}
+
+export function VistaLeida({
+  leida, biblioteca, diasActuales, hayEjercicios, extra,
+}: {
+  leida: RutinaLeidaConNotas | null;
+  biblioteca: readonly EjercicioBiblioteca[];
+  /** Cuántos días tiene la rutina ahora (para no pasar de 10 al agregar). */
+  diasActuales: number;
+  /** Si la rutina ya tiene algo: entonces se elige entre reemplazar y agregar. */
+  hayEjercicios: boolean;
+  extra?: ReactNode;
+}) {
+  const t = useTextos();
+  const p = t.rutinasEditor.pegar;
+  const { ejercicios, nombreDia, problema, avisoAgregar } = useEstadoLeida(leida, diasActuales, hayEjercicios);
+  const nuevos = useMemo(
+    () => (leida ? nombresNuevos(leida.dias.flatMap((d) => d.ejercicios.map((e) => e.nombre)), biblioteca) : []),
+    [leida, biblioteca],
+  );
 
   return (
     <>
@@ -129,32 +138,48 @@ export function VistaLeida({
           {avisoAgregar && <p className="text-[12.5px] text-tinta/55">{avisoAgregar}</p>}
         </div>
       )}
+    </>
+  );
+}
 
-      <div className="sticky bottom-0 -mx-5 mt-4 flex flex-col gap-2 border-t border-borde/70 bg-superficie px-5 pb-4 pt-3 sm:flex-row">
-        {hayEjercicios ? (
-          <>
-            <button
-              type="button" disabled={!puedeAgregar} onClick={() => leida && onUsar(leida, 'agregar')}
-              className="boton-suave min-h-[48px] flex-1"
-            >
-              {p.agregar}
-            </button>
-            <button
-              type="button" disabled={!listo} onClick={() => leida && onUsar(leida, 'reemplazar')}
-              className="boton-principal min-h-[48px] flex-1"
-            >
-              {p.reemplazar}
-            </button>
-          </>
-        ) : (
+/** «Agregar», «Reemplazar» o «Usar»: para el `pie` de la Hoja. */
+export function PieLeida({
+  leida, diasActuales, hayEjercicios, onUsar,
+}: {
+  leida: RutinaLeidaConNotas | null;
+  diasActuales: number;
+  hayEjercicios: boolean;
+  onUsar: (leida: RutinaLeidaConNotas, modo: ModoPegar) => void;
+}) {
+  const t = useTextos();
+  const p = t.rutinasEditor.pegar;
+  const { listo, puedeAgregar } = useEstadoLeida(leida, diasActuales, hayEjercicios);
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      {hayEjercicios ? (
+        <>
+          <button
+            type="button" disabled={!puedeAgregar} onClick={() => leida && onUsar(leida, 'agregar')}
+            className="boton-suave min-h-[48px] flex-1"
+          >
+            {p.agregar}
+          </button>
           <button
             type="button" disabled={!listo} onClick={() => leida && onUsar(leida, 'reemplazar')}
-            className="boton-principal min-h-[48px] w-full"
+            className="boton-principal min-h-[48px] flex-1"
           >
-            {p.usar}
+            {p.reemplazar}
           </button>
-        )}
-      </div>
-    </>
+        </>
+      ) : (
+        <button
+          type="button" disabled={!listo} onClick={() => leida && onUsar(leida, 'reemplazar')}
+          className="boton-principal min-h-[48px] w-full"
+        >
+          {p.usar}
+        </button>
+      )}
+    </div>
   );
 }

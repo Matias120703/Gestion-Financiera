@@ -181,7 +181,33 @@ export function HojaEjercicio({
   const chip = (encendido: boolean) => `${encendido ? 'chip-encendido' : 'chip-apagado'} px-3.5 text-[13.5px]`;
 
   return (
-    <Hoja titulo={nuevo ? h.nuevo : h.editar} onCerrar={onCerrar}>
+    <Hoja
+      titulo={nuevo ? h.nuevo : h.editar} onCerrar={onCerrar}
+      // En el pie de la Hoja, fijos. Con el teclado abierto la hoja se achica
+      // a lo que queda a la vista (components/Hoja.tsx), así que quedan justo
+      // arriba del teclado y no debajo.
+      pie={(
+        <div className="flex items-center gap-2.5">
+          {nuevo ? (
+            <>
+              <button type="button" onClick={() => guardar(true)} className="boton-suave min-h-[48px] flex-1">
+                {h.guardarYOtro}
+              </button>
+              <button type="button" onClick={() => guardar(false)} className="boton-principal min-h-[48px] flex-1">{h.agregar}</button>
+            </>
+          ) : (
+            <>
+              {onQuitar && (
+                <button type="button" onClick={onQuitar} className="min-h-[48px] px-2 text-[13.5px] font-semibold text-rojo">
+                  {h.quitar}
+                </button>
+              )}
+              <button type="button" onClick={() => guardar(false)} className="boton-principal ml-auto min-h-[48px] flex-1">{h.listo}</button>
+            </>
+          )}
+        </div>
+      )}
+    >
       {agregado && (
         <p role="status" className="mb-3 rounded-xl bg-verde-claro px-3 py-2 text-[13px] font-semibold text-verde-fuerte aparecer">
           ✓ {h.agregado(agregado)}
@@ -263,7 +289,10 @@ export function HojaEjercicio({
             />
           </div>
         </div>
-        <div className="scroll-limpio -mx-5 -mt-2 flex gap-2 overflow-x-auto px-5">
+        {/* Los atajos, la unidad y el descanso van en varias líneas (01/10):
+            en una fila de costado «al fallo» y «3 min» quedaban afuera, y con
+            mouse no había cómo llegar. */}
+        <div className="-mt-2 flex flex-wrap gap-2">
           {h.atajosReps.map((a) => (
             <button key={a} type="button" onClick={() => setReps(a)} className={chip(reps.trim() === a)}>{a}</button>
           ))}
@@ -277,7 +306,7 @@ export function HojaEjercicio({
             placeholder={h.cargaEjemplo} autoComplete="off" enterKeyHint="next"
             onChange={(ev) => { setCarga(ev.target.value); setAviso(''); }}
           />
-          <div className="scroll-limpio -mx-5 mt-2 flex gap-2 overflow-x-auto px-5" role="group" aria-label={h.carga}>
+          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label={h.carga}>
             {UNIDADES_CARGA.map((u) => (
               <button key={u} type="button" onClick={() => tocarUnidad(u)} aria-pressed={unidad === u} className={chip(unidad === u)}>
                 {t.rutinasComun.unidadesCarga[u]}
@@ -290,7 +319,7 @@ export function HojaEjercicio({
         {/* ---- descanso ---- */}
         <div>
           <p className="etiqueta" id={`${id}-descanso`}>{h.descanso}</p>
-          <div className="scroll-limpio -mx-5 flex gap-2 overflow-x-auto px-5" role="group" aria-labelledby={`${id}-descanso`}>
+          <div className="flex flex-wrap gap-2" role="group" aria-labelledby={`${id}-descanso`}>
             <button type="button" onClick={() => elegirDescanso(null)} className={chip(descanso === null && !descansoLibre.trim())}>
               {h.sinDescanso}
             </button>
@@ -345,29 +374,6 @@ export function HojaEjercicio({
         )}
 
         <MensajeError texto={error} />
-
-        {/* Fijos al pie de la hoja. Con el teclado abierto la hoja se achica
-            a lo que queda a la vista (Hoja, en panel/Piezas.tsx), así que
-            quedan justo arriba del teclado y no debajo. */}
-        <div className="sticky bottom-0 -mx-5 flex items-center gap-2.5 border-t border-borde/70 bg-superficie px-5 pb-4 pt-3">
-          {nuevo ? (
-            <>
-              <button type="button" onClick={() => guardar(true)} className="boton-suave min-h-[48px] flex-1">
-                {h.guardarYOtro}
-              </button>
-              <button type="button" onClick={() => guardar(false)} className="boton-principal min-h-[48px] flex-1">{h.agregar}</button>
-            </>
-          ) : (
-            <>
-              {onQuitar && (
-                <button type="button" onClick={onQuitar} className="min-h-[48px] px-2 text-[13.5px] font-semibold text-rojo">
-                  {h.quitar}
-                </button>
-              )}
-              <button type="button" onClick={() => guardar(false)} className="boton-principal ml-auto min-h-[48px] flex-1">{h.listo}</button>
-            </>
-          )}
-        </div>
       </div>
     </Hoja>
   );

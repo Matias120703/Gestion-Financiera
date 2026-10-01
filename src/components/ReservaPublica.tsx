@@ -8,6 +8,7 @@ import { sumarDias } from '@/lib/fechas';
 import type { AgendaPublica, ProfesionalPublico, ServicioPublico } from '@/lib/tipos';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Rico } from '@/components/Rico';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 
 /**
  * RESERVAR UN TURNO · lo que ve el cliente
@@ -214,13 +215,17 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
           {/* ---- qué día ---- */}
           {profesional && servicio && (
             <Bloque titulo={r.queDia}>
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+              {/* Las 14 fechas, en una línea. Con mouse, flechas y ruedita
+                  (01/10): antes se veía la barra gris del navegador y había
+                  que arrastrarla. */}
+              <FilaDeslizable enCompu="flechas" rol="group" etiqueta={r.queDia} activo={dia} claseCaja="-mx-1" className="gap-2 px-1 pb-1">
                 {dias.map((d) => {
                   const f = new Date(`${d}T12:00:00`);
                   return (
                     <button
                       key={d}
                       type="button"
+                      aria-pressed={dia === d}
                       onClick={() => { setDia(d); setHora(''); }}
                       className={`shrink-0 rounded-xl border px-3 py-2 text-center transition ${
                         dia === d ? 'border-verde bg-verde-claro text-verde-fuerte' : 'border-borde bg-superficie'
@@ -233,7 +238,7 @@ export function ReservaPublica({ slug, datos }: { slug: string; datos: AgendaPub
                     </button>
                   );
                 })}
-              </div>
+              </FilaDeslizable>
 
               <div className="mt-3">
                 {huecos === null ? (

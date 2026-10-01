@@ -7,7 +7,7 @@ import { MEDIDAS, METODOS_GRASA, seAlejaMucho, ultimoValor, validarMedida } from
 import type {
   ClaveMedida, Medicion, MetodoGrasa, RespuestaAnotarMedicion,
 } from '@/lib/tipos-rutinas';
-import { Confirmar, Hoja, MensajeError } from './panel/Piezas';
+import { Confirmar, Hoja, MensajeError, PieHoja } from './panel/Piezas';
 import { useAccion } from './panel/useAccion';
 import { cifra, fechaCorta, primerNombre } from './panel/utiles';
 
@@ -258,7 +258,14 @@ export function AnotarControl({
   // Ya había un control ese día: se completó. Se muestra qué cambió.
   if (fusion) {
     return (
-      <Hoja titulo={a.fusionTitulo} onCerrar={() => onListo(t.rutinasPanel.progreso.guardado)}>
+      <Hoja
+        titulo={a.fusionTitulo} onCerrar={() => onListo(t.rutinasPanel.progreso.guardado)} tamano="chico"
+        pie={(
+          <button type="button" onClick={() => onListo(t.rutinasPanel.progreso.guardado)} className="boton-principal min-h-[48px] w-full">
+            {t.comun.listo}
+          </button>
+        )}
+      >
         {fusion.length === 0 ? (
           <p className="text-[14px] leading-relaxed text-tinta/70">{a.fusionSinCambios}</p>
         ) : (
@@ -273,9 +280,6 @@ export function AnotarControl({
             </ul>
           </>
         )}
-        <button type="button" onClick={() => onListo(t.rutinasPanel.progreso.guardado)} className="boton-principal mt-5 min-h-[48px] w-full">
-          {t.comun.listo}
-        </button>
       </Hoja>
     );
   }
@@ -299,8 +303,52 @@ export function AnotarControl({
   const deSiempre = MEDIDAS.filter((d) => d.porDefecto && d.clave !== 'grasa_pct');
   const extras = MEDIDAS.filter((d) => !d.porDefecto);
 
+  // Tres caras en la misma hoja: «ya hay un control ese día», «¿seguro?» y
+  // el formulario. Los botones de cada una van en el pie, siempre a la vista
+  // (con el teclado numérico abierto quedaban lejos, al final del scroll).
+  const enCompletar = !!(completar && mismoDia);
+  const pie = completar && mismoDia ? (
+    <div className="grid gap-2">
+      <button
+        type="button" disabled={ocupado} className="boton-principal min-h-[48px] w-full"
+        onClick={() => { const d = completar.datos; setCompletar(null); revisarYGuardar(d); }}
+      >
+        {ocupado ? t.comun.guardando : a.siCompletar}
+      </button>
+      {onCorregir && (
+        <button type="button" disabled={ocupado} onClick={() => onCorregir(mismoDia)} className="boton-suave min-h-[48px] w-full">
+          {a.corregirEse}
+        </button>
+      )}
+      <button type="button" disabled={ocupado} onClick={() => setCompletar(null)} className="boton-texto min-h-[44px] w-full">
+        {a.revisar}
+      </button>
+    </div>
+  ) : seguro ? (
+    <PieHoja columnas={2}>
+      <button type="button" onClick={() => setSeguro(null)} disabled={ocupado} className="boton-suave min-h-[48px]">{a.revisar}</button>
+      <button type="button" onClick={() => guardar(seguro.datos)} disabled={ocupado} className="boton-principal min-h-[48px]">
+        {ocupado ? t.comun.guardando : a.siEstaBien}
+      </button>
+    </PieHoja>
+  ) : (
+    <PieHoja columnas={2}>
+      <button type="button" onClick={onCerrar} disabled={ocupado} className="boton-suave min-h-[48px]">{t.comun.cancelar}</button>
+      <button type="submit" disabled={ocupado} className="boton-principal min-h-[48px]">
+        {ocupado ? t.comun.guardando : t.comun.guardar}
+      </button>
+    </PieHoja>
+  );
+
   return (
-    <Hoja titulo={control ? a.tituloEditar : a.titulo} onCerrar={onCerrar} bloqueada={ocupado}>
+    <Hoja
+      titulo={control ? a.tituloEditar : a.titulo}
+      subtitulo={!enCompletar && !seguro ? nombre : undefined}
+      onCerrar={onCerrar} bloqueada={ocupado} pie={pie}
+      formulario={!enCompletar && !seguro
+        ? { noValidate: true, onSubmit: (e) => { e.preventDefault(); if (!ocupado) alGuardar(); } }
+        : undefined}
+    >
       {completar && mismoDia ? (
         <div>
           <p className="text-[17px] font-bold leading-snug">{a.yaHayControl(fechaCorta(mismoDia.fecha, locale, hoy))}</p>
@@ -311,22 +359,6 @@ export function AnotarControl({
             ))}
           </ul>
           <MensajeError texto={error} />
-          <div className="mt-5 grid gap-2.5">
-            <button
-              type="button" disabled={ocupado} className="boton-principal min-h-[48px] w-full"
-              onClick={() => { const d = completar.datos; setCompletar(null); revisarYGuardar(d); }}
-            >
-              {ocupado ? t.comun.guardando : a.siCompletar}
-            </button>
-            {onCorregir && (
-              <button type="button" disabled={ocupado} onClick={() => onCorregir(mismoDia)} className="boton-suave min-h-[48px] w-full">
-                {a.corregirEse}
-              </button>
-            )}
-            <button type="button" disabled={ocupado} onClick={() => setCompletar(null)} className="boton-texto min-h-[44px] w-full">
-              {a.revisar}
-            </button>
-          </div>
         </div>
       ) : seguro ? (
         <div>
@@ -338,19 +370,9 @@ export function AnotarControl({
             ))}
           </ul>
           <MensajeError texto={error} />
-          <div className="mt-5 grid grid-cols-2 gap-2.5">
-            <button type="button" onClick={() => setSeguro(null)} disabled={ocupado} className="boton-suave min-h-[48px]">{a.revisar}</button>
-            <button type="button" onClick={() => guardar(seguro.datos)} disabled={ocupado} className="boton-principal min-h-[48px]">
-              {ocupado ? t.comun.guardando : a.siEstaBien}
-            </button>
-          </div>
         </div>
       ) : (
-        <form
-          noValidate className="space-y-4"
-          onSubmit={(e) => { e.preventDefault(); if (!ocupado) alGuardar(); }}
-        >
-          <p className="-mt-1 text-[13.5px] font-semibold text-tinta/60">{nombre}</p>
+        <div className="space-y-4">
 
           <label className="block">
             <span className="etiqueta">{a.fecha}</span>
@@ -427,13 +449,6 @@ export function AnotarControl({
 
           <MensajeError texto={error} />
 
-          <div className="grid grid-cols-2 gap-2.5">
-            <button type="button" onClick={onCerrar} disabled={ocupado} className="boton-suave min-h-[48px]">{t.comun.cancelar}</button>
-            <button type="submit" disabled={ocupado} className="boton-principal min-h-[48px]">
-              {ocupado ? t.comun.guardando : t.comun.guardar}
-            </button>
-          </div>
-
           {control && (
             <button
               type="button" onClick={() => { setError(''); setBorrando(true); }} disabled={ocupado}
@@ -442,7 +457,7 @@ export function AnotarControl({
               {a.borrar}
             </button>
           )}
-        </form>
+        </div>
       )}
     </Hoja>
   );

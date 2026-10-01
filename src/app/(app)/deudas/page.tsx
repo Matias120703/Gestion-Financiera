@@ -1,5 +1,6 @@
 import { contextoObligatorio } from '@/lib/sesion';
 import { traerDeudas, traerResumenDeudas } from '@/lib/deudas';
+import { traerCuentasParaElegir } from '@/lib/billetera';
 import { textos } from '@/i18n';
 import { PantallaDeudas } from '@/components/PantallaDeudas';
 import { Vacio } from '@/components/Piezas';
@@ -31,9 +32,14 @@ export default async function PaginaDeudas() {
     );
   }
 
-  const [deudas, resumen] = await Promise.all([
+  // Las cuentas de la billetera, para «¿De qué cuenta salió?» al pagar
+  // (01/10): Matías tenía dos bancos y pagaba por transferencia sin poder
+  // decir de cuál. Si falla, llega vacía y el pago va como siempre a la
+  // cuenta de su forma de pago.
+  const [deudas, resumen, cuentas] = await Promise.all([
     traerDeudas(ctx.empresa.id),
     traerResumenDeudas(ctx.empresa.id),
+    traerCuentasParaElegir(ctx.empresa.id),
   ]);
 
   return (
@@ -43,6 +49,7 @@ export default async function PaginaDeudas() {
       deudas={deudas}
       resumen={resumen}
       puedeEditar={ctx.esAdmin}
+      cuentas={cuentas}
     />
   );
 }

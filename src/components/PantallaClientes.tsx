@@ -374,7 +374,7 @@ function FormularioCliente({
               <button type="button" className="boton-texto px-4" onClick={() => setConfirmar(false)}>{t.clientes.no}</button>
               <button
                 type="button" onClick={eliminar} disabled={eliminando}
-                className="flex-1 rounded-xl bg-rojo px-4 py-2.5 text-[13.5px] font-bold text-white disabled:opacity-50"
+                className="boton-peligro flex-1 px-4 py-2.5 text-[13.5px]"
               >
                 {eliminando ? t.clientes.eliminando : t.clientes.siEliminar}
               </button>

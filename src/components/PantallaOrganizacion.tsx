@@ -11,6 +11,7 @@ import { useTextos, useLocale } from '@/i18n/cliente';
 import { categoriaVisible } from '@/i18n/nombres';
 import { Seccion, Vacio } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
+import { ElegirCuenta, cuentaDelCobro } from '@/components/FormaDeCobro';
 import type {
   ResumenPersonal, IngresoFijo, GastoFijo, Ahorro, CategoriaDeCuenta, CuentaParaElegir, TrabajoPendiente,
 } from '@/lib/tipos';
@@ -85,6 +86,52 @@ export function PantallaOrganizacion({
   const sb = () => clienteNavegador();
   const ocupado = trabajando !== '';
 
+  /*
+    «YA LO COBRÉ» SIN CUENTA GUARDADA (01/10). Con la cuenta del sueldo
+    guardada (075) va directo ahí. Sin ella entraba con 'otro' y sin cuenta, y
+    casi siempre quedaba como plata suelta sin que nadie lo dijera: ahora,
+    si hay cuentas, primero se pregunta a cuál entró.
+  */
+  const [acreditando, setAcreditando] = useState<string | null>(null);
+  const [cuentaAcreditar, setCuentaAcreditar] = useState<string | null>(null);
+  async function acreditar(f: IngresoFijo, cuentaId: string | null) {
+    await correr('ingreso', async () => sb().from('movimientos').insert({
+      empresa_id: empresaId,
+      tipo: 'ingreso',
+      fecha: resumen.desde,
+      descripcion: f.nombre,
+      categoria: 'Sueldo',
+      subtotal: f.importe,
+      descuento: 0,
+      monto: f.importe,
+      costo_total: 0,
+      metodo_pago: 'otro',
+      contraparte: '',
+      notas: '',
+      cuenta_id: cuentaId,
+      origen: 'manual',
+    }));
+    setAcreditando(null);
+  }
+
+  /**
+   * La cuenta guardada de un sueldo, si sigue en la billetera (01/10). Una
+   * que se quitó después queda archivada y fuera de `cuentas`: mandarla
+   * dejaba el sueldo en una cuenta que la billetera ya no muestra, y la
+   * plata no aparecía en ningún lado. Con una archivada se pregunta, como si
+   * no hubiera ninguna. Sin lista (no hay billetera que mostrar) va la
+   * guardada, y la base la descarta si ya no está activa (118).
+   */
+  const cuentaActiva = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    if (cuentas.length === 0) return id;
+    return cuentas.some((c) => c.id === id) ? id : null;
+  };
+
+  // Lo cobrado trabajando en otro lado entra, de entrada, donde cae el
+  // sueldo principal (117). Se cambia con un toque.
+  const cuentaDelSueldo = cuentaActiva(resumen.ingresos_fijos.find((f) => f.principal)?.cuenta_id);
+
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       {/* ---------- el número, y todo lo que lo explica ---------- */}
@@ -110,35 +157,52 @@ export function PantallaOrganizacion({
             */}
             <div className="mt-4 space-y-2">
               {resumen.ingresos_fijos.map((f) => (
-                <div key={f.id} className="flex items-center justify-between gap-3 rounded-xl bg-arena px-3.5 py-2.5">
-                  <span className="min-w-0">
-                    <span className="block truncate text-[14px] font-semibold">{f.nombre}</span>
-                    <span className="block text-[12.5px] tabular-nums text-tinta/55">{plata(f.importe)}</span>
-                  </span>
-                  <button
-                    type="button"
-                    disabled={ocupado}
-                    onClick={() => correr('ingreso', async () => sb().from('movimientos').insert({
-                      empresa_id: empresaId,
-                      tipo: 'ingreso',
-                      fecha: resumen.desde,
-                      descripcion: f.nombre,
-                      categoria: 'Sueldo',
-                      subtotal: f.importe,
-                      descuento: 0,
-                      monto: f.importe,
-                      costo_total: 0,
-                      metodo_pago: 'otro',
-                      contraparte: '',
-                      notas: '',
-                      // Donde se cobra, que ya quedó guardado al cargarlo (075).
-                      cuenta_id: f.cuenta_id || null,
-                      origen: 'manual',
-                    }))}
-                    className="boton-suave shrink-0 px-3.5 py-1.5 text-[13px] disabled:opacity-50"
-                  >
-                    {t.organizacion.yaLoCobre}
-                  </button>
+                <div key={f.id} className="rounded-xl bg-arena px-3.5 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-[14px] font-semibold">{f.nombre}</span>
+                      <span className="block text-[12.5px] tabular-nums text-tinta/55">{plata(f.importe)}</span>
+                    </span>
+                    {acreditando !== f.id && (
+                      <button
+                        type="button"
+                        disabled={ocupado}
+                        onClick={() => {
+                          // Donde se cobra, que ya quedó guardado al cargarlo (075).
+                          // Sin cuenta guardada y con cuentas, se pregunta antes.
+                          const guardada = cuentaActiva(f.cuenta_id);
+                          if (guardada || cuentas.length === 0) acreditar(f, guardada);
+                          else { setCuentaAcreditar(null); setAcreditando(f.id); }
+                        }}
+                        className="boton-suave shrink-0 px-3.5 py-1.5 text-[13px] disabled:opacity-50"
+                      >
+                        {t.organizacion.yaLoCobre}
+                      </button>
+                    )}
+                  </div>
+                  {acreditando === f.id && (
+                    <div className="mt-3 space-y-3 border-t border-borde/70 pt-3">
+                      <ElegirCuenta
+                        cuentas={cuentas} metodo="otro" elegida={cuentaAcreditar}
+                        alElegir={setCuentaAcreditar} deshabilitado={ocupado}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button" disabled={ocupado}
+                          onClick={() => acreditar(f, cuentaDelCobro(cuentas, 'otro', cuentaAcreditar))}
+                          className="boton-principal px-4 py-2 text-[13px]"
+                        >
+                          {ocupado ? t.comun.guardando : t.organizacion.yaLoCobre}
+                        </button>
+                        <button
+                          type="button" disabled={ocupado} onClick={() => setAcreditando(null)}
+                          className="boton-suave px-3.5 py-2 text-[13px]"
+                        >
+                          {t.comun.cancelar}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -256,9 +320,13 @@ export function PantallaOrganizacion({
           trabajos={trabajos}
           locale={locale}
           ocupado={ocupado}
-          alTraer={(empresaNegocio) => correr('trabajo', async () => sb().rpc('traer_ingreso_de_trabajo', {
+          cuentas={cuentas}
+          cuentaInicial={cuentaDelSueldo}
+          alTraer={(empresaNegocio, cuenta) => correr('trabajo', async () => sb().rpc('traer_ingreso_de_trabajo', {
             p_negocio: empresaNegocio,
             p_personal: empresaId,
+            // A qué cuenta entra (117). Null = como hasta hoy.
+            p_cuenta: cuenta,
           }))}
         />
       )}
@@ -728,20 +796,31 @@ function FormularioIngreso({
 // convierte en un ingreso con la fecha real en que cobraste, no la de hoy.
 // ════════════════════════════════════════════════════════════
 function TrabajosPendientes({
-  trabajos, locale, ocupado, alTraer,
+  trabajos, locale, ocupado, cuentas, cuentaInicial, alTraer,
 }: {
   trabajos: TrabajoPendiente[];
   locale: string;
   ocupado: boolean;
-  alTraer: (empresaNegocio: string) => void;
+  /** A qué cuenta de tu billetera entra lo traído (117). */
+  cuentas: CuentaParaElegir[];
+  /** La del sueldo principal, si tiene: ahí suele caer lo cobrado. */
+  cuentaInicial: string | null;
+  alTraer: (empresaNegocio: string, cuenta: string | null) => void;
 }) {
   const t = useTextos();
+  const [cuenta, setCuenta] = useState<string | null>(cuentaInicial);
 
   return (
     <Seccion titulo={t.organizacion.cobrasteTrabajando}>
       <p className="px-4 pb-2 text-[12.5px] leading-relaxed text-tinta/50">
         {t.organizacion.cobrasteTrabajandoDetalle}
       </p>
+      {/* Entraba con 'otro' y sin cuenta: casi siempre quedaba suelto. */}
+      {cuentas.length > 0 && (
+        <div className="px-4 pb-3">
+          <ElegirCuenta cuentas={cuentas} metodo="otro" elegida={cuenta} alElegir={setCuenta} deshabilitado={ocupado} />
+        </div>
+      )}
       <ul className="divide-y divide-borde border-t border-borde">
         {trabajos.map((tr) => (
           <li key={tr.empresa_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -758,7 +837,7 @@ function TrabajosPendientes({
               <button
                 type="button" className="boton-principal px-3 py-1.5 text-[13px]"
                 disabled={ocupado}
-                onClick={() => alTraer(tr.empresa_id)}
+                onClick={() => alTraer(tr.empresa_id, cuentaDelCobro(cuentas, 'otro', cuenta))}
               >
                 {t.organizacion.traerAMiCuenta}
               </button>

@@ -15,6 +15,8 @@ import { useZona } from '@/lib/zona';
 import type { Producto } from '@/lib/tipos';
 import { Vacio } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
+import { Hoja, PieHoja } from '@/components/Hoja';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import { mensajeDeError } from '@/lib/errores';
 import { ElegirCuenta, cuentaDelCobro, cuentasDelMetodo, useCuentasParaElegir } from '@/components/FormaDeCobro';
 import { tonoDeCuenta } from '@/lib/colores-cuenta';
@@ -136,6 +138,17 @@ export function PantallaVenta({
   const [avisoStock, setAvisoStock] = useState('');
   const [libreAbierto, setLibreAbierto] = useState(false);
   const [detalleAbierto, setDetalleAbierto] = useState(false);
+  // El detalle es del celular (en la computadora el carrito ya está al
+  // costado): si la ventana se agranda con el detalle abierto, se cierra en
+  // vez de quedar una hoja escondida que frena la página.
+  useEffect(() => {
+    if (!detalleAbierto || typeof window.matchMedia !== 'function') return;
+    const grande = window.matchMedia('(min-width: 1024px)');
+    const mirar = () => { if (grande.matches) setDetalleAbierto(false); };
+    mirar();
+    grande.addEventListener?.('change', mirar);
+    return () => grande.removeEventListener?.('change', mirar);
+  }, [detalleAbierto]);
   /**
    * De qué campaña es esta venta (100). Vacío = ninguna. Queda elegida para
    * la venta siguiente, como la cuenta: la feria de un sábado es toda de la
@@ -379,17 +392,19 @@ export function PantallaVenta({
           </div>
         )}
 
+        {/* En el celular, una tira que se desliza; con mouse, en varias
+            líneas y se ven todas (01/10). */}
         {categorias.length > 1 && (
-          <div className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+          <FilaDeslizable enCompu="envolver" sangria="pagina" rol="group" etiqueta={t.productos.categoria} activo={categoria} className="gap-2">
             {['todas', ...categorias].map((c) => (
               <button
-                key={c} type="button" onClick={() => setCategoria(c)}
+                key={c} type="button" onClick={() => setCategoria(c)} aria-pressed={categoria === c}
                 className={categoria === c ? 'chip-encendido' : 'chip-apagado'}
               >
                 {c === 'todas' ? t.venta.todas : categoriaDelRubro(t, c)}
               </button>
             ))}
-          </div>
+          </FilaDeslizable>
         )}
 
         {sinCatalogo && !conCatalogo ? (
@@ -488,11 +503,18 @@ export function PantallaVenta({
                 Todos los chips de esta barra miden 44 px, lo mínimo para un
                 dedo; si no entran a lo ancho, su fila se desliza (nunca la
                 pantalla). La fila de arriba perdió su `pb-1` para que la
-                barra base quede de la misma altura que con los chips de 40. */}
-            <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pt-3">
+                barra base quede de la misma altura que con los chips de 40.
+                Las tres filas van en una línea siempre (el alto de la barra
+                está calculado por fila): con mouse, en una ventana angosta,
+                tienen flechas y ruedita (01/10). El aire de arriba es margen
+                y no relleno, para que las flechas queden a la altura del chip. */}
+            <FilaDeslizable
+              enCompu="flechas" tono="noche" rol="group" etiqueta={t.venta.comoTePagan} activo={metodo}
+              claseCaja="mt-3" className="gap-2 px-3"
+            >
               {METODOS.map((m) => (
                 <button
-                  key={m.valor} type="button" onClick={() => elegirMetodo(m.valor)}
+                  key={m.valor} type="button" onClick={() => elegirMetodo(m.valor)} aria-pressed={metodo === m.valor}
                   className={`inline-flex min-h-[44px] shrink-0 items-center rounded-xl px-3.5 text-[13.5px] font-bold transition active:scale-[.97] ${
                     metodo === m.valor ? 'bg-verde text-sobre-verde' : 'bg-white/10 text-white/60'
                   }`}
@@ -500,13 +522,16 @@ export function PantallaVenta({
                   {m.corto}
                 </button>
               ))}
-            </div>
+            </FilaDeslizable>
 
             {/* A qué banco entró (096): a la vista, como la forma de pago,
                 porque cobrar sigue siendo un toque y no hay otro momento
                 para decirlo. Solo si hay más de una cuenta posible. */}
             {cuentasPosibles.length > 1 && (
-              <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pt-2" role="group" aria-label={t.cobro.enQueCuenta}>
+              <FilaDeslizable
+                enCompu="flechas" tono="noche" rol="group" etiqueta={t.cobro.enQueCuenta} activo={cuentaMarcada}
+                claseCaja="mt-2" className="gap-2 px-3"
+              >
                 {cuentasPosibles.map((c) => (
                   <button
                     key={c.id} type="button" onClick={() => setCuentaElegida(c.id)} aria-pressed={cuentaMarcada === c.id}
@@ -518,14 +543,17 @@ export function PantallaVenta({
                     <span className="truncate">{c.nombre}</span>
                   </button>
                 ))}
-              </div>
+              </FilaDeslizable>
             )}
 
             {/* De qué campaña (100): a la vista, como la cuenta. Queda elegida
                 de la venta anterior, y una campaña escondida se colgaría
                 sin que nadie la vea. */}
             {campanas.length > 0 && (
-              <div className="scroll-limpio flex gap-2 overflow-x-auto px-3 pt-2" role="group" aria-label={t.gastosCampana.vender.deQueLote}>
+              <FilaDeslizable
+                enCompu="flechas" tono="noche" rol="group" etiqueta={t.gastosCampana.vender.deQueLote} activo={loteId}
+                claseCaja="mt-2" className="gap-2 px-3"
+              >
                 {[{ id: '', texto: t.gastosCampana.chip.ninguno }, ...campanas.map((c) => ({ id: c.id, texto: etiquetaCampana(c, idioma) }))].map((c) => (
                   <button
                     key={c.id || 'ninguna'} type="button" onClick={() => elegirLote(c.id)} aria-pressed={loteId === c.id}
@@ -536,7 +564,7 @@ export function PantallaVenta({
                     <span className="truncate">{c.texto}</span>
                   </button>
                 ))}
-              </div>
+              </FilaDeslizable>
             )}
 
             <div className="flex items-stretch gap-2 p-3">
@@ -570,21 +598,34 @@ export function PantallaVenta({
       )}
 
       {detalleAbierto && (
-        <div className="fixed inset-0 z-[60] flex items-end bg-noche/45 backdrop-blur-[2px] lg:hidden" onClick={() => setDetalleAbierto(false)}>
-          <div className="zona-segura-abajo max-h-[88vh] w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-4 aparecer" onClick={(e) => e.stopPropagation()}>
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-borde" />
-            <Carrito
-              carrito={carrito} moneda={moneda} dec={dec} total={total} subtotal={subtotal}
-              ganancia={ganancia} verCostos={verCostos} descuento={descuento} metodo={metodo} fecha={fecha}
+        // Una sola caja se desplaza (la de la hoja): la lista del carrito ya
+        // no trae su propio scroll adentro, y «Cobrar» va en el pie, siempre
+        // a la vista. Con dos cajas, en el iPhone el botón quedaba afuera.
+        <Hoja
+          titulo={t.venta.estaVenta} onCerrar={() => setDetalleAbierto(false)} bloqueada={guardando} tamano="grande"
+          pie={carrito.length > 0 ? (
+            <PieHoja>
+              <button
+                type="button" className="boton-principal min-h-[52px] w-full text-[16px]"
+                onClick={cobrar}
+                disabled={guardando || total <= 0 || descuento > subtotal}
+              >
+                {guardando ? t.venta.registrando : t.venta.cobrarMonto(dinero(total, moneda))}
+              </button>
+            </PieHoja>
+          ) : null}
+        >
+          <Carrito
+            carrito={carrito} moneda={moneda} dec={dec} total={total} subtotal={subtotal}
+            ganancia={ganancia} verCostos={verCostos} descuento={descuento} metodo={metodo} fecha={fecha}
             empresaId={empresaId} elegido={elegido} setElegido={setElegido}
-              guardando={guardando} error={error} sinMarco
-              onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
-              setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
-              cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
-              campanas={campanas} loteId={loteId} setLoteId={elegirLote}
-            />
-          </div>
-        </div>
+            guardando={guardando} error={error} sinMarco
+            onCambiar={cambiar} onQuitar={quitar} onLimpiar={limpiar} onCobrar={cobrar}
+            setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
+            cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
+            campanas={campanas} loteId={loteId} setLoteId={elegirLote}
+          />
+        </Hoja>
       )}
 
       {/* --------------------------- producto suelto --------------------------- */}
@@ -632,8 +673,8 @@ function Carrito(props: {
 
   return (
     <div className={sinMarco ? '' : 'tarjeta overflow-hidden'}>
-      <div className="flex items-center justify-between px-4 pb-2 pt-4">
-        <h2 className="text-[15px] font-bold tracking-tight">{t.venta.estaVenta}</h2>
+      <div className={sinMarco ? 'flex justify-end' : 'flex items-center justify-between px-4 pb-2 pt-4'}>
+        {!sinMarco && <h2 className="text-[15px] font-bold tracking-tight">{t.venta.estaVenta}</h2>}
         {carrito.length > 0 && (
           <button type="button" onClick={onLimpiar} className="-my-1 min-h-[44px] px-2 text-[13px] font-semibold text-tinta/40 hover:text-rojo">
             {t.venta.vaciar}
@@ -645,7 +686,7 @@ function Carrito(props: {
         <Vacio titulo={t.venta.carritoVacio} detalle={t.venta.carritoVacioDetalle} />
       ) : (
         <>
-          <div className="max-h-[42vh] space-y-2 overflow-y-auto scroll-limpio px-4 lg:max-h-[38vh]">
+          <div className={sinMarco ? 'space-y-2' : 'max-h-[42vh] space-y-2 overflow-y-auto scroll-limpio px-4 lg:max-h-[38vh]'}>
             {carrito.map((l) => {
               const excede = l.stock !== null && l.cantidad > l.stock;
               return (
@@ -703,13 +744,16 @@ function Carrito(props: {
             })}
           </div>
 
-          <div className="space-y-3 border-t border-borde px-4 py-3.5">
+          <div className={sinMarco ? 'mt-3 space-y-3 border-t border-borde pt-3.5' : 'space-y-3 border-t border-borde px-4 py-3.5'}>
             <div>
               <span className="etiqueta">{t.venta.comoTePagan}</span>
-              <div className="scroll-limpio flex gap-2 overflow-x-auto">
+              {/* En varias líneas (01/10): en el carrito de la computadora
+                  (326 px) «Fiado / crédito» y «Otro» quedaban afuera de una
+                  fila de costado, y con mouse no se podía vender fiado. */}
+              <div className="flex flex-wrap gap-2">
                 {METODOS.map((m) => (
                   <button
-                    key={m.valor} type="button" onClick={() => setMetodo(m.valor)}
+                    key={m.valor} type="button" onClick={() => setMetodo(m.valor)} aria-pressed={metodo === m.valor}
                     className={metodo === m.valor ? 'chip-encendido' : 'chip-apagado'}
                   >
                     {m.largo}
@@ -804,15 +848,17 @@ function Carrito(props: {
                 {t.venta.descuentoMayor}
               </p>
             )}
-            {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+            {error && <p role="alert" className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-            <button
-              className="boton-principal min-h-[52px] w-full text-[16px]"
-              onClick={onCobrar}
-              disabled={guardando || total <= 0 || descuento > subtotal}
-            >
-              {guardando ? t.venta.registrando : t.venta.cobrarMonto(dinero(total, moneda))}
-            </button>
+            {!sinMarco && (
+              <button
+                className="boton-principal min-h-[52px] w-full text-[16px]"
+                onClick={onCobrar}
+                disabled={guardando || total <= 0 || descuento > subtotal}
+              >
+                {guardando ? t.venta.registrando : t.venta.cobrarMonto(dinero(total, moneda))}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -841,16 +887,18 @@ function DialogoLibre({
   const [conCosto, setConCosto] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4" onClick={onCerrar}>
-      <form
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={(e) => { e.preventDefault(); if (precio > 0) onAgregar(nombre.trim(), precio, conCosto ? costo : 0); }}
-      >
-        <h2 className="text-[18px] font-bold tracking-tight">{t.venta.ventaSuelta}</h2>
-        <p className="mt-1 text-[13.5px] text-tinta/55">{t.venta.ventaSueltaDetalle}</p>
-
-        <div className="mt-4 space-y-3">
+    <Hoja
+      titulo={t.venta.ventaSuelta} subtitulo={t.venta.ventaSueltaDetalle}
+      onCerrar={onCerrar} tamano="chico"
+      formulario={{ onSubmit: (e) => { e.preventDefault(); if (precio > 0) onAgregar(nombre.trim(), precio, conCosto ? costo : 0); } }}
+      pie={(
+        <PieHoja columnas={2}>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar}>{t.comun.cancelar}</button>
+          <button type="submit" className="boton-principal min-h-[48px]" disabled={precio <= 0}>{t.venta.agregar}</button>
+        </PieHoja>
+      )}
+    >
+        <div className="space-y-3">
           <label className="block">
             <span className="etiqueta">{t.venta.precio}</span>
             <CampoMonto
@@ -892,12 +940,6 @@ function DialogoLibre({
             </label>
           )}
         </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-2.5">
-          <button type="button" className="boton-suave min-h-[48px]" onClick={onCerrar}>{t.comun.cancelar}</button>
-          <button type="submit" className="boton-principal min-h-[48px]" disabled={precio <= 0}>{t.venta.agregar}</button>
-        </div>
-      </form>
-    </div>
+    </Hoja>
   );
 }

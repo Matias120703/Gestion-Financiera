@@ -13,6 +13,7 @@ import type {
 } from '@/lib/tipos';
 import { PanelSocios } from './PanelSocios';
 import { CampoMonto } from '@/components/CampoMonto';
+import { Hoja } from '@/components/Hoja';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -698,32 +699,15 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
   const u = urgenciaDe(cuenta);
   const ocupado = trabajando !== '';
 
+  // La cabecera de la Hoja queda fija: el nombre no se pierde al bajar. Con
+  // una acción en curso no se cierra (ni la ✕, ni Escape, ni el velo).
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 px-0 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={onCerrar}
+    <Hoja
+      titulo={<span className="block truncate">{cuenta.nombre}</span>}
+      subtitulo={<span className="block truncate">{cuenta.propietario} · {cuenta.correo || 'sin correo'}</span>}
+      onCerrar={onCerrar} bloqueada={ocupado} tamano="grande"
     >
-      <div
-        className="zona-segura-abajo max-h-[90vh] w-full max-w-xl overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie shadow-tarjeta aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* ---- cabecera pegada arriba: el nombre no se pierde al bajar ---- */}
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-borde bg-superficie/95 px-5 py-4 backdrop-blur">
-          <div className="min-w-0">
-            <h2 className="truncate text-[18px] font-bold tracking-tight">{cuenta.nombre}</h2>
-            <p className="mt-0.5 truncate text-[13px] text-tinta/55">
-              {cuenta.propietario} · {cuenta.correo || 'sin correo'}
-            </p>
-          </div>
-          <button
-            type="button" onClick={onCerrar} aria-label="Cerrar"
-            className="icono-toque shrink-0 text-tinta/40 hover:bg-arena"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" {...trazo}><path d="M6 6l12 12M18 6 6 18" /></svg>
-          </button>
-        </div>
-
-        <div className="space-y-5 p-5">
+        <div className="space-y-5 pt-1">
           {/* ---- de un vistazo ---- */}
           <div className="rounded-2xl bg-arena p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -785,7 +769,9 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
           )}
 
           {error && (
-            <p className="rounded-xl bg-rojo-claro px-3.5 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
+            // role="alert": la Hoja lo trae a la vista (useAlertaALaVista). Las
+            // acciones están abajo de todo y el error se pinta acá arriba.
+            <p role="alert" className="rounded-xl bg-rojo-claro px-3.5 py-2.5 text-[13px] font-medium text-rojo">{error}</p>
           )}
           {aviso && (
             <div className="rounded-xl bg-ambar-claro px-3.5 py-2.5">
@@ -1069,8 +1055,7 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Hoja>
   );
 }
 

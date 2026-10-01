@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTextos } from '@/i18n/cliente';
+import { FilaDeslizable } from '@/components/FilaDeslizable';
 import type { ClaveRangoReporte } from '@/lib/reportes/rango';
 
 /**
@@ -66,7 +67,8 @@ export function SelectorRangoReporte({
 
   return (
     <div className="space-y-2.5">
-      <div className="scroll-limpio -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+      {/* En el celular se desliza; con mouse va en varias líneas (01/10). */}
+      <FilaDeslizable enCompu="envolver" sangria="pagina" activo={clave} className="gap-2">
         {rapidos.map((k) => (
           <button key={k} type="button" onClick={() => aplicar(k)} className={boton(clave === k)} aria-pressed={clave === k}>
             {etiquetas[k]}
@@ -78,7 +80,7 @@ export function SelectorRangoReporte({
         >
           {t.comun.elegirFechas}
         </button>
-      </div>
+      </FilaDeslizable>
 
       {diaCobro && (clave === 'ciclo' || clave === 'ciclo_pasado') && (
         <p className="text-[12.5px] text-tinta/50">{r.cicloExplicado(diaCobro)}</p>

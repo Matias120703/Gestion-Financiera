@@ -235,6 +235,8 @@ export const MENSAJES_PT: Record<string, string> = {
   'Esa excepción no existe.': 'Essa exceção não existe.',
   'Esa fecha ya pasó. Poné para cuándo lo querés juntar.': 'Essa data já passou. Coloque pra quando você quer juntar.',
   'Esa forma de cobro no es válida.': 'Essa forma de pagamento não é válida.',
+  // 117: lo mismo del lado de lo que se paga (pagarle al equipo).
+  'Esa forma de pago no es válida.': 'Essa forma de pagamento não é válida.',
   'Esa línea ya no existe.': 'Essa linha não existe mais.',
   'Esa persona no atiende en este local.': 'Essa pessoa não atende neste local.',
   'Esa persona no es parte de este negocio.': 'Essa pessoa não faz parte deste negócio.',

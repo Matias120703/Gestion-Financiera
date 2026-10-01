@@ -12,6 +12,7 @@ import { enlaceWhatsApp } from '@/lib/telefono';
 import { Indicador, Vacio } from '@/components/Piezas';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { CampoMonto } from '@/components/CampoMonto';
+import { ElegirCuentaOpcional } from '@/components/FormaDeCobro';
 import type { CuentaParaElegir, DeudorFiado, LineaFiado, ResumenFiado } from '@/lib/tipos';
 
 /** Cómo se cobra un fiado. Se guarda el código; se lee con `metodoVisible`. */
@@ -246,30 +247,11 @@ function FormularioNuevo({
           anotaban igual, y son dos cosas distintas: en la venta entregás
           mercadería y de tus cuentas no sale nada; en el préstamo sale plata
           de verdad y el saldo tiene que bajar. */}
-      {cuentas.length > 0 && (
-        <div>
-          <span className="etiqueta">{t.fiado.salioDeTuBilletera}</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button" onClick={() => setCuentaId('')}
-              className={cuentaId === '' ? 'chip-encendido' : 'chip-apagado'}
-            >
-              {t.fiado.noSalioPlata}
-            </button>
-            {cuentas.map((c) => (
-              <button
-                key={c.id} type="button" onClick={() => setCuentaId(c.id)}
-                className={cuentaId === c.id ? 'chip-encendido' : 'chip-apagado'}
-              >
-                {c.nombre}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">
-            {cuentaId === '' ? t.fiado.noSalioPlataDetalle : t.fiado.salioDetalle}
-          </p>
-        </div>
-      )}
+      <ElegirCuentaOpcional
+        cuentas={cuentas} elegida={cuentaId} alElegir={setCuentaId} deshabilitado={guardando}
+        pregunta={t.fiado.salioDeTuBilletera} ninguna={t.fiado.noSalioPlata}
+        detalle={cuentaId === '' ? t.fiado.noSalioPlataDetalle : t.fiado.salioDetalle}
+      />
 
       {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 

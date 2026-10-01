@@ -95,7 +95,7 @@ export function CancelarTurno({ token, reserva }: { token: string; reserva: Rese
             </button>
             <button
               type="button"
-              className="flex-1 rounded-xl bg-rojo py-2.5 text-[14px] font-semibold text-white disabled:opacity-60"
+              className="boton-peligro flex-1 py-2.5 text-[14px]"
               onClick={cancelar} disabled={cargando}
             >
               {cargando ? r.cancelando : r.siCancelar}

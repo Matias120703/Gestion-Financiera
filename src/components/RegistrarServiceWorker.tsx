@@ -92,12 +92,19 @@ export function RegistrarServiceWorker({ sinConexion }: { sinConexion: string })
     };
   }, []);
 
+  // Con una hoja abierta la franja se muda arriba y la hoja le deja lugar
+  // (globals.css, `html.hay-hoja.sin-senal`): abajo tapaba los botones.
+  useEffect(() => {
+    document.documentElement.classList.toggle('sin-senal', desconectado);
+    return () => document.documentElement.classList.remove('sin-senal');
+  }, [desconectado]);
+
   if (!desconectado) return null;
 
   return (
     <div
       role="status"
-      className="zona-segura-abajo fixed inset-x-0 bottom-0 z-[70] bg-ambar px-4 py-2 text-center text-[13px] font-bold text-white"
+      className="franja-sin-conexion fixed inset-x-0 bottom-0 z-[70] bg-ambar px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-[13px] font-bold text-noche"
     >
       {sinConexion}
     </div>

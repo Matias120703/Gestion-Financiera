@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTextos } from '@/i18n/cliente';
 import { usePush, esIphoneSinInstalar } from '@/lib/push-cliente';
-import { useBloquearFondo } from '@/lib/fondo';
 import { GuiaInstalar } from '@/components/GuiaInstalar';
+import { Hoja, PieHoja } from '@/components/Hoja';
 import {
   CLAVE_INVITACION, HISTORIAL_VACIO, anotarInvitacion, debeInvitar, ejemplosDeInvitacion,
   leerHistorialInvitacion, noVolverAInvitar, type CasoInvitacion, type HistorialInvitacion,
@@ -55,8 +55,6 @@ export function InvitarAvisos({ caso, enPrueba }: { caso: CasoInvitacion; enPrue
   // Lo que se leyó al decidir, para anotar encima el «no vuelve nunca».
   const historial = useRef<HistorialInvitacion | null>(null);
 
-  useBloquearFondo(visible);
-
   /**
    * CUÁNDO APARECE.
    *
@@ -99,14 +97,6 @@ export function InvitarAvisos({ caso, enPrueba }: { caso: CasoInvitacion; enPrue
     return () => clearTimeout(reloj);
   }, [paso]);
 
-  // Escape cierra, como «Ahora no».
-  useEffect(() => {
-    if (!visible) return;
-    const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape' && !trabajando) setVisible(false); };
-    document.addEventListener('keydown', alTeclear);
-    return () => document.removeEventListener('keydown', alTeclear);
-  }, [visible, trabajando]);
-
   async function alActivar() {
     const final = await activar();
     if (final === 'encendido') { setPaso('listo'); return; }
@@ -133,104 +123,98 @@ export function InvitarAvisos({ caso, enPrueba }: { caso: CasoInvitacion; enPrue
 
   const ejemplos = ejemplosDeInvitacion(tx, caso, enPrueba);
 
-  return (
-    <div
-      data-invitar-avisos=""
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={cerrar}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="invitar-avisos-titulo"
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
+  // Escape, el velo y la ✕ cierran como «Ahora no» (lo hace la Hoja), salvo
+  // mientras se está pidiendo el permiso. El fondo quieto, también.
+  const ahoraNo = (
+    <>
+      <button
+        type="button" onClick={cerrar} disabled={trabajando}
+        className="flex min-h-[44px] w-full items-center justify-center rounded-full text-[14px] font-semibold text-tinta/55 transition hover:bg-arena disabled:opacity-50"
       >
-        <div className="flex items-start justify-between gap-3">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-verde-claro text-verde-fuerte">
+        {tx.ahoraNo}
+      </button>
+      <p className="text-center text-[12px] text-tinta/40">{tx.seApagan}</p>
+    </>
+  );
+
+  const pie = paso === 'listo' ? null : paso === 'bloqueado' ? (
+    <button type="button" onClick={cerrar} className="boton-suave min-h-[48px] w-full text-[15px]">
+      {tx.entendido}
+    </button>
+  ) : modo === 'instalar' ? (
+    <PieHoja>{ahoraNo}</PieHoja>
+  ) : (
+    <div className="grid gap-1.5">
+      <button
+        type="button" onClick={() => { void alActivar(); }} disabled={trabajando}
+        className="boton-principal min-h-[48px] w-full text-[15px]"
+      >
+        {trabajando ? tx.activando : tx.activar}
+      </button>
+      {ahoraNo}
+    </div>
+  );
+
+  return (
+    <Hoja
+      titulo={(
+        <span className="flex items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-verde-claro text-verde-fuerte">
             <IconoCampana />
           </span>
-          <button
-            type="button" onClick={cerrar} aria-label={t.comun.cerrar}
-            className="icono-toque -mr-2 -mt-1 text-tinta/45 hover:bg-arena"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
-
-        <h2 id="invitar-avisos-titulo" className="mt-3 text-[21px] font-bold tracking-tight">{tx.titulo}</h2>
-
-        {paso === 'listo' ? (
-          <p role="status" className="mt-4 flex items-center gap-2.5 rounded-2xl bg-verde-claro px-4 py-3.5 text-[14.5px] font-semibold text-verde-fuerte">
-            <IconoTilde />
-            {tx.listo}
+          <span className="text-[21px]">{tx.titulo}</span>
+        </span>
+      )}
+      etiqueta={tx.titulo}
+      onCerrar={cerrar} bloqueada={trabajando} tamano="chico" pie={pie}
+    >
+      {paso === 'listo' ? (
+        <p role="status" className="mt-1 flex items-center gap-2.5 rounded-2xl bg-verde-claro px-4 py-3.5 text-[14.5px] font-semibold text-verde-fuerte">
+          <IconoTilde />
+          {tx.listo}
+        </p>
+      ) : paso === 'bloqueado' ? (
+        <div>
+          <p className="text-[15px] font-semibold">{tx.bloqueadoTitulo}</p>
+          <p className="mt-2 rounded-xl bg-arena px-3.5 py-3 text-[14px] leading-relaxed text-tinta/75">
+            {textoDesbloquear(tx)}
           </p>
-        ) : paso === 'bloqueado' ? (
-          <div className="mt-3">
-            <p className="text-[15px] font-semibold">{tx.bloqueadoTitulo}</p>
-            <p className="mt-2 rounded-xl bg-arena px-3.5 py-3 text-[14px] leading-relaxed text-tinta/75">
-              {textoDesbloquear(tx)}
-            </p>
-            <p className="mt-2.5 text-[13px] leading-relaxed text-tinta/55">{tx.bloqueadoDespues}</p>
-            <button type="button" onClick={cerrar} className="boton-suave mt-5 min-h-[48px] w-full text-[15px]">
-              {tx.entendido}
-            </button>
-          </div>
-        ) : (
-          <>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-tinta/60">{tx.intro}</p>
-            <ul className="mt-3 space-y-2.5">
-              {ejemplos.map((e) => (
-                <li key={e} className="flex items-start gap-2.5 text-[14px] leading-snug">
-                  <span className="mt-0.5 shrink-0 text-verde-fuerte"><IconoTilde /></span>
-                  <span>{e}</span>
-                </li>
-              ))}
-            </ul>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-tinta/55">{tx.bloqueadoDespues}</p>
+        </div>
+      ) : (
+        <>
+          <p className="text-[14px] leading-relaxed text-tinta/60">{tx.intro}</p>
+          <ul className="mt-3 space-y-2.5">
+            {ejemplos.map((e) => (
+              <li key={e} className="flex items-start gap-2.5 text-[14px] leading-snug">
+                <span className="mt-0.5 shrink-0 text-verde-fuerte"><IconoTilde /></span>
+                <span>{e}</span>
+              </li>
+            ))}
+          </ul>
 
-            {modo === 'instalar' ? (
-              <div className="mt-4 rounded-2xl bg-arena p-4">
-                <p className="text-[14.5px] font-semibold">{tx.iphoneTitulo}</p>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-tinta/65">{tx.iphone}</p>
-                <div className="mt-4">
-                  <GuiaInstalar compacta />
-                </div>
-                <p className="mt-3 text-[12px] text-tinta/45">
-                  <Link href="/instalar" target="_blank" className="font-semibold text-verde-fuerte hover:underline">
-                    {t.ajustes.guiaEnSuPagina}
-                  </Link>
-                  {' '}{t.ajustes.paraMandarla}
-                </p>
+          {modo === 'instalar' ? (
+            <div className="mt-4 rounded-2xl bg-arena p-4">
+              <p className="text-[14.5px] font-semibold">{tx.iphoneTitulo}</p>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-tinta/65">{tx.iphone}</p>
+              <div className="mt-4">
+                <GuiaInstalar compacta />
               </div>
-            ) : (
-              <>
-                {paso === 'no-se-activaron' && (
-                  <p role="status" className="mt-4 rounded-xl bg-arena px-3.5 py-3 text-[13.5px] leading-relaxed text-tinta/70">
-                    {tx.noSeActivaron}
-                  </p>
-                )}
-                <button
-                  type="button" onClick={() => { void alActivar(); }} disabled={trabajando}
-                  className="boton-principal mt-5 min-h-[48px] w-full text-[15px]"
-                >
-                  {trabajando ? tx.activando : tx.activar}
-                </button>
-              </>
-            )}
-
-            <button
-              type="button" onClick={cerrar} disabled={trabajando}
-              className={`${modo === 'instalar' ? 'mt-4' : 'mt-1.5'} flex min-h-[44px] w-full items-center justify-center rounded-full text-[14px] font-semibold text-tinta/55 transition hover:bg-arena disabled:opacity-50`}
-            >
-              {tx.ahoraNo}
-            </button>
-            <p className="mt-1 text-center text-[12px] text-tinta/40">{tx.seApagan}</p>
-          </>
-        )}
-      </div>
-    </div>
+              <p className="mt-3 text-[12px] text-tinta/45">
+                <Link href="/instalar" target="_blank" className="font-semibold text-verde-fuerte hover:underline">
+                  {t.ajustes.guiaEnSuPagina}
+                </Link>
+                {' '}{t.ajustes.paraMandarla}
+              </p>
+            </div>
+          ) : paso === 'no-se-activaron' && (
+            <p role="status" className="mt-4 rounded-xl bg-arena px-3.5 py-3 text-[13.5px] leading-relaxed text-tinta/70">
+              {tx.noSeActivaron}
+            </p>
+          )}
+        </>
+      )}
+    </Hoja>
   );
 }
 
@@ -246,13 +230,15 @@ function textoDesbloquear(tx: { bloqueadoAndroid: string; bloqueadoIphone: strin
 }
 
 /**
- * ¿Hay otra hoja adelante? Toda hoja o diálogo usa `z-[60]` (ver la regla
- * en globals.css), y el menú y la captura bloquean el fondo con
- * `useBloquearFondo`, que deja el body en `overflow: hidden`.
+ * ¿Hay otra hoja adelante? Las hojas (components/Hoja) marcan `html.hay-hoja`
+ * mientras están abiertas; el menú y la captura usan `z-[60]` (ver la regla
+ * en globals.css) y bloquean el fondo con `useBloquearFondo`, que deja el
+ * body en `overflow: hidden`. Esta todavía no está abierta cuando se pregunta.
  */
 function hayOtraHojaAbierta(): boolean {
+  if (document.documentElement.classList.contains('hay-hoja')) return true;
   if (document.body.style.overflow === 'hidden') return true;
-  return document.querySelector('[class*="z-[60]"]:not([data-invitar-avisos])') !== null;
+  return document.querySelector('[class*="z-[60]"]') !== null;
 }
 
 /**

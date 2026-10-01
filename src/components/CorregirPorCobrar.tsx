@@ -6,6 +6,7 @@ import { mensajeDeError } from '@/lib/errores';
 import { decimalesDe, dinero } from '@/lib/formato';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { CampoMonto } from '@/components/CampoMonto';
+import { Hoja, PieHoja } from '@/components/Hoja';
 import type { PorCobrarAlumnos } from '@/lib/tipos';
 
 type Fila = PorCobrarAlumnos['lista'][number];
@@ -76,31 +77,42 @@ export function CorregirPorCobrar({
   }));
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-noche/45 backdrop-blur-[2px] sm:items-center sm:px-4"
-      onClick={() => !ocupado && alCerrar()}
+    <Hoja
+      titulo={<span className="block truncate">{fila.alumno}</span>}
+      subtitulo={<span className="block truncate">{fila.materia ? `${fila.materia} · ${fila.nombre}` : fila.nombre}</span>}
+      onCerrar={alCerrar} bloqueada={ocupado} tamano="chico"
+      pie={sacando ? (
+        <PieHoja columnas={2}>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={() => { setSacando(false); setError(''); }} disabled={ocupado}>
+            {t.clientes.no}
+          </button>
+          <button type="button" className="boton-peligro min-h-[48px]" onClick={noCobrar} disabled={ocupado}>
+            {ocupado ? t.comun.guardando : i.siSacar}
+          </button>
+        </PieHoja>
+      ) : (
+        <PieHoja columnas={2}>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={alCerrar} disabled={ocupado}>
+            {t.comun.cancelar}
+          </button>
+          <button type="button" className="boton-principal min-h-[48px]" onClick={guardar} disabled={ocupado || !cambio}>
+            {ocupado ? t.comun.guardando : t.comun.guardar}
+          </button>
+        </PieHoja>
+      )}
     >
-      <div
-        role="dialog" aria-modal="true" aria-labelledby="corregir-por-cobrar"
-        className="zona-segura-abajo max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-superficie p-5 aparecer sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="corregir-por-cobrar" className="truncate text-[19px] font-bold tracking-tight">{fila.alumno}</h2>
-        <p className="truncate text-[13px] text-tinta/55">
-          {fila.materia ? `${fila.materia} · ${fila.nombre}` : fila.nombre}
-        </p>
-
-        {sacando ? (
-          // Sacarlo es lo único de acá que no se arregla con otro «Guardar»:
-          // se pregunta, y se dice qué va a pasar.
-          <div className="mt-4 space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
-            <p className="text-[14px] font-bold text-rojo">{i.noCobrarPregunta(fila.alumno, plata(Number(fila.monto)))}</p>
-            <p className="text-[13px] leading-snug text-tinta/70">
-              {fila.tuvo_clases ? i.noCobrarConClases : i.noCobrarSinClases}
-            </p>
-          </div>
-        ) : (
-          <div className="mt-4">
+      {sacando ? (
+        // Sacarlo es lo único de acá que no se arregla con otro «Guardar»:
+        // se pregunta, y se dice qué va a pasar.
+        <div className="mt-1 space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
+          <p className="text-[14px] font-bold text-rojo">{i.noCobrarPregunta(fila.alumno, plata(Number(fila.monto)))}</p>
+          <p className="text-[13px] leading-snug text-tinta/70">
+            {fila.tuvo_clases ? i.noCobrarConClases : i.noCobrarSinClases}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-1">
             <label className="etiqueta" htmlFor="monto-por-cobrar">{i.montoCorrecto}</label>
             <CampoMonto
               id="monto-por-cobrar" className="campo" decimales={decimalesDe(moneda)} placeholder="0"
@@ -108,43 +120,22 @@ export function CorregirPorCobrar({
             />
             <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">{i.montoAyuda}</p>
           </div>
-        )}
-
-        {error && <p className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
-
-        {sacando ? (
-          <div className="mt-5 grid grid-cols-2 gap-2.5">
-            <button type="button" className="boton-suave py-3" onClick={() => { setSacando(false); setError(''); }} disabled={ocupado}>
-              {t.clientes.no}
-            </button>
-            <button type="button" className="boton-peligro py-3" onClick={noCobrar} disabled={ocupado}>
-              {ocupado ? t.comun.guardando : i.siSacar}
+          {/* Abajo y separado: es lo menos frecuente, y lo único que saca
+              la inscripción de la lista. Va en el cuerpo, no en el pie: el
+              pie es para Guardar. */}
+          <div className="mt-4 border-t border-borde pt-4">
+            <button
+              type="button" disabled={ocupado}
+              onClick={() => { setSacando(true); setError(''); }}
+              className="boton min-h-[44px] border border-rojo/30 px-4 py-2 text-[13px] text-rojo hover:bg-rojo-claro"
+            >
+              {i.noCobrar}
             </button>
           </div>
-        ) : (
-          <>
-            <div className="mt-5 grid grid-cols-2 gap-2.5">
-              <button type="button" className="boton-suave py-3" onClick={alCerrar} disabled={ocupado}>
-                {t.comun.cancelar}
-              </button>
-              <button type="button" className="boton-principal py-3" onClick={guardar} disabled={ocupado || !cambio}>
-                {ocupado ? t.comun.guardando : t.comun.guardar}
-              </button>
-            </div>
-            {/* Abajo y separado: es lo menos frecuente, y lo único que saca
-                la inscripción de la lista. */}
-            <div className="mt-4 border-t border-borde pt-4">
-              <button
-                type="button" disabled={ocupado}
-                onClick={() => { setSacando(true); setError(''); }}
-                className="boton min-h-[44px] border border-rojo/30 px-4 py-2 text-[13px] text-rojo hover:bg-rojo-claro"
-              >
-                {i.noCobrar}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
+    </Hoja>
   );
 }

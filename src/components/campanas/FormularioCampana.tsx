@@ -185,8 +185,16 @@ export function FormularioCampana({
   }
 
   return (
-    <Hoja titulo={titulo} onCerrar={onCerrar} bloqueada={ocupado}>
-      {modo === 'repetir' && <p className="-mt-1 mb-3 text-[13px] leading-relaxed text-tinta/55">{f.repetirDetalle}</p>}
+    <Hoja
+      titulo={titulo} subtitulo={modo === 'repetir' ? f.repetirDetalle : undefined}
+      onCerrar={onCerrar} bloqueada={ocupado}
+      pie={(
+        <button type="button" className="boton-principal min-h-[48px] w-full"
+          disabled={ocupado || faltaAlgo} onClick={guardar}>
+          {ocupado ? t.comun.guardando : editando ? f.guardar : f.abrir}
+        </button>
+      )}
+    >
 
       <div className="space-y-4">
         {/* ---- el cultivo ---- */}
@@ -225,12 +233,13 @@ export function FormularioCampana({
           {modo === 'nuevo' && nombresDeAntes.length > 0 && (
             <div className="mt-2">
               <span className="text-[12px] text-tinta/45">{f.nombreDeAntes}</span>
-              <div className="mt-1 flex gap-2 overflow-x-auto scroll-limpio">
+              {/* En varias líneas (01/10): de costado, con mouse no se llegaba a los últimos. */}
+              <div className="mt-1 flex flex-wrap gap-2">
                 {nombresDeAntes.map((n) => (
                   <button key={n} type="button" disabled={ocupado}
-                    className={nombre.trim().toLowerCase() === n.toLowerCase() ? 'chip-encendido' : 'chip-apagado'}
+                    className={`${nombre.trim().toLowerCase() === n.toLowerCase() ? 'chip-encendido' : 'chip-apagado'} max-w-full`}
                     onClick={() => setNombre(n)}>
-                    {n}
+                    <span className="truncate">{n}</span>
                   </button>
                 ))}
               </div>
@@ -313,11 +322,6 @@ export function FormularioCampana({
       </div>
 
       <MensajeError texto={error} />
-
-      <button type="button" className="boton-principal mt-5 min-h-[48px] w-full"
-        disabled={ocupado || faltaAlgo} onClick={guardar}>
-        {ocupado ? t.comun.guardando : editando ? f.guardar : f.abrir}
-      </button>
     </Hoja>
   );
 }

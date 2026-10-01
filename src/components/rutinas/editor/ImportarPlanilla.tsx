@@ -9,7 +9,7 @@ import { rutinaComoTexto, type RutinaLeidaConNotas } from '@/lib/rutina-texto';
 import type { EjercicioBiblioteca } from '@/lib/tipos-rutinas';
 import { Hoja } from '../panel/Piezas';
 import { ExtrasPlanilla } from './ExtrasPlanilla';
-import { VistaLeida, type ModoPegar } from './VistaLeida';
+import { PieLeida, VistaLeida, type ModoPegar } from './VistaLeida';
 
 type CodigoError = keyof typeof rutinasEditorEs.importar.errores;
 
@@ -175,7 +175,17 @@ export function ImportarPlanilla({
   ) : null;
 
   return (
-    <Hoja titulo={i.titulo} onCerrar={onCerrar} bloqueada={leyendo}>
+    <Hoja
+      titulo={i.titulo} onCerrar={onCerrar} bloqueada={leyendo}
+      // La revisión es larga (días lado a lado): ancha en la computadora.
+      tamano={estado.tipo === 'libro' && !sinEjercicios ? 'grande' : 'medio'}
+      pie={estado.tipo === 'libro' && !sinEjercicios ? (
+        <PieLeida
+          leida={leida} diasActuales={diasActuales} hayEjercicios={hayEjercicios}
+          onUsar={(l, modo) => onUsar(l, modo, { semanas: resultado?.duracionSemanas ?? null })}
+        />
+      ) : null}
+    >
       {estado.tipo !== 'libro' || sinEjercicios ? (
         <>
           <p className="text-[13.5px] leading-relaxed text-tinta/65">{i.explicacion}</p>
@@ -210,7 +220,6 @@ export function ImportarPlanilla({
       ) : (
         <VistaLeida
           leida={leida} biblioteca={biblioteca} diasActuales={diasActuales} hayEjercicios={hayEjercicios} extra={extra}
-          onUsar={(l, modo) => onUsar(l, modo, { semanas: resultado?.duracionSemanas ?? null })}
         />
       )}
     </Hoja>

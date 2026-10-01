@@ -95,6 +95,8 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
             guardaComprobantes={ctx.limites?.adjuntos ?? false}
             tipoCuenta={ctx.empresa.tipo_cuenta}
             conIA={(ctx.capturasIA?.tope ?? 0) > 0}
+            esAdmin={ctx.esAdmin}
+            gratisPersonal={ctx.gratisPersonal}
           />
         )}
         <NavInferior tipo={ctx.empresa.tipo_cuenta} rubro={ctx.empresa.rubro} esAdmin={ctx.esAdmin} administraOrden={ctx.administraOrden} gratisPersonal={ctx.gratisPersonal} />

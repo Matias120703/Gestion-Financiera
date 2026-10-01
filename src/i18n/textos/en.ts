@@ -26,6 +26,8 @@ export const en: Parcial<Textos> = {
     ayer: 'Yesterday',
     verTodo: 'See all',
     error: 'Something went wrong',
+    verAnteriores: 'Show previous',
+    verMas: 'Show more',
   },
 
   formato: {
@@ -848,6 +850,7 @@ export const en: Parcial<Textos> = {
     comoPagaste: 'How you paid it',
     crearGasto: 'Also record it as an expense',
     crearGastoDetalle: 'Recommended: that money left your pocket, so this is how you will see it in your numbers.',
+    sinGastoNoMueve: 'Without recording it as an expense, your wallet does not change.',
     pagoListo: (saldo: string) => `Done. ${saldo} left.`,
     pagoSaldada: 'Done, you finished paying it off!',
     sobrante: (monto: string) => `You paid ${monto} extra. Only what was owed was applied.`,
@@ -952,6 +955,7 @@ export const en: Parcial<Textos> = {
     colLeDebe: 'You owe',
     pagar: 'Record payment',
     cuantoLePagas: 'How much you are paying',
+    comoLePagas: 'How you are paying',
     pagarDetalle: 'Recorded as a business expense, with their name on it.',
     alDia: 'settled up',
 
@@ -1013,6 +1017,7 @@ export const en: Parcial<Textos> = {
     porElLink: 'via link',
     atender: 'Done, charge',
     atendido: 'Charged',
+    marcarAtendido: 'Done',
     noVino: 'No-show',
     confirmarNoVino: (nombre: string) => `Mark ${nombre} as a no-show?`,
     mover: 'Reschedule',
