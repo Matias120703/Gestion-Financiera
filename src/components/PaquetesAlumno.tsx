@@ -11,6 +11,7 @@ import { metodoVisible } from '@/i18n/nombres';
 import { CampoMonto } from '@/components/CampoMonto';
 import { InscribirAlumno } from '@/components/InscribirAlumno';
 import { FormaDeCobro, cuentaDelCobro, useCuentasParaElegir } from '@/components/FormaDeCobro';
+import { CorregirPorCobrar } from '@/components/CorregirPorCobrar';
 import type { PaqueteAlumno, PorCobrarAlumnos as DatosPorCobrar } from '@/lib/tipos';
 
 /** Las formas de pago de un paquete. `credito` es el fiado (055). */
@@ -31,10 +32,12 @@ const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito'] as const;
  * contestar distinto cuántas clases le quedan a alguien.
  */
 export function PaquetesAlumno({
-  empresaId, clienteId, moneda, zona, esAdmin, deAlumnos = false,
+  empresaId, clienteId, alumno, moneda, zona, esAdmin, deAlumnos = false, porCobrar = null,
 }: {
   empresaId: string;
   clienteId: string;
+  /** Su nombre, para el título de la hoja de corregir (116). */
+  alumno: string;
   moneda: string;
   zona: string;
   esAdmin: boolean;
@@ -43,6 +46,14 @@ export function PaquetesAlumno({
    * período (091). El paquete suelto queda para quien lo necesite.
    */
   deAlumnos?: boolean;
+  /**
+   * Lo que la página leyó de Por cobrar (116). No se muestra: cada vez que
+   * la página se refresca llega uno nuevo, y la ficha vuelve a leer. Así,
+   * si el monto se corrigió o se sacó desde la tarjeta «Por cobrar» con la
+   * ficha abierta, «Cobrar» no queda mostrando —y pidiendo confirmar— el
+   * monto viejo mientras la base cobra el nuevo.
+   */
+  porCobrar?: DatosPorCobrar | null;
 }) {
   const t = useTextos();
   const p = t.paquetes;
@@ -58,6 +69,8 @@ export function PaquetesAlumno({
   const [metodoCobro, setMetodoCobro] = useState('transferencia');
   const [cuentaCobro, setCuentaCobro] = useState<string | null>(null);
   const cuentas = useCuentasParaElegir(empresaId, esAdmin);
+  // El período que se está corrigiendo, en la misma hoja que Por cobrar (116).
+  const [corrigiendo, setCorrigiendo] = useState<PaqueteAlumno | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
 
@@ -77,7 +90,8 @@ export function PaquetesAlumno({
     }
   }
 
-  useEffect(() => { leer(); }, [empresaId, clienteId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // `porCobrar` cambia en cada router.refresh(): ver la prop (116).
+  useEffect(() => { leer(); }, [empresaId, clienteId, porCobrar]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Corre una acción, vuelve a leer y refresca lo de alrededor (el fiado, el panel). */
   async function correr(fn: () => PromiseLike<{ error: unknown }>) {
@@ -205,11 +219,22 @@ export function PaquetesAlumno({
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-1.5 flex items-center gap-2">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-[12px] font-semibold text-ambar">{t.inscribir.faltaCobrar}</span>
                       <button type="button" onClick={() => { setCobrando(pq.id); setMetodoCobro('transferencia'); setCuentaCobro(null); }} className="boton-texto text-[12.5px]">
                         {t.inscribir.cobrar} {plata(Number(pq.precio))}
                       </button>
+                      {/* Corregir el monto o sacarlo sin cobrar, igual que en la
+                          tarjeta «Por cobrar» (116): Matías mira «Falta cobrar»
+                          también acá. Del dueño o un administrador. */}
+                      {esAdmin && (
+                        <button
+                          type="button" disabled={ocupado} onClick={() => { setCobrando(null); setCorrigiendo(pq); }}
+                          className="boton ml-auto min-h-[40px] border border-borde bg-superficie px-3.5 py-1.5 text-[12.5px] text-tinta/70 hover:bg-arena"
+                        >
+                          {t.inscribir.editar}
+                        </button>
+                      )}
                     </div>
                   )
                 )}
@@ -262,6 +287,25 @@ export function PaquetesAlumno({
             );
           })}
         </ul>
+      )}
+
+      {corrigiendo && (
+        <CorregirPorCobrar
+          fila={{
+            paquete: corrigiendo.id, cliente_id: clienteId, alumno,
+            nombre: corrigiendo.nombre, materia: corrigiendo.materia,
+            monto: Number(corrigiendo.precio), desde: corrigiendo.desde, hasta: corrigiendo.vence_el,
+            tuvo_clases: corrigiendo.tuvo_clases,
+          }}
+          moneda={moneda}
+          alCerrar={() => setCorrigiendo(null)}
+          alListo={async () => {
+            setCorrigiendo(null);
+            await leer();
+            // La tarjeta «Por cobrar» y el panel se enteran con el refresco.
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );
@@ -353,13 +397,33 @@ function FormularioPaquete({
  * no es una venta fiada —se gana al cobrar, y una venta fiada contaría como
  * cobrada el día de la inscripción—, así que no vive en el fiado. Vive acá,
  * donde el profe está mirando a sus alumnos, con el botón para cobrar.
+ *
+ * Y con el de corregir (116): el monto mal anotado, o sacarlo sin cobrarlo
+ * (CorregirPorCobrar). Es del dueño o de un administrador, como cerrar un
+ * paquete; la base lo vuelve a verificar.
+ *
+ * Lo que trae la página (`inicial`) manda: así, cuando algo de alrededor
+ * cambia lo que se debe —eliminar a un alumno, inscribirlo o cobrarle desde
+ * su ficha— y la página se refresca, esta lista se entera. Antes leía una
+ * sola vez y un alumno eliminado seguía acá hasta recargar.
  */
-export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; moneda: string }) {
+export function PorCobrarAlumnos({
+  empresaId, moneda, esAdmin = false, inicial = null,
+}: {
+  empresaId: string;
+  moneda: string;
+  /** Dueño y administradores: corrigen el monto o lo sacan sin cobrar (116). */
+  esAdmin?: boolean;
+  /** Lo que leyó la página. Null si no lo leyó: entonces lo lee esta lista. */
+  inicial?: DatosPorCobrar | null;
+}) {
   const t = useTextos();
   const i = t.inscribir;
   const locale = useLocale();
   const router = useRouter();
-  const [datos, setDatos] = useState<DatosPorCobrar | null>(null);
+  const [datos, setDatos] = useState<DatosPorCobrar | null>(inicial);
+  // La inscripción que se está corrigiendo, en su hoja (116).
+  const [corrigiendo, setCorrigiendo] = useState<DatosPorCobrar['lista'][number] | null>(null);
   const [cobrando, setCobrando] = useState<string | null>(null);
   const [metodo, setMetodo] = useState('transferencia');
   const [cuenta, setCuenta] = useState<string | null>(null);
@@ -379,7 +443,11 @@ export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; mon
     }
   }
 
-  useEffect(() => { leer(); }, [empresaId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cada vez que la página trae lo suyo (al refrescarse), eso es lo vigente.
+  useEffect(() => {
+    if (inicial) setDatos(inicial);
+    else leer();
+  }, [empresaId, inicial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function abrir(paquete: string) {
     setCobrando(paquete);
@@ -446,13 +514,36 @@ export function PorCobrarAlumnos({ empresaId, moneda }: { empresaId: string; mon
                 </div>
               </div>
             ) : (
-              <button type="button" onClick={() => abrir(x.paquete)} className="boton-texto mt-1 text-[13px]">
-                {i.cobrar}
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => abrir(x.paquete)} className="boton-suave min-h-[44px] px-4 py-2 text-[13px]">
+                  {i.cobrar}
+                </button>
+                {/* Corregir el monto o sacarlo sin cobrar (116). */}
+                {esAdmin && (
+                  <button
+                    type="button" onClick={() => { setCobrando(null); setCorrigiendo(x); }}
+                    className="boton min-h-[44px] border border-borde bg-superficie px-4 py-2 text-[13px] text-tinta/70 hover:bg-arena"
+                  >
+                    {i.editar}
+                  </button>
+                )}
+              </div>
             )}
           </li>
         ))}
       </ul>
+
+      {corrigiendo && (
+        <CorregirPorCobrar
+          fila={corrigiendo} moneda={moneda}
+          alCerrar={() => setCorrigiendo(null)}
+          alListo={async () => {
+            setCorrigiendo(null);
+            await leer();
+            router.refresh();
+          }}
+        />
+      )}
     </section>
   );
 }

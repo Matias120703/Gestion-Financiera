@@ -14,7 +14,7 @@ import { Indicador, Vacio } from '@/components/Piezas';
 import { PaquetesAlumno, PorCobrarAlumnos } from '@/components/PaquetesAlumno';
 import { MandarRutina } from '@/components/rutinas/MandarRutina';
 import { fechaCorta } from '@/components/rutinas/panel/utiles';
-import type { ClienteLista, TurnoCliente } from '@/lib/tipos';
+import type { ClienteLista, PorCobrarAlumnos as DatosPorCobrar, TurnoCliente } from '@/lib/tipos';
 import type { EnlaceRutina } from '@/lib/tipos-rutinas';
 
 /**
@@ -63,7 +63,7 @@ function haceTanto(t: Textos, iso: string | null): string {
  */
 export function PantallaClientes({
   empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, tienePaquetes, puedeEliminar,
-  deAlumnos = false, titulo, notasALaVista = false, conRutinas = false, rutinas = null,
+  deAlumnos = false, titulo, notasALaVista = false, conRutinas = false, rutinas = null, porCobrar = null,
 }: {
   empresaId: string;
   moneda: string;
@@ -90,6 +90,13 @@ export function PantallaClientes({
    * ficha no dice «Sin rutina», porque no lo sabe; queda el botón a la carpeta.
    */
   rutinas?: Record<string, RutinaEnClientes> | null;
+  /**
+   * Lo que falta cobrar de los alumnos (`por_cobrar_alumnos`), leído por la
+   * página (116). Null si no es de alumnos o no se pudo leer: entonces la
+   * tarjeta «Por cobrar» lo lee sola y eliminar no avisa el monto (la base
+   * lo anula igual).
+   */
+  porCobrar?: DatosPorCobrar | null;
   /** Dueño y administradores. Un vendedor carga clientes pero no los saca. */
   puedeEliminar: boolean;
 }) {
@@ -114,6 +121,14 @@ export function PantallaClientes({
 
   const totalDeben = Object.values(saldos).reduce((s, n) => s + n, 0);
   const cuantosDeben = Object.values(saldos).filter((n) => n > 0).length;
+
+  // Lo que cada alumno tiene sin cobrar (116): al eliminarlo se anula, y la
+  // confirmación lo dice con el monto.
+  const sinCobrar = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const x of porCobrar?.lista ?? []) m[x.cliente_id] = (m[x.cliente_id] ?? 0) + Number(x.monto);
+    return m;
+  }, [porCobrar]);
 
   function listo(mensaje: string) {
     setAviso(mensaje);
@@ -140,8 +155,11 @@ export function PantallaClientes({
         </Link>}
       </div>
 
-      {/* Lo que le deben a un profe: inscripciones sin cobrar (091). */}
-      {deAlumnos && <PorCobrarAlumnos empresaId={empresaId} moneda={moneda} />}
+      {/* Lo que le deben a un profe: inscripciones sin cobrar (091), que el
+          dueño o un administrador corrigen ahí mismo (116). */}
+      {deAlumnos && (
+        <PorCobrarAlumnos empresaId={empresaId} moneda={moneda} esAdmin={puedeEliminar} inicial={porCobrar} />
+      )}
 
       {aviso && (
         <p className="rounded-xl bg-verde-claro px-4 py-3 text-[13.5px] font-semibold text-verde-fuerte aparecer">
@@ -187,6 +205,8 @@ export function PantallaClientes({
                 key={c.id}
                 c={c}
                 debe={saldos[c.id] ?? 0}
+                sinCobrar={sinCobrar[c.id] ?? 0}
+                porCobrar={porCobrar}
                 empresaId={empresaId}
                 zona={zona}
                 negocio={negocio}
@@ -215,7 +235,7 @@ export function PantallaClientes({
 /** Crear o editar un cliente. Con `c`, edita. */
 function FormularioCliente({
   empresaId, c, titulo, onCerrar, onListo,
-  puedeEliminar = false, conSalud = false, debe = 0, plata, proximo = '',
+  puedeEliminar = false, conSalud = false, debe = 0, sinCobrar = 0, plata, proximo = '',
 }: {
   empresaId: string;
   c?: ClienteLista;
@@ -231,6 +251,11 @@ function FormularioCliente({
   conSalud?: boolean;
   /** Lo que debe. A quien debe no se lo elimina: se lo manda a Fiado. */
   debe?: number;
+  /**
+   * Lo que un alumno tiene sin cobrar de sus períodos (116). No frena como
+   * el fiado: al eliminarlo se anula, y se dice antes, con el monto.
+   */
+  sinCobrar?: number;
   plata?: (n: number) => string;
   /** Su próximo turno ya escrito, para avisar que no se cancela. */
   proximo?: string;
@@ -333,8 +358,15 @@ function FormularioCliente({
           <div className="space-y-2.5 rounded-xl bg-rojo-claro px-3.5 py-3 aparecer">
             <p className="text-[13.5px] font-bold text-rojo">{t.clientes.eliminarPregunta(c.nombre)}</p>
             <p className="text-[12.5px] leading-snug text-tinta/65">
-              {t.clientes.eliminarDetalle(c.nombre)}{proximo && ` ${t.clientes.turnoNoSeCancela(proximo)}`}
+              {/* Con algo sin cobrar, su próxima clase puede ser de lo que se
+                  anula y salir de la agenda: «no se cancela» podría ser falso. */}
+              {t.clientes.eliminarDetalle(c.nombre)}{proximo && !(sinCobrar > 0) && ` ${t.clientes.turnoNoSeCancela(proximo)}`}
             </p>
+            {sinCobrar > 0 && (
+              <p className="text-[12.5px] font-semibold leading-snug text-tinta/80">
+                {t.clientes.eliminarSinCobrar(c.nombre, plata ? plata(sinCobrar) : String(sinCobrar))}
+              </p>
+            )}
             {conSalud && (
               <p className="text-[12.5px] leading-snug text-tinta/65">{t.clientes.eliminarConSalud(c.nombre)}</p>
             )}
@@ -437,11 +469,18 @@ function FichaRutina({
 }
 
 function FilaCliente({
-  c, debe, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista,
+  c, debe, sinCobrar, porCobrar, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista,
   conRutinas, rutina, moneda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
+  /** Lo que tiene sin cobrar de sus períodos (116). */
+  sinCobrar: number;
+  /**
+   * Lo que la página leyó de Por cobrar (116). Llega uno nuevo en cada
+   * refresco, y con eso la ficha abierta vuelve a leer sus períodos.
+   */
+  porCobrar: DatosPorCobrar | null;
   empresaId: string;
   zona: string;
   negocio: string;
@@ -530,6 +569,7 @@ function FilaCliente({
               puedeEliminar={puedeEliminar}
               conSalud={conRutinas}
               debe={debe}
+              sinCobrar={sinCobrar}
               plata={plata}
               proximo={proximo}
             />
@@ -600,8 +640,8 @@ function FilaCliente({
                   quedan?» es lo primero que un profe quiere saber de un alumno. */}
               {tienePaquetes && (
                 <PaquetesAlumno
-                  empresaId={empresaId} clienteId={c.id} moneda={moneda} zona={zona}
-                  esAdmin={puedeEliminar} deAlumnos={deAlumnos}
+                  empresaId={empresaId} clienteId={c.id} alumno={c.nombre} moneda={moneda} zona={zona}
+                  esAdmin={puedeEliminar} deAlumnos={deAlumnos} porCobrar={porCobrar}
                 />
               )}
 

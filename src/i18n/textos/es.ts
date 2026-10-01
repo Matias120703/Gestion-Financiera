@@ -1191,6 +1191,16 @@ export const es = {
     pagado: 'Pagado',
     faltaCobrar: 'Falta cobrar',
     cobrado: (monto: string) => `Cobrado: ${monto}.`,
+    // Corregir lo que falta cobrar (116): el monto mal anotado, o sacarlo
+    // sin cobrarlo. Es del dueño o de un administrador.
+    editar: 'Editar',
+    montoCorrecto: 'Cuánto le cobrás por este período',
+    montoAyuda: 'Todavía no se cobró: corregirlo no toca tu plata.',
+    noCobrar: 'No lo voy a cobrar',
+    noCobrarPregunta: (alumno: string, monto: string) => `¿Sacar los ${monto} de ${alumno} de lo que falta cobrar?`,
+    noCobrarSinClases: 'Todavía no tuvo clases: se borra esta inscripción, con sus clases de la agenda. Si fue un error, lo volvés a inscribir.',
+    noCobrarConClases: 'Ya tuvo clases: queda en su ficha como cerrada y sin cobrar, y las que faltaban salen de tu agenda.',
+    siSacar: 'Sí, sacarlo',
   },
 
   /** CÓMO TE PAGÓ Y A QUÉ CUENTA ENTRÓ (095). */
@@ -1274,6 +1284,10 @@ export const es = {
     eliminarConSalud: (nombre: string) =>
       `Si ${nombre} tiene rutinas o medidas, queda archivado: se borran sus medidas, su consentimiento y «Salud y lesiones». Sus rutinas quedan como tu historia y no se ven en ningún link.`,
     turnoNoSeCancela: (cuando: string) => `Su turno del ${cuando} no se cancela.`,
+    // Un alumno con un período sin cobrar (116): al eliminarlo se anula, y se
+    // dice antes, con el monto.
+    eliminarSinCobrar: (nombre: string, monto: string) =>
+      `${nombre} tiene ${monto} sin cobrar: se anula y deja de figurar en Por cobrar, y las clases de eso que faltaban salen de tu agenda. Lo que ya te pagó queda en tu historial.`,
     no: 'No',
     eliminando: 'Eliminando…',
     siEliminar: 'Sí, eliminar',

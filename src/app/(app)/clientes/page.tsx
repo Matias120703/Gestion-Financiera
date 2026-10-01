@@ -6,6 +6,7 @@ import { traerClientes } from '@/lib/clientes';
 import { traerResumenFiado } from '@/lib/fiado';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { PantallaClientes, type RutinaEnClientes } from '@/components/PantallaClientes';
+import type { PorCobrarAlumnos } from '@/lib/tipos';
 import type { RutinasDelNegocio } from '@/lib/tipos-rutinas';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,26 @@ async function rutinasPorCliente(empresaId: string): Promise<Record<string, Ruti
 }
 
 /**
+ * Lo que falta cobrar de los alumnos (116), leído acá y no solo en la
+ * tarjeta: así la tarjeta «Por cobrar» se entera cuando la página se
+ * refresca (eliminar a un alumno, inscribirlo o cobrarle desde su ficha), y
+ * la confirmación de eliminar dice cuánto tiene sin cobrar.
+ *
+ * Es contexto: si falla devuelve null, la tarjeta lo lee sola y eliminar no
+ * dice el monto (la base lo anula igual).
+ */
+async function porCobrarDeAlumnos(empresaId: string): Promise<PorCobrarAlumnos | null> {
+  try {
+    const { data, error } = await clienteServidor().rpc('por_cobrar_alumnos', { p_empresa: empresaId });
+    const datos = data as PorCobrarAlumnos | null;
+    if (error || !datos || !Array.isArray(datos.lista)) return null;
+    return datos;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * CLIENTES · a quién le vendés.
  *
  * Una lista que solo se mira no vale el trabajo de mantenerla. Lo que la
@@ -54,11 +75,14 @@ export default async function PaginaClientes() {
 
   // El trainer ve la rutina de cada cliente en su ficha (098). Solo él la pide.
   const conRutinas = tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/rutinas');
+  // Un profe inscribe alumnos y cobra períodos, no fía (091).
+  const deAlumnos = fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos;
 
-  const [clientes, fiado, rutinas] = await Promise.all([
+  const [clientes, fiado, rutinas, porCobrar] = await Promise.all([
     traerClientes(ctx.empresa.id),
     traerResumenFiado(ctx.empresa.id),
     conRutinas ? rutinasPorCliente(ctx.empresa.id) : Promise.resolve(null),
+    deAlumnos ? porCobrarDeAlumnos(ctx.empresa.id) : Promise.resolve(null),
   ]);
 
   const saldos: Record<string, number> = {};
@@ -80,8 +104,9 @@ export default async function PaginaClientes() {
       tieneAgenda={tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/agenda')}
       // Los paquetes de clases, solo donde se venden así (088).
       tienePaquetes={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).paquetes}
-      // Un profe inscribe alumnos y cobra períodos, no fía (091).
-      deAlumnos={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).agendaDeAlumnos}
+      deAlumnos={deAlumnos}
+      // Lo que falta cobrar, para la tarjeta y para avisar al eliminar (116).
+      porCobrar={porCobrar}
       notasALaVista={fichaDe(ctx.empresa.rubro, ctx.empresa.tipo_cuenta).notasALaVista}
       conRutinas={conRutinas}
       rutinas={rutinas}

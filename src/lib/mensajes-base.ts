@@ -146,6 +146,12 @@ export const MENSAJES_PT: Record<string, string> = {
   'Poné cuánto cobrás: por hora o un precio cerrado.': 'Coloque quanto você cobra: por hora ou um preço fechado.',
   'En ese período no cae ningún día de los que elegiste.': 'Nesse período não cai nenhum dos dias que você escolheu.',
   'El % a las % ya tenés a %.': 'No dia % às % você já tem %.',
+  // Lo que falta cobrar se corrige (116).
+  'Corregir lo que falta cobrar es del dueño o de un administrador.':
+    'Corrigir o que falta receber é do dono ou de um administrador.',
+  'Eso ya se cobró. Para corregirlo, anulá ese cobro en el Historial: vuelve a quedar por cobrar y ahí lo cambiás.':
+    'Isso já foi recebido. Pra corrigir, cancele esse recebimento no Histórico: volta a ficar a receber e aí você muda.',
+  'Ese monto es demasiado grande. Revisá los ceros.': 'Esse valor é grande demais. Confira os zeros.',
   // La clase del día (092).
   'Esa clase no es de ninguna inscripción.': 'Essa aula não é de nenhuma inscrição.',
   // Un profe no tiene link público (089).
