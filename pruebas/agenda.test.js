@@ -767,6 +767,252 @@ const num = (v) => Number(v);
     rechazado('ni un rango al revés',
       await llamar(local.uid, 'select public.agenda_calendario($1, $2::date, ($2::date - 1))', [local.empresaId, lunes2]),
       'no es válido');
+
+    // (119) La barbería con horario sigue igual, y ahora dice que lo tiene.
+    const igual = await cal(sur.uid, lunes2, 1);
+    ok('la barbería con horario sigue en lleno / cerrado, con su horario a la vista (119)',
+      [igual[0].estado, igual[1].estado, igual[0].con_horario], ['lleno', 'cerrado', true]);
+    ok('y cuenta sus turnos y sus franjas', [igual[0].turnos, igual[0].franjas], [3, 3]);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('15 · El calendario que se entiende (119)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Matías (01/10): su cuenta de clases, con dos clases agendadas, veía toda
+  // la semana gris, «Cerrado», y «0 días con lugar». Sin horario cargado un
+  // día no es «cerrado»: no hay con qué medirlo, y se pinta por cantidad.
+  {
+    const masDias = (iso, n) => {
+      const [a, m, d] = iso.split('-').map(Number);
+      return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10);
+    };
+    const lunesP = masDias(lunes, 35);
+    const juevesP = masDias(lunesP, 3);
+    const viernesP = masDias(lunesP, 4);
+
+    const profe = await H.montarEmpresa(db, { email: 'profe@clases119.com', nombre: 'Clases de Matías', rubro: 'clases' });
+    const alumno = async (nombre, tel) => (await valor(profe.uid,
+      'select public.guardar_cliente($1,$2,$3,$4,$5) id', [profe.empresaId, nombre, tel, '', null])).id;
+    const inscribir = (cli, dia, desde, hasta, grupo = false) => llamar(profe.uid,
+      'select public.inscribir_alumno($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) j',
+      [profe.empresaId, cli, [new Date(`${desde}T12:00:00Z`).getUTCDay()], '18:00', '19:00', desde, hasta,
+        50000, null, false, 'efectivo', null, 'Inglés', null, grupo]);
+    const calP = async (desde, dias) => (await valor(profe.uid,
+      'select public.agenda_calendario($1, $2::date, ($2::date + $3::int)) j', [profe.empresaId, desde, dias])).j;
+
+    const ana = await alumno('Ana Benítez', '0982111111');
+    const beto = await alumno('Beto Gómez', '0982222333');
+    aceptado('el profe inscribe a Ana el jueves', await inscribir(ana, null, juevesP, juevesP));
+    aceptado('y a Beto el viernes', await inscribir(beto, null, viernesP, viernesP));
+
+    let semana = await calP(lunesP, 6);
+    ok('sin horario cargado ningún día es «cerrado» (el caso de Matías)',
+      semana.filter((d) => d.estado === 'cerrado').length, 0);
+    ok('todos dicen sin_horario', [...new Set(semana.map((d) => d.estado))], ['sin_horario']);
+    ok('y traen la cantidad de cada día', semana.map((d) => d.turnos), [0, 0, 0, 1, 1, 0, 0]);
+    ok('las clases, contadas como clases', semana.map((d) => d.franjas), [0, 0, 0, 1, 1, 0, 0]);
+    ok('y la cuenta no tiene horario', semana[0].con_horario, false);
+
+    // mi_profesional: el que creó la inscripción, siempre el mismo.
+    const prof = (await valor(profe.uid, 'select public.mi_profesional($1) id', [profe.empresaId])).id;
+    ok('mi_profesional da el profe que creó la inscripción',
+      prof, (await crudo('select id from public.turnos_profesional where empresa_id = $1', [profe.empresaId])).id);
+    await valor(profe.uid, 'select public.mi_profesional($1) id', [profe.empresaId]);
+    ok('y llamarla de nuevo no crea otro',
+      (await crudo('select count(*)::int n from public.turnos_profesional where empresa_id = $1', [profe.empresaId])).n, 1);
+    rechazado('otro negocio no la puede usar',
+      await llamar(local.uid, 'select public.mi_profesional($1)', [profe.empresaId]), 'No pertenecés');
+    rechazado('ni una barbería, que arma su equipo en Equipo y reparto',
+      await llamar(local.uid, 'select public.mi_profesional($1)', [local.empresaId]), 'agenda de un profe');
+
+    // Un profe recién creado: sin profesional ni clases, no rompe y se arma solo.
+    const nuevo = await H.montarEmpresa(db, { email: 'nuevo@clases119.com', nombre: 'Profe nuevo', rubro: 'entrenamiento' });
+    const vacio = (await valor(nuevo.uid,
+      'select public.agenda_calendario($1, $2::date, ($2::date + 2)) j', [nuevo.empresaId, lunesP])).j;
+    ok('un profe sin nada todavía ve sin_horario, con cero', vacio.map((d) => [d.estado, d.turnos]),
+      [['sin_horario', 0], ['sin_horario', 0], ['sin_horario', 0]]);
+    const suyo = (await valor(nuevo.uid, 'select public.mi_profesional($1) id', [nuevo.empresaId])).id;
+    ok('el trainer que no agendó a nadie ya puede tener su profesional', typeof suyo, 'string');
+    aceptado('y cargar su horario antes de agendar a nadie',
+      await llamar(nuevo.uid, 'select public.guardar_horario($1,$2,1,$3,$4)', [nuevo.empresaId, suyo, '07:00', '09:00']));
+    ok('su lunes ya se mide: libre', (await valor(nuevo.uid,
+      'select public.agenda_calendario($1, $2::date, $2::date) j', [nuevo.empresaId, lunesP])).j[0].estado, 'libre');
+
+    // Las vacaciones de alguien sin horario: cerrado, con su motivo.
+    aceptado('el trainer se toma el miércoles',
+      await llamar(nuevo.uid, 'select public.cerrar_dias($1,$2::date,$2::date,null,$3)', [nuevo.empresaId, masDias(lunesP, 2), 'Vacaciones']));
+    const conVacaciones = (await valor(nuevo.uid,
+      'select public.agenda_calendario($1, $2::date, ($2::date + 2)) j', [nuevo.empresaId, lunesP])).j[2];
+    ok('unas vacaciones son «cerrado», con su motivo', [conVacaciones.estado, conVacaciones.motivo], ['cerrado', 'Vacaciones']);
+
+    // El profe carga su horario: jueves de 17 a 20.
+    aceptado('el profe carga su horario del jueves',
+      await llamar(profe.uid, 'select public.guardar_horario($1,$2,4,$3,$4)', [profe.empresaId, prof, '17:00', '20:00']));
+    semana = await calP(lunesP, 6);
+    ok('con horario, el jueves con una clase está libre',
+      [semana[3].estado, semana[3].abierto_min, semana[3].ocupado_min], ['libre', 180, 60]);
+    ok('el viernes tiene una clase fuera del horario: sin_horario, no «cerrado»', [semana[4].estado, semana[4].turnos], ['sin_horario', 1]);
+    ok('y la base la marca fuera; la del jueves, no', [semana[4].fuera, semana[3].fuera], [1, 0]);
+    ok('y el sábado, sin horario ni clases, no trabaja: cerrado', semana[5].estado, 'cerrado');
+    ok('la cuenta ya dice que tiene horario', semana[0].con_horario, true);
+    ok('un día cerrado por no trabajar no trae motivo', semana[5].motivo, null);
+
+    // Una clase en grupo (108): tres alumnos a la misma hora ocupan UNA hora.
+    const juevesG = masDias(juevesP, 7);
+    for (const [n, tel] of [['Carla', '0983000001'], ['Dani', '0983000002'], ['Eli', '0983000003']]) {
+      aceptado(`${n} se suma a la clase en grupo`, await inscribir(await alumno(n, tel), null, juevesG, juevesG, true));
+    }
+    const grupoDia = (await calP(juevesG, 0))[0];
+    ok('tres alumnos en grupo: 3 turnos, 1 clase, 60 minutos ocupados',
+      [grupoDia.turnos, grupoDia.franjas, grupoDia.ocupado_min], [3, 1, 60]);
+    ok('y el día sigue libre (la 072 decía lleno)', grupoDia.estado, 'libre');
+    ok('la clase en grupo cae en el horario: nada fuera', grupoDia.fuera, 0);
+
+    // Las vacaciones del profe sobre un jueves con horario.
+    const juevesV = masDias(juevesP, 14);
+    aceptado('el profe cierra un jueves por vacaciones',
+      await llamar(profe.uid, 'select public.guardar_excepcion($1,$2,true,null,null,null,$3)', [profe.empresaId, juevesV, 'Vacaciones']));
+    const vac = (await calP(juevesV, 0))[0];
+    ok('un feriado o unas vacaciones: cerrado, con su motivo', [vac.estado, vac.motivo, vac.abierto_min], ['cerrado', 'Vacaciones', 0]);
+
+    // Los días que ya pasaron también dicen cuántas clases tuvieron.
+    const pasado = (await crudo("select ((now() at time zone 'America/Asuncion')::date - 10) as d")).d.toISOString().slice(0, 10);
+    await db.query(
+      `insert into public.turnos_reserva (empresa_id, profesional_id, producto_id, inicia, termina, cliente_nombre, estado)
+       select $1, $2, r.producto_id, ($3::date + time '18:00') at time zone 'America/Asuncion',
+              ($3::date + time '19:00') at time zone 'America/Asuncion', 'Ana', 'atendida'
+       from public.turnos_reserva r where r.empresa_id = $1 limit 1`,
+      [profe.empresaId, prof, pasado]);
+    const yaPaso = (await calP(pasado, 0))[0];
+    ok('un día pasado trae su cantidad', [yaPaso.turnos, yaPaso.franjas], [1, 1]);
+
+    // Dos profesionales distintos a la misma hora se siguen sumando.
+    const este = await H.montarEmpresa(db, { email: 'dueno@barberiaeste.com', nombre: 'Barbería Este' });
+    const corteEste = await H.crearProducto(db, este.empresaId, este.uid,
+      { nombre: 'Corte', costo: 0, precio: 50000, controla_stock: false });
+    const ids = [];
+    for (const n of ['Uno', 'Dos']) {
+      const uidN = await H.sumarMiembro(db, este.empresaId, `${n.toLowerCase()}@barberiaeste.com`, 'vendedor');
+      const id = (await valor(este.uid, "select public.guardar_profesional($1,$2,'comision',50,$3) as id", [este.empresaId, n, uidN])).id;
+      await llamar(este.uid, 'select public.guardar_horario($1,$2,1,$3,$4)', [este.empresaId, id, '09:00', '10:00']);
+      ids.push(id);
+    }
+    for (const id of ids) {
+      await db.query(
+        `insert into public.turnos_reserva (empresa_id, profesional_id, producto_id, inicia, termina, cliente_nombre, estado)
+         values ($1, $2, $3, ($4::date + time '09:00') at time zone 'America/Asuncion',
+                 ($4::date + time '10:00') at time zone 'America/Asuncion', 'Cliente', 'pendiente')`,
+        [este.empresaId, id, corteEste, lunesP]);
+    }
+    const dosProf = (await valor(este.uid, 'select public.agenda_calendario($1, $2::date, $2::date) j', [este.empresaId, lunesP])).j[0];
+    ok('dos barberos a la misma hora ocupan sus dos horas: lleno',
+      [dosProf.estado, dosProf.ocupado_min, dosProf.abierto_min, dosProf.franjas], ['lleno', 120, 120, 2]);
+    ok('y ninguno queda fuera de su horario', dosProf.fuera, 0);
+
+    // ── Lo ocupado se mide ADENTRO del horario de cada uno ──
+    // Hallado en la revisión (01/10): una clase fuera del horario contaba
+    // contra el horario. Un profe con horario de 18 a 21 y clases a la
+    // mañana veía «Lleno» con la tarde entera libre; los turnos de alguien de
+    // vacaciones o sin horario llenaban el horario de otro.
+    const reservarEn = (empresaId, prof, prod, dia, desde, hasta) => db.query(
+      `insert into public.turnos_reserva (empresa_id, profesional_id, producto_id, inicia, termina, cliente_nombre, estado)
+       values ($1, $2, $3, ($4::date + $5::time) at time zone 'America/Asuncion',
+               ($4::date + $6::time) at time zone 'America/Asuncion', 'Alguien', 'pendiente')`,
+      [empresaId, prof, prod, dia, desde, hasta]);
+    const nuevoProf = async (empresaId, nombre) => (await crudo(
+      "insert into public.turnos_profesional (empresa_id, nombre, reparto) values ($1, $2, 'local') returning id",
+      [empresaId, nombre])).id;
+    const franja = (empresaId, prof, dow, desde, hasta) => db.query(
+      'insert into public.turnos_horario (empresa_id, profesional_id, dia_semana, desde, hasta) values ($1, $2, $3, $4, $5)',
+      [empresaId, prof, dow, desde, hasta]);
+    const cerrarA = (empresaId, prof, dia, motivo) => db.query(
+      'insert into public.turnos_excepcion (empresa_id, profesional_id, fecha, cerrado, motivo) values ($1, $2, $3, true, $4)',
+      [empresaId, prof, dia, motivo]);
+    const calDe = async (e, dia) => (await valor(e.uid,
+      'select public.agenda_calendario($1, $2::date, $2::date) j', [e.empresaId, dia])).j[0];
+    const productoDe = (e) => H.crearProducto(db, e.empresaId, e.uid,
+      { nombre: 'Clase', costo: 0, precio: 50000, controla_stock: false });
+    const martesP = masDias(lunesP, 1);
+
+    // 1. El profe que atiende de 18 a 21 y tiene clases a la mañana.
+    const tardes = await H.montarEmpresa(db, { email: 'tardes@clases119.com', nombre: 'Clases de tarde', rubro: 'clases' });
+    const tardesProd = await productoDe(tardes);
+    const tardesProf = await nuevoProf(tardes.empresaId, 'Ana');
+    await franja(tardes.empresaId, tardesProf, 1, '18:00', '21:00');
+    await reservarEn(tardes.empresaId, tardesProf, tardesProd, lunesP, '10:00', '12:00');
+    await reservarEn(tardes.empresaId, tardesProf, tardesProd, lunesP, '13:00', '15:00');
+    let tarde = await calDe(tardes, lunesP);
+    ok('horario de 18 a 21 y clases a la mañana: la tarde sigue libre (antes «Lleno»)',
+      [tarde.estado, tarde.abierto_min, tarde.ocupado_min, tarde.libre_min], ['libre', 180, 0, 180]);
+    ok('y las dos de la mañana quedan marcadas fuera del horario', [tarde.turnos, tarde.fuera], [2, 2]);
+    await reservarEn(tardes.empresaId, tardesProf, tardesProd, lunesP, '18:00', '19:00');
+    await reservarEn(tardes.empresaId, tardesProf, tardesProd, lunesP, '20:30', '21:30');
+    tarde = await calDe(tardes, lunesP);
+    ok('la clase de adentro cuenta entera; la que se pasa de las 21, solo su media hora',
+      [tarde.ocupado_min, tarde.fuera, tarde.estado], [90, 3, 'libre']);
+
+    // Un horario especial ese día manda sobre el de la semana, también para medir.
+    const lunesQ = masDias(lunesP, 7);
+    await db.query(
+      `insert into public.turnos_excepcion (empresa_id, profesional_id, fecha, cerrado, desde, hasta, motivo)
+       values ($1, $2, $3, false, '09:00', '11:00', 'Cambio')`, [tardes.empresaId, tardesProf, lunesQ]);
+    await reservarEn(tardes.empresaId, tardesProf, tardesProd, lunesQ, '09:00', '10:00');
+    await reservarEn(tardes.empresaId, tardesProf, tardesProd, lunesQ, '18:00', '19:00');
+    const cambio = await calDe(tardes, lunesQ);
+    ok('con horario especial (9 a 11) la clase de las 18 queda fuera, no la de las 9',
+      [cambio.abierto_min, cambio.ocupado_min, cambio.fuera, cambio.estado], [120, 60, 1, 'libre']);
+
+    // 2. Barbería: A se va de vacaciones con 6 h anotadas (cerrar no las
+    // mueve) y B, que también atiende de 9 a 17, no tiene nada.
+    const barb = await H.montarEmpresa(db, { email: 'dueno@barberia119.com', nombre: 'Barbería 119' });
+    const barbProd = await productoDe(barb);
+    const pa = await nuevoProf(barb.empresaId, 'A');
+    const pb = await nuevoProf(barb.empresaId, 'B');
+    for (const p of [pa, pb]) await franja(barb.empresaId, p, 1, '09:00', '17:00');
+    for (const [d, h] of [['09:00', '11:00'], ['11:00', '13:00'], ['14:00', '16:00']]) {
+      await reservarEn(barb.empresaId, pa, barbProd, lunesP, d, h);
+    }
+    await cerrarA(barb.empresaId, pa, lunesP, 'Vacaciones');
+    const vacA = await calDe(barb, lunesP);
+    ok('A de vacaciones con 6 h anotadas y B libre todo el día: libre, no «casi lleno»',
+      [vacA.estado, vacA.abierto_min, vacA.ocupado_min, vacA.fuera, vacA.motivo], ['libre', 480, 0, 3, null]);
+
+    // Las vacaciones de uno solo no cierran la cuenta (hallado en la revisión).
+    await cerrarA(barb.empresaId, pa, martesP, 'Vacaciones');
+    await reservarEn(barb.empresaId, pb, barbProd, martesP, '10:00', '11:00');
+    await reservarEn(barb.empresaId, pb, barbProd, martesP, '11:00', '12:00');
+    const soloA = await calDe(barb, martesP);
+    ok('las vacaciones de A no ponen «Cerrado · Vacaciones» el día que B tiene turnos',
+      [soloA.estado, soloA.motivo, soloA.turnos, soloA.fuera], ['sin_horario', null, 2, 2]);
+    await cerrarA(barb.empresaId, pb, martesP, 'Vacaciones');
+    const losDos = await calDe(barb, martesP);
+    ok('si se van los dos, sí: cerrado, con su motivo', [losDos.estado, losDos.motivo], ['cerrado', 'Vacaciones']);
+    const lunesF = masDias(lunesP, 14);
+    await cerrarA(barb.empresaId, null, lunesF, 'Feriado');
+    const feriado = await calDe(barb, lunesF);
+    ok('y el feriado del local cierra a todos', [feriado.estado, feriado.motivo, feriado.abierto_min], ['cerrado', 'Feriado', 0]);
+
+    // 3. Cuenta de clases con dos profes. Sin horario: las vacaciones de Ana
+    // no cierran el día de Beto. Con horario solo de Ana: las clases de Beto
+    // no llenan el horario de ella.
+    const dos = await H.montarEmpresa(db, { email: 'dos@clases119.com', nombre: 'Clases de a dos', rubro: 'clases' });
+    const dosProd = await productoDe(dos);
+    const ana2 = await nuevoProf(dos.empresaId, 'Ana');
+    const beto2 = await nuevoProf(dos.empresaId, 'Beto');
+    await cerrarA(dos.empresaId, ana2, lunesP, 'Vacaciones');
+    await reservarEn(dos.empresaId, beto2, dosProd, lunesP, '18:00', '19:00');
+    await reservarEn(dos.empresaId, beto2, dosProd, lunesP, '19:00', '20:00');
+    const sinH = await calDe(dos, lunesP);
+    ok('sin horario, las vacaciones de Ana no cierran el día de las clases de Beto',
+      [sinH.estado, sinH.motivo, sinH.turnos, sinH.con_horario], ['sin_horario', null, 2, false]);
+    await franja(dos.empresaId, ana2, 2, '18:00', '21:00');
+    for (const [d, h] of [['18:00', '19:00'], ['19:00', '20:00'], ['20:00', '21:00']]) {
+      await reservarEn(dos.empresaId, beto2, dosProd, martesP, d, h);
+    }
+    const deBeto = await calDe(dos, martesP);
+    ok('tres clases de Beto, que no tiene horario, no llenan el horario de Ana (antes «Lleno»)',
+      [deBeto.estado, deBeto.abierto_min, deBeto.ocupado_min, deBeto.fuera], ['libre', 180, 0, 3]);
   }
 
   console.log('\n══════════════════════════════════════════════════════════════');

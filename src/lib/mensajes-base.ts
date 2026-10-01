@@ -397,6 +397,8 @@ export const MENSAJES_PT: Record<string, string> = {
   'Solo podés cambiar el precio de tus propios servicios.': 'Você só pode mudar o preço dos seus próprios serviços.',
   'Solo podés cambiar tu propia agenda.': 'Você só pode mudar a sua própria agenda.',
   'Solo podés cambiar tu propio horario.': 'Você só pode mudar o seu próprio horário.',
+  // mi_profesional (119): el horario de un profe, no el de una barbería.
+  'Esto es para la agenda de un profe: el equipo se arma en Equipo y reparto.': 'Isso é para a agenda de um professor: a equipe se monta em Equipe e divisão.',
   'Solo podés cargar tus propios servicios.': 'Você só pode lançar os seus próprios serviços.',
   'Solo podés elegir una empresa tuya.': 'Você só pode escolher uma empresa sua.',
   'Solo quien la anotó o un administrador puede borrarla.': 'Só quem anotou ou um administrador pode apagar.',

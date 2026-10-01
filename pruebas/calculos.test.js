@@ -2767,6 +2767,209 @@ ok('un rubro desconocido no rompe: cae en comercio',
     ['es', 'pt', 'en'].filter((l) => !/marcarAtendido: '[^']+'/.test(leer(`src/i18n/textos/${l}.ts`))), []);
 }
 
+// --- El calendario que se entiende (119) ---
+//
+// Matías (01/10): su cuenta de clases veía la semana entera gris, «Cerrado»,
+// con «0 días con lugar», y al tocar un día con clases «no aparecía nada».
+// La base ya no dice «cerrado» sin horario (pruebas/agenda.test.js, grupo
+// 15); esto cuida la pantalla: que use el estado nuevo, que pinte el día
+// entero y no solo una rayita, y que tocar un día abra su lista ahí mismo.
+// Se leen las fuentes (con CRLF normalizado): si alguien saca una pieza,
+// esto lo dice antes que un profe.
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const cal = leer('src/components/CalendarioAgenda.tsx');
+  const age = leer('src/components/PantallaAgenda.tsx');
+  const ins = leer('src/components/InscribirAlumno.tsx');
+  const mig = leer('supabase/migrations/119_el_calendario_que_se_entiende.sql');
+
+  // La base.
+  ok('la 119 da sin_horario cuando no hay con qué medir, y cerrado solo con feriado o sin trabajar',
+    [mig.includes("when abierto_min = 0 and con_cierre then 'cerrado'"),
+      mig.includes("when abierto_min = 0 and (not v_con_horario or turnos > 0) then 'sin_horario'"),
+      mig.includes("'franjas', franjas") && mig.includes("'con_horario', v_con_horario") && mig.includes("'motivo',")],
+    [true, true, true]);
+  // Hallado en la revisión (01/10): lo de afuera del horario contaba contra
+  // el horario, y las vacaciones de uno cerraban la cuenta entera. Lo prueba
+  // la base de verdad (pruebas/agenda.test.js, grupo 15); acá, que no se vaya.
+  ok('lo ocupado se mide adentro del horario de cada uno, y lo de afuera se marca',
+    [mig.includes('cross join lateral unnest(u.rangos * v.abiertas) as x(r)'),
+      mig.includes('join ventanas v on v.fecha = u.fecha and v.profesional_id = u.profesional_id'),
+      mig.includes("'fuera', fuera")], [true, true, true]);
+  ok('«Cerrado» por vacaciones solo si cierra el local o no atiende nadie',
+    mig.includes('where c.profesional_id is null\n       or not exists ('), true);
+  ok('con la misma firma y los mismos permisos que la 072',
+    [mig.includes('create or replace function public.agenda_calendario(\n  p_empresa uuid,\n  p_desde   date,\n  p_hasta   date\n)\nreturns jsonb'),
+      mig.includes('revoke all on function public.agenda_calendario(uuid, date, date) from public, anon;'),
+      mig.includes('grant execute on function public.agenda_calendario(uuid, date, date) to authenticated;'),
+      mig.includes('revoke all on function public.mi_profesional(uuid) from public, anon;')], [true, true, true, true]);
+  ok('y sin escapes \\uXXXX en el SQL', /\\u[0-9a-fA-F]{4}/.test(mig), false);
+
+  // El calendario usa el estado nuevo y pinta el día entero.
+  const libCal = leer('src/lib/calendario-agenda.ts');
+  ok('el calendario conoce el estado sin_horario y cuenta clases o turnos',
+    [cal.includes("'sin_horario'"), libCal.includes('export function cantidadDelDia('),
+      libCal.includes('d.franjas ?? d.turnos'), cal.includes('tieneHorario(')], [true, true, true, true]);
+  ok('sin horario el verde sube con la cantidad, y nunca es «Cerrado»',
+    [cal.includes('function escalaPorCantidad('), cal.includes('!medido ? escalaPorCantidad(n)'),
+      cal.includes('a.cargaTuHorario') && cal.includes('alCargarHorario')], [true, true, true]);
+  // Lleno, más intenso que casi: medido en el banco (01/10), con el mismo
+  // tono suave el ámbar y el rojo quedaban dos marrones parecidos en oscuro.
+  ok('con horario, libre / casi lleno / lleno pintan fondo y borde del día',
+    [cal.includes("libre: 'bg-verde/15 border-verde/50'"), cal.includes("casi: 'bg-ambar/[0.22] border-ambar/60'"),
+      cal.includes("lleno: 'bg-rojo/30 border-rojo/70'"), cal.includes("cerrado: 'bg-tinta/[0.04] border-dashed border-tinta/25'")],
+    [true, true, true, true]);
+  ok('el mes entra en la pantalla de la compu y dice la palabra; en el celular, el día chico y la cantidad grande',
+    [cal.includes("'aspect-square min-h-[40px] sm:aspect-auto sm:h-16'"), cal.includes("'hidden sm:inline sm:text-[10px]'"),
+      cal.includes("'text-[11px] font-semibold sm:text-[12.5px] sm:font-bold'")], [true, true, true]);
+  ok('«Cargar horario» baja al horario con el formulario abierto',
+    [age.includes('setPedirHorario((n) => n + 1);'), age.includes('abrirPedido={pedirHorario}'),
+      /if \(abrirPedido > 0 && unico\) setAbierto\(unico\);/.test(age)], [true, true, true]);
+  ok('la rayita de abajo ya no es el único color del día',
+    [cal.includes('BARRA['), cal.includes('h-1 w-5 rounded-full'), /\$\{aspecto\}/.test(cal)], [false, false, true]);
+  ok('solo con los colores del tema: ni dark: ni bg-white',
+    [/\bdark:[a-z]/.test(cal), /\bbg-white\b/.test(cal)], [false, false]);
+  ok('cada día dice su cantidad, también los pasados (apagados, no borrados)',
+    [cal.includes("pasado ? 'opacity-70'"), cal.includes('opacity-45'), /\{n > 0 \? \(/.test(cal)], [true, false, true]);
+  ok('el resumen tiene sentido sin horario y cuenta los casi llenos como lugar',
+    [cal.includes('a.resumenSinHorario(cantidadTotal, r.alcance, nombreMes)'),
+      libCal.includes("(d.estado === 'libre' || d.estado === 'casi') && d.fecha >= o.hoy")], [true, true]);
+  ok('los encabezados con tres letras, no «M M» ni «S S»', cal.includes("weekday: 'short'") && !cal.includes("weekday: 'narrow'"), true);
+  ok('y se vuelve a pedir después de cada cambio (version)',
+    [/\[empresaId, desde, hasta, clave, rangoValido, version,/.test(cal), age.includes('version={version}'),
+      age.includes('setVersion((v) => v + 1);')], [true, true, true]);
+
+  // Tocar un día abre su lista ahí mismo.
+  ok('tocar un día abre la hoja de ese día, no la vista Día con el día viejo',
+    [age.includes('alElegirDia={(d, info, conHorario) => { setError(\'\'); setDiaAbierto({ fecha: d, info, conHorario }); }}'),
+      age.includes("setVista('dia'); router.push(`/agenda?dia=${d}`)"), age.includes('<HojaDelDia')], [true, false, true]);
+  ok('la hoja usa el molde Hoja y trae la lista del día desde el navegador',
+    [/function HojaDelDia[\s\S]*<Hoja\b/.test(age), age.includes("sb.rpc('agenda_del_dia', { p_empresa: empresaId, p_fecha: fecha })"),
+      age.includes("sb.rpc('rutinas_de_la_agenda', { p_empresa: empresaId, p_fecha: fecha })"), age.includes('<EsqueletoDia />')],
+    [true, true, true, true]);
+  ok('con las mismas filas y acciones que la vista Día',
+    [age.includes('fila={filaTurno}'), age.includes('turnos.map((r) => filaTurno(r, dia, rutinas))'),
+      age.includes('fila(r, fecha, datos?.rutinas ?? {})'), age.includes('dia={diaFila}')], [true, true, true, true]);
+  ok('y abajo, anotar ese día y ver el día completo',
+    [age.includes('a.inscribirEseDia : a.anotarEseDia'), age.includes('a.verDiaCompleto'),
+      age.includes('diaInicial={diaInscribir ?? undefined}'), ins.includes('diaInicial && /^\\d{4}-\\d{2}-\\d{2}$/.test(diaInicial)'),
+      age.includes('abiertoDeEntrada') && age.includes('sinDictado')], [true, true, true, true, true]);
+  ok('la vista Día nunca muestra un día por otro mientras llega el pedido',
+    [age.includes('useTransition'), age.includes('const cargandoDia = yendo && diaPedido !== dia;'),
+      age.includes('<NavegadorDia dia={diaVisible} hoy={hoy} alIr={irADia} />')], [true, true, true]);
+  ok('el profe tiene dónde cargar su horario y sus vacaciones (opcional)',
+    [age.includes('<div id="horario"'), age.includes("rpc('mi_profesional'"),
+      age.includes('titulo={deAlumnos ? t.agenda.tuHorario : undefined}'), age.includes('titulo={deAlumnos ? t.agenda.vacaciones : undefined}'),
+      age.includes('{!deAlumnos && <Horarios'), age.includes('{!deAlumnos && <DiasEspeciales')],
+    [true, true, true, true, false, false]);
+  ok('y sigue sin link público ni servicios reservables', age.includes('{esAdmin && !deAlumnos && (\n        <ServiciosReservables'), true);
+
+  // Los textos, en los dos idiomas y con la jerga del trainer.
+  const es = leer('src/i18n/textos/es.ts');
+  const pt = leer('src/i18n/textos/pt.ts');
+  const ent = leer('src/i18n/textos/entrenamiento.ts');
+  const claves = ['resumenSinHorario:', 'palabraClase:', 'palabraTurno:', "sin_horario: '", 'fueraDeHorario:', 'escalaMas:',
+    'cargaTuHorario:', 'cargarHorario:', 'tocaUnDiaProfe:', 'clasesDe:', 'sinTurnosDeAlumnos:', 'anotarEseDia:',
+    'inscribirEseDia:', 'verDiaCompleto:', 'noSeCargoDia:', 'tuHorario:', 'horarioOpcional:', 'vacaciones:', 'vacacionesDetalle:',
+    'avisoClasesYaTomadas:', 'fueraN:'];
+  ok('los textos del calendario están en español y en portugués', claves.filter((k) => !es.includes(k) || !pt.includes(k)), []);
+  ok('«Cargá tu horario y te muestro…»', es.includes("cargaTuHorario: 'Cargá tu horario y te muestro"), true);
+  ok('el trainer cuenta sesiones, no clases',
+    [ent.includes("palabraClase: (n: number) => (n === 1 ? 'sesión' : 'sesiones')"),
+      ent.includes("palabraClase: (n: number) => (n === 1 ? 'sessão' : 'sessões')"),
+      ent.includes("tuHorario: 'Tu horario de sesiones'")], [true, true, true]);
+  ok('«esa semana» para otra semana, en los dos idiomas',
+    [es.includes('`${cantidad} esa semana`'), pt.includes('`${cantidad} nessa semana`')], [true, true]);
+
+  // ── Lo que se calcula del calendario, corrido de verdad ──
+  // (src/lib/calendario-agenda.ts, compilado con el resto de src/lib).
+  // Hallado en la revisión (01/10).
+  const C = require('../.compilado/calendario-agenda.js');
+  const A = {
+    palabraClase: (n) => (n === 1 ? 'clase' : 'clases'),
+    palabraTurno: (n) => (n === 1 ? 'turno' : 'turnos'),
+    estadoCalendario: { libre: 'Libre', casi: 'Casi lleno', lleno: 'Lleno', cerrado: 'Cerrado', sin_horario: 'Sin horario' },
+    fueraDeHorario: 'Fuera de horario',
+    fueraN: (n) => `${n} fuera de horario`,
+  };
+  const dia = (o) => ({
+    fecha: '2026-10-05', turnos: 0, franjas: 0, fuera: 0, abierto_min: 180, ocupado_min: 0, libre_min: 180,
+    con_horario: true, motivo: null, estado: 'libre', ...o,
+  });
+
+  // Lo que se lee (aria-label y subtítulo de la hoja) dice lo mismo que la casilla.
+  ok('con horario: la cantidad y el estado',
+    [C.describirDia(dia({ turnos: 2, franjas: 2 }), true, true, A),
+      C.describirDia(dia({ turnos: 3, franjas: 1, estado: 'casi' }), true, true, A),
+      C.describirDia(dia({ turnos: 3, franjas: 1, estado: 'casi' }), false, true, A)],
+    ['2 clases · Libre', '1 clase · Casi lleno', '3 turnos · Casi lleno']);
+  ok('un profe sin horario de la semana con «Abro en otro horario»: ni «Libre» ni «Lleno», como su casilla',
+    [C.describirDia(dia({ con_horario: false, abierto_min: 120 }), true, false, A),
+      C.describirDia(dia({ con_horario: false, turnos: 2, franjas: 2, estado: 'lleno' }), true, false, A)],
+    ['0 clases', '2 clases']);
+  ok('fuera del horario: el día entero, o lo de afuera en un día que sí se mide',
+    [C.describirDia(dia({ turnos: 1, franjas: 1, fuera: 1, estado: 'sin_horario', abierto_min: 0 }), true, true, A),
+      C.describirDia(dia({ turnos: 1, franjas: 1, fuera: 1, estado: 'sin_horario', abierto_min: 0 }), true, false, A),
+      C.describirDia(dia({ turnos: 3, franjas: 3, fuera: 2 }), true, true, A)],
+    ['1 clase · Fuera de horario', '1 clase', '3 clases · Libre · 2 fuera de horario']);
+  ok('cerrado, con su motivo y sin «fuera»',
+    [C.describirDia(dia({ estado: 'cerrado', motivo: 'Vacaciones', abierto_min: 0 }), true, true, A),
+      C.describirDia(dia({ estado: 'cerrado', turnos: 2, franjas: 2, fuera: 2, abierto_min: 0 }), true, true, A)],
+    ['Cerrado · Vacaciones', '2 clases · Cerrado']);
+  ok('el punto ámbar: solo con horario, y no en un día cerrado ni «Fuera de horario» entero',
+    [C.fueraDelDia(dia({ fuera: 2 }), true), C.fueraDelDia(dia({ fuera: 2 }), false),
+      C.fueraDelDia(dia({ fuera: 2, estado: 'cerrado' }), true), C.fueraDelDia(dia({ fuera: 1, estado: 'sin_horario' }), true),
+      C.fueraDelDia(dia({ fuera: undefined }), true)],
+    [2, 0, 0, 0, 0]);
+  ok('si la cuenta tiene horario (antes de la 119, sí)',
+    [C.tieneHorario([]), C.tieneHorario([dia({ con_horario: undefined })]), C.tieneHorario([dia({ con_horario: false })])],
+    [true, true, false]);
+
+  // El resumen de arriba.
+  const grilla = (desde, hasta, o = {}) => {
+    const out = [];
+    for (let f = desde; f <= hasta; f = sumarDias(f, 1)) out.push(dia({ fecha: f, turnos: 2, franjas: 1, ...o }));
+    return out;
+  };
+  const hoyR = '2026-10-01';
+  const sep = grilla('2026-08-31', '2026-10-04');
+  const rSep = C.resumirCalendario(sep, { vista: 'mes', desde: '2026-08-31', hasta: '2026-10-04', ancla: '2026-09-15', hoy: hoyR, deAlumnos: true });
+  ok('el mes que ya pasó no dice «0 días con lugar» aunque su grilla llegue a hoy',
+    [rSep.yaPaso, rSep.total], [true, 30]);
+  const oct = grilla('2026-09-28', '2026-11-01');
+  const rOct = C.resumirCalendario(oct, { vista: 'mes', desde: '2026-09-28', hasta: '2026-11-01', ancla: '2026-10-01', hoy: hoyR, deAlumnos: true });
+  ok('el mes de hoy cuenta sus días con lugar desde hoy, sin los del mes de al lado',
+    [rOct.yaPaso, rOct.conLugar, rOct.total, rOct.alcance], [false, 31, 31, 'mes']);
+  ok('y cuenta turnos en una barbería', C.resumirCalendario(oct, { vista: 'mes', desde: '2026-09-28', hasta: '2026-11-01', ancla: '2026-10-01', hoy: hoyR, deAlumnos: false }).total, 62);
+  const semanaR = (desde) => C.resumirCalendario(grilla(desde, sumarDias(desde, 6)),
+    { vista: 'semana', desde, hasta: sumarDias(desde, 6), ancla: desde, hoy: hoyR, deAlumnos: true });
+  ok('«esta semana» solo la de hoy; con las flechas, «esa semana»',
+    [semanaR('2026-09-28').alcance, semanaR('2026-10-05').alcance, semanaR('2026-09-21').alcance],
+    ['semana', 'otraSemana', 'otraSemana']);
+  ok('una semana que ya pasó tampoco cuenta lugar', [semanaR('2026-09-21').yaPaso, semanaR('2026-09-28').yaPaso], [true, false]);
+  ok('un casi lleno todavía tiene lugar; un lleno o cerrado, no',
+    C.resumirCalendario([dia({ fecha: '2026-10-02', estado: 'casi' }), dia({ fecha: '2026-10-03', estado: 'lleno' }),
+      dia({ fecha: '2026-10-04', estado: 'cerrado' }), dia({ fecha: '2026-09-30' })],
+    { vista: 'rango', desde: '2026-09-30', hasta: '2026-10-04', ancla: '2026-09-30', hoy: hoyR, deAlumnos: true }).conLugar, 1);
+
+  // La pantalla usa todo esto, y mientras carga no inventa una leyenda.
+  ok('el calendario usa el resumen de la lib, el punto de lo de afuera y lo último que supo del horario',
+    [cal.includes('resumirCalendario(dias ?? [], { vista, desde, hasta, ancla, hoy, deAlumnos })'),
+      cal.includes('r.yaPaso ? cantidadTotal'), cal.includes('(fueraDeHorario || conAlgoFuera) &&'),
+      cal.includes('const conHorario: boolean | null = dias && dias.length > 0 ? tieneHorario(dias) : conHorarioVisto;'),
+      cal.includes("conHorario === null ? (\n        <div aria-hidden className=\"mt-3 text-[11.5px] font-medium\">&nbsp;</div>"),
+      cal.includes('hasta < hoy ? cantidadTotal')],
+    [true, true, true, true, true, false]);
+  ok('la primera vez la leyenda sale de los horarios que ya trajo el servidor',
+    [cal.includes('useState<boolean | null>(conHorarioInicial ?? null)'),
+      age.includes('conHorarioInicial={horarios.some((h) => h.activo && profesionales.some((p) => p.activo && p.id === h.profesional_id))}')],
+    [true, true]);
+  ok('la hoja abierta se entera del estado nuevo del día',
+    [cal.includes('if (d) avisar.current?.(d, tieneHorario(dias));'), age.includes('alActualizarElegido={(info, conHorario) => {')],
+    [true, true]);
+}
+
 // Las comprobaciones que esperan algo (una función async) se anotan en
 // `pendientes` y el resumen las espera. Sin esto se imprimirían después del
 // `process.exit` y una falla ahí no bajaría la bandera: pasaría inadvertida.

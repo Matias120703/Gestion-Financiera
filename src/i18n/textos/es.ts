@@ -2317,11 +2317,39 @@ export const es = {
     anterior: 'Anterior',
     siguiente: 'Siguiente',
     rangoLargo: 'Elegí un rango de hasta tres meses.',
-    resumenCalendario: (turnos: number, libres: number) =>
-      `${turnos === 1 ? '1 turno' : `${turnos} turnos`} · ${libres === 1 ? '1 día con lugar' : `${libres} días con lugar`}`,
+    // El calendario que se entiende (119). `cantidad` llega armada: «5 turnos»
+    // en una barbería, «5 clases» en la de un profe.
+    resumenCalendario: (cantidad: string, libres: number) =>
+      `${cantidad} · ${libres === 1 ? '1 día con lugar' : `${libres} días con lugar`}`,
+    /**
+     * Sin horario no hay «lugar» que contar: solo cuántos hay. «Esta semana»
+     * es solo la de hoy; a otra se llega con las flechas: «esa semana».
+     */
+    resumenSinHorario: (cantidad: string, alcance: 'semana' | 'otraSemana' | 'mes' | 'rango', mes: string) =>
+      alcance === 'semana' ? `${cantidad} esta semana` : alcance === 'otraSemana' ? `${cantidad} esa semana`
+        : alcance === 'mes' ? `${cantidad} en ${mes}` : `${cantidad} en estas fechas`,
     turnosN: (n: number) => (n === 1 ? '1 turno' : `${n} turnos`),
-    estadoCalendario: { libre: 'Libre', casi: 'Casi lleno', lleno: 'Lleno', cerrado: 'Cerrado' },
+    // La palabra sola, para la casilla del día y la escala de colores.
+    palabraTurno: (n: number): string => (n === 1 ? 'turno' : 'turnos'),
+    palabraClase: (n: number): string => (n === 1 ? 'clase' : 'clases'),
+    estadoCalendario: { libre: 'Libre', casi: 'Casi lleno', lleno: 'Lleno', cerrado: 'Cerrado', sin_horario: 'Sin horario' },
+    fueraDeHorario: 'Fuera de horario',
+    // Un día con lugar que además tiene algo fuera del horario (el punto ámbar).
+    fueraN: (n: number) => `${n} fuera de horario`,
+    escalaMenos: 'Menos',
+    escalaMas: (palabra: string) => `Más ${palabra}`,
+    cargaTuHorario: 'Cargá tu horario y te muestro qué días te queda lugar.',
+    cargarHorario: 'Cargar horario',
     tocaUnDia: 'Tocá un día para ver y anotar sus turnos.',
+    tocaUnDiaProfe: 'Tocá un día para ver sus clases y anotar.',
+    // La hoja de un día, al tocarlo en el calendario.
+    clasesDe: 'Clases del',
+    sinTurnosDeAlumnos: 'Sin clases para este día',
+    sinNadaEseDia: 'Ese día está libre.',
+    anotarEseDia: 'Anotar',
+    inscribirEseDia: 'Inscribir',
+    verDiaCompleto: 'Ver el día completo',
+    noSeCargoDia: 'No se pudo traer este día.',
     diaSiguiente: 'Día siguiente',
 
     anotarTurno: 'Anotar un turno',
@@ -2400,6 +2428,13 @@ export const es = {
     hasta: 'Hasta',
     sinEquipo: 'Todavía no cargaste a nadie',
     sinEquipoDetalle: 'Agregá a tu equipo en Equipo y reparto, y después definí sus horarios acá.',
+    // El horario de un profe (119): opcional, solo para el calendario.
+    tuHorario: 'Tu horario de clases',
+    horarioOpcional: 'Opcional: con tu horario, el calendario te muestra qué días te queda lugar y cuáles están llenos. No abre ningún link de reservas.',
+    sinHorarioProfe: 'Todavía no cargaste tu horario.',
+    vacaciones: 'Vacaciones y días libres',
+    vacacionesDetalle: 'Los días que no das clases. En el calendario se ven como «Cerrado».',
+    avisoClasesYaTomadas: 'Cerrar un día no mueve las clases que ya tenías anotadas: esas movelas una por una.',
     // La agenda de un profe (089): él es el único que da clases.
     empezarTitulo: 'Tu agenda de clases',
     empezarDetalle: 'Vos das las clases y lo que cobrás es todo tuyo: no hay equipo que armar ni comisiones que repartir. Empezá, y después inscribí a cada alumno con sus días y su horario.',

@@ -94,6 +94,15 @@ export const entrenamientoEs: Parcial<Textos> = {
     dictadoInscribir: 'Lo que dictaste ya está puesto: revisá los días, el período y el precio, y agendá.',
     empezarTitulo: 'Tu agenda de sesiones',
     empezarDetalle: 'Vos entrenás y lo que cobrás es todo tuyo: no hay equipo que armar ni comisiones que repartir. Empezá, y después agendá a cada cliente con sus días y su horario.',
+    // El calendario que se entiende (119): cuenta sesiones, no clases.
+    palabraClase: (n: number) => (n === 1 ? 'sesión' : 'sesiones'),
+    tocaUnDiaProfe: 'Tocá un día para ver sus sesiones y agendar.',
+    clasesDe: 'Sesiones del',
+    sinTurnosDeAlumnos: 'Sin sesiones para este día',
+    inscribirEseDia: 'Agendar',
+    tuHorario: 'Tu horario de sesiones',
+    vacacionesDetalle: 'Los días que no entrenás a nadie. En el calendario se ven como «Cerrado».',
+    avisoClasesYaTomadas: 'Cerrar un día no mueve las sesiones que ya tenías agendadas: esas movelas una por una.',
   },
 };
 
@@ -168,5 +177,13 @@ export const entrenamientoPt: Parcial<Textos> = {
     dictadoInscribir: 'O que você ditou já está preenchido: confira os dias, o período e o preço, e agende.',
     empezarTitulo: 'Sua agenda de sessões',
     empezarDetalle: 'Você treina e o que recebe é todo seu: não há equipe para montar nem comissões para dividir. Comece, e depois agende cada cliente com seus dias e horário.',
+    palabraClase: (n: number) => (n === 1 ? 'sessão' : 'sessões'),
+    tocaUnDiaProfe: 'Toque num dia pra ver as sessões e agendar.',
+    clasesDe: 'Sessões de',
+    sinTurnosDeAlumnos: 'Sem sessões marcadas pra este dia',
+    inscribirEseDia: 'Agendar',
+    tuHorario: 'Seu horário de sessões',
+    vacacionesDetalle: 'Os dias em que você não treina ninguém. No calendário aparecem como «Fechado».',
+    avisoClasesYaTomadas: 'Fechar um dia não remarca as sessões que já estavam agendadas: essas, remarque uma por uma.',
   },
 };

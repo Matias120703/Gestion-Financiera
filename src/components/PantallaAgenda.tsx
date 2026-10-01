@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
@@ -10,7 +10,9 @@ import { sumarDias } from '@/lib/fechas';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Seccion, Vacio } from '@/components/Piezas';
+import { Hoja, PieHoja, MensajeError } from '@/components/Hoja';
 import { CalendarioAgenda, SelectorVista, type VistaAgenda } from '@/components/CalendarioAgenda';
+import { describirDia, type DiaCalendario } from '@/lib/calendario-agenda';
 import { SelectorCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { InscribirAlumno } from '@/components/InscribirAlumno';
 import { CLAVE_TURNO_DICTADO, EVENTO_TURNO_DICTADO, type TurnoRespuesta } from '@/lib/turno-voz';
@@ -90,6 +92,30 @@ export function PantallaAgenda({
   const [siguiente, setSiguiente] = useState<{ id: string; nombre: string; mensaje: string } | null>(null);
   // Lo que se dictó en el micrófono, para un profe: llega a inscribir (092).
   const [dictadoProfe, setDictadoProfe] = useState<TurnoRespuesta | null>(null);
+  // EL CALENDARIO QUE SE ENTIENDE (119).
+  // Sube con cada cambio (anotar, marcar, mover, cancelar): el calendario y
+  // la hoja del día se vuelven a pedir. `router.refresh()` solo trae lo que
+  // arma el servidor, y el calendario se pide desde el navegador.
+  const [version, setVersion] = useState(0);
+  // El día tocado en el calendario: su lista se abre ahí mismo, en una hoja.
+  // Antes el toque pasaba a la vista Día con el día ANTERIOR a la vista, sin
+  // ninguna señal, hasta que contestaba el servidor: «no aparece nada».
+  const [diaAbierto, setDiaAbierto] = useState<{ fecha: string; info: DiaCalendario; conHorario: boolean } | null>(null);
+  // «Inscribir» desde la hoja de un día: el formulario de arriba, con ese día puesto.
+  const [diaInscribir, setDiaInscribir] = useState<string | null>(null);
+  const refInscribir = useRef<HTMLDivElement>(null);
+  // «Cargar horario» desde el calendario: abre el formulario del horario.
+  const [pedirHorario, setPedirHorario] = useState(0);
+  // La vista Día nunca muestra un día por otro: mientras llega el pedido, el
+  // título ya dice el día nuevo y la lista espera (sin loading.tsx).
+  const [diaPedido, setDiaPedido] = useState(dia);
+  const [yendo, empezarIda] = useTransition();
+  const diaVisible = yendo ? diaPedido : dia;
+  const cargandoDia = yendo && diaPedido !== dia;
+  function irADia(d: string) {
+    setDiaPedido(d);
+    empezarIda(() => router.push(`/agenda?dia=${d}`));
+  }
   useEffect(() => {
     if (!deAlumnos) return;
     function levantar() {
@@ -123,6 +149,7 @@ export function PantallaAgenda({
       const r = await fn();
       const fallo = r && typeof r === 'object' && 'error' in r ? r.error : null;
       if (fallo) throw fallo;
+      setVersion((v) => v + 1);
       router.refresh();
       return true;
     } catch (e: unknown) {
@@ -148,10 +175,10 @@ export function PantallaAgenda({
    * darle cómo avisar convierte al que no puede venir en un plantón, en
    * vez de en un hueco libre para otro.
    */
-  const enlaceDe = (r: TurnoDelDia) => enlaceWhatsApp(r.telefono, zona, t.agenda.mensajeRecordatorio({
+  const enlaceDe = (r: TurnoDelDia, diaDelTurno: string = dia) => enlaceWhatsApp(r.telefono, zona, t.agenda.mensajeRecordatorio({
     cliente: r.cliente,
     negocio,
-    fecha: fechaLarga(dia, locale),
+    fecha: fechaLarga(diaDelTurno, locale),
     hora: hora(r.inicia),
     servicio: r.servicio,
     enlace: origen ? `${origen}/turno/${r.token}` : '',
@@ -162,8 +189,8 @@ export function PantallaAgenda({
    * el await y el open el navegador ya perdió el gesto del dedo y trata la
    * ventana como un pop-up: la bloquea, y el mensaje no se manda nunca.
    */
-  function avisarPorWhatsApp(r: TurnoDelDia) {
-    const enlace = enlaceDe(r);
+  function avisarPorWhatsApp(r: TurnoDelDia, diaDelTurno: string = dia) {
+    const enlace = enlaceDe(r, diaDelTurno);
     if (!enlace) return;
     window.open(enlace, '_blank', 'noopener,noreferrer');
     correr('avisar', async () => sb().rpc('marcar_avisado', { p_reserva: r.id }));
@@ -172,6 +199,195 @@ export function PantallaAgenda({
   // Cuántos de este día tienen teléfono utilizable y siguen sin aviso.
   const sinAvisar = turnos.filter((r) =>
     !r.avisado && (r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r)).length;
+
+  /**
+   * UNA FILA DE LA AGENDA: la hora, quién, qué y lo que se puede hacer.
+   * La misma en la vista Día y en la hoja que se abre al tocar un día del
+   * calendario (119): las mismas acciones, en los dos lados. `rutinas` es la
+   * del día de la fila (la del servidor en la vista Día, la que trae la hoja).
+   */
+  const filaTurno = (r: TurnoDelDia, diaFila: string, rutinas: RutinasDeLaAgenda) => (
+    <li key={r.id} className="px-4 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="flex items-baseline gap-2.5">
+          <span className="text-[15px] font-bold tabular-nums">{hora(r.inicia)}</span>
+          <span className="text-[14.5px] font-semibold">{r.cliente}</span>
+          {r.origen === 'publico' && (
+            <span className="pastilla bg-verde-claro text-verde-fuerte">{t.agenda.porElLink}</span>
+          )}
+        </span>
+        {r.estado === 'atendida' && (
+          <span className="pastilla bg-verde text-sobre-verde">{deAlumnos ? t.agenda.claseDada : t.agenda.atendido}</span>
+        )}
+        {r.estado === 'no_vino' && (
+          <span className="pastilla bg-rojo-claro text-rojo">{deAlumnos ? t.agenda.claseNoTenida : t.agenda.noVino}</span>
+        )}
+        {(r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r, diaFila) && (
+          <button
+            type="button" disabled={ocupado}
+            onClick={() => avisarPorWhatsApp(r, diaFila)}
+            className={r.avisado
+              ? 'rounded-lg px-2 py-1 text-[12px] font-semibold text-tinta/45 hover:text-verde-fuerte'
+              : 'rounded-lg border border-verde bg-verde-claro px-2.5 py-1 text-[12px] font-bold text-verde-fuerte'}
+          >
+            {r.avisado ? t.agenda.yaAvisado : t.agenda.avisar}
+          </button>
+        )}
+      </div>
+
+      {/* Un profe da sus clases solo: «Clase · su propio nombre» debajo
+          de cada una no dice nada (092). Queda el teléfono, si hay. */}
+      {(!deAlumnos || r.telefono || r.materia) && (
+        <p className="mt-0.5 text-[12.5px] text-tinta/50">
+          {!deAlumnos && <>{r.servicio} · {r.profesional}</>}
+          {/* Para un profe, qué se da en esa clase (094). */}
+          {deAlumnos && r.materia && <span className="font-semibold text-tinta/70">{r.materia}</span>}
+          {r.telefono && (
+            <>{(!deAlumnos || r.materia) && ' · '}<a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
+          )}
+        </p>
+      )}
+
+      {/* Las lesiones del cliente, antes de empezar (097). Entera: «sin
+          saltos» cortado por la mitad es peor que no decirlo. */}
+      {notasALaVista && r.notas && (
+        // El aviso en ámbar y la letra en el color de siempre: ámbar sobre
+        // ámbar claro no llega al contraste mínimo en el modo claro.
+        <p className="mt-1.5 flex gap-1.5 rounded-lg bg-ambar-claro px-2.5 py-1.5 text-[12.5px] font-medium leading-snug text-tinta/85">
+          <span aria-hidden className="text-ambar">⚠</span>
+          <span><span className="sr-only">{t.inscribir.salud}: </span>{r.notas}</span>
+        </p>
+      )}
+
+      {/* La rutina de la sesión, debajo de las lesiones (098): «Ver»
+          la abre para darla con el celular en la mano y subir la
+          carga ahí mismo. Sin rutina vigente, no hay renglón. */}
+      {conRutinas && rutinas[r.id] && (
+        <RutinaDeLaSesion
+          className="mt-1.5"
+          empresaId={empresaId}
+          rutinaId={rutinas[r.id].rutina_id}
+          nombre={rutinas[r.id].nombre}
+        />
+      )}
+
+      {(r.estado === 'pendiente' || r.estado === 'confirmada') && deAlumnos && r.paquete_id && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {/* LA CLASE YA ESTÁ COBRADA (092). Matías: «atendido y cobrar
+              no se puede, porque yo ya cobré por adelantado». Marcar
+              es solo decir que pasó, y descontarla del período. */}
+          <button
+            type="button" className="boton-principal px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => correr('atender', async () =>
+              sb().rpc('marcar_clase', { p_reserva: r.id, p_dada: true }))}
+          >
+            {t.agenda.marcarDada}
+          </button>
+          <button
+            type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => setMoviendo(moviendo === r.id ? null : r.id)}
+          >
+            {t.agenda.mover}
+          </button>
+          {/* En cada falta se decide si se descuenta: es la regla que
+              eligió Matías. Aceptar la pierde; cancelar se la guarda. */}
+          <button
+            type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => {
+              const descontar = confirm(t.agenda.preguntaDescontar(r.cliente));
+              correr('novino', async () =>
+                sb().rpc('marcar_clase', { p_reserva: r.id, p_dada: false, p_descontar: descontar }));
+            }}
+          >
+            {t.agenda.marcarNoTenida}
+          </button>
+        </div>
+      )}
+
+      {/* «ATENDIDO, COBRAR» PREGUNTA CÓMO PAGÓ (117). Antes cobraba al
+          toque y siempre en efectivo, a la caja, aunque te lo hayan
+          transferido. Ahora se elige cómo pagó y, con dos bancos, a
+          cuál entró, y se confirma: un toque de más, y ningún cobro
+          en la cuenta equivocada (como Cobrar en la ficha, 095). */}
+      {cobrandoTurno === r.id && (r.estado === 'pendiente' || r.estado === 'confirmada') && (
+        <CobrarTurno
+          turno={r} empresaId={empresaId} cuentas={cuentas} plata={plata} ocupado={ocupado}
+          alquila={profesionales.find((p) => p.id === r.profesional_id)?.reparto === 'alquiler'}
+          alCancelar={() => setCobrandoTurno(null)}
+          alCobrar={async (metodo, cuenta) => {
+            if (await correr('atender', async () => sb().rpc('atender_reserva', metodo === null
+              // Alquila la silla: no hay venta del local, no se dice cómo ni a dónde.
+              ? { p_reserva: r.id }
+              : { p_reserva: r.id, p_metodo: metodo, p_cuenta: cuenta },
+            ))) setCobrandoTurno(null);
+          }}
+        />
+      )}
+
+      {(r.estado === 'pendiente' || r.estado === 'confirmada') && !(deAlumnos && r.paquete_id) && cobrandoTurno !== r.id && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button" className="boton-principal px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => { setMoviendo(null); setCobrandoTurno(r.id); }}
+          >
+            {t.agenda.atender}
+          </button>
+          <button
+            type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => setMoviendo(moviendo === r.id ? null : r.id)}
+          >
+            {t.agenda.mover}
+          </button>
+          {/* Avisó que no venía: se cancela y el hueco queda para otro.
+              Distinto de «no vino», que le queda pegado al cliente. */}
+          <button
+            type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => {
+              if (confirm(t.agenda.confirmarCancelar(r.cliente))) {
+                correr('cancelar', async () => sb().rpc('cancelar_turno', { p_reserva: r.id }));
+              }
+            }}
+          >
+            {t.comun.cancelar}
+          </button>
+          <button
+            type="button" className="boton-suave px-3 py-1.5 text-[13px]"
+            disabled={ocupado}
+            onClick={() => {
+              if (confirm(t.agenda.confirmarNoVino(r.cliente))) {
+                correr('novino', async () => sb().rpc('marcar_no_vino', { p_reserva: r.id }));
+              }
+            }}
+          >
+            {t.agenda.noVino}
+          </button>
+        </div>
+      )}
+
+      {moviendo === r.id && (
+        <MoverTurno
+          empresaId={empresaId}
+          turno={r}
+          dia={diaFila}
+          hoy={hoy}
+          profesionales={profesionales.filter((p) => p.activo)}
+          ocupado={ocupado}
+          alCerrar={() => setMoviendo(null)}
+          alMover={(prof, inicia) => correr('mover', async () => sb().rpc('mover_turno', {
+            p_reserva: r.id,
+            p_profesional: prof,
+            p_inicia: inicia,
+          }))}
+        />
+      )}
+    </li>
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -187,13 +403,19 @@ export function PantallaAgenda({
           anota». Está arriba del calendario a propósito: se mira el
           calendario, se decide, y se inscribe sin moverse de pantalla. */}
       {deAlumnos && (inscribiendo ? (
+        <div ref={refInscribir} className="scroll-mt-24">
         <InscribirAlumno
+          // Desde la hoja de un día llega con ese día puesto; otro día, otro formulario.
+          key={diaInscribir ?? 'nuevo'}
           empresaId={empresaId} moneda={moneda} zona={zona}
           dictado={dictadoProfe}
+          diaInicial={diaInscribir ?? undefined}
           pedirSalud={notasALaVista}
-          alCancelar={() => { setInscribiendo(false); setDictadoProfe(null); }}
+          alCancelar={() => { setInscribiendo(false); setDictadoProfe(null); setDiaInscribir(null); }}
           alListo={(m, nuevo) => {
             setInscribiendo(false);
+            setDiaInscribir(null);
+            setVersion((v) => v + 1);
             router.refresh();
             // Alguien nuevo del trainer: el aviso se queda con «Siguiente»
             // hasta que elija qué hacer. Si no, se va solo como siempre.
@@ -205,6 +427,7 @@ export function PantallaAgenda({
             setTimeout(() => setInscripto(''), 5000);
           }}
         />
+        </div>
       ) : (
         <button
           type="button" className="boton-principal w-full py-3 text-[15px]"
@@ -273,13 +496,16 @@ export function PantallaAgenda({
 
       {/* ---------- los turnos del día ---------- */}
       <Seccion
-        titulo={vista === 'dia' ? `${t.agenda.turnosDe} ${fechaLarga(dia, locale)}` : t.agenda.calendario}
+        titulo={vista === 'dia'
+          ? `${deAlumnos ? t.agenda.clasesDe : t.agenda.turnosDe} ${fechaLarga(diaVisible, locale)}`
+          : t.agenda.calendario}
         accion={vista === 'dia'
-          ? <NavegadorDia dia={dia} hoy={hoy} alIr={(d) => router.push(`/agenda?dia=${d}`)} />
+          ? <NavegadorDia dia={diaVisible} hoy={hoy} alIr={irADia} />
           : undefined}
       >
-        {/* El calendario es una forma de MIRAR: tocar un día vuelve a la
-            vista del día, donde se anota, se mueve y se atiende. */}
+        {/* El calendario es una forma de MIRAR: tocar un día abre su lista
+            ahí mismo, en una hoja, con las mismas acciones que la vista Día
+            (119). «Ver el día completo» lleva a la vista Día. */}
         <SelectorVista vista={vista} alCambiar={setVista} />
 
         {vista !== 'dia' ? (
@@ -288,8 +514,26 @@ export function PantallaAgenda({
             vista={vista}
             dia={dia}
             hoy={hoy}
-            alElegirDia={(d) => { setVista('dia'); router.push(`/agenda?dia=${d}`); }}
+            elegido={diaAbierto?.fecha ?? null}
+            deAlumnos={deAlumnos}
+            version={version}
+            conHorarioInicial={horarios.some((h) => h.activo && profesionales.some((p) => p.activo && p.id === h.profesional_id))}
+            alElegirDia={(d, info, conHorario) => { setError(''); setDiaAbierto({ fecha: d, info, conHorario }); }}
+            alActualizarElegido={(info, conHorario) => {
+              // Lo nuevo del día abierto (después de anotar, mover o cancelar):
+              // la hoja no se queda con el «Libre» de cuando se tocó.
+              setDiaAbierto((x) => (!x || x.fecha !== info.fecha || (x.info === info && x.conHorario === conHorario)
+                ? x : { ...x, info, conHorario }));
+            }}
+            alCargarHorario={() => {
+              // Baja al horario con el formulario ya abierto.
+              setPedirHorario((n) => n + 1);
+              document.getElementById('horario')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
           />
+        ) : cargandoDia ? (
+          // El día pedido todavía no llegó: nunca la lista de otro día.
+          <EsqueletoDia />
         ) : (<>
         {/* El turno suelto necesita servicios reservables, que un profe
             no tiene: él inscribe al alumno arriba (091). */}
@@ -320,202 +564,84 @@ export function PantallaAgenda({
 
         {turnos.length === 0 ? (
           <div className="px-4 pb-4">
-            <Vacio titulo={t.agenda.sinTurnos} detalle={deAlumnos ? t.agenda.sinTurnosProfe : t.agenda.sinTurnosDetalle} />
+            <Vacio
+              titulo={deAlumnos ? t.agenda.sinTurnosDeAlumnos : t.agenda.sinTurnos}
+              detalle={deAlumnos ? t.agenda.sinTurnosProfe : t.agenda.sinTurnosDetalle}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-borde border-t border-borde">
-            {turnos.map((r) => (
-              <li key={r.id} className="px-4 py-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="flex items-baseline gap-2.5">
-                    <span className="text-[15px] font-bold tabular-nums">{hora(r.inicia)}</span>
-                    <span className="text-[14.5px] font-semibold">{r.cliente}</span>
-                    {r.origen === 'publico' && (
-                      <span className="pastilla bg-verde-claro text-verde-fuerte">{t.agenda.porElLink}</span>
-                    )}
-                  </span>
-                  {r.estado === 'atendida' && (
-                    <span className="pastilla bg-verde text-sobre-verde">{deAlumnos ? t.agenda.claseDada : t.agenda.atendido}</span>
-                  )}
-                  {r.estado === 'no_vino' && (
-                    <span className="pastilla bg-rojo-claro text-rojo">{deAlumnos ? t.agenda.claseNoTenida : t.agenda.noVino}</span>
-                  )}
-                  {(r.estado === 'pendiente' || r.estado === 'confirmada') && enlaceDe(r) && (
-                    <button
-                      type="button" disabled={ocupado}
-                      onClick={() => avisarPorWhatsApp(r)}
-                      className={r.avisado
-                        ? 'rounded-lg px-2 py-1 text-[12px] font-semibold text-tinta/45 hover:text-verde-fuerte'
-                        : 'rounded-lg border border-verde bg-verde-claro px-2.5 py-1 text-[12px] font-bold text-verde-fuerte'}
-                    >
-                      {r.avisado ? t.agenda.yaAvisado : t.agenda.avisar}
-                    </button>
-                  )}
-                </div>
-
-                {/* Un profe da sus clases solo: «Clase · su propio nombre» debajo
-                    de cada una no dice nada (092). Queda el teléfono, si hay. */}
-                {(!deAlumnos || r.telefono || r.materia) && (
-                  <p className="mt-0.5 text-[12.5px] text-tinta/50">
-                    {!deAlumnos && <>{r.servicio} · {r.profesional}</>}
-                    {/* Para un profe, qué se da en esa clase (094). */}
-                    {deAlumnos && r.materia && <span className="font-semibold text-tinta/70">{r.materia}</span>}
-                    {r.telefono && (
-                      <>{(!deAlumnos || r.materia) && ' · '}<a href={`tel:${r.telefono}`} className="text-verde-fuerte">{r.telefono}</a></>
-                    )}
-                  </p>
-                )}
-
-                {/* Las lesiones del cliente, antes de empezar (097). Entera: «sin
-                    saltos» cortado por la mitad es peor que no decirlo. */}
-                {notasALaVista && r.notas && (
-                  // El aviso en ámbar y la letra en el color de siempre: ámbar sobre
-                  // ámbar claro no llega al contraste mínimo en el modo claro.
-                  <p className="mt-1.5 flex gap-1.5 rounded-lg bg-ambar-claro px-2.5 py-1.5 text-[12.5px] font-medium leading-snug text-tinta/85">
-                    <span aria-hidden className="text-ambar">⚠</span>
-                    <span><span className="sr-only">{t.inscribir.salud}: </span>{r.notas}</span>
-                  </p>
-                )}
-
-                {/* La rutina de la sesión, debajo de las lesiones (098): «Ver»
-                    la abre para darla con el celular en la mano y subir la
-                    carga ahí mismo. Sin rutina vigente, no hay renglón. */}
-                {conRutinas && rutinas[r.id] && (
-                  <RutinaDeLaSesion
-                    className="mt-1.5"
-                    empresaId={empresaId}
-                    rutinaId={rutinas[r.id].rutina_id}
-                    nombre={rutinas[r.id].nombre}
-                  />
-                )}
-
-                {(r.estado === 'pendiente' || r.estado === 'confirmada') && deAlumnos && r.paquete_id && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {/* LA CLASE YA ESTÁ COBRADA (092). Matías: «atendido y cobrar
-                        no se puede, porque yo ya cobré por adelantado». Marcar
-                        es solo decir que pasó, y descontarla del período. */}
-                    <button
-                      type="button" className="boton-principal px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => correr('atender', async () =>
-                        sb().rpc('marcar_clase', { p_reserva: r.id, p_dada: true }))}
-                    >
-                      {t.agenda.marcarDada}
-                    </button>
-                    <button
-                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => setMoviendo(moviendo === r.id ? null : r.id)}
-                    >
-                      {t.agenda.mover}
-                    </button>
-                    {/* En cada falta se decide si se descuenta: es la regla que
-                        eligió Matías. Aceptar la pierde; cancelar se la guarda. */}
-                    <button
-                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => {
-                        const descontar = confirm(t.agenda.preguntaDescontar(r.cliente));
-                        correr('novino', async () =>
-                          sb().rpc('marcar_clase', { p_reserva: r.id, p_dada: false, p_descontar: descontar }));
-                      }}
-                    >
-                      {t.agenda.marcarNoTenida}
-                    </button>
-                  </div>
-                )}
-
-                {/* «ATENDIDO, COBRAR» PREGUNTA CÓMO PAGÓ (117). Antes cobraba al
-                    toque y siempre en efectivo, a la caja, aunque te lo hayan
-                    transferido. Ahora se elige cómo pagó y, con dos bancos, a
-                    cuál entró, y se confirma: un toque de más, y ningún cobro
-                    en la cuenta equivocada (como Cobrar en la ficha, 095). */}
-                {cobrandoTurno === r.id && (r.estado === 'pendiente' || r.estado === 'confirmada') && (
-                  <CobrarTurno
-                    turno={r} empresaId={empresaId} cuentas={cuentas} plata={plata} ocupado={ocupado}
-                    alquila={profesionales.find((p) => p.id === r.profesional_id)?.reparto === 'alquiler'}
-                    alCancelar={() => setCobrandoTurno(null)}
-                    alCobrar={async (metodo, cuenta) => {
-                      if (await correr('atender', async () => sb().rpc('atender_reserva', metodo === null
-                        // Alquila la silla: no hay venta del local, no se dice cómo ni a dónde.
-                        ? { p_reserva: r.id }
-                        : { p_reserva: r.id, p_metodo: metodo, p_cuenta: cuenta },
-                      ))) setCobrandoTurno(null);
-                    }}
-                  />
-                )}
-
-                {(r.estado === 'pendiente' || r.estado === 'confirmada') && !(deAlumnos && r.paquete_id) && cobrandoTurno !== r.id && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button
-                      type="button" className="boton-principal px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => { setMoviendo(null); setCobrandoTurno(r.id); }}
-                    >
-                      {t.agenda.atender}
-                    </button>
-                    <button
-                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => setMoviendo(moviendo === r.id ? null : r.id)}
-                    >
-                      {t.agenda.mover}
-                    </button>
-                    {/* Avisó que no venía: se cancela y el hueco queda para otro.
-                        Distinto de «no vino», que le queda pegado al cliente. */}
-                    <button
-                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => {
-                        if (confirm(t.agenda.confirmarCancelar(r.cliente))) {
-                          correr('cancelar', async () => sb().rpc('cancelar_turno', { p_reserva: r.id }));
-                        }
-                      }}
-                    >
-                      {t.comun.cancelar}
-                    </button>
-                    <button
-                      type="button" className="boton-suave px-3 py-1.5 text-[13px]"
-                      disabled={ocupado}
-                      onClick={() => {
-                        if (confirm(t.agenda.confirmarNoVino(r.cliente))) {
-                          correr('novino', async () => sb().rpc('marcar_no_vino', { p_reserva: r.id }));
-                        }
-                      }}
-                    >
-                      {t.agenda.noVino}
-                    </button>
-                  </div>
-                )}
-
-                {moviendo === r.id && (
-                  <MoverTurno
-                    empresaId={empresaId}
-                    turno={r}
-                    dia={dia}
-                    hoy={hoy}
-                    profesionales={profesionales.filter((p) => p.activo)}
-                    ocupado={ocupado}
-                    alCerrar={() => setMoviendo(null)}
-                    alMover={(prof, inicia) => correr('mover', async () => sb().rpc('mover_turno', {
-                      p_reserva: r.id,
-                      p_profesional: prof,
-                      p_inicia: inicia,
-                    }))}
-                  />
-                )}
-              </li>
-            ))}
+            {turnos.map((r) => filaTurno(r, dia, rutinas))}
           </ul>
         )}
         </>)}
       </Seccion>
 
+      {/* LA HOJA DEL DÍA TOCADO EN EL CALENDARIO (119). */}
+      {diaAbierto && (
+        <HojaDelDia
+          empresaId={empresaId}
+          fecha={diaAbierto.fecha}
+          info={diaAbierto.info}
+          conHorario={diaAbierto.conHorario}
+          hoy={hoy}
+          deAlumnos={deAlumnos}
+          conRutinas={conRutinas}
+          version={version}
+          error={error}
+          ocupado={ocupado}
+          puedeAnotar={deAlumnos || profesionales.some((p) => p.activo)}
+          fila={filaTurno}
+          alCerrar={() => { setDiaAbierto(null); setMoviendo(null); setCobrandoTurno(null); }}
+          alVerDia={() => {
+            const d = diaAbierto.fecha;
+            setDiaAbierto(null);
+            setVista('dia');
+            irADia(d);
+          }}
+          alInscribir={() => {
+            // El profe inscribe arriba, en el formulario de siempre, con ese día puesto.
+            const d = diaAbierto.fecha;
+            setDiaAbierto(null);
+            setSiguiente(null);
+            setDictadoProfe(null);
+            setDiaInscribir(d);
+            setInscribiendo(true);
+            setTimeout(() => refInscribir.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+          }}
+          anotarTurno={(alCerrarForm) => (
+            <NuevoTurno
+              empresaId={empresaId}
+              dia={diaAbierto.fecha}
+              hoy={hoy}
+              zona={zona}
+              profesionales={profesionales.filter((p) => p.activo)}
+              servicios={servicios}
+              catalogo={catalogo}
+              ocupado={ocupado}
+              abiertoDeEntrada
+              sinDictado
+              alCerrar={alCerrarForm}
+              alReservar={(d) => correr('turno', async () => sb().rpc('reservar', {
+                p_empresa: empresaId,
+                p_profesional: d.profesional,
+                p_producto: d.producto,
+                p_inicia: d.inicia,
+                p_nombre: d.nombre,
+                p_telefono: d.telefono,
+                p_cliente: d.cliente,
+              }))}
+            />
+          )}
+        />
+      )}
+
       {/* ---------- qué se puede reservar ----------
-          Nada de esto es para un profe (090): qué se reserva, el horario de
-          atención y los feriados existen para el link público, donde un
-          desconocido mira qué hay libre. Al profe el alumno le escribe por
-          WhatsApp, y él mira su calendario y anota. */}
+          No es para un profe (090): qué se reserva existe para el link
+          público, donde un desconocido mira qué hay libre. Al profe el alumno
+          le escribe por WhatsApp, y él mira su calendario y anota. Su horario
+          y sus vacaciones sí (119): son opcionales y solo los lee el
+          calendario, para decirle qué días le queda lugar. */}
       {esAdmin && !deAlumnos && (
         <ServiciosReservables
           catalogo={catalogo}
@@ -532,26 +658,51 @@ export function PantallaAgenda({
         />
       )}
 
-      {/* ---------- el horario de cada uno ---------- */}
-      {!deAlumnos && <Horarios
-        profesionales={profesionales.filter((p) => p.activo)}
-        horarios={horarios}
-        ocupado={ocupado}
-        alAgregar={(prof, dia, desde, hasta) =>
-          correr('horario', async () => sb().rpc('guardar_horario', {
-            p_empresa: empresaId, p_profesional: prof, p_dia: dia, p_desde: desde, p_hasta: hasta,
-          }))}
-        alQuitar={(id) => correr('horario', async () =>
-          sb().rpc('borrar_horario', { p_empresa: empresaId, p_id: id }))}
-      />}
+      {/* ---------- el horario de cada uno ----------
+          El calendario lleva acá con «Cargar horario» (119). El profe que da
+          sus clases solo lo ve como «Tu horario de clases», sin elegir a
+          nadie, y opcional. */}
+      <div id="horario" className="scroll-mt-24">
+        <Horarios
+          profesionales={profesionales.filter((p) => p.activo)}
+          horarios={horarios}
+          ocupado={ocupado}
+          unaPersona={deAlumnos && profesionales.filter((p) => p.activo).length <= 1}
+          titulo={deAlumnos ? t.agenda.tuHorario : undefined}
+          detalle={deAlumnos ? t.agenda.horarioOpcional : undefined}
+          abrirPedido={pedirHorario}
+          alAgregar={(prof, dia, desde, hasta) =>
+            correr('horario', async () => {
+              // El profe que todavía no inscribió a nadie no tiene fila de
+              // profesional, y guardar_horario la pide: se la da la base (119).
+              let quien = prof;
+              if (!quien) {
+                const r = await sb().rpc('mi_profesional', { p_empresa: empresaId });
+                if (r.error) return { error: r.error };
+                quien = String(r.data ?? '');
+              }
+              return sb().rpc('guardar_horario', {
+                p_empresa: empresaId, p_profesional: quien, p_dia: dia, p_desde: desde, p_hasta: hasta,
+              });
+            })}
+          alQuitar={(id) => correr('horario', async () =>
+            sb().rpc('borrar_horario', { p_empresa: empresaId, p_id: id }))}
+        />
+      </div>
 
-      {/* ---------- feriados, vacaciones y horarios especiales ---------- */}
-      {!deAlumnos && <DiasEspeciales
+      {/* ---------- feriados, vacaciones y horarios especiales ----------
+          Para el profe, «Vacaciones y días libres»: lo que en su calendario
+          se ve como «Cerrado» (119). */}
+      <DiasEspeciales
         excepciones={excepciones}
         profesionales={profesionales.filter((p) => p.activo)}
         esAdmin={esAdmin}
         hoy={hoy}
         ocupado={ocupado}
+        unaPersona={deAlumnos && profesionales.filter((p) => p.activo).length <= 1}
+        titulo={deAlumnos ? t.agenda.vacaciones : undefined}
+        detalle={deAlumnos ? t.agenda.vacacionesDetalle : undefined}
+        aviso={deAlumnos ? t.agenda.avisoClasesYaTomadas : undefined}
         alCerrar={(d, h, prof, mot) => correr('especial', async () => sb().rpc('cerrar_dias', {
           p_empresa: empresaId,
           p_desde: d,
@@ -575,8 +726,157 @@ export function PantallaAgenda({
             p_hasta: h,
             p_motivo: mot,
           }))}
-      />}
+      />
     </div>
+  );
+}
+
+/** Mientras llega el día pedido: unas filas grises, nunca la lista de otro día. */
+function EsqueletoDia() {
+  return (
+    <ul aria-busy="true" className="divide-y divide-borde border-t border-borde">
+      {[0, 1, 2].map((i) => (
+        <li key={i} className="flex items-center gap-3 px-4 py-3.5">
+          <span className="h-4 w-11 animate-pulse rounded-md bg-tinta/[0.08]" />
+          <span className="h-4 flex-1 animate-pulse rounded-md bg-tinta/[0.06]" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// LA HOJA DE UN DÍA (119)
+//
+// Matías tocaba un día con clases en el calendario y «no aparecía nada»: la
+// pantalla pasaba a la vista Día con la lista del día ANTERIOR, sin ninguna
+// señal, hasta que contestaba el servidor. Ahora el día se abre ahí mismo,
+// sobre el calendario: la lista la trae la hoja desde el navegador (con un
+// esqueleto mientras llega), con las mismas filas y acciones que la vista
+// Día, y abajo «Anotar» ese día y «Ver el día completo».
+// ════════════════════════════════════════════════════════════
+function HojaDelDia({
+  empresaId, fecha, info, conHorario, hoy, deAlumnos, conRutinas, version, error, ocupado, puedeAnotar,
+  fila, alCerrar, alVerDia, alInscribir, anotarTurno,
+}: {
+  empresaId: string;
+  fecha: string;
+  /**
+   * Lo que dice el calendario de ese día: cuántos, y si está libre, lleno o
+   * cerrado. Se renueva cada vez que llega el calendario (alActualizarElegido).
+   */
+  info: DiaCalendario;
+  conHorario: boolean;
+  hoy: string;
+  deAlumnos: boolean;
+  conRutinas: boolean;
+  /** Sube con cada acción: la lista se vuelve a pedir. */
+  version: number;
+  error: string;
+  ocupado: boolean;
+  puedeAnotar: boolean;
+  fila: (r: TurnoDelDia, dia: string, rutinas: RutinasDeLaAgenda) => React.ReactNode;
+  alCerrar: () => void;
+  alVerDia: () => void;
+  /** El profe: inscribir arriba, con este día puesto. */
+  alInscribir: () => void;
+  /** La barbería: el formulario de anotar un turno, adentro de la hoja. */
+  anotarTurno: (alCerrarForm: () => void) => React.ReactNode;
+}) {
+  const t = useTextos();
+  const a = t.agenda;
+  const locale = useLocale();
+  const [datos, setDatos] = useState<{ fecha: string; turnos: TurnoDelDia[]; rutinas: RutinasDeLaAgenda } | null>(null);
+  const [fallo, setFallo] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [anotando, setAnotando] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setFallo(false);
+    (async () => {
+      const sb = clienteNavegador();
+      // La rutina de cada sesión (098) es contexto: si falla, la lista sale igual.
+      const pedirRutinas: Promise<unknown> = conRutinas
+        ? Promise.resolve(sb.rpc('rutinas_de_la_agenda', { p_empresa: empresaId, p_fecha: fecha }))
+          .then((r) => (r.error ? {} : r.data), () => ({}))
+        : Promise.resolve({});
+      const [lista, rut] = await Promise.all([
+        sb.rpc('agenda_del_dia', { p_empresa: empresaId, p_fecha: fecha }),
+        pedirRutinas,
+      ]);
+      if (!vivo) return;
+      if (lista.error) { setFallo(true); return; }
+      const mapa = rut && typeof rut === 'object' && !Array.isArray(rut) ? (rut as RutinasDeLaAgenda) : {};
+      setDatos({ fecha, turnos: Array.isArray(lista.data) ? (lista.data as TurnoDelDia[]) : [], rutinas: mapa });
+    })().catch(() => { if (vivo) setFallo(true); });
+    return () => { vivo = false; };
+  }, [empresaId, fecha, conRutinas, version, intento]);
+
+  // Solo la lista de ESTE día: la de otro, mientras llega, es el esqueleto.
+  const turnos = datos && datos.fecha === fecha ? datos.turnos : null;
+  // La cantidad, de la lista ya traída (si se anotó algo, se ve al toque).
+  const actual: DiaCalendario = turnos ? {
+    ...info,
+    turnos: turnos.length,
+    franjas: new Set(turnos.map((r) => `${r.profesional_id}|${r.inicia}|${r.termina}`)).size,
+  } : info;
+  const titulo = fechaLarga(fecha, locale);
+  const futuro = fecha >= hoy;
+
+  return (
+    <Hoja
+      titulo={titulo.charAt(0).toUpperCase() + titulo.slice(1)}
+      subtitulo={describirDia(actual, deAlumnos, conHorario, a)}
+      onCerrar={alCerrar}
+      bloqueada={ocupado}
+      tamano="grande"
+      pie={(
+        <PieHoja columnas={futuro && puedeAnotar && !anotando ? 2 : 1}>
+          {futuro && puedeAnotar && !anotando && (
+            <button
+              type="button" className="boton-principal min-h-[48px] px-3 text-[14px]" disabled={ocupado}
+              onClick={() => (deAlumnos ? alInscribir() : setAnotando(true))}
+            >
+              + {deAlumnos ? a.inscribirEseDia : a.anotarEseDia}
+            </button>
+          )}
+          <button type="button" className="boton-suave min-h-[48px] px-3 text-[14px]" disabled={ocupado} onClick={alVerDia}>
+            {a.verDiaCompleto}
+          </button>
+        </PieHoja>
+      )}
+    >
+      <MensajeError texto={error} />
+
+      {anotando && !deAlumnos && (
+        <div className="-mx-4 mt-2">{anotarTurno(() => setAnotando(false))}</div>
+      )}
+
+      {fallo ? (
+        <div className="py-8 text-center">
+          <p className="text-[14px] font-semibold text-tinta/70">{a.noSeCargoDia}</p>
+          <button type="button" className="boton-suave mt-3 px-4 py-2 text-[13px]" onClick={() => setIntento((n) => n + 1)}>
+            {t.comun.reintentar}
+          </button>
+        </div>
+      ) : turnos === null ? (
+        <div className="-mx-5"><EsqueletoDia /></div>
+      ) : turnos.length === 0 ? (
+        <div className="py-8 text-center">
+          <p className="text-[15px] font-bold">{deAlumnos ? a.sinTurnosDeAlumnos : a.sinTurnos}</p>
+          <p className="mx-auto mt-1 max-w-xs text-[13.5px] leading-relaxed text-tinta/55">
+            {info.estado === 'cerrado'
+              ? (info.motivo ? `${a.estadoCalendario.cerrado} · ${info.motivo}` : a.estadoCalendario.cerrado)
+              : a.sinNadaEseDia}
+          </p>
+        </div>
+      ) : (
+        <ul className="-mx-5 divide-y divide-borde border-y border-borde [&>li]:px-5">
+          {turnos.map((r) => fila(r, fecha, datos?.rutinas ?? {}))}
+        </ul>
+      )}
+    </Hoja>
   );
 }
 
@@ -797,6 +1097,7 @@ function HorariosLibres({
 // ════════════════════════════════════════════════════════════
 function NuevoTurno({
   empresaId, dia, hoy, zona, profesionales, servicios, catalogo, ocupado, alReservar,
+  abiertoDeEntrada = false, sinDictado = false, alCerrar,
 }: {
   empresaId: string;
   dia: string;
@@ -811,6 +1112,12 @@ function NuevoTurno({
     profesional: string; producto: string; inicia: string; nombre: string; telefono: string;
     cliente: string | null;
   }) => Promise<boolean>;
+  /** En la hoja de un día (119): ya abierto, para ese día. */
+  abiertoDeEntrada?: boolean;
+  /** El turno dictado lo levanta el de la vista Día, no una copia en la hoja. */
+  sinDictado?: boolean;
+  /** Al cerrar el formulario (cancelar, o después de anotar). */
+  alCerrar?: () => void;
 }) {
   const t = useTextos();
 
@@ -819,7 +1126,7 @@ function NuevoTurno({
   const agendables = catalogo.filter((p) =>
     servicios.some((s) => s.producto_id === p.id && s.reservable));
 
-  const [abierto, setAbierto] = useState(false);
+  const [abierto, setAbierto] = useState(abiertoDeEntrada);
   const [profesional, setProfesional] = useState(profesionales.length === 1 ? profesionales[0].id : '');
   const [producto, setProducto] = useState(agendables.length === 1 ? agendables[0].id : '');
   const [fecha, setFecha] = useState(dia);
@@ -845,6 +1152,7 @@ function NuevoTurno({
   // formulario se abre con todo puesto. Al montar, por si la captura trajo a
   // la persona hasta la agenda; y con el aviso, por si ya estaba en ella.
   useEffect(() => {
+    if (sinDictado) return;
     function levantar() {
       let crudo: string | null = null;
       try {
@@ -865,7 +1173,7 @@ function NuevoTurno({
     levantar();
     window.addEventListener(EVENTO_TURNO_DICTADO, levantar);
     return () => window.removeEventListener(EVENTO_TURNO_DICTADO, levantar);
-  }, []);
+  }, [sinDictado]);
 
   /**
    * Lo dictado completa el formulario de siempre y nada más: no reserva. Lo
@@ -890,6 +1198,7 @@ function NuevoTurno({
     setElegido('');
     setPedido('');
     setDictado(null);
+    alCerrar?.();
   }
 
   // Sin nadie en el equipo no hay agenda posible, y la sección de horarios que
@@ -1280,19 +1589,107 @@ function ServiciosReservables({
 // EL HORARIO
 // ════════════════════════════════════════════════════════════
 function Horarios({
-  profesionales, horarios, ocupado, alAgregar, alQuitar,
+  profesionales, horarios, ocupado, alAgregar, alQuitar, unaPersona = false, titulo, detalle, abrirPedido = 0,
 }: {
   profesionales: Profesional[];
   horarios: HorarioSemanal[];
   ocupado: boolean;
+  /** `prof` llega vacío si el profe todavía no tiene fila de profesional (119). */
   alAgregar: (prof: string, dia: number, desde: string, hasta: string) => void;
   alQuitar: (id: string) => void;
+  /** El profe que da sus clases solo (119): su horario, sin nombre ni equipo. */
+  unaPersona?: boolean;
+  titulo?: string;
+  detalle?: string;
+  /**
+   * Sube con cada «Cargar horario» del calendario (119): el formulario se
+   * abre solo, sin tener que encontrar «Agregar franja». Con un equipo de
+   * varios no se abre ninguno: no se sabe de quién es el horario.
+   */
+  abrirPedido?: number;
 }) {
   const t = useTextos();
   const [abierto, setAbierto] = useState<string | null>(null);
   const [dia, setDia] = useState(1);
   const [desde, setDesde] = useState('08:00');
   const [hasta, setHasta] = useState('12:00');
+  const unico = unaPersona ? (profesionales[0]?.id || 'yo') : profesionales.length === 1 ? profesionales[0].id : null;
+  useEffect(() => {
+    if (abrirPedido > 0 && unico) setAbierto(unico);
+  }, [abrirPedido]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const formulario = (prof: string) => (
+    <div className="mt-2.5 flex flex-wrap items-end gap-2 rounded-xl bg-arena p-3">
+      <label className="min-w-[120px] flex-1">
+        <span className="etiqueta">{t.agenda.dia}</span>
+        <select className="campo py-2 text-[13.5px]" value={dia}
+          onChange={(e) => setDia(Number(e.target.value))}>
+          {t.agenda.diasSemana.map((d, i) => <option key={i} value={i}>{d}</option>)}
+        </select>
+      </label>
+      <label className="w-[104px]">
+        <span className="etiqueta">{t.agenda.desde}</span>
+        <input type="time" className="campo py-2 text-[13.5px]" value={desde}
+          onChange={(e) => setDesde(e.target.value)} />
+      </label>
+      <label className="w-[104px]">
+        <span className="etiqueta">{t.agenda.hasta}</span>
+        <input type="time" className="campo py-2 text-[13.5px]" value={hasta}
+          onChange={(e) => setHasta(e.target.value)} />
+      </label>
+      <button
+        type="button" className="boton-principal px-4 py-2 text-[13px]"
+        disabled={ocupado}
+        onClick={() => { alAgregar(prof, dia, desde, hasta); setAbierto(null); }}
+      >
+        {t.comun.guardar}
+      </button>
+    </div>
+  );
+
+  // EL HORARIO DE UN PROFE (119): opcional, y solo para el calendario.
+  if (unaPersona) {
+    const yo = profesionales[0]?.id ?? '';
+    const suyos = horarios.filter((h) => h.activo && (yo === '' || h.profesional_id === yo));
+    const marca = yo || 'yo';
+    return (
+      <Seccion
+        titulo={titulo ?? t.agenda.horarios}
+        accion={(
+          <button type="button" className="boton-texto text-[12.5px]" disabled={ocupado}
+            onClick={() => setAbierto(abierto === marca ? null : marca)}>
+            {abierto === marca ? t.comun.cancelar : t.agenda.agregarFranja}
+          </button>
+        )}
+      >
+        <p className="px-4 pb-2 text-[12.5px] leading-relaxed text-tinta/50">{detalle ?? t.agenda.horariosDetalle}</p>
+        <div className="border-t border-borde px-4 py-3">
+          {suyos.length === 0 ? (
+            <p className="text-[12.5px] text-tinta/45">{t.agenda.sinHorarioProfe}</p>
+          ) : (
+            <ul className="space-y-1">
+              {suyos.map((h) => (
+                <li key={h.id} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span className="tabular-nums text-tinta/70">
+                    <b className="font-semibold">{t.agenda.diasSemana[h.dia_semana]}</b>{' '}
+                    {h.desde.slice(0, 5)} — {h.hasta.slice(0, 5)}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-[12px] font-semibold text-tinta/35 hover:text-rojo"
+                    onClick={() => alQuitar(h.id)} disabled={ocupado}
+                  >
+                    {t.comun.borrar}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {abierto === marca && formulario(yo)}
+        </div>
+      </Seccion>
+    );
+  }
 
   if (profesionales.length === 0) {
     return (
@@ -1305,8 +1702,8 @@ function Horarios({
   }
 
   return (
-    <Seccion titulo={t.agenda.horarios}>
-      <p className="px-4 pb-2 text-[12.5px] leading-relaxed text-tinta/50">{t.agenda.horariosDetalle}</p>
+    <Seccion titulo={titulo ?? t.agenda.horarios}>
+      <p className="px-4 pb-2 text-[12.5px] leading-relaxed text-tinta/50">{detalle ?? t.agenda.horariosDetalle}</p>
       <ul className="divide-y divide-borde border-t border-borde">
         {profesionales.map((p) => {
           const suyos = horarios.filter((h) => h.profesional_id === p.id && h.activo);
@@ -1344,34 +1741,7 @@ function Horarios({
                 </ul>
               )}
 
-              {abierto === p.id && (
-                <div className="mt-2.5 flex flex-wrap items-end gap-2 rounded-xl bg-arena p-3">
-                  <label className="min-w-[120px] flex-1">
-                    <span className="etiqueta">{t.agenda.dia}</span>
-                    <select className="campo py-2 text-[13.5px]" value={dia}
-                      onChange={(e) => setDia(Number(e.target.value))}>
-                      {t.agenda.diasSemana.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                    </select>
-                  </label>
-                  <label className="w-[104px]">
-                    <span className="etiqueta">{t.agenda.desde}</span>
-                    <input type="time" className="campo py-2 text-[13.5px]" value={desde}
-                      onChange={(e) => setDesde(e.target.value)} />
-                  </label>
-                  <label className="w-[104px]">
-                    <span className="etiqueta">{t.agenda.hasta}</span>
-                    <input type="time" className="campo py-2 text-[13.5px]" value={hasta}
-                      onChange={(e) => setHasta(e.target.value)} />
-                  </label>
-                  <button
-                    type="button" className="boton-principal px-4 py-2 text-[13px]"
-                    disabled={ocupado}
-                    onClick={() => { alAgregar(p.id, dia, desde, hasta); setAbierto(null); }}
-                  >
-                    {t.comun.guardar}
-                  </button>
-                </div>
-              )}
+              {abierto === p.id && formulario(p.id)}
             </li>
           );
         })}
@@ -1425,12 +1795,18 @@ function agruparDias(lista: Excepcion[]): GrupoDeDias[] {
 
 function DiasEspeciales({
   excepciones, profesionales, esAdmin, hoy, ocupado, alCerrar, alAbrir, alHorarioEspecial,
+  unaPersona = false, titulo, detalle, aviso,
 }: {
   excepciones: Excepcion[];
   profesionales: Profesional[];
   esAdmin: boolean;
   hoy: string;
   ocupado: boolean;
+  /** El profe que da sus clases solo (119): sus días, sin elegir quién. */
+  unaPersona?: boolean;
+  titulo?: string;
+  detalle?: string;
+  aviso?: string;
   alCerrar: (desde: string, hasta: string, profesional: string, motivo: string) => Promise<boolean>;
   alAbrir: (desde: string, hasta: string, profesional: string) => void;
   alHorarioEspecial: (
@@ -1465,7 +1841,7 @@ function DiasEspeciales({
 
   return (
     <Seccion
-      titulo={t.agenda.diasEspeciales}
+      titulo={titulo ?? t.agenda.diasEspeciales}
       accion={
         <button type="button" className="boton-texto text-[12.5px]" disabled={ocupado}
           onClick={() => setAbierto((v) => !v)}>
@@ -1474,7 +1850,7 @@ function DiasEspeciales({
       }
     >
       <p className="px-4 pb-3 text-[12.5px] leading-relaxed text-tinta/50">
-        {t.agenda.diasEspecialesDetalle}
+        {detalle ?? t.agenda.diasEspecialesDetalle}
       </p>
 
       {abierto && (
@@ -1494,15 +1870,18 @@ function DiasEspeciales({
             </button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className="etiqueta" htmlFor="esp-quien">{t.agenda.quienCierra}</label>
-              <select id="esp-quien" className="campo" value={quien} disabled={ocupado}
-                onChange={(e) => setQuien(e.target.value)}>
-                {esAdmin && <option value="">{t.agenda.todoElLocal}</option>}
-                {profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
-            </div>
+          <div className={`grid gap-3 ${unaPersona ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+            {/* El profe que da sus clases solo no elige quién: son sus días (119). */}
+            {!unaPersona && (
+              <div>
+                <label className="etiqueta" htmlFor="esp-quien">{t.agenda.quienCierra}</label>
+                <select id="esp-quien" className="campo" value={quien} disabled={ocupado}
+                  onChange={(e) => setQuien(e.target.value)}>
+                  {esAdmin && <option value="">{t.agenda.todoElLocal}</option>}
+                  {profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="etiqueta" htmlFor="esp-desde">
                 {cerrado ? t.agenda.primerDia : t.agenda.queDia}
@@ -1543,7 +1922,7 @@ function DiasEspeciales({
           </div>
 
           <p className="mt-3 rounded-xl bg-superficie px-3 py-2.5 text-[12px] leading-relaxed text-tinta/55">
-            {t.agenda.avisoTurnosYaTomados}
+            {aviso ?? t.agenda.avisoTurnosYaTomados}
           </p>
 
           <button type="button" className="boton-principal mt-3 px-4 py-2 text-[13.5px]"
@@ -1568,8 +1947,7 @@ function DiasEspeciales({
                     : t.agenda.rangoDeDias(fechaLegible(g.desde, false, locale), fechaLegible(g.hasta, false, locale))}
                 </span>
                 <span className="mt-0.5 block text-[12.5px] text-tinta/50">
-                  {nombreDe(g.excepcion.profesional_id)}
-                  {' · '}
+                  {!unaPersona && <>{nombreDe(g.excepcion.profesional_id)}{' · '}</>}
                   {g.excepcion.cerrado
                     ? t.agenda.cerradoTodoElDia
                     : t.agenda.abreDe(g.excepcion.desde ?? '', g.excepcion.hasta ?? '')}

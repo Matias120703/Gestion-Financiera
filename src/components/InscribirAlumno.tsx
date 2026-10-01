@@ -58,7 +58,7 @@ function finDePeriodo(desde: string, meses: number): string {
  * su propia cuenta, algún día diría «13 clases» y la base inscribiría 12.
  */
 export function InscribirAlumno({
-  empresaId, moneda, zona, clienteId, dictado = null, pedirSalud = false, alCancelar, alListo,
+  empresaId, moneda, zona, clienteId, dictado = null, diaInicial, pedirSalud = false, alCancelar, alListo,
 }: {
   empresaId: string;
   moneda: string;
@@ -67,6 +67,11 @@ export function InscribirAlumno({
   clienteId?: string;
   /** Lo dictado en el micrófono (092): el alumno, la hora y el día, ya puestos. */
   dictado?: TurnoRespuesta | null;
+  /**
+   * El día tocado en el calendario (119): ese día de la semana queda marcado
+   * y el período arranca ahí, como con un día dictado.
+   */
+  diaInicial?: string;
   /**
    * Preguntar por la salud de alguien nuevo (097). Un trainer tiene que
    * saber de una rodilla operada ANTES de la primera sesión, y el momento
@@ -92,7 +97,8 @@ export function InscribirAlumno({
   // Lo dictado trae un día: ese día de la semana queda marcado, y el
   // período arranca ahí. La hora dictada dura una hora; el resto se corrige a mano.
   const hoy = hoyISO(zona);
-  const diaDictado = dictado?.fecha && /^\d{4}-\d{2}-\d{2}$/.test(dictado.fecha) ? dictado.fecha : null;
+  const diaDictado = dictado?.fecha && /^\d{4}-\d{2}-\d{2}$/.test(dictado.fecha) ? dictado.fecha
+    : diaInicial && /^\d{4}-\d{2}-\d{2}$/.test(diaInicial) ? diaInicial : null;
   const horaDictada = dictado?.hora && /^\d{2}:\d{2}$/.test(dictado.hora) ? dictado.hora : null;
   const [dias, setDias] = useState<number[]>(
     diaDictado ? [new Date(`${diaDictado}T12:00:00Z`).getUTCDay()] : []);
