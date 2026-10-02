@@ -788,7 +788,7 @@ export const pt: Textos = {
   },
 
   portada: {
-    metaTitulo: 'Orden · Saiba quanto sobrou de verdade',
+    metaTitulo: 'Orden · Você realmente sabe quanto ganha?',
     metaDescripcion: 'Vendas, despesas, horários, alunos, safras ou seu salário: lance falando, com uma foto ou escrevendo, e o Orden te diz quanto sobrou de verdade. Pra comércios, serviços, professores, personal trainers, a lavoura, a pecuária e suas finanças pessoais.',
     metaDescripcionCorta: 'O Orden se ajusta ao que você faz —comércio, serviços, aulas, lavoura ou suas finanças— e te diz quanto sobrou de verdade.',
     dias: (n: number) => `${n} dias`,
@@ -799,9 +799,9 @@ export const pt: Textos = {
     idioma: 'Idioma',
 
     titularOficios: 'Vendendo, atendendo, dando aula ou plantando:',
-    titular: 'saiba quanto sobrou',
-    titularResaltado: 'de verdade',
-    titularCierre: '.',
+    titular: 'você realmente sabe',
+    titularResaltado: 'quanto ganha',
+    titularCierre: '?',
     bajada: 'O Orden se monta diferente pra cada ofício: o comércio vê o estoque, a barbearia a agenda, o professor quem deve a mensalidade, a lavoura o custo por hectare. O que não muda é a resposta: quanto **sobrou** depois de pagar tudo. E pra lançar basta contar pra ele.',
     probarGratis: (dias: string) => `Testar ${dias} grátis`,
     verLoTuyo: 'Veja como fica o seu',

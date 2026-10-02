@@ -814,7 +814,7 @@ export const es = {
     // tenía que dejar de hablar como si lo fuera. Lo que cambia por rubro
     // (pantalla, beneficios, planes y precios) vive en `textos/vitrina.ts`,
     // junto al componente que lo muestra; acá queda el resto de la página.
-    metaTitulo: 'Orden · Sabé cuánto te quedó de verdad',
+    metaTitulo: 'Orden · ¿Realmente sabés cuánto ganás?',
     metaDescripcion: 'Ventas, gastos, turnos, alumnos, campañas o tu sueldo: cargalos hablando, con una foto o escribiendo, y Orden te dice cuánto te quedó de verdad. Para comercios, servicios, profes, personal trainers, el campo, la ganadería y tus finanzas personales.',
     metaDescripcionCorta: 'Orden se arma para lo que hacés —comercio, servicios, clases, campo o tus finanzas— y te dice cuánto te quedó de verdad.',
     dias: (n: number) => `${n} días`,
@@ -829,10 +829,13 @@ export const es = {
     // que hacés, lo que te dice no. Sin verbos a propósito, elegido por
     // Matías el 24/09: «Vendas, atiendas, enseñes o siembres» se leía
     // «vendas a tiendas» y el subjuntivo confundía.
+    // 02/10 (Matías): el titular pasa a ser una pregunta, el problema de quien
+    // llega: «¿realmente sabés cuánto ganás?». Antes: «sabé cuánto te quedó de
+    // verdad.»
     titularOficios: 'En tu negocio, tus clases, tu campo o tu casa:',
-    titular: 'sabé cuánto te quedó',
-    titularResaltado: 'de verdad',
-    titularCierre: '.',
+    titular: '¿realmente sabés',
+    titularResaltado: 'cuánto ganás',
+    titularCierre: '?',
     bajada: 'Orden se arma distinto para cada oficio: el comercio ve su stock, la barbería su agenda, el profe quién le debe la cuota, el campo su costo por hectárea. Lo que no cambia es la respuesta: cuánto **te quedó** después de pagar todo. Y para cargarlo alcanza con contárselo.',
     probarGratis: (dias: string) => `Probar ${dias} gratis`,
     verLoTuyo: 'Mirá cómo se ve lo tuyo',

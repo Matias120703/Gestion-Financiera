@@ -44,7 +44,7 @@ import { ImageResponse } from 'next/og';
  * el HTML del login y el enlace sale sin foto, sin ningún error que avise.
  */
 
-export const alt = 'Orden: sabé cuánto te quedó de verdad, en tu comercio, tus clases, tu campo o tu casa.';
+export const alt = 'Orden: ¿realmente sabés cuánto ganás? En tu comercio, tus clases, tu campo o tu casa.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -64,9 +64,9 @@ const C = {
 } as const;
 
 const TEXTO = {
-  titular1: 'Sabé cuánto',
-  titular2: 'te quedó',
-  titular3: 'de verdad.',
+  titular1: '¿Realmente',
+  titular2: 'sabés',
+  titular3: 'cuánto ganás?',
   bajada: 'Orden se adapta a lo que hacés. Contale lo que pasó hablando, con una foto o escribiendo.',
   rubros: ['Comercio', 'Servicios', 'Clases', 'Personal trainer', 'Campo', 'Ganadería', 'Para vos'],
   prueba: 'Probalo gratis · sin tarjeta',
