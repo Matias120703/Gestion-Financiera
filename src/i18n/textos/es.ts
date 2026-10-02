@@ -2267,7 +2267,7 @@ export const es = {
   },
 
   soporte: {
-    titulo: 'Ayuda',
+    titulo: 'Soporte',
     detalle: 'Si algo no anda o no entendés algo, escribinos. Contestamos nosotros, no un robot.',
     whatsapp: 'Escribinos por WhatsApp',
     email: 'Mandanos un correo',

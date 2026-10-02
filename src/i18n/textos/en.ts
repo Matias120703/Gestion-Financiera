@@ -891,7 +891,7 @@ export const en: Parcial<Textos> = {
   },
 
   soporte: {
-    titulo: 'Help',
+    titulo: 'Support',
     detalle: "If something is broken or unclear, write to us. A person answers, not a bot.",
     whatsapp: 'Message us on WhatsApp',
     email: 'Send us an email',

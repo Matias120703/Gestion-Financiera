@@ -10,6 +10,7 @@ import { SelectorZona } from '@/components/SelectorZona';
 import { ListaEquipo, RotarCodigo } from '@/components/Equipo';
 import { TarjetaPlan } from '@/components/TarjetaPlan';
 import { ZonaPeligro } from '@/components/ZonaPeligro';
+import { Soporte } from '@/components/Soporte';
 import { esSuperadmin } from '@/lib/admin';
 import { conJerga } from '@/i18n/jergas';
 import { catalogoSoloConStock, fichaDe, ofreceInterruptor, tieneSeccion } from '@/lib/rubros';
@@ -63,6 +64,15 @@ export default async function PaginaAjustes({
   const esPersonal = ctx.empresa.tipo_cuenta === 'personal';
   // Solo para decidir si mostrar el acceso. El permiso real lo pone la base.
   const administraOrden = await esSuperadmin();
+  /**
+   * Soporte (02/10, Matías): su WhatsApp, en Ajustes. Solo si hay a dónde
+   * escribir: el 01/10 la sección se sacó porque abría una pantalla vacía.
+   * Las mismas variables que lee Soporte.tsx.
+   */
+  const haySoporte = Boolean(
+    (process.env.NEXT_PUBLIC_WHATSAPP_SOPORTE || process.env.NEXT_PUBLIC_WHATSAPP || '').replace(/\D/g, '')
+    || process.env.NEXT_PUBLIC_EMAIL_SOPORTE,
+  );
 
   const disponibles: Record<Clave, boolean> = {
     negocio: true,
@@ -74,6 +84,7 @@ export default async function PaginaAjustes({
     estado: true,
     permisos: !esPersonal,
     calculos: true,
+    soporte: haySoporte,
     admin: administraOrden,
     peligro: true,
   };
@@ -93,6 +104,7 @@ export default async function PaginaAjustes({
     estado: t.pantallas.estadoSistema,
     permisos: t.pantallas.quienPuedeQue,
     calculos: t.pantallas.comoSeCalculan,
+    soporte: t.soporte.titulo,
     admin: t.pantallas.administracionOrden,
     peligro: t.zonaPeligro.titulo,
   };
@@ -109,6 +121,7 @@ export default async function PaginaAjustes({
       estado: s.estado,
       permisos: s.permisos,
       calculos: s.calculos,
+      soporte: s.soporte,
       admin: s.admin,
       peligro: s.peligro,
     };
@@ -117,9 +130,7 @@ export default async function PaginaAjustes({
     const grupos: Clave[][] = [
       ['negocio', 'moneda', 'equipo', 'plan'],
       ['idioma', 'avisos'],
-      // Sin «Ayuda» (01/10, Matías): por la app nadie le escribe; para pagar
-      // está el WhatsApp de /plan.
-      ['estado', 'permisos', 'calculos'],
+      ['estado', 'permisos', 'calculos', 'soporte'],
       ['admin'],
       ['peligro'],
     ];
@@ -383,6 +394,9 @@ export default async function PaginaAjustes({
             <p className="text-[12.5px] text-tinta/45">{t.ajustes.descuentoRepartido}</p>
           </div>
         );
+
+      case 'soporte':
+        return <Soporte />;
 
       // Solo llega acá quien administra Orden: para los demás la sección ni
       // figura en la lista, y la dirección a mano vuelve a la lista.

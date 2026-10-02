@@ -2081,7 +2081,7 @@ export const pt: Textos = {
   },
 
   soporte: {
-    titulo: 'Ajuda',
+    titulo: 'Suporte',
     detalle: 'Se algo não funciona ou você não entende alguma coisa, fale com a gente. Quem responde somos nós, não um robô.',
     whatsapp: 'Fale pelo WhatsApp',
     email: 'Mande um e-mail',
