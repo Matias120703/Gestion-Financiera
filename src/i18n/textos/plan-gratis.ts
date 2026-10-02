@@ -1,7 +1,7 @@
 /**
  * TEXTOS DEL PLAN GRATIS DE LA CUENTA PERSONAL (110, 28/09/2026).
  *
- * Matías decidió que la cuenta personal, al terminar la prueba de 5 días, no
+ * Matías decidió que la cuenta personal, al terminar su prueba (5 días entonces; 8 desde la 123), no
  * quede con el candado total: pasa al plan Gratis. Anota gastos e ingresos a
  * mano, ve su historial e invita. La voz, la foto, «escribir», los
  * comprobantes, el presupuesto, las deudas, «Me deben», la billetera, los

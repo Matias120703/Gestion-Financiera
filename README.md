@@ -12,7 +12,7 @@ Pensado para el comerciante que vende en la calle, no para el contador.
 - **Cierre del día y racha.** Diez segundos a la noche para saber cómo te fue, y un contador de días seguidos.
 - **Avisos.** Recordatorio a la hora que elijas y resumen de la semana por email.
 - **Seis idiomas.** Español, inglés, portugués, alemán, francés e italiano.
-- **Planes con prueba de 14 días** sin tarjeta.
+- **Planes con prueba gratis** (20 días un negocio, 8 una cuenta personal), sin tarjeta.
 - **Se instala como app** en Android y iPhone. Abre sin señal.
 
 ---
@@ -203,7 +203,7 @@ barato; mantener dos sistemas era lo caro.
 
 Se elige al crear la cuenta, en la primera pregunta de la pantalla —antes que
 el nombre— porque de ahí cuelga todo: el largo de la prueba (20 días un
-comercio, 14 una persona), el precio, y qué pantallas van a existir.
+comercio, 8 una persona), el precio, y qué pantallas van a existir.
 
 ### Qué desaparece, y por qué desaparece
 
@@ -273,11 +273,11 @@ Orden le vende a **dos públicos distintos**, y por eso hay dos listas.
 | Pro | Gs. 190.000 / mes | US$ 24,99 / mes | Hasta 3 vendedores, 600 capturas con IA al mes, comprobantes, Excel |
 | Premium | desde Gs. 250.000 / mes | desde US$ 32,99 / mes | Sin tope de vendedores, 3.000 capturas al mes, roles |
 
-**Para una cuenta personal** — 14 días de prueba:
+**Para una cuenta personal** — 8 días de prueba:
 
 | Plan | Guaraníes | Dólares | Para quién |
 |---|---|---|---|
-| Personal | Gs. 60.000 / mes | US$ 7,99 / mes | Sueldo, gastos y deudas. Sin ventas ni productos |
+| Pro | Gs. 40.000 / mes | US$ 7 / mes | Sueldo, gastos y deudas. Sin ventas ni productos. Al terminar la prueba, la cuenta sigue en el plan Gratis |
 
 Premium es **«desde»**: cada vendedor por encima de los 3 que trae Pro suma
 **Gs. 60.000 al mes**. 250.000 es el primer escalón —cuatro vendedores— y por

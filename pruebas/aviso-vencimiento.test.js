@@ -248,7 +248,8 @@ function cargarTs(relativo, reemplazos = {}) {
   // La cuenta personal no se pausa: pasa al plan Gratis (110, 28/09/2026). Su
   // correo y su push lo dicen y nombran lo que se cierra; el negocio (arriba)
   // sigue igual.
-  const personal = { ...base, tipo_cuenta: 'personal', precio: 60000 };
+  // Gs. 40.000 es el Pro personal desde la 123 (02/10/2026).
+  const personal = { ...base, tipo_cuenta: 'personal', precio: 40000 };
   const pruebaPersonal = L.correoDeVencimiento({ ...personal, tipo: 'prueba', dias: 1 }, yo, es, 'es-PY', 'https://orden.com.py');
   ok('personal: el correo de la prueba dice que pasa al plan Gratis',
     pruebaPersonal.texto.includes('pasás al plan Gratis'), true);
@@ -258,20 +259,20 @@ function cargarTs(relativo, reemplazos = {}) {
   ok('lo de «queda guardado» se dice una sola vez', (pruebaPersonal.texto.match(/guardad/g) || []).length, 1);
   ok('el HTML también', pruebaPersonal.html.includes('pasás al plan Gratis'), true);
   ok('el asunto, el precio y el botón son los de siempre',
-    [pruebaPersonal.asunto, pruebaPersonal.texto.includes('Plan Pro: Gs. 60.000 por mes.'),
+    [pruebaPersonal.asunto, pruebaPersonal.texto.includes('Plan Pro: Gs. 40.000 por mes.'),
       pruebaPersonal.texto.includes('Activar mi plan: https://orden.com.py/plan')],
     ['Tu prueba de Orden termina mañana, 27 de septiembre', true, true]);
 
   const pushPersonal = L.pushDeVencimiento(personal, es, 'es-PY');
   ok('personal: el push del período dice que pasa al plan Gratis', pushPersonal.cuerpo.includes('pasás al plan Gratis'), true);
-  ok('con su precio', pushPersonal.cuerpo.includes('Gs. 60.000 por mes'), true);
+  ok('con su precio', pushPersonal.cuerpo.includes('Gs. 40.000 por mes'), true);
   ok('y el mismo título', pushPersonal.titulo, 'Tu plan de Orden vence en 3 días');
   ok('sin precio, tampoco inventa un número',
     /Gs\.|\d/.test(L.pushDeVencimiento({ ...personal, precio: null }, es, 'es-PY').cuerpo), false);
   const periodoPersonal = L.correoDeVencimiento(personal, yo, es, 'es-PY', 'https://orden.com.py');
   ok('personal: el correo del período dice qué se cierra', periodoPersonal.texto.includes('se cierran'), true);
   ok('y ya no promete seguir «sin cortes»', periodoPersonal.texto.includes('sin cortes'), false);
-  ok('con la renovación de siempre', periodoPersonal.texto.includes('Renovación: Gs. 60.000 por mes.'), true);
+  ok('con la renovación de siempre', periodoPersonal.texto.includes('Renovación: Gs. 40.000 por mes.'), true);
   ok('en portugués, la prueba', L.correoDeVencimiento({ ...personal, tipo: 'prueba' }, { ...yo, idioma: 'pt' }, pt, 'pt-BR',
     'https://orden.com.py').texto.includes('passa pro plano Grátis'), true);
   ok('y el push', L.pushDeVencimiento(personal, pt, 'pt-BR').cuerpo.includes('passa pro plano Grátis'), true);

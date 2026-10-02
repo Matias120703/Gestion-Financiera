@@ -9,8 +9,10 @@ import type { Rubro } from '@/lib/tipos';
 import { vitrinaEs, vitrinaPt, type TextosVitrina } from '@/i18n/textos/vitrina';
 import {
   CLAVES_VITRINA, claveConTecla, diasDePrueba, enlaceDePrueba, esClaveVitrina, planesDeLaVitrina,
-  rachaDelDescuento, rubroDeClave, type ClaveVitrina, type PlanVitrina, type PrecioVitrina, type TarjetaPlan,
+  porcentajeDelDescuento, rachaDelDescuento, rubroDeClave,
+  type ClaveVitrina, type PlanVitrina, type PrecioVitrina, type TarjetaPlan,
 } from './vitrina-datos';
+import { Rico } from '@/components/Rico';
 import { PantallaComercio } from './pantallas/Comercio';
 import { PantallaServicios } from './pantallas/Servicios';
 import { PantallaClases } from './pantallas/Clases';
@@ -59,11 +61,21 @@ export function ElegiTuRubro(props: {
   preciosPYG: PrecioVitrina[];
   referenciaUSD: PrecioVitrina[];
   diasPrueba: { negocio: number; personal: number };
-  promo: { porcentaje: number; negocio: number; personal: number; constanciaPorcentaje: number; constanciaDias: number };
+  /**
+   * Los números de la promo (078, 093, 123). `porcentaje` es el del negocio
+   * y `porcentajePersonal` el de la cuenta personal, que desde la 123 tiene
+   * el suyo; `negocio` y `personal` son los días seguidos que pide cada uno.
+   */
+  promo: {
+    porcentaje: number; porcentajePersonal: number; negocio: number; personal: number;
+    constanciaPorcentaje: number; constanciaDias: number;
+  };
   precioPorVendedor: number | null;
+  /** El Premium: cuántas personas trae su precio y hasta cuántas llega (123). */
+  premium: { incluidas: number; tope: number };
   planesPorRubro: Record<ClaveVitrina, ('basico' | 'pro' | 'negocio')[]>;
 }): JSX.Element {
-  const { idioma, preciosPYG, referenciaUSD, diasPrueba, promo, precioPorVendedor, planesPorRubro } = props;
+  const { idioma, preciosPYG, referenciaUSD, diasPrueba, promo, precioPorVendedor, premium, planesPorRubro } = props;
   const v: TextosVitrina = idioma === 'pt' ? vitrinaPt : vitrinaEs;
   const locale = FICHA[idioma === 'pt' ? 'pt' : 'es'].locale;
 
@@ -199,6 +211,7 @@ export function ElegiTuRubro(props: {
               usd={(n) => precio(n, 'USD', locale)}
               enlace={enlace}
               llamado={conGratis ? v.probarPro(dias) : v.probar(dias)}
+              premium={premium}
             />
           ))}
 
@@ -211,7 +224,8 @@ export function ElegiTuRubro(props: {
             <ul className={`mt-3 grid gap-3 ${cuantas >= 3 ? 'md:grid-cols-2' : ''}`}>
               <Condicion icono="guaranies">{v.cobroEnGuaranies}</Condicion>
               <Condicion icono="descuento">
-                {v.descuento(Math.round(promo.porcentaje), rachaDelDescuento(clave, promo))}{' '}
+                {/* El porcentaje es el de ESTE chip: la cuenta personal tiene el suyo (123). */}
+                {v.descuento(Math.round(porcentajeDelDescuento(clave, promo)), rachaDelDescuento(clave, promo))}{' '}
                 {v.constancia(Math.round(promo.constanciaPorcentaje), promo.constanciaDias)}
               </Condicion>
               <Condicion icono="pago">{v.comoSePaga}</Condicion>
@@ -242,7 +256,7 @@ function Pantalla({ clave, v }: { clave: ClaveVitrina; v: TextosVitrina }) {
 }
 
 function TarjetaDePlan({
-  t, v, paso, nombre, textos, resaltar, importe, usd, enlace, llamado,
+  t, v, paso, nombre, textos, resaltar, importe, usd, enlace, llamado, premium,
 }: {
   t: TarjetaPlan;
   v: TextosVitrina;
@@ -255,6 +269,7 @@ function TarjetaDePlan({
   usd: (n: number) => string;
   enlace: string;
   llamado: string;
+  premium: { incluidas: number; tope: number };
 }) {
   return (
     <div
@@ -278,6 +293,21 @@ function TarjetaDePlan({
       </p>
       <p className="mt-1.5 text-[13px] font-semibold text-tinta/60">{textos.para}</p>
 
+      {/* EL PREMIUM, DICHO ENTERO (123, 02/10/2026): cuántas personas trae el
+          precio «desde» y cuánto suma cada una de más. Va arriba, pegado al
+          precio y en un recuadro, y no al pie en letra chica: es lo que cambia
+          la cuenta de cuánto le sale. `desde` solo lo tiene el Premium. */}
+      {t.desde && (
+        <div className="mt-3 rounded-xl bg-verde-claro/50 px-3 py-2.5 text-[13.5px] leading-snug text-tinta/75">
+          <p className="font-semibold text-tinta">{v.premiumIncluye(premium.incluidas)}</p>
+          <p className="mt-1">
+            {t.porVendedor !== null
+              ? <Rico texto={v.vendedorExtra(importe(t.porVendedor), premium.tope)} negrita="font-bold text-tinta" />
+              : v.premiumSinPrecio}
+          </p>
+        </div>
+      )}
+
       <ul className="mt-4 flex-1 space-y-2">
         {textos.puntos.map((punto) => (
           <li key={punto} className="flex items-start gap-2 text-[13.5px] leading-snug text-tinta/70">
@@ -290,11 +320,6 @@ function TarjetaDePlan({
       {t.mesesDeRegalo > 0 && t.anual !== null && (
         <p className="mt-4 border-t border-borde pt-3 text-[13px] leading-relaxed text-tinta/60">
           {v.alAnio(importe(t.anual), t.mesesDeRegalo)}
-        </p>
-      )}
-      {t.porVendedor !== null && (
-        <p className="mt-4 border-t border-borde pt-3 text-[13px] leading-relaxed text-tinta/60">
-          {v.vendedorExtra(importe(t.porVendedor))}
         </p>
       )}
 

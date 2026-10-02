@@ -778,6 +778,10 @@ export const en: Parcial<Textos> = {
     capturasAgotadasDetalle: 'You can keep recording by hand as much as you want. With Pro, voice and photo have no cap.',
     incluye: 'Includes',
     personas: (n: number) => (n === 1 ? '1 person' : `Up to ${n} people`),
+    premiumIncluye: (n: number) => `The price includes ${n} people: you and ${n - 1} more`,
+    premiumPorPersona: (monto: string | null, tope: number) => (monto
+      ? `For each extra person you add to your team, ${monto} more per month (up to ${tope} people)`
+      : `Each extra person you add to your team is charged separately (up to ${tope} people)`),
     capturasMes: (n: number) => `${n} AI captures per month`,
     capturasLibres: 'Voice, photo and text with no cap',
     conAdjuntos: 'Receipts kept',

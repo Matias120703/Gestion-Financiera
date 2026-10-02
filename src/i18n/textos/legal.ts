@@ -12,7 +12,12 @@ import type { PlanDeRubro } from '@/lib/rubros';
  *
  * CADA FRASE SE SOSTIENE CON EL CÓDIGO DE HOY. De dónde sale cada una:
  *   · días de prueba ............ `DIAS_DE_PRUEBA` (constantes.ts, espejo de
- *                                  `dias_de_prueba()`, 049). No se escriben a mano.
+ *                                  `dias_de_prueba()`, 123). No se escriben a mano.
+ *   · personas del Premium ...... `PERSONAS_INCLUIDAS_PREMIUM` (constantes.ts),
+ *                                  `precio_por_vendedor()` (050), el precio de
+ *                                  lista (`lista_precios`) y el tope de
+ *                                  `LIMITES_VISIBLES`. Los lee la página y los
+ *                                  pinta el bloque `premium` (123).
  *   · plan de la prueba ......... `plan_de_prueba()` (102): Pro si el rubro lo
  *                                  ofrece; si no, el más alto de su lista.
  *   · planes de cada rubro ...... la tabla la arma la página con
@@ -59,8 +64,23 @@ import type { PlanDeRubro } from '@/lib/rubros';
 export type BloqueLegal =
   | string
   | { lista: string[] }
-  /** Piezas que la página arma con datos vivos: la tabla de planes, el botón de WhatsApp. */
-  | { especial: 'planesPorRubro' | 'contacto' };
+  /**
+   * Piezas que la página arma con datos vivos: la tabla de planes, el botón
+   * de WhatsApp y, desde la 123, lo que cuesta cada persona del Premium.
+   */
+  | { especial: 'planesPorRubro' | 'contacto' | 'premium' };
+
+/**
+ * Los números del Premium que pinta el bloque `premium`. Los importes ya
+ * vienen escritos («Gs. 250.000») o en null si la base no los devolvió: en
+ * ese caso el texto lo dice sin importe, no inventa uno.
+ */
+export interface DatosPremiumLegal {
+  precio: string | null;
+  porPersona: string | null;
+  incluidas: number;
+  tope: number;
+}
 
 export interface ApartadoLegal {
   /** El ancla del índice: /terminos#pagos. */
@@ -91,10 +111,12 @@ export interface TextosLegal {
     nombresPlanes: Record<PlanDeRubro, string>;
     cuentaPersonal: string;
     planPersonal: string;
-    /** El nombre solo, para «Pro, 5 días» (el plan que prueba la cuenta personal). */
+    /** El nombre solo, para «Pro, 8 días» (el plan que prueba la cuenta personal). */
     nombrePlanPersonal: string;
     pruebaDe: (plan: string, dias: number) => string;
   };
+  /** El párrafo del Premium: cuántas personas trae y cuánto suma cada una de más (123). */
+  premium: (d: DatosPremiumLegal) => string;
   contacto: {
     whatsapp: string;
     mensaje: string;
@@ -121,6 +143,13 @@ export const legalEs: TextosLegal = {
     nombrePlanPersonal: 'Pro',
     pruebaDe: (plan, dias) => `${plan}, ${dias} días`,
   },
+  // Matías (02/10/2026): «especificar bien que por cada usuario o funcionario
+  // que vaya a tu equipo van a ser 60.000 guaraníes más». Cuántas personas
+  // quedan habilitadas lo escribe la administración al activar el plan
+  // (`cambiar_plan_cuenta`, 103): por eso «se acuerda al activar».
+  premium: ({ precio, porPersona, incluidas, tope }) => (precio && porPersona
+    ? `El plan **Premium** cuesta ${precio} por mes e incluye **${incluidas} personas**: el dueño de la cuenta y ${incluidas - 1} más. **Por cada persona más que sumes a tu equipo se suman ${porPersona} por mes**, hasta ${tope} personas. Cuántas personas quedan habilitadas en tu cuenta se acuerda con nosotros al activar el plan.`
+    : `El plan **Premium** incluye **${incluidas} personas**: el dueño de la cuenta y ${incluidas - 1} más. **Cada persona más que sumes a tu equipo se paga aparte**, hasta ${tope} personas; el importe está en la portada y en la pantalla de tu plan. Cuántas personas quedan habilitadas en tu cuenta se acuerda con nosotros al activar el plan.`),
   contacto: {
     whatsapp: 'Escribinos por WhatsApp',
     mensaje: 'Hola, tengo una consulta sobre Orden.',
@@ -131,7 +160,7 @@ export const legalEs: TextosLegal = {
     metaTitulo: 'Términos · Orden',
     metaDescripcion: 'Las condiciones de uso de Orden: la prueba, los planes de cada rubro, cómo se paga, qué pasa si no pagás y cómo funcionan las invitaciones.',
     titulo: 'Términos del servicio',
-    actualizado: '28 de septiembre de 2026',
+    actualizado: '2 de octubre de 2026',
     bajada: 'Escritos para que se entiendan de una leída. Cada cosa que dice esta página es lo que Orden hace hoy, no lo que hará algún día.',
     esencialTitulo: 'Lo esencial',
     esencial: [
@@ -182,6 +211,7 @@ export const legalEs: TextosLegal = {
           { especial: 'planesPorRubro' },
           'La cuenta personal tiene además un plan **Gratis**, que no se paga: se anotan gastos e ingresos a mano, se ve el historial y se puede invitar. La carga por voz, foto o texto, el presupuesto, las deudas, lo que te deben, las cuentas de plata, los reportes y el Excel son del Pro.',
           'Los planes cambian cuántas personas pueden usar la cuenta y cuántas cargas con inteligencia artificial entran por mes. Eso y los precios están en la portada y en la pantalla de tu plan.',
+          { especial: 'premium' },
           'Los precios se cobran en **guaraníes**. Al lado puede aparecer un «≈ US$» chico: es solo una referencia, no se cobra en dólares.',
           'Los descuentos —por cargar todos los días durante la prueba y por constancia— se explican en la pantalla de tu plan, con sus condiciones, y se aplican al pagar.',
           'Si los precios suben, te avisamos antes de que se apliquen a tu cuenta. Si ya pagaste un plan y cambiás de rubro, lo que pagaste se respeta hasta que termine ese período.',
@@ -534,6 +564,9 @@ export const legalPt: TextosLegal = {
     nombrePlanPersonal: 'Pro',
     pruebaDe: (plan, dias) => `${plan}, ${dias} dias`,
   },
+  premium: ({ precio, porPersona, incluidas, tope }) => (precio && porPersona
+    ? `O plano **Premium** custa ${precio} por mês e inclui **${incluidas} pessoas**: o dono da conta e mais ${incluidas - 1}. **Para cada pessoa a mais na sua equipe somam-se ${porPersona} por mês**, até ${tope} pessoas. Quantas pessoas ficam liberadas na sua conta é combinado com a gente ao ativar o plano.`
+    : `O plano **Premium** inclui **${incluidas} pessoas**: o dono da conta e mais ${incluidas - 1}. **Cada pessoa a mais na sua equipe é paga à parte**, até ${tope} pessoas; o valor está na página inicial e na tela do seu plano. Quantas pessoas ficam liberadas na sua conta é combinado com a gente ao ativar o plano.`),
   contacto: {
     whatsapp: 'Fale com a gente no WhatsApp',
     mensaje: 'Olá, tenho uma dúvida sobre o Orden.',
@@ -544,7 +577,7 @@ export const legalPt: TextosLegal = {
     metaTitulo: 'Termos · Orden',
     metaDescripcion: 'As condições de uso do Orden: o teste, os planos de cada ramo, como se paga, o que acontece se você não pagar e como funcionam os convites.',
     titulo: 'Termos de serviço',
-    actualizado: '28 de setembro de 2026',
+    actualizado: '2 de outubro de 2026',
     bajada: 'Escritos pra serem entendidos numa leitura só. Tudo o que esta página diz é o que o Orden faz hoje, não o que vai fazer algum dia.',
     esencialTitulo: 'O essencial',
     esencial: [
@@ -595,6 +628,7 @@ export const legalPt: TextosLegal = {
           { especial: 'planesPorRubro' },
           'A conta pessoal tem também um plano **Grátis**, que não se paga: dá pra lançar despesas e entradas na mão, ver o histórico e convidar. O registro por voz, foto ou texto, o orçamento, as dívidas, o que te devem, as contas de dinheiro, os relatórios e o Excel são do Pro.',
           'Os planos mudam quantas pessoas podem usar a conta e quantos registros com inteligência artificial cabem por mês. Isso e os preços estão na página inicial e na tela do seu plano.',
+          { especial: 'premium' },
           'Os preços são cobrados em **guaranis**. Do lado pode aparecer um «≈ US$» pequeno: é só uma referência, não se cobra em dólares.',
           'Os descontos —por registrar todos os dias durante o teste e por constância— são explicados na tela do seu plano, com as condições, e se aplicam na hora de pagar.',
           'Se os preços subirem, avisamos antes de valerem pra sua conta. Se você já pagou um plano e muda de ramo, o que pagou é respeitado até o fim desse período.',

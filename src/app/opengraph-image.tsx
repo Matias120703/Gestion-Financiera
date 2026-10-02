@@ -34,10 +34,10 @@ import { ImageResponse } from 'next/og';
  * foto. La letra por defecto no tiene negrita: el peso de los títulos sale
  * del tamaño y de un trazo fino del mismo color.
  *
- * No dice cuántos días dura la prueba a propósito: son 8 para un negocio y 5
- * para una cuenta personal, y la foto habla de los dos. «Probalo gratis» es
- * verdad para todos; el número exacto lo dice la portada, que lo lee de la
- * constante.
+ * No dice cuántos días dura la prueba a propósito: son 20 para un negocio y
+ * 8 para una cuenta personal (migración 123), y la foto habla de los dos.
+ * «Probalo gratis» es verdad para todos; el número exacto lo dice la
+ * portada, que lo lee de la constante.
  *
  * Ojo: el middleware tiene que dejar pasar `/opengraph-image` sin sesión.
  * El robot de WhatsApp no tiene cuenta: si lo mandan al login, se queda con

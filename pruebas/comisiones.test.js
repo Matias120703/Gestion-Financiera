@@ -1063,12 +1063,13 @@ async function principal() {
         .then((r) => [Number(r.rows[0].b), Number(r.rows[0].m)]),
       [110000, 55000]);
 
-    // La cuenta personal tiene su propio precio de lista.
+    // La cuenta personal tiene su propio precio de lista: Gs. 40.000 desde
+    // la 123 (02/10/2026; antes 60.000). La comisión es la mitad: 20.000.
     const b6 = await traido('persona@hogar.com', 'Mis gastos', { tipoCuenta: 'personal' });
-    await cobrar(b6.empresaId, 'pro', 60000);
+    await cobrar(b6.empresaId, 'pro', 40000);
     ok('una cuenta personal usa el precio personal',
       [Number((await comisionDe(b6.empresaId)).base), Number((await comisionDe(b6.empresaId)).monto)],
-      [60000, 30000]);
+      [40000, 20000]);
 
     // Lo que no cambia: una sola por negocio, y se cae si el cobro se anula.
     const otra = await cobrar(b1.empresaId, 'pro', 190000);

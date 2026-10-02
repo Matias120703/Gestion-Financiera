@@ -2,9 +2,9 @@ import Link from 'next/link';
 import { Apartado, Lista, PaginaLegal } from '@/components/PaginaLegal';
 import type { Idioma } from '@/i18n';
 import {
-  partesDeTexto, type BloqueLegal, type DocumentoLegal, type TextosLegal,
+  partesDeTexto, type BloqueLegal, type DatosPremiumLegal, type DocumentoLegal, type TextosLegal,
 } from '@/i18n/textos/legal';
-import { DIAS_DE_PRUEBA } from '@/lib/constantes';
+import { DIAS_DE_PRUEBA, PERSONAS_INCLUIDAS_PREMIUM } from '@/lib/constantes';
 import { LISTA_RUBROS, rubroVisible, type PlanDeRubro } from '@/lib/rubros';
 
 /**
@@ -19,8 +19,16 @@ import { LISTA_RUBROS, rubroVisible, type PlanDeRubro } from '@/lib/rubros';
  * Servidor puro: no hay nada que hidratar. El índice es un `<details>`, que
  * se abre y se cierra sin JavaScript y lo entiende cualquier lector de
  * pantalla.
+ *
+ * `premium` (123, 02/10/2026) son los números del párrafo del Premium, que
+ * /terminos lee de la base. La política de privacidad no tiene ese párrafo y
+ * no los manda: quedan los de respaldo, sin importes, que nadie llega a ver.
  */
-export function VistaLegal({ l, d, idioma }: { l: TextosLegal; d: DocumentoLegal; idioma: Idioma }) {
+export function VistaLegal({ l, d, idioma, premium }: {
+  l: TextosLegal; d: DocumentoLegal; idioma: Idioma; premium?: DatosPremiumLegal;
+}) {
+  const datosPremium: DatosPremiumLegal = premium
+    ?? { precio: null, porPersona: null, incluidas: PERSONAS_INCLUIDAS_PREMIUM, tope: PERSONAS_INCLUIDAS_PREMIUM };
   return (
     <PaginaLegal titulo={d.titulo} actualizado={d.actualizado}>
       <p className="text-[16px] leading-relaxed text-tinta/75">{d.bajada}</p>
@@ -63,7 +71,7 @@ export function VistaLegal({ l, d, idioma }: { l: TextosLegal; d: DocumentoLegal
       {d.apartados.map((a) => (
         <div key={a.id} id={a.id} className="scroll-mt-6">
           <Apartado titulo={a.titulo}>
-            {a.bloques.map((b, i) => <Bloque key={i} bloque={b} l={l} idioma={idioma} />)}
+            {a.bloques.map((b, i) => <Bloque key={i} bloque={b} l={l} idioma={idioma} premium={datosPremium} />)}
           </Apartado>
         </div>
       ))}
@@ -71,10 +79,13 @@ export function VistaLegal({ l, d, idioma }: { l: TextosLegal; d: DocumentoLegal
   );
 }
 
-function Bloque({ bloque, l, idioma }: { bloque: BloqueLegal; l: TextosLegal; idioma: Idioma }) {
+function Bloque({ bloque, l, idioma, premium }: {
+  bloque: BloqueLegal; l: TextosLegal; idioma: Idioma; premium: DatosPremiumLegal;
+}) {
   if (typeof bloque === 'string') return <p><Texto texto={bloque} /></p>;
   if ('lista' in bloque) return <Lista items={bloque.lista.map((t, i) => <Texto key={i} texto={t} />)} />;
   if (bloque.especial === 'planesPorRubro') return <PlanesPorRubro l={l} idioma={idioma} />;
+  if (bloque.especial === 'premium') return <p><Texto texto={l.premium(premium)} /></p>;
   return <BotonContacto l={l} />;
 }
 

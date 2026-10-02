@@ -1548,6 +1548,17 @@ export interface DescuentoRacha {
   vigente: boolean;
 }
 
+/**
+ * Los números del gancho de las invitaciones (123, 02/10/2026): qué descuento
+ * gana en su primer mes quien entra, y cuántos días seguidos de su prueba
+ * tiene que cargar. Un par para un negocio y otro para una cuenta personal.
+ * Salen de `promo_de_la_prueba()`; la página de Invitaciones los arma.
+ */
+export interface PromoInvitacion {
+  negocio: { porcentaje: number; dias: number };
+  personal: { porcentaje: number; dias: number };
+}
+
 // ---- Reportes por rubro: las lecturas por período de la 106 ----
 //
 // Montos en la moneda del negocio. Un null no es un cero: quiere decir «no

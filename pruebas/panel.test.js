@@ -97,18 +97,19 @@ const PROHIBIDAS = [
 
   const dias = await db.query(
     'select public.dias_de_prueba($1) p, public.dias_de_prueba($2) e', ['personal', 'emprendedor']);
-  ok('personal prueba 5 días', dias.rows[0].p, 5);
-  ok('emprendedor prueba 8 días', dias.rows[0].e, 8);
+  // 8 y 20 desde la 123 (02/10/2026); antes 5 y 8 (049).
+  ok('personal prueba 8 días', dias.rows[0].p, 8);
+  ok('emprendedor prueba 20 días', dias.rows[0].e, 20);
 
   const pruebaPersona = await db.query(
     `select round(extract(epoch from (prueba_fin - now())) / 86400)::int d
      from public.suscripciones where empresa_id = $1`, [empresaPersonal]);
-  ok('la cuenta personal nació con 5 días', pruebaPersona.rows[0].d, 5);
+  ok('la cuenta personal nació con 8 días', pruebaPersona.rows[0].d, 8);
 
   const pruebaComercio = await db.query(
     `select round(extract(epoch from (prueba_fin - now())) / 86400)::int d
      from public.suscripciones where empresa_id = $1`, [comercio.empresaId]);
-  ok('el comercio nació con 8 días', pruebaComercio.rows[0].d, 8);
+  ok('el comercio nació con 20 días', pruebaComercio.rows[0].d, 20);
 
   // ═══════════════════════════════════════════════════════════
   grupo('2 · El panel es solo del dueño del sistema');

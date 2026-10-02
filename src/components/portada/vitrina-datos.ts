@@ -186,6 +186,18 @@ export function rachaDelDescuento(clave: ClaveVitrina, promo: { negocio: number;
 }
 
 /**
+ * Cuánto se descuenta del primer mes por esa racha. Desde la 123
+ * (02/10/2026) la cuenta personal tiene su propio porcentaje: sin esto, la
+ * vitrina le prometía a «Para vos» el descuento del negocio.
+ */
+export function porcentajeDelDescuento(
+  clave: ClaveVitrina,
+  promo: { porcentaje: number; porcentajePersonal: number },
+): number {
+  return clave === 'personal' ? promo.porcentajePersonal : promo.porcentaje;
+}
+
+/**
  * El teclado en la fila de chips, como un grupo de radio: las flechas mueven
  * y eligen (dan la vuelta), Inicio y Fin van a las puntas. Cualquier otra
  * tecla devuelve null y no se toca nada.

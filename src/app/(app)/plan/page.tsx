@@ -6,8 +6,8 @@ import { conJerga } from '@/i18n/jergas';
 import { fichaDe } from '@/lib/rubros';
 import { precio as precioTexto } from '@/lib/formato';
 import {
-  LIMITES_VISIBLES, MONEDA_DE_REFERENCIA, PLANES_PAGOS, mesesDeRegalo, monedaDeCobro, precioDe, traerPrecios,
-  traerReferencia, type PlanPago,
+  LIMITES_VISIBLES, MONEDA_DE_REFERENCIA, PERSONAS_INCLUIDAS_PREMIUM, PLANES_PAGOS, mesesDeRegalo, monedaDeCobro,
+  precioDe, traerPrecios, traerReferencia, type PlanPago,
 } from '@/lib/precios';
 import type { PeriodoCobro } from '@/lib/tipos';
 import { SelectorCobro } from '@/components/SelectorCobro';
@@ -60,9 +60,23 @@ export default async function PaginaPlan({
 
   // La referencia en dólares no puede tumbar la pantalla donde se cobra: si
   // falla, vuelve vacía y los precios en guaraníes se ven igual.
-  const [precios, referencia] = await Promise.all([
+  //
+  // Lo mismo el precio de cada persona extra del Premium (050): se pide solo
+  // si esta cuenta ve la tarjeta del Premium, y si falla la tarjeta lo dice
+  // sin importe en vez de caerse.
+  const vePremium = ctx.empresa.tipo_cuenta !== 'personal'
+    && (ficha.planes.includes('negocio') || ctx.planEfectivo === 'negocio');
+  const [precios, referencia, porPersona] = await Promise.all([
     traerPrecios(moneda, ctx.empresa.tipo_cuenta),
     traerReferencia(ctx.empresa.tipo_cuenta),
+    vePremium
+      ? Promise.resolve(clienteServidor().rpc('precio_por_vendedor', { p_moneda: moneda }))
+        .then((r) => {
+          const n = r.error || r.data == null ? NaN : Number(r.data);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        })
+        .catch(() => null)
+      : Promise.resolve(null),
   ]);
   const sus = ctx.suscripcion;
   /**
@@ -320,12 +334,26 @@ export default async function PaginaPlan({
                         t.plan.capturasMes(limites.capturas),
                         t.plan.conExcel,
                       ]
-                    : [
-                        t.plan.capturasLibres,
-                        t.plan.personas(limites.miembros),
-                        t.plan.conAdjuntos,
-                        t.plan.conExcel,
-                      ]
+                    : plan === 'negocio'
+                      // EL PREMIUM, DICHO ENTERO (123, 02/10/2026): cuántas
+                      // personas trae su precio y cuánto suma cada una de
+                      // más. Decía solo «Hasta 15 personas».
+                      ? [
+                          t.plan.capturasLibres,
+                          t.plan.premiumIncluye(PERSONAS_INCLUIDAS_PREMIUM),
+                          t.plan.premiumPorPersona(
+                            porPersona !== null ? precioTexto(porPersona, moneda, locale) : null,
+                            limites.miembros,
+                          ),
+                          t.plan.conAdjuntos,
+                          t.plan.conExcel,
+                        ]
+                      : [
+                          t.plan.capturasLibres,
+                          t.plan.personas(limites.miembros),
+                          t.plan.conAdjuntos,
+                          t.plan.conExcel,
+                        ]
               }
               pie={
                 esActual ? null : whatsapp ? (
@@ -413,7 +441,7 @@ function Tarjeta({
   etiquetaActual: string;
   destacado?: boolean;
   pie?: React.ReactNode;
-  /** «−18% tu primer mes», cuando la promo ya está ganada (078). */
+  /** «−18% tu primer mes» (−5% en la cuenta personal, 123), cuando la promo ya está ganada (078). */
   nota?: string | null;
 }) {
   return (

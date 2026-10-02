@@ -856,7 +856,10 @@ export const pt: Textos = {
 
     preguntasEtiqueta: 'Perguntas frequentes',
     preguntasTitulo: 'O que quase todo mundo pergunta antes de começar.',
-    preguntas: (dias: { negocio: number; personal: number }): {
+    preguntas: (
+      dias: { negocio: number; personal: number },
+      equipo: { pro: number; incluidas: number; tope: number; premium: string | null; porPersona: string | null },
+    ): {
       pregunta: string; respuesta: string; enlace?: { texto: string; href: string };
     }[] => [
       {
@@ -879,6 +882,14 @@ export const pt: Textos = {
       {
         pregunta: 'Meus vendedores veem meus custos?',
         respuesta: 'Não. Cada vendedor entra com a própria conta e lança vendas, mas não vê seus custos, suas margens nem as dívidas do negócio. E você vê quem lançou cada venda. Pra colocar mais gente na conta, é com os planos Pro e Premium.',
+      },
+      {
+        pregunta: 'Quanto custa colocar mais gente na minha equipe?',
+        respuesta: `O **Básico** é só pra você e o **Pro** inclui ${equipo.pro} pessoas: você e mais ${equipo.pro - 1}. `
+          + (equipo.premium && equipo.porPersona
+            ? `O **Premium** custa ${equipo.premium} por mês com ${equipo.incluidas} pessoas —você e mais ${equipo.incluidas - 1}—, e **para cada pessoa a mais na sua equipe são ${equipo.porPersona} a mais por mês**, até ${equipo.tope} pessoas. `
+            : `O **Premium** inclui ${equipo.incluidas} pessoas —você e mais ${equipo.incluidas - 1}—, e **cada pessoa a mais na sua equipe é paga à parte**, até ${equipo.tope} pessoas. `)
+          + 'A assinatura é paga só pelo dono da conta: o Orden não cobra nada da sua equipe.',
       },
       {
         pregunta: 'Funciona em português?',
@@ -1291,31 +1302,43 @@ export const pt: Textos = {
 
     ideasTitulo: 'Não sabe o que dizer',
     ideasBajada: 'Escolha com quem a pessoa se parece e mande a mensagem assim mesmo, ou mude o que quiser.',
+    ideasGancho: {
+      negocio: (pct: number, dias: number) =>
+        `Use meu link e ganhe ${pct} % de desconto no primeiro mês do Orden, lançando algo ${dias} dias seguidos no seu teste grátis.`,
+      personal: (pct: number, dias: number) =>
+        `Use meu link e ganhe ${pct} % de desconto no primeiro mês do plano Pro do Orden, lançando algo ${dias} dias seguidos no seu teste grátis.`,
+    },
+    ideasQueGana: (n: { pct: number; dias: number }, p: { pct: number; dias: number }) =>
+      `Quem entra com seu link tem **${n.pct} % de desconto no primeiro mês** se lançar algo ${n.dias} dias seguidos no teste (${p.pct} % com ${p.dias} dias se for uma conta pessoal). Cada mensagem já diz isso.`,
     ideasCopiar: 'Copiar mensagem',
     ideasVerMas: 'Ver ideias',
     ideasVerMenos: 'Esconder',
     ideas: [
       {
         situacion: 'Para um negócio que anota em caderno',
+        para: 'negocio',
         mensaje: (enlace: string) =>
           `Você ainda anota as vendas no caderno? Eu uso o Orden: falo no celular e ele lança a venda ou a despesa, e me diz quanto lucrei de verdade a cada dia. Teste grátis: ${enlace}`,
       },
       {
         situacion: 'Para quem não sabe pra onde vai o salário',
+        para: 'personal',
         mensaje: (enlace: string) =>
           `Olha só: eu anoto meus gastos no celular e vejo quanto sobrou cada mês. Pra uso pessoal tem um plano grátis: ${enlace}`,
       },
       {
         situacion: 'Para uma loja com vendedores',
+        para: 'negocio',
         mensaje: (enlace: string) =>
           `Se você quer saber quanto cada vendedor vendeu sem ficar pedindo caderno, olha o Orden. Cada um lança o dele pelo celular e você vê tudo junto, com o lucro real. Teste grátis: ${enlace}`,
       },
       {
         situacion: 'Para quem já testou apps e desistiu',
+        para: 'negocio',
         mensaje: (enlace: string) =>
           `Sei que você já testou apps e largou. Essa é diferente: não tem formulário longo, você fala e pronto — «vendi dois perfumes a 150 mil» e fica anotado. Teste grátis: ${enlace}`,
       },
-    ] as { situacion: string; mensaje: (enlace: string) => string }[],
+    ] as { situacion: string; para: 'negocio' | 'personal'; mensaje: (enlace: string) => string }[],
     ideasConsejo: 'Mande para uma pessoa por dia, para quem realmente precisa. Funciona muito melhor do que encaminhar para vinte grupos.',
 
     mensajeWhatsApp: (enlace: string) => `Te passo o Orden, uso pra anotar as vendas e as despesas do negócio e ver o lucro do dia. Entra por aqui: ${enlace}`,
@@ -1814,6 +1837,10 @@ export const pt: Textos = {
     capturasAgotadasDetalle: 'Você pode continuar lançando na mão o quanto quiser. Com o Pro, a voz e a foto não têm limite.',
     incluye: 'Inclui',
     personas: (n: number) => (n === 1 ? '1 pessoa' : `Até ${n} pessoas`),
+    premiumIncluye: (n: number) => `O preço inclui ${n} pessoas: você e mais ${n - 1}`,
+    premiumPorPersona: (monto: string | null, tope: number) => (monto
+      ? `Para cada pessoa a mais na sua equipe, ${monto} a mais por mês (até ${tope} pessoas)`
+      : `Cada pessoa a mais na sua equipe é paga à parte (até ${tope} pessoas)`),
     capturasMes: (n: number) => `${n} registros com IA por mês`,
     capturasLibres: 'Voz, foto e texto sem limite',
     conAdjuntos: 'Comprovantes guardados',

@@ -14,7 +14,11 @@ import {
 } from '@/components/portada/vitrina-datos';
 import { fichaDe } from '@/lib/rubros';
 import type { Precio } from '@/lib/tipos';
-import { DIAS_DE_PRUEBA, MONEDA_DE_REFERENCIA, monedaDeCobro } from '@/lib/precios';
+import { precio as precioTexto } from '@/lib/formato';
+import { FICHA } from '@/i18n/idiomas';
+import {
+  DIAS_DE_PRUEBA, LIMITES_VISIBLES, MONEDA_DE_REFERENCIA, PERSONAS_INCLUIDAS_PREMIUM, monedaDeCobro,
+} from '@/lib/precios';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,16 +126,20 @@ export default async function Portada() {
       .filter((x) => Number.isFinite(x.importe));
 
   /**
-   * Los números de las promos (078, 093) salen de `ajustes_orden`, que es
-   * donde se editan sin desplegar. Si la lectura falla quedan los de por
+   * Los números de las promos (078, 093, 123) salen de `ajustes_orden`, que
+   * es donde se editan sin desplegar. Si la lectura falla quedan los de por
    * defecto: decir un número equivocado sería peor que no decirlo.
+   *
+   * Desde la 123 (02/10/2026) la cuenta personal tiene su propio porcentaje
+   * (`porcentaje_personal`); `porcentaje` es el del negocio.
    */
   const leida = (promo ?? null) as {
-    porcentaje?: number; negocio?: number; personal?: number;
+    porcentaje?: number; porcentaje_personal?: number; negocio?: number; personal?: number;
     constancia_porcentaje?: number; constancia_dias?: number;
   } | null;
   const promoVitrina = {
     porcentaje: Math.round(Number(leida?.porcentaje ?? 18)),
+    porcentajePersonal: Math.round(Number(leida?.porcentaje_personal ?? 5)),
     negocio: Number(leida?.negocio ?? DIAS_DE_PRUEBA.emprendedor),
     personal: Number(leida?.personal ?? DIAS_DE_PRUEBA.personal),
     constanciaPorcentaje: Math.round(Number(leida?.constancia_porcentaje ?? 5)),
@@ -142,7 +150,33 @@ export default async function Portada() {
     ? Number(porVendedor)
     : null;
 
-  const preguntas = p.preguntas({ negocio: DIAS_DE_PRUEBA.emprendedor, personal: DIAS_DE_PRUEBA.personal });
+  /**
+   * EL PREMIUM, CON SUS NÚMEROS (123, 02/10/2026): cuántas personas trae su
+   * precio, hasta cuántas llega y cuánto suma cada una de más. El importe por
+   * persona sale de `precio_por_vendedor()` y el del plan de `lista_precios`;
+   * las personas, de los mismos espejos que usa /plan. Si un importe no se
+   * leyó, la pregunta frecuente lo dice sin número.
+   */
+  const premium = {
+    incluidas: PERSONAS_INCLUIDAS_PREMIUM,
+    tope: LIMITES_VISIBLES.negocio.miembros,
+  };
+  const localeDeLaPortada = FICHA[idioma === 'pt' ? 'pt' : 'es'].locale;
+  const precioPremium = todos.find((x) => x.moneda === moneda && x.tipo_cuenta === 'emprendedor'
+    && x.plan === 'negocio' && x.periodo === 'mensual');
+  const enGuaranies = (n: number | null) =>
+    (n !== null && Number.isFinite(n) && n > 0 ? precioTexto(n, moneda, localeDeLaPortada) : null);
+
+  const preguntas = p.preguntas(
+    { negocio: DIAS_DE_PRUEBA.emprendedor, personal: DIAS_DE_PRUEBA.personal },
+    {
+      pro: LIMITES_VISIBLES.pro.miembros,
+      incluidas: premium.incluidas,
+      tope: premium.tope,
+      premium: enGuaranies(precioPremium ? Number(precioPremium.importe) : null),
+      porPersona: enGuaranies(vendedorExtra),
+    },
+  );
 
   /**
    * Las preguntas frecuentes, también para los buscadores (schema.org
@@ -335,6 +369,7 @@ export default async function Portada() {
               diasPrueba={{ negocio: DIAS_DE_PRUEBA.emprendedor, personal: DIAS_DE_PRUEBA.personal }}
               promo={promoVitrina}
               precioPorVendedor={vendedorExtra}
+              premium={premium}
               planesPorRubro={planesPorRubroDe(fichaDe)}
             />
           </div>

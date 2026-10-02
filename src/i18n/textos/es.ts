@@ -901,7 +901,13 @@ export const es = {
     preguntasTitulo: 'Lo que casi todos preguntan antes de empezar.',
     // `enlace` es opcional: la respuesta sigue en otra parte (la guía de
     // instalar, la política de privacidad).
-    preguntas: (dias: { negocio: number; personal: number }): {
+    // `equipo` (123, 02/10/2026): los números del Pro y del Premium para la
+    // pregunta de cuánto cuesta sumar gente. Los importes ya vienen escritos
+    // («Gs. 250.000») o en null si la base no los devolvió: no se inventan.
+    preguntas: (
+      dias: { negocio: number; personal: number },
+      equipo: { pro: number; incluidas: number; tope: number; premium: string | null; porPersona: string | null },
+    ): {
       pregunta: string; respuesta: string; enlace?: { texto: string; href: string };
     }[] => [
       {
@@ -926,6 +932,16 @@ export const es = {
       {
         pregunta: '¿Mis vendedores ven mis costos?',
         respuesta: 'No. Cada vendedor entra con su propia cuenta y carga ventas, pero no ve tus costos, tus márgenes ni las deudas del negocio. Y vos ves quién cargó cada venta. Sumar gente a tu cuenta viene con los planes Pro y Premium.',
+      },
+      {
+        // Matías (02/10/2026): «especificar bien que por cada usuario o
+        // funcionario que vaya a tu equipo van a ser 60.000 guaraníes más».
+        pregunta: '¿Cuánto cuesta sumar gente a mi equipo?',
+        respuesta: `El **Básico** es para vos solo y el **Pro** incluye ${equipo.pro} personas: vos y ${equipo.pro - 1} más. `
+          + (equipo.premium && equipo.porPersona
+            ? `El **Premium** cuesta ${equipo.premium} por mes con ${equipo.incluidas} personas —vos y ${equipo.incluidas - 1} más—, y **por cada persona más que sumes a tu equipo son ${equipo.porPersona} más por mes**, hasta ${equipo.tope} personas. `
+            : `El **Premium** incluye ${equipo.incluidas} personas —vos y ${equipo.incluidas - 1} más—, y **cada persona más que sumes a tu equipo se paga aparte**, hasta ${equipo.tope} personas. `)
+          + 'La suscripción la paga solo el dueño de la cuenta: a tu equipo Orden no le cobra nada.',
       },
       {
         pregunta: '¿Funciona en portugués?',
@@ -1401,12 +1417,33 @@ export const es = {
     // escribir no escribe: esto le da el mensaje hecho, listo para mandar.
     ideasTitulo: 'No sabés qué decirle',
     ideasBajada: 'Elegí a quién se parece y mandale el mensaje tal cual, o cambiale lo que quieras.',
+    // EL GANCHO (123, 02/10/2026). Matías: «usá mi código, tenés 18 % de
+    // descuento», para que el que recomienda tenga algo que ofrecer. El
+    // descuento es el de la racha de la prueba (078): lo gana quien carga
+    // todos los días, entre o no con un enlace. Por eso la condición va EN LA
+    // MISMA ORACIÓN que el porcentaje: el que lo lee sabe qué tiene que hacer
+    // y nadie reclama después un descuento que no se ganó. Los números llegan
+    // de `promo_de_la_prueba()`; si no se pudieron leer, el mensaje sale sin
+    // gancho. La cuenta personal tiene su porcentaje y sus días.
+    ideasGancho: {
+      negocio: (pct: number, dias: number) =>
+        `Usá mi link y tenés ${pct} % de descuento en tu primer mes de Orden, cargando algo ${dias} días seguidos en tu prueba gratis.`,
+      personal: (pct: number, dias: number) =>
+        `Usá mi link y tenés ${pct} % de descuento en tu primer mes del plan Pro de Orden, cargando algo ${dias} días seguidos en tu prueba gratis.`,
+    },
+    // El renglón de arriba de las ideas: qué gana el que entra, dicho al que
+    // recomienda. `n` es el negocio y `p` la cuenta personal.
+    ideasQueGana: (n: { pct: number; dias: number }, p: { pct: number; dias: number }) =>
+      `Quien entra con tu enlace tiene **${n.pct} % de descuento en su primer mes** si carga algo ${n.dias} días seguidos en su prueba (${p.pct} % con ${p.dias} días si es una cuenta personal). Cada mensaje ya lo dice.`,
     ideasCopiar: 'Copiar mensaje',
     ideasVerMas: 'Ver ideas',
     ideasVerMenos: 'Ocultar',
+    // `para` dice con qué números va el gancho: los del negocio o los de la
+    // cuenta personal. El gancho lo pone la pantalla, ADELANTE del mensaje.
     ideas: [
       {
         situacion: 'A un negocio que anota en un cuaderno',
+        para: 'negocio',
         mensaje: (enlace: string) =>
           `Che, ¿seguís anotando las ventas en el cuaderno? Yo uso Orden: le hablo al celular y me anota la venta o el gasto, y me dice cuánto gané de verdad cada día. Probalo gratis: ${enlace}`,
       },
@@ -1415,20 +1452,24 @@ export const es = {
         // Sin la voz ni el presupuesto (110, 28/09/2026): lo puede mandar
         // alguien que está en el plan Gratis, y a quien lo recibe le toca
         // Gratis después de la prueba.
+        para: 'personal',
         mensaje: (enlace: string) =>
           `Mirá esto: anoto mis gastos en el celular y veo cuánto me quedó cada mes. Para uso personal tiene un plan gratis: ${enlace}`,
       },
       {
         situacion: 'A un local con vendedores',
+        para: 'negocio',
         mensaje: (enlace: string) =>
           `Si querés saber cuánto vendió cada vendedor sin andar pidiendo el cuaderno, mirá Orden. Cada uno carga lo suyo desde su celular y vos ves todo junto, con la ganancia real. Probalo gratis: ${enlace}`,
       },
       {
+        // El ejemplo es de un negocio («vendí dos perfumes»): va con sus números.
         situacion: 'A alguien que probó apps y las dejó',
+        para: 'negocio',
         mensaje: (enlace: string) =>
           `Sé que probaste apps y las dejaste. Esta es distinta: no hay formularios largos, le hablás y listo — «vendí dos perfumes a 150 mil» y queda anotado. Probala gratis: ${enlace}`,
       },
-    ] as { situacion: string; mensaje: (enlace: string) => string }[],
+    ] as { situacion: string; para: 'negocio' | 'personal'; mensaje: (enlace: string) => string }[],
     ideasConsejo: 'Mandáselo a uno por día, a alguien que de verdad lo necesite. Funciona mucho mejor que reenviarlo a veinte grupos.',
 
     mensajeWhatsApp: (enlace: string) => `Te paso Orden, lo uso para anotar las ventas y los gastos del negocio y ver la ganancia del día. Entrá por acá: ${enlace}`,
@@ -1960,6 +2001,16 @@ export const es = {
     capturasAgotadasDetalle: 'Podés seguir cargando a mano todo lo que quieras. Con Pro, la voz y la foto no tienen tope.',
     incluye: 'Incluye',
     personas: (n: number) => (n === 1 ? '1 persona' : `Hasta ${n} personas`),
+    // EL PREMIUM, DICHO ENTERO (123, 02/10/2026). Antes su tarjeta decía solo
+    // «Hasta 15 personas» y no nombraba lo que suma cada una. Matías: «por
+    // cada usuario o funcionario que vaya a tu equipo van a ser 60.000
+    // guaraníes más». Los números llegan de afuera (las personas incluidas, el
+    // importe de `precio_por_vendedor()` y el tope del plan); sin importe
+    // leído no se inventa uno. `personas` sigue para el Pro y ZonaPeligro.
+    premiumIncluye: (n: number) => `El precio incluye ${n} personas: vos y ${n - 1} más`,
+    premiumPorPersona: (monto: string | null, tope: number) => (monto
+      ? `Por cada persona más que sumes a tu equipo, ${monto} más por mes (hasta ${tope} personas)`
+      : `Cada persona más que sumes a tu equipo se paga aparte (hasta ${tope} personas)`),
     capturasMes: (n: number) => `${n} capturas con IA por mes`,
     capturasLibres: 'Voz, foto y texto sin tope',
     conAdjuntos: 'Comprobantes guardados',

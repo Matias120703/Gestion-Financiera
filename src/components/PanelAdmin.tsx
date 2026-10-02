@@ -871,7 +871,9 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
                     value={vendedores} onChange={(e) => setVendedores(e.target.value)}
                   />
                   <p className="mt-1.5 text-[12px] leading-snug text-tinta/50">
-                    Sin contar al dueño. 190.000 son 2 vendedores; cada uno de más, 60.000.
+                    Sin contar al dueño. Pro (190.000): 2 vendedores. Premium (250.000): 3 vendedores;
+                    cada uno de más, 60.000. En un Premium escribí siempre el número: si queda en el
+                    del plan, entran hasta 15 personas por el precio base.
                     {' '}Vacío deja el tope como está
                     {cuenta.tope_vendedores === null ? ' (hoy: el del plan).' : ` (hoy: ${cuenta.tope_vendedores}).`}
                     {' '}Escribí <strong className="text-tinta/70">-1</strong> para volver al del plan.
@@ -953,6 +955,13 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
                   {trabajando === 'cambiando' ? '…' : 'Cambiar'}
                 </button>
               </div>
+              {/* 123 (02/10/2026): cambiar_tipo_cuenta estira la prueba que
+                  todavía corre a la del tipo nuevo. Sin números acá: los días
+                  de cada tipo los dice la base. */}
+              <p className="mt-2 text-[12px] leading-relaxed text-tinta/50">
+                Si todavía está probando, su prueba pasa a durar lo que dura la del tipo nuevo.
+                Nunca se le acorta, y una prueba ya terminada no se reabre: para eso, «Dar unos días más».
+              </p>
             </div>
           </div>
 

@@ -73,22 +73,23 @@ function ok(nombre, real, esperado) {
 const fichaDeClave = (c) => fichaDe(D.rubroDeClave(c), D.tipoDeCuenta(c));
 const IDIOMAS = { es: vitrinaEs, pt: vitrinaPt };
 
-// Las filas de `lista_precios` de las migraciones 020, 050 y 077 (como las
-// manda la página: el importe ya como número).
+// Las filas de `lista_precios` de las migraciones 020, 050, 077 y 123 (como
+// las manda la página: el importe ya como número). El Pro personal vale
+// Gs. 40.000 y US$ 7 desde la 123 (02/10/2026).
 const PYG = [
   { tipo: 'emprendedor', plan: 'basico', periodo: 'mensual', importe: 110000 },
   { tipo: 'emprendedor', plan: 'basico', periodo: 'anual', importe: 1210000 },
   { tipo: 'emprendedor', plan: 'pro', periodo: 'mensual', importe: 190000 },
   { tipo: 'emprendedor', plan: 'pro', periodo: 'anual', importe: 2090000 },
   { tipo: 'emprendedor', plan: 'negocio', periodo: 'mensual', importe: 250000 },
-  { tipo: 'personal', plan: 'pro', periodo: 'mensual', importe: 60000 },
-  { tipo: 'personal', plan: 'pro', periodo: 'anual', importe: 660000 },
+  { tipo: 'personal', plan: 'pro', periodo: 'mensual', importe: 40000 },
+  { tipo: 'personal', plan: 'pro', periodo: 'anual', importe: 440000 },
 ];
 const USD = [
   { tipo: 'emprendedor', plan: 'basico', periodo: 'mensual', importe: 19 },
   { tipo: 'emprendedor', plan: 'pro', periodo: 'mensual', importe: 32 },
   { tipo: 'emprendedor', plan: 'negocio', periodo: 'mensual', importe: 42 },
-  { tipo: 'personal', plan: 'pro', periodo: 'mensual', importe: 11 },
+  { tipo: 'personal', plan: 'pro', periodo: 'mensual', importe: 7 },
 ];
 const planesPorRubro = D.planesPorRubroDe(fichaDe);
 const datos = { planesPorRubro, preciosPYG: PYG, referenciaUSD: USD, precioPorVendedor: 60000 };
@@ -117,10 +118,15 @@ console.log('\n── 2 · El botón de la prueba ──');
     const esperado = c === 'personal' ? '/crear?para=personal' : `/crear?para=negocio&rubro=${c}`;
     ok(`${c} → ${esperado}`, D.enlaceDePrueba(c), esperado);
   }
-  ok('los días: 8 el negocio, 5 la personal',
-    [D.diasDePrueba('clases', { negocio: 8, personal: 5 }), D.diasDePrueba('personal', { negocio: 8, personal: 5 })], [8, 5]);
+  ok('los días: 20 el negocio, 8 la personal',
+    [D.diasDePrueba('clases', { negocio: 20, personal: 8 }), D.diasDePrueba('personal', { negocio: 20, personal: 8 })], [20, 8]);
   ok('la racha del descuento: la del negocio o la personal',
-    [D.rachaDelDescuento('ganaderia', { negocio: 8, personal: 5 }), D.rachaDelDescuento('personal', { negocio: 8, personal: 5 })], [8, 5]);
+    [D.rachaDelDescuento('ganaderia', { negocio: 20, personal: 8 }), D.rachaDelDescuento('personal', { negocio: 20, personal: 8 })], [20, 8]);
+  // Desde la 123 (02/10/2026) la cuenta personal tiene su propio porcentaje:
+  // cada chip de negocio dice el del negocio y «Para vos» el suyo.
+  ok('el porcentaje del descuento: 18 en cada rubro de negocio, 5 en «Para vos»',
+    D.CLAVES_VITRINA.map((c) => D.porcentajeDelDescuento(c, { porcentaje: 18, porcentajePersonal: 5 })),
+    [18, 18, 18, 18, 18, 18, 5]);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -160,7 +166,7 @@ console.log('\n── 4 · Los precios ──');
 
   const personal = D.planesDeLaVitrina('personal', datos);
   ok('personal: su precio, no el del negocio', personal.map((t) => [t.plan, t.mensual, t.anual, t.referenciaUSD, t.mesesDeRegalo]),
-    [['pro', 60000, 660000, 11, 1]]);
+    [['pro', 40000, 440000, 7, 1]]);
 
   const profe = D.planesDeLaVitrina('clases', datos);
   ok('profe: Básico a su precio', profe.map((t) => [t.plan, t.mensual, t.referenciaUSD, t.conEsteProbas]), [['basico', 110000, 19, true]]);
@@ -247,6 +253,40 @@ console.log('\n── 6 · Los textos, en los dos idiomas ──');
       [v.probarPro(5).includes('5'), v.garantiasPersonal(5).includes('5')], [true, true]);
     ok(`${idioma}: el botón grande de la personal no promete días gratis sino empezar gratis`,
       Boolean(v.empezarGratis.trim()) && !/\d/.test(v.empezarGratis), true);
+  }
+
+  // EL PREMIUM, DICHO ENTERO (123, 02/10/2026): cuántas personas trae su
+  // precio y cuánto suma cada una de más, con los números que llegan de
+  // afuera y ninguno escrito en el texto.
+  for (const [idioma, v] of Object.entries(IDIOMAS)) {
+    const incluye = v.premiumIncluye(4);
+    const extra = v.vendedorExtra('Gs. 60.000', 15);
+    ok(`${idioma}: el Premium dice cuántas personas trae su precio`, [incluye.includes('4'), incluye.includes('3')], [true, true]);
+    ok(`${idioma}: y cuánto suma cada persona de más, por mes y hasta cuántas`,
+      [extra.includes('Gs. 60.000'), /por mes|por mês/.test(extra), extra.includes('15'), /persona|pessoa/.test(extra)],
+      [true, true, true, true]);
+    ok(`${idioma}: con otros números dice otros números (no hay ninguno escrito)`,
+      [v.premiumIncluye(6).includes('6'), v.premiumIncluye(6).includes('5'), v.vendedorExtra('X', 30).includes('30'),
+        /\d/.test(v.vendedorExtra('X', 30).replace('30', '')), /\d/.test(v.premiumSinPrecio)],
+      [true, true, true, false, false]);
+    for (const c of ['comercio', 'servicios']) {
+      const tx = v.planes[c].negocio;
+      ok(`${idioma} ${c}: los puntos del Premium ya no dicen «hasta 15 personas» a secas`,
+        [...tx.puntos, tx.para].some((x) => /\b15\b/.test(x)), false);
+    }
+    ok(`${idioma}: el plan genérico tampoco`, /\b15\b/.test(v.planGenerico.negocio.para), false);
+    ok(`${idioma}: «el equipo no paga» ya no se lee como que sumar gente es gratis`,
+      /no pagan nada|não pagam nada/.test(v.equipoNoPaga), false);
+  }
+  ok('ElegiTuRubro pinta el Premium con sus números y el porcentaje de cada chip',
+    ['v.premiumIncluye(premium.incluidas)', 'v.vendedorExtra(importe(t.porVendedor), premium.tope)', 'v.premiumSinPrecio',
+      'porcentajeDelDescuento(clave, promo)']
+      .filter((k) => !elegi.includes(k)), []);
+  {
+    const portada = fs.readFileSync(path.join(RAIZ, 'src/app/page.tsx'), 'utf8');
+    ok('la portada manda las personas del Premium y el porcentaje personal, leídos y no escritos',
+      ['incluidas: PERSONAS_INCLUIDAS_PREMIUM', 'tope: LIMITES_VISIBLES.negocio.miembros', 'premium={premium}',
+        'leida?.porcentaje_personal'].filter((k) => !portada.includes(k)), []);
   }
 
   ok('ElegiTuRubro usa los textos de la personal en Gratis',

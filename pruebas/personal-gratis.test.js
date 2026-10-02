@@ -1,9 +1,9 @@
 /**
  * La cuenta personal pasa a Gratis (migración 110, 28/09/2026).
  *
- * Matías, 28/09: la cuenta PERSONAL, al terminar sus 5 días de prueba del
- * Pro, no se cierra: pasa al plan Gratis y sigue anotando sus gastos y sus
- * ingresos a mano. La voz, la foto, la IA, los comprobantes, los reportes, el
+ * Matías, 28/09: la cuenta PERSONAL, al terminar sus días de prueba del
+ * Pro (5 ese día; 8 desde la migración 123), no se cierra: pasa al plan
+ * Gratis y sigue anotando sus gastos y sus ingresos a mano. La voz, la foto, la IA, los comprobantes, los reportes, el
  * Excel, el presupuesto, las deudas, «Me deben» y la billetera son del Pro.
  * «Los negocios no se tocan, así se quedan»: un NEGOCIO vencido sigue con el
  * candado total del 15/09 (069).
@@ -362,10 +362,11 @@ const LO_PAGO_CON_CANDADO = LO_PAGO.filter(([, candado]) => candado);
   ok('si el traído se queda en Gratis, no hay comisión',
     await contar('select count(*)::int n from public.comisiones where empresa_id=$1', [R.empresaId]), 0);
   const cobro = await H.intentar(db, jefe, () => db.query(
-    'select public.cambiar_plan_cuenta($1,$2,$3,$4,$5::numeric,$6::integer) j', [R.empresaId, 'pro', 1, 'transferencia', 60000, null]));   // comisiones.test.js:78-81
+    'select public.cambiar_plan_cuenta($1,$2,$3,$4,$5::numeric,$6::integer) j', [R.empresaId, 'pro', 1, 'transferencia', 40000, null]));   // comisiones.test.js:78-81
   ok('cuando paga su primer mes, sí', cobro.valor?.rows[0].j.comision_generada, true);
-  ok('la mitad del precio personal (comisiones.test.js:1067-1071)',
-    Number((await db.query('select monto from public.comisiones where empresa_id=$1', [R.empresaId])).rows[0]?.monto), 30000);
+  // El Pro personal vale Gs. 40.000 desde la 123 (02/10/2026): la mitad son 20.000.
+  ok('la mitad del precio personal (comisiones.test.js, «una cuenta personal usa el precio personal»)',
+    Number((await db.query('select monto from public.comisiones where empresa_id=$1', [R.empresaId])).rows[0]?.monto), 20000);
 
   // ═══════════════════════════════════════════════════════════
   grupo('10 · Irse sigue siendo gratis');

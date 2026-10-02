@@ -1244,16 +1244,16 @@ ok('un rubro desconocido no rompe: cae en comercio',
 // --- Los días de prueba: la web y la base tienen que decir lo mismo ---
 //
 // El número vive en dos lados que no se hablan: `dias_de_prueba()` en la
-// migración 049, que es la que escribe la fecha de vencimiento, y
-// `DIAS_DE_PRUEBA` en src/lib/precios.ts, que es lo que leen la portada y
+// migración 123, que es la que escribe la fecha de vencimiento, y
+// `DIAS_DE_PRUEBA` en src/lib/constantes.ts, que es lo que leen la portada y
 // los Términos del servicio.
 //
 // Si se separan, la web le promete a alguien una prueba que no va a tener, y
 // eso no da error en ningún lado: da una página linda con un número falso y
 // un reclamo dos semanas después. Por eso se comparan leyendo los archivos.
 //
-// Se lee el TEXTO y no se importa el módulo porque precios.ts arrastra el
-// cliente de Supabase, que no compila suelto en este arnés.
+// Se lee el TEXTO y no se importa el módulo: constantes.ts no está entre los
+// archivos que compila este arnés (pruebas/tsconfig.calculos.json).
 {
   const fs = require('fs');
 
@@ -1267,7 +1267,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
     personal: Number((bloque.match(/personal:\s*(\d+)/) ?? [])[1]),
   };
 
-  const sql = fs.readFileSync('supabase/migrations/049_prueba_mas_corta.sql', 'utf8');
+  // La última definición de `dias_de_prueba()` está en la 123 (02/10/2026);
+  // antes, en la 049. Se lee de ahí: es la que queda viva en la base.
+  const sql = fs.readFileSync('supabase/migrations/123_precios_prueba_y_descuentos.sql', 'utf8');
   const cuerpo = sql.slice(sql.indexOf('function public.dias_de_prueba'));
   const delSql = {
     emprendedor: Number((cuerpo.match(/else\s+(\d+)/) ?? [])[1]),
@@ -1278,7 +1280,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // encuentra nada devuelve NaN, y NaN !== NaN haría fallar la prueba por el
   // motivo equivocado; peor sería que devolviera undefined en los dos lados
   // y pasara sin haber comprobado nada.
-  ok('se leyó el número de precios.ts',
+  ok('se leyó el número de constantes.ts',
     Number.isInteger(delTs.emprendedor) && Number.isInteger(delTs.personal), true);
   ok('y el de la migración',
     Number.isInteger(delSql.emprendedor) && Number.isInteger(delSql.personal), true);
@@ -1288,8 +1290,14 @@ ok('un rubro desconocido no rompe: cae en comercio',
 
   // Y los valores que se decidieron, para que bajarlos sea una decisión y no
   // un descuido.
-  ok('un negocio prueba 8 días', delSql.emprendedor, 8);
-  ok('una cuenta personal, 5', delSql.personal, 5);
+  ok('un negocio prueba 20 días', delSql.emprendedor, 20);
+  ok('una cuenta personal, 8', delSql.personal, 8);
+
+  // Y que ninguna migración posterior la vuelva a definir sin que esta
+  // prueba se entere: si aparece otra, hay que apuntar acá a esa.
+  const ultimaQueLaDefine = fs.readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql')).sort()
+    .filter((f) => fs.readFileSync('supabase/migrations/' + f, 'utf8').includes('function public.dias_de_prueba(')).pop();
+  ok('la 123 es la última que define dias_de_prueba()', ultimaQueLaDefine, '123_precios_prueba_y_descuentos.sql');
 
   // Y QUE NO QUEDE NINGUNO ESCRITO A MANO EN NINGÚN LADO.
   //
@@ -2448,6 +2456,36 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('las invitaciones traen ideas de qué decir', rec2.includes('<Ideas enlace'), true);
   ok('con un mensaje por situación',
     fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('ideas: ['), true);
+
+  // El gancho de las ideas (123, 02/10/2026): «usá mi link y tenés N % de
+  // descuento…». Los números salen de la base, y la condición va en la misma
+  // oración que el porcentaje.
+  {
+    const paginaRec = fs.readFileSync('src/app/(app)/recomendar/page.tsx', 'utf8');
+    ok('la página de Invitaciones lee la promo de la base',
+      paginaRec.includes("rpc('promo_de_la_prueba')") && paginaRec.includes('promo={promo}'), true);
+    ok('y la pantalla se la pasa a las ideas, con el gancho adelante del mensaje',
+      [rec2.includes('<Ideas enlace={enlace} promo={promo} />'),
+        rec2.includes('r.ideasGancho[idea.para](de.porcentaje, de.dias)'),
+        rec2.includes("[gancho, idea.mensaje(enlace)].filter(Boolean).join(' ')"),
+        rec2.includes('r.ideasQueGana(')], [true, true, true, true]);
+    // Ningún porcentaje ni cantidad de días escrito en la pantalla ni en la página.
+    const sinComentarios = (s) => s.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    ok('sin números de la promo escritos a mano',
+      [/\b(18|20)\b/.test(sinComentarios(paginaRec)), /\d+\s*%/.test(sinComentarios(rec2))], [false, false]);
+
+    for (const [idioma, archivo] of [['es', 'src/i18n/textos/es.ts'], ['pt', 'src/i18n/textos/pt.ts']]) {
+      const fuente = fs.readFileSync(archivo, 'utf8').replace(/\r\n/g, '\n');
+      const bloque = fuente.slice(fuente.indexOf('ideasGancho: {'), fuente.indexOf('ideasConsejo:'));
+      const ganchos = bloque.slice(0, bloque.indexOf('ideasQueGana')).split('\n').filter((l) => l.includes('${pct}'));
+      ok(`${idioma}: dos ganchos, el del negocio y el de la cuenta personal`, ganchos.length, 2);
+      ok(`${idioma}: cada gancho dice el porcentaje y los días en la misma oración`,
+        ganchos.every((l) => l.includes('${pct} %') && l.includes('${dias}') && (l.match(/\./g) || []).length === 1), true);
+      ok(`${idioma}: ningún porcentaje escrito a mano en las ideas`, /\d\s*%/.test(bloque), false);
+      ok(`${idioma}: cuatro ideas, tres de negocio y una personal`,
+        [(bloque.match(/para: 'negocio',/g) || []).length, (bloque.match(/para: 'personal',/g) || []).length], [3, 1]);
+    }
+  }
 
   const panelAdmin = fs.readFileSync('src/components/PanelAdmin.tsx', 'utf8');
   ok('activar un plan avisa al cliente', panelAdmin.includes('avisarActivacion('), true);

@@ -138,9 +138,12 @@ const planesEs: PlanesDeLaVitrina = {
     negocio: {
       para: 'Para el local con más gente cargando',
       puntos: [
-        'Todo lo del Pro, con más vendedores: hasta 15 personas',
+        // Cuántas personas trae el precio y cuánto suma cada una de más lo
+        // dice la tarjeta con los números de la base (`premiumIncluye` y
+        // `vendedorExtra`, 123): acá no va ningún número de personas.
+        'Todo lo del Pro, con más vendedores',
         'Voz, foto y texto: 3.000 cargas por mes',
-        '¿Más de 15? Escribinos y lo ampliamos',
+        '¿Un equipo más grande? Escribinos y lo ampliamos',
       ],
     },
   },
@@ -166,9 +169,9 @@ const planesEs: PlanesDeLaVitrina = {
     negocio: {
       para: 'Para el local con más sillas',
       puntos: [
-        'Todo lo del Pro, con más profesionales: hasta 15 personas',
+        'Todo lo del Pro, con más profesionales',
         'Voz, foto y texto: 3.000 cargas por mes',
-        '¿Más de 15? Escribinos y lo ampliamos',
+        '¿Un equipo más grande? Escribinos y lo ampliamos',
       ],
     },
   },
@@ -300,14 +303,28 @@ export const vitrinaEs = {
   referencia: (monto: string) => `≈ ${monto}`,
   referenciaAyuda: 'Referencia en dólares. No se cobra en dólares.',
   alAnio: (monto: string, meses: number) => `O ${monto} al año: ${meses} ${meses === 1 ? 'mes' : 'meses'} de regalo.`,
-  vendedorExtra: (monto: string) => `Cada vendedor o profesional arriba de los 2 del Pro suma ${monto} al mes. Escribinos y te pasamos el número exacto.`,
+  /**
+   * EL PREMIUM, DICHO ENTERO (123, 02/10/2026). Matías: «que quede bien
+   * especificado que por cada usuario o funcionario que vaya a tu equipo van
+   * a ser 60.000 guaraníes más». Antes decía «hasta 15 personas» y un renglón
+   * chico al pie; ahora la tarjeta lo dice arriba, en un recuadro: cuántas
+   * personas trae el precio y cuánto suma cada una de más. Los números llegan
+   * de afuera: las incluidas de `PERSONAS_INCLUIDAS_PREMIUM`, el importe de
+   * `precio_por_vendedor()` y el tope de `LIMITES_VISIBLES`. `**así**` es
+   * negrita (la pinta `Rico`).
+   */
+  premiumIncluye: (personas: number) => `El precio incluye ${personas} personas: vos y ${personas - 1} más.`,
+  vendedorExtra: (monto: string, tope: number) =>
+    `Por cada persona más que sumes a tu equipo, **${monto} más por mes**. Hasta ${tope} personas.`,
+  // Si el precio por persona no se pudo leer, no se inventa un importe.
+  premiumSinPrecio: 'Cada persona más que sumes a tu equipo se paga aparte: escribinos y te pasamos el número.',
   conEsteProbas: 'Tu prueba es con este',
   planes: planesEs,
   /** Si algún día la página manda un plan que acá no tiene texto propio. */
   planGenerico: {
     basico: { para: 'Para una sola persona', puntos: ['Voz, foto y texto: 300 cargas por mes', REPORTES_ES] },
     pro: { para: 'Para vos y hasta 2 personas más', puntos: ['Voz, foto y texto: 600 cargas por mes', REPORTES_ES] },
-    negocio: { para: 'Para hasta 15 personas', puntos: ['Voz, foto y texto: 3.000 cargas por mes', REPORTES_ES] },
+    negocio: { para: 'Para equipos más grandes', puntos: ['Voz, foto y texto: 3.000 cargas por mes', REPORTES_ES] },
   } as Record<PlanVitrina, TextosPlanVitrina>,
 
   // ---- la letra de los precios, sin letra chica ----
@@ -322,7 +339,9 @@ export const vitrinaEs = {
   // La personal no se pausa: pasa al plan Gratis (110, 28/09/2026). Va en
   // su propia clave: `finDePrueba` es la del negocio y la lee una prueba.
   finDePruebaPersonal: 'Si no pagás, la cuenta pasa al plan Gratis: seguís anotando tus gastos e ingresos a mano. Tus datos no se borran.',
-  equipoNoPaga: 'Las personas que sumás no pagan nada: la suscripción la paga solo el dueño.',
+  // Decía «las personas que sumás no pagan nada», que al lado del Premium
+  // se leía como que sumar gente es gratis (123).
+  equipoNoPaga: 'La suscripción la paga solo el dueño de la cuenta: a las personas de tu equipo Orden no les cobra nada.',
 
   // ---- la barra de abajo del celular (la de verdad, rubro por rubro) ----
   barra: {
@@ -570,9 +589,9 @@ const planesPt: PlanesDeLaVitrina = {
     negocio: {
       para: 'Pro local com mais gente lançando',
       puntos: [
-        'Tudo do Pro, com mais vendedores: até 15 pessoas',
+        'Tudo do Pro, com mais vendedores',
         'Voz, foto e texto: 3.000 lançamentos por mês',
-        'Mais de 15? Fale com a gente e ampliamos',
+        'Uma equipe maior? Fale com a gente e ampliamos',
       ],
     },
   },
@@ -598,9 +617,9 @@ const planesPt: PlanesDeLaVitrina = {
     negocio: {
       para: 'Pro salão com mais cadeiras',
       puntos: [
-        'Tudo do Pro, com mais profissionais: até 15 pessoas',
+        'Tudo do Pro, com mais profissionais',
         'Voz, foto e texto: 3.000 lançamentos por mês',
-        'Mais de 15? Fale com a gente e ampliamos',
+        'Uma equipe maior? Fale com a gente e ampliamos',
       ],
     },
   },
@@ -717,13 +736,16 @@ export const vitrinaPt: TextosVitrina = {
   referencia: (monto: string) => `≈ ${monto}`,
   referenciaAyuda: 'Referência em dólares. Não é cobrado em dólares.',
   alAnio: (monto: string, meses: number) => `Ou ${monto} por ano: ${meses} ${meses === 1 ? 'mês' : 'meses'} de presente.`,
-  vendedorExtra: (monto: string) => `Cada vendedor ou profissional além dos 2 do Pro soma ${monto} por mês. Fale com a gente e passamos o valor exato.`,
+  premiumIncluye: (personas: number) => `O preço inclui ${personas} pessoas: você e mais ${personas - 1}.`,
+  vendedorExtra: (monto: string, tope: number) =>
+    `Para cada pessoa a mais na sua equipe, **${monto} a mais por mês**. Até ${tope} pessoas.`,
+  premiumSinPrecio: 'Cada pessoa a mais na sua equipe é paga à parte: fale com a gente e passamos o valor.',
   conEsteProbas: 'Seu teste é com este',
   planes: planesPt,
   planGenerico: {
     basico: { para: 'Para uma pessoa só', puntos: ['Voz, foto e texto: 300 lançamentos por mês', REPORTES_PT] },
     pro: { para: 'Pra você e até 2 pessoas a mais', puntos: ['Voz, foto e texto: 600 lançamentos por mês', REPORTES_PT] },
-    negocio: { para: 'Para até 15 pessoas', puntos: ['Voz, foto e texto: 3.000 lançamentos por mês', REPORTES_PT] },
+    negocio: { para: 'Para equipes maiores', puntos: ['Voz, foto e texto: 3.000 lançamentos por mês', REPORTES_PT] },
   },
 
   loQueTenesQueSaber: 'O que você precisa saber',
@@ -735,7 +757,7 @@ export const vitrinaPt: TextosVitrina = {
   comoSePaga: 'Hoje se paga por transferência: no fim do teste você toca em «Assinar», abre um WhatsApp com a gente, transfere e ativamos seu plano.',
   finDePrueba: 'Se você não pagar, a conta fica pausada e não dá pra usar até ativar o plano. Seus dados não são apagados: voltam intactos quando você paga.',
   finDePruebaPersonal: 'Se você não pagar, a conta passa pro plano Grátis: você continua lançando suas despesas e entradas na mão. Seus dados não são apagados.',
-  equipoNoPaga: 'As pessoas que você adiciona não pagam nada: a assinatura é paga só pelo dono.',
+  equipoNoPaga: 'A assinatura é paga só pelo dono da conta: o Orden não cobra nada das pessoas da sua equipe.',
 
   barra: {
     panel: 'Painel', vender: 'Vender', cobrar: 'Receber', gastos: 'Despesas', cierre: 'Fechamento',

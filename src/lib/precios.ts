@@ -153,4 +153,4 @@ export const LIMITES_VISIBLES: Record<'gratis' | PlanPago, FilaDePlan> = {
  * entero. Se re-exporta para que quien ya lo pedía a este módulo siga
  * andando.
  */
-export { DIAS_DE_PRUEBA, textoPrueba } from './constantes';
+export { DIAS_DE_PRUEBA, PERSONAS_INCLUIDAS_PREMIUM, textoPrueba } from './constantes';

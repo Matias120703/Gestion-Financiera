@@ -6,7 +6,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { enlaceDeSocio } from '@/lib/referido';
-import type { PanelSocio, RetiroSocio } from '@/lib/tipos';
+import type { PanelSocio, PromoInvitacion, RetiroSocio } from '@/lib/tipos';
 import { useTextos, useLocale } from '@/i18n/cliente';
 import { Rico } from '@/components/Rico';
 import { CampoMonto } from '@/components/CampoMonto';
@@ -34,8 +34,12 @@ function fechaCorta(iso: string | null, locale: string) {
  * La comisión en plata no se calcula acá. Sale de la base en el momento en
  * que el cliente traído paga de verdad (migración 060), y esta pantalla solo
  * muestra lo que hay.
+ *
+ * `promo` (123, 02/10/2026) son los números del descuento de la prueba, que
+ * la página lee de `promo_de_la_prueba()`: van en el gancho de las ideas. Si
+ * no se pudieron leer llega null y las ideas salen sin gancho.
  */
-export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
+export function PantallaRecomendar({ panel, promo = null }: { panel: PanelSocio; promo?: PromoInvitacion | null }) {
   const t = useTextos();
   const r = t.recomendar;
   const locale = useLocale();
@@ -96,7 +100,7 @@ export function PantallaRecomendar({ panel }: { panel: PanelSocio }) {
 
       <Compartir enlace={enlace} codigo={panel.codigo} />
 
-      <Ideas enlace={enlace} />
+      <Ideas enlace={enlace} promo={promo} />
 
       <div className="grid grid-cols-2 gap-3">
         <Cuadro titulo={r.trajiste} valor={String(panel.traidos)} detalle={r.cuentasCreadas(panel.traidos)} />
@@ -578,8 +582,15 @@ function Cuadro({ titulo, valor, detalle, tono }: {
  *
  * Arranca plegado: el que ya sabe qué decir no tiene que pasar por encima de
  * cuatro mensajes para llegar a sus números.
+ *
+ * EL GANCHO (123, 02/10/2026). Cada mensaje empieza con lo que gana el que
+ * entra: el descuento de la racha de la prueba, con su condición en la misma
+ * oración, y con los números de un negocio o de una cuenta personal según a
+ * quién va dirigido (`idea.para`). Los números son los de la base; acá no
+ * hay ninguno escrito. Sin `promo` no hay gancho ni renglón: un mensaje sin
+ * descuento es mejor que uno con un descuento inventado.
  */
-function Ideas({ enlace }: { enlace: string }) {
+function Ideas({ enlace, promo }: { enlace: string; promo: PromoInvitacion | null }) {
   const r = useTextos().recomendar;
   const [abierto, setAbierto] = useState(false);
   const [copiado, setCopiado] = useState(-1);
@@ -611,10 +622,27 @@ function Ideas({ enlace }: { enlace: string }) {
         </span>
       </button>
 
+      {/* Qué gana el que entra: a la vista aunque las ideas estén plegadas,
+          porque es lo que el que recomienda tiene para ofrecer. */}
+      {promo && (
+        <p className="mx-4 mb-3.5 rounded-xl bg-verde-claro/50 px-3 py-2.5 text-[12.5px] leading-relaxed text-tinta/75">
+          <Rico
+            texto={r.ideasQueGana(
+              { pct: promo.negocio.porcentaje, dias: promo.negocio.dias },
+              { pct: promo.personal.porcentaje, dias: promo.personal.dias },
+            )}
+            negrita="text-tinta"
+          />
+        </p>
+      )}
+
       {abierto && (
         <div className="space-y-3 border-t border-borde/70 px-4 py-4 aparecer">
           {r.ideas.map((idea, i) => {
-            const mensaje = idea.mensaje(enlace);
+            // El gancho va PRIMERO, con los números de quien lo va a leer.
+            const de = promo ? promo[idea.para] : null;
+            const gancho = de ? r.ideasGancho[idea.para](de.porcentaje, de.dias) : '';
+            const mensaje = [gancho, idea.mensaje(enlace)].filter(Boolean).join(' ');
             return (
               <div key={idea.situacion} className="rounded-2xl bg-arena p-3.5">
                 <p className="text-[13px] font-bold">{idea.situacion}</p>
