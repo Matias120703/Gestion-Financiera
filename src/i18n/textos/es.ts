@@ -833,7 +833,7 @@ export const es = {
     // llega: «¿realmente sabés cuánto ganás?». Antes: «sabé cuánto te quedó de
     // verdad.»
     titularOficios: 'En tu negocio, tus clases, tu campo o tu casa:',
-    titular: '¿realmente sabés',
+    titular: '¿Realmente sabés',
     titularResaltado: 'cuánto ganás',
     titularCierre: '?',
     bajada: 'Orden se arma distinto para cada oficio: el comercio ve su stock, la barbería su agenda, el profe quién le debe la cuota, el campo su costo por hectárea. Lo que no cambia es la respuesta: cuánto **te quedó** después de pagar todo. Y para cargarlo alcanza con contárselo.',

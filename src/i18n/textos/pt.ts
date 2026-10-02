@@ -799,7 +799,7 @@ export const pt: Textos = {
     idioma: 'Idioma',
 
     titularOficios: 'Vendendo, atendendo, dando aula ou plantando:',
-    titular: 'você realmente sabe',
+    titular: 'Você realmente sabe',
     titularResaltado: 'quanto ganha',
     titularCierre: '?',
     bajada: 'O Orden se monta diferente pra cada ofício: o comércio vê o estoque, a barbearia a agenda, o professor quem deve a mensalidade, a lavoura o custo por hectare. O que não muda é a resposta: quanto **sobrou** depois de pagar tudo. E pra lançar basta contar pra ele.',
