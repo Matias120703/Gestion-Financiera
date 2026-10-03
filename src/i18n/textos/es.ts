@@ -844,47 +844,12 @@ export const es = {
     rubrosTitulo: 'Tocá tu rubro y mirá cómo cambia Orden.',
     rubrosBajada: 'Cada rubro ve sus pantallas, sus palabras y sus planes. Elegí el tuyo: el celular, lo que ganás y los precios cambian con él.',
 
-    cargarEtiqueta: 'Cómo se carga',
-    cargarTitulo: 'Cargar te tiene que llevar menos que cobrar.',
-    cargarBajada: 'Un solo botón para todo, en cualquier rubro. Orden lo entiende, lo ordena y te lo muestra para que confirmes antes de guardar.',
-    modoVoz: 'Contáselo hablando',
-    modoVozDetalle: 'Como se lo contarías a alguien. Sin formularios de veinte campos ni categorías que adivinar.',
-    modoFoto: 'Sacale una foto',
-    modoFotoDetalle: 'Al ticket o a la factura. Lee el monto y la foto queda guardada con el movimiento: el comprobante, para cuando lo necesites.',
-    modoTexto: 'O escribilo',
-    modoTextoDetalle: 'Si estás en un lugar donde no podés hablar, lo escribís igual que lo dirías.',
-    loDijeronAsi: 'Así se lo cuentan',
-    // La casilla que para la rotación y muestra las cinco quietas.
-    frasesVerTodas: 'Ver todas',
-    // Cinco frases, una por vez (la animación de page.tsx cuenta con cinco).
-    // Todas son cosas que la captura entiende hoy: una venta, un gasto
-    // atado a una campaña, un turno (turno-voz.ts), un fiado y un gasto de
-    // la casa.
-    frases: [
-      { rubro: 'Comercio', frase: '«Vendí dos perfumes a 150 mil cada uno»', queda: 'Venta cargada · stock descontado' },
-      { rubro: 'Campo', frase: '«Gasté 2 millones en semilla para el Norte»', queda: 'Gasto de la campaña Norte' },
-      { rubro: 'Servicios', frase: '«Juan, mañana a las tres, corte con Pedro»', queda: 'Turno anotado en la agenda' },
-      { rubro: 'Fiado', frase: '«Luis me debe 180 mil»', queda: 'Anotado en lo que te deben' },
-      { rubro: 'Para vos', frase: '«Pagué la luz, 280 mil»', queda: 'Gasto de la casa' },
-    ],
-    deudasTambien: 'Las deudas también. Decí _«debo cinco millones de la tarjeta»_ y queda cargada como deuda — no como plata que entró.',
-
-    nocheEtiqueta: 'En comercio y servicios',
-    nocheTitulo: 'Y a la noche, en diez segundos, sabés cómo te fue.',
-    nocheBajada: 'El cierre del día te muestra cuánto entró, cuánto salió y cuánto te quedó. Comparado con el mismo día de la semana pasada, para que sepas si fue un buen día _para vos_ y no contra un promedio que no significa nada.',
-    nochePuntos: [
-      'La ganancia se calcula con el costo que tenía el producto el día que lo vendiste, no con el de hoy.',
-      'Un vendedor puede cargar ventas sin ver nunca tus costos ni tus márgenes.',
-      'Reportes y Excel armados para lo tuyo, listos para imprimir o mandar.',
-    ],
-    cierreDelDia: 'Cierre del día',
-    // Era «martes 12 de agosto»: en 2026 el 12 de agosto cae miércoles.
-    cierreFecha: 'miércoles 12 de agosto',
-    entro: 'Entró',
-    salio: 'Salió',
-    teQuedo: 'Te quedó',
-    cierreMas: '18 % más',
-    cierreComparado: 'que el mismo día de la semana pasada',
+    // Lo que sigue a la vitrina son cuatro escenas (02/10/2026: cargar, la
+    // noche, recomendar e instalar). Sus textos viven en `textos/escenas/*.ts`,
+    // al lado del componente que los muestra, y lo que las pantallas dibujadas
+    // repiten de la app se lee de los bloques reales (`captura`, `cierre`,
+    // `recomendar`, `instalarGuia`). Acá quedan la franja de confianza, las
+    // preguntas y lo que la vitrina y las escenas leen de la portada.
 
     // La franja de confianza. Cuatro cosas que se pueden comprobar.
     confianzaTitulo: 'Cuatro cosas que se pueden comprobar',
@@ -964,28 +929,19 @@ export const es = {
       },
     ],
 
-    empezarPrueba: 'Empezar la prueba gratis',
+    // En la vitrina, pegado a los precios.
     recomendarEnPlanes: '**Las invitaciones están en todos los planes**, incluso mientras probás y en el Gratis de la cuenta personal: si traés a alguien, te llevás la mitad del precio de su plan, con su primer pago.',
     comoFunciona: 'Cómo funciona',
 
-    unExtra: 'Un extra',
-    recomendarTitulo: 'Traé a alguien a Orden y llevate la mitad del precio de su plan, con su primer pago',
+    // Las condiciones enteras de recomendar: la escena las muestra adentro
+    // de «Las condiciones, enteras». Acá viven «una sola vez por cada
+    // cuenta» y «las dos cuentas valen igual».
     recomendarBajada: 'Puede ser un negocio que todavía anota sus ventas en un cuaderno, o una persona que no sabe en qué se le va el sueldo: las dos cuentas valen igual. Si entra con tu enlace y paga su primer mes, **te llevás la mitad del precio de su plan** —sea el plan que sea—. Una sola vez por cada cuenta, y sin tope: podés traer uno o veinte.',
-    tuEnlaceAdentro: 'Tu enlace está adentro, en «Invitaciones».',
-    paso1Titulo: 'Compartís tu enlace',
-    paso1: 'Cada cuenta tiene el suyo. Sirve igual para un negocio o para una persona.',
-    paso2Titulo: 'Paga su primer mes',
-    paso2: 'Mientras prueba o usa el plan Gratis no pasa nada. Se cuenta cuando paga de verdad.',
-    paso3Titulo: 'Te transferimos la mitad de su plan',
-    paso3: 'A tu banco o tu billetera. Vos ponés los datos una vez.',
     recomendarLetraChica: 'Aunque pague con descuento o pague el año entero, te llevás la mitad del precio de lista de un mes. Lo que pague después ya no entra: la comisión nace con su primer pago y nada más. Preferimos decirlo acá y no cuando llegue el segundo mes. Como es la mitad del precio de su plan, traer un negocio deja más que traer una cuenta personal, que cuesta menos. Y no vale traerte a vos mismo ni al negocio donde trabajás. Si la cuenta personal que traés se queda en el plan Gratis, no hay comisión.',
+    // El chip del plan de la cuenta personal en la escena de recomendar:
+    // «Pro · cuenta personal», para distinguirlo del Pro de un negocio.
+    cuentaPersonal: 'cuenta personal',
 
-    enTuCelular: 'En tu celular',
-    instalarTitulo: 'Cómo poner Orden en tu pantalla de inicio',
-    instalarBajada: 'Orden no se descarga de ninguna tienda: se agrega desde el navegador y queda con su ícono, como cualquier aplicación. Se abre más rápido, ocupa toda la pantalla, y en iPhone es **la única forma de que te lleguen los avisos** —es una regla del teléfono, no de Orden—.',
-    pasarGuia: '¿Se lo querés pasar a alguien?',
-    guiaPropia: 'Esta guía tiene su propia página',
-    paraMandar: ', para mandarla por WhatsApp.',
     pieInstalar: 'Cómo instalar Orden',
   },
 

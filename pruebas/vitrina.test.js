@@ -348,5 +348,87 @@ console.log('\n── 7 · Los números de ejemplo cierran ──');
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+console.log('\n── 8 · Las escenas que siguen a la vitrina (02/10/2026) ──');
+{
+  // Cuatro escenas (cargar, la noche, recomendar, instalar), cada una con su
+  // módulo de textos suelto como vitrina.ts: compila sin importar nada en
+  // ejecución, es y pt con la misma forma, cada pantalla dibujada con su
+  // resumen para el lector de pantalla, y los números de ejemplo que
+  // cierran. Y ningún precio escrito a mano: salen de la base por page.tsx.
+  const forma = (o) => (Array.isArray(o) ? o.map(forma)
+    : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().map((k) => [k, forma(o[k])]))
+      : typeof o);
+  // `resumen` es una frase (noche), una por modo (cargar) o cuatro por sistema (instalar): se aplanan todas.
+  const resumenes = (o) => (typeof o === 'string' ? [o]
+    : Array.isArray(o) ? o.flatMap(resumenes)
+      : o && typeof o === 'object' ? Object.values(o).flatMap(resumenes)
+        : []);
+  const escenas = {};
+  for (const nombre of ['cargar', 'noche', 'recomendar', 'instalar']) {
+    const m = cargar(`src/i18n/textos/escenas/${nombre}.ts`);
+    const es = m[`${nombre}Es`], pt = m[`${nombre}Pt`];
+    escenas[nombre] = { es, pt };
+    ok(`${nombre}: exporta ${nombre}Es y ${nombre}Pt`, [typeof es, typeof pt], ['object', 'object']);
+    ok(`${nombre}: español y portugués tienen la misma forma`, forma(pt), forma(es));
+    for (const [idioma, x] of [['es', es], ['pt', pt]]) {
+      const todos = resumenes(x.resumen);
+      ok(`${nombre} ${idioma}: cada pantalla dibujada tiene su resumen para el lector de pantalla`,
+        [todos.length > 0, todos.every((r) => r.length > 40)], [true, true]);
+      ok(`${nombre} ${idioma}: título, etiqueta y apoyo de una línea`,
+        [x.titulo.trim().length > 0, x.etiqueta.trim().length > 0, x.apoyo.trim().length > 0 && !x.apoyo.includes('\n')],
+        [true, true, true]);
+      ok(`${nombre} ${idioma}: los tres rótulos del botón de la animación`,
+        [x.pausar, x.seguir, x.verDeNuevo].every((r) => typeof r === 'string' && r.trim()), true);
+      ok(`${nombre} ${idioma}: nada de «sin señal»`, /sin señal|sem sinal/i.test(JSON.stringify(x)), false);
+    }
+  }
+  for (const [idioma, x] of Object.entries(escenas.cargar)) {
+    const voz = x.escenas.voz;
+    ok(`cargar ${idioma}: cantidad × precio = total de la venta hablada`, voz.cantidad * voz.precioUnitario, voz.total);
+    ok(`cargar ${idioma}: cinco frases, con rubro, frase y lo que queda`,
+      [x.frases.length, x.frases.every((f) => f.rubro.trim() && f.frase.trim() && f.queda.trim())], [5, true]);
+  }
+  for (const [idioma, x] of Object.entries(escenas.noche)) {
+    ok(`noche ${idioma}: entró − salió = ganancia neta (servicios, sin mercadería)`, x.entro - x.salio, x.ganancia);
+    ok(`noche ${idioma}: la parte resaltada está adentro del título`, x.titulo.includes(x.tituloResaltado), true);
+    ok(`noche ${idioma}: nada de «12 de agosto» (es miércoles; la barbería cierra el martes 11)`, /12 de ag/i.test(JSON.stringify(x)), false);
+  }
+  for (const [idioma, x] of Object.entries(escenas.recomendar)) {
+    ok(`recomendar ${idioma}: tres pasos`, x.pasos.length, 3);
+    ok(`recomendar ${idioma}: la parte resaltada está adentro del título`, x.titulo.includes(x.tituloResaltado), true);
+    ok(`recomendar ${idioma}: el código tiene la forma real (ocho letras y números en mayúsculas)`, /^[A-Z0-9]{8}$/.test(x.codigo), true);
+    ok(`recomendar ${idioma}: lo que llega es un saldo, no una transferencia`,
+      /transferencia recibida|transferência recebida/i.test(JSON.stringify(x)), false);
+  }
+  for (const [idioma, x] of Object.entries(escenas.instalar)) {
+    ok(`instalar ${idioma}: cuatro resúmenes por sistema`, [x.resumen.iphone.length, x.resumen.android.length], [4, 4]);
+    ok(`instalar ${idioma}: nada de tiendas ni logos (App Store, Google Play)`, /app store|google play/i.test(JSON.stringify(x)), false);
+  }
+
+  // Ningún precio ni comisión escrito a mano en lo de recomendar: los
+  // importes llegan por props y page.tsx hace el «/ 2» una sola vez.
+  const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+  const PRECIO = /\b(55|95|110|125|190|250|40|20)\.000\b/;
+  ok('recomendar.ts no escribe ningún precio', PRECIO.test(leer('src/i18n/textos/escenas/recomendar.ts')), false);
+  ok('EscenaRecomendar.tsx tampoco', PRECIO.test(leer('src/components/portada/escenas/EscenaRecomendar.tsx')), false);
+  const portada = leer('src/app/page.tsx');
+  ok('la portada muestra las cuatro escenas',
+    ['<EscenaCargar', '<EscenaNoche', '<EscenaRecomendar', '<EscenaInstalar', 'planes={planesEjemplo}'].filter((k) => !portada.includes(k)), []);
+  ok('y la mitad se calcula una sola vez, en la portada', portada.split('lista / 2').length - 1, 1);
+
+  // Las guardias del proyecto, sobre todos los archivos de las escenas.
+  const carpeta = path.join(RAIZ, 'src/components/portada/escenas');
+  for (const archivo of fs.readdirSync(carpeta)) {
+    const fuente = fs.readFileSync(path.join(carpeta, archivo), 'utf8');
+    ok(`escenas/${archivo}: sin bg-white sin barra, dark:, fixed ni loading`,
+      [/(bg|border|divide)-white(?![\/0-9a-z-])/.test(fuente), /\bdark:/.test(fuente), /\bfixed\b/.test(fuente), /loading/i.test(fuente)],
+      [false, false, false, false]);
+    if (archivo !== 'base.tsx') {
+      ok(`escenas/${archivo}: el único IntersectionObserver vive en base.tsx`, fuente.includes('IntersectionObserver'), false);
+    }
+  }
+}
+
 console.log(`\n${corridas} comprobaciones, ${fallos} fallos`);
 process.exit(fallos > 0 ? 1 : 0);
