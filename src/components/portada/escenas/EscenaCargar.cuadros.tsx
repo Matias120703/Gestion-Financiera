@@ -575,9 +575,12 @@ export function Flotante({ x, modo, fase, locale, animado }: {
   const inicial = x.vos.charAt(0).toUpperCase();
 
   return (
+    // En el celular flota por encima del marco; en escritorio se corre al
+    // costado y pisa la pantalla, y la hoja de revisión (z-[5]) lo tapaba
+    // entero salvo el avatar: por eso va con z-10.
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-x-0 -top-9 mx-auto flex w-[250px] items-start gap-2.5 lg:inset-x-auto lg:-left-16 lg:top-12 lg:w-[236px]"
+      className="pointer-events-none absolute inset-x-0 -top-9 z-10 mx-auto flex w-[250px] items-start gap-2.5 lg:inset-x-auto lg:-left-16 lg:top-12 lg:w-[236px]"
     >
       <span className="shrink-0 pt-1"><Avatar inicial={inicial} nombre={x.vos} /></span>
       {fase === 'antes' && modo === 'voz' && (
