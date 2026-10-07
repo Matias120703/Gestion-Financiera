@@ -13,7 +13,7 @@ import { ZonaPeligro } from '@/components/ZonaPeligro';
 import { Soporte } from '@/components/Soporte';
 import { esSuperadmin } from '@/lib/admin';
 import { conJerga } from '@/i18n/jergas';
-import { catalogoSoloConStock, fichaDe, ofreceInterruptor, tieneSeccion } from '@/lib/rubros';
+import { catalogoSoloConStock, fichaDe, fichaDeLaCuenta, ofreceInterruptor, tieneSeccion } from '@/lib/rubros';
 import { VendoProductos } from '@/components/VendoProductos';
 import Link from 'next/link';
 import { MenuAjustes, CabeceraAjuste, SECCIONES_AJUSTES as SECCIONES, type SeccionAjustes as Clave } from '@/components/MenuAjustes';
@@ -286,6 +286,11 @@ export default async function PaginaAjustes({
             <AjustesDeAvisos
               inicial={prefs}
               esPersonal={esPersonal}
+              // El profe y el trainer no reciben el recordatorio ni los avisos
+              // de la mañana y de la tarde; el de la noche, solo si tienen
+              // Cierre del día (128). La pregunta es por la CUENTA.
+              deAlumnos={ficha.agendaDeAlumnos}
+              conCierre={fichaDeLaCuenta(ctx.empresa).secciones['/cierre']}
               // El aviso de los turnos de mañana solo existe donde hay agenda.
               tieneAgenda={tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/agenda')}
               // El de los cobros con fecha (127), solo a quien puede abrir

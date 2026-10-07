@@ -84,11 +84,21 @@ export function SelectorIdioma() {
  * interruptor y la misma preferencia guardada: lo que cambia es que a una
  * persona no se le puede ofrecer «cerrar el día», porque esa pantalla no
  * existe en su cuenta y ese recorte del tiempo no es el suyo.
+ *
+ * `deAlumnos` (el profe, el trainer): no se le ofrece lo que nunca le llega.
+ * La base no le manda el recordatorio de cargar ni los avisos de la mañana y
+ * de la tarde (090, 128: lo retan por descansar). Si además vende productos
+ * (`conCierre`) recibe el de la noche, y el interruptor lo cuenta tal cual;
+ * si no, «Tu día con Orden» tampoco sale.
  */
 export function AjustesDeAvisos({
-  inicial, esPersonal = false, tieneAgenda = false, tieneFiado = false,
+  inicial, esPersonal = false, tieneAgenda = false, tieneFiado = false, deAlumnos = false, conCierre = false,
 }: {
   inicial: Prefs; esPersonal?: boolean; tieneAgenda?: boolean;
+  /** Negocio de alumnos: sin recordatorio de cargar, sin mañana ni tarde. */
+  deAlumnos?: boolean;
+  /** Esa cuenta de alumnos tiene Cierre del día (vende productos, 128). */
+  conCierre?: boolean;
   /** La cuenta tiene la pantalla de Fiado (y no es la personal en Gratis). */
   tieneFiado?: boolean;
 }) {
@@ -124,14 +134,20 @@ export function AjustesDeAvisos({
 
   return (
     <div className="space-y-4">
-      <Interruptor
-        titulo={esPersonal ? t.ajustes.avisoCarga : t.ajustes.avisoCierre}
-        detalle={esPersonal ? t.ajustes.avisoCargaDetalle : t.ajustes.avisoCierreDetalle}
-        encendido={prefs.aviso_cierre}
-        alCambiar={(v) => guardar({ aviso_cierre: v })}
-      />
+      {/* Al profe no se le ofrece «Recordarme cerrar el día»: ese aviso no
+          le llega nunca, tenga o no el cierre. La preferencia guardada no
+          se toca: si apaga «También vendo productos» o cambia de rubro,
+          vuelve como la dejó. */}
+      {!deAlumnos && (
+        <Interruptor
+          titulo={esPersonal ? t.ajustes.avisoCarga : t.ajustes.avisoCierre}
+          detalle={esPersonal ? t.ajustes.avisoCargaDetalle : t.ajustes.avisoCierreDetalle}
+          encendido={prefs.aviso_cierre}
+          alCambiar={(v) => guardar({ aviso_cierre: v })}
+        />
+      )}
 
-      {prefs.aviso_cierre && (
+      {!deAlumnos && prefs.aviso_cierre && (
         <label className="block pl-1">
           <span className="etiqueta">{t.ajustes.horaCierre}</span>
           <select
@@ -146,12 +162,14 @@ export function AjustesDeAvisos({
         </label>
       )}
 
-      <Interruptor
-        titulo={t.ajustes.avisoDiario}
-        detalle={t.ajustes.avisoDiarioDetalle}
-        encendido={prefs.aviso_diario ?? true}
-        alCambiar={(v) => guardar({ aviso_diario: v })}
-      />
+      {(!deAlumnos || conCierre) && (
+        <Interruptor
+          titulo={t.ajustes.avisoDiario}
+          detalle={deAlumnos ? t.ajustes.avisoDiarioDetalleAlumnos : t.ajustes.avisoDiarioDetalle}
+          encendido={prefs.aviso_diario ?? true}
+          alCambiar={(v) => guardar({ aviso_diario: v })}
+        />
+      )}
 
       <Interruptor
         titulo={t.ajustes.avisoSemanal}

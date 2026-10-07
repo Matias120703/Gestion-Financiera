@@ -47392,8 +47392,22 @@ grant execute on function public.cobros_de_hoy() to service_role;
 -- llamada de la herramienta que aplica): entre uno y otro la base no puede
 -- quedar sin la función. Con las dos firmas vivas, la llamada sin
 -- argumentos sería ambigua; por eso el drop (como en 019, 048, 055 y 095).
--- Y antes de aplicarla, comparar el cuerpo vivo (`pg_get_functiondef`) con
--- el de la 106: esta copia sale de ahí.
+--
+-- PASOS PARA APLICARLA (la revisión confirmó que el primero NO se hizo: en
+-- el repo la 106 es la última definición, pero contra producción no se
+-- comparó, y ahí ya hubo arreglos en caliente):
+--
+--   1. ANTES de aplicar, en producción y solo lectura:
+--        select pg_get_functiondef('public.avisos_del_dia()'::regprocedure);
+--      Tiene que ser antes: después del drop esa firma ya no existe.
+--   2. Comparar ese cuerpo con el de la 106 (el que copia esta migración,
+--      sin las dos líneas marcadas con 128). Si difiere, rehacer la copia
+--      de acá abajo desde el cuerpo vivo, conservando esas dos líneas, y
+--      volver a correr pruebas/cierre-profe.test.js (el grupo 14 compara
+--      contra la 106 y va a pedir que se actualice a propósito).
+--   3. Aplicarla en UNA sola llamada y verificar la huella después.
+--   4. El número: billetera-monedas también anotó «128» en las notas. La
+--      rama que se publique segunda pasa a 129, con sus referencias.
 --
 -- QUÉ NO CAMBIA
 --

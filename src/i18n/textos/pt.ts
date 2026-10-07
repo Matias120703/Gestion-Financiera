@@ -1941,6 +1941,7 @@ export const pt: Textos = {
     avisoCobrosDetalle: 'De manhã, no dia que você tem que receber de alguém, e se alguma parcela continua atrasada.',
     avisoDiario: 'Seu dia com o Orden',
     avisoDiarioDetalle: 'De manhã, como foi ontem. À tarde, se você ainda não lançou nada. À noite, quanto vendeu, gastou e lucrou, comparado com ontem.',
+    avisoDiarioDetalleAlumnos: 'À noite, o que entrou e o que sobrou, se nesse dia você lançou algo.',
     horaCierre: 'A que horas te lembrar',
     activarPush: 'Ativar avisos neste aparelho',
     pushActivo: 'Avisos ativados aqui',
@@ -2555,6 +2556,7 @@ export const pt: Textos = {
       alumnos: (entro: string, queda: string) => `Hoje entraram ${entro} e sobram ${queda}.`,
       alumnosConPerdida: (entro: string, abajo: string) => `Hoje entraram ${entro}, mas você ficou ${abajo} no negativo.`,
       alumnosSinIngresos: (gastos: string) => `Hoje não entrou dinheiro e você gastou ${gastos}.`,
+      alumnosSoloPerdida: (abajo: string) => `Hoje não entrou dinheiro e você ficou ${abajo} no negativo.`,
     },
     prueba: {
       titulo: (dias: number) => (dias <= 0 ? 'Seu teste do Orden termina hoje'

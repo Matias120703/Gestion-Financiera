@@ -2132,6 +2132,9 @@ export const es = {
     avisoCobrosDetalle: 'A la mañana, el día que te toca cobrarle a alguien, y si alguna cuota sigue atrasada.',
     avisoDiario: 'Tu día con Orden',
     avisoDiarioDetalle: 'A la mañana, cómo te fue ayer. A la tarde, si todavía no cargaste nada. A la noche, cuánto vendiste, gastaste y ganaste, contra ayer.',
+    // El profe que vende productos (128): de «Tu día con Orden» solo le
+    // llega el de la noche, y solo el día que cargó plata.
+    avisoDiarioDetalleAlumnos: 'A la noche, lo que entró y lo que te quedó, si ese día cargaste algo.',
     horaCierre: 'A qué hora recordarte',
     activarPush: 'Activar avisos en este dispositivo',
     pushActivo: 'Avisos activados acá',
@@ -2805,6 +2808,8 @@ export const es = {
       alumnos: (entro: string, queda: string) => `Hoy te entraron ${entro} y te quedan ${queda}.`,
       alumnosConPerdida: (entro: string, abajo: string) => `Hoy te entraron ${entro}, pero quedaste ${abajo} abajo.`,
       alumnosSinIngresos: (gastos: string) => `Hoy no entró plata y gastaste ${gastos}.`,
+      // Regaló un producto y nada más: no entró ni gastó, pero le costó.
+      alumnosSoloPerdida: (abajo: string) => `Hoy no entró plata y quedaste ${abajo} abajo.`,
     },
     prueba: {
       titulo: (dias: number) => (dias <= 0 ? 'Tu prueba de Orden termina hoy'

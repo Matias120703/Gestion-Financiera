@@ -63,11 +63,11 @@ export function NumerosCierreAlumnos({
       {/* De dónde vino lo que entró. Solo lo que no es cero: el cierre se
           lee en diez segundos. */}
       {desglose && desglose.clases > 0 && (
-        <DetalleCierre
-          etiqueta={vp.panel.deTusClases(palabras)}
-          valor={plata(desglose.clases)}
-          nota={desglose.clasesDadas > 0 ? vp.cierre.clasesDadas(desglose.clasesDadas, palabras) : undefined}
-        />
+        // Sin «Diste N clases» debajo: lo cobrado y lo dado son dos cosas.
+        // El día que cobra un paquete de ocho y da una clase se leía como
+        // si esa clase hubiera valido todo el paquete. Las clases dadas se
+        // dicen solo el día sin plata, donde no hay número con qué confundir.
+        <DetalleCierre etiqueta={vp.panel.deTusClases(palabras)} valor={plata(desglose.clases)} />
       )}
       {desglose && desglose.productos > 0 && (
         <DetalleCierre

@@ -400,6 +400,7 @@ function ayudantes(db, P) {
       personal: () => 'P', personalSoloGastos: () => 'P', personalSoloIngresos: () => 'P',
       masQueAyer: () => '', menosQueAyer: () => '', igualQueAyer: '', rachaLinea: (d) => `R${d}`,
       alumnos: (e, q) => `A:${e}|${q}`, alumnosConPerdida: (e, a) => `AP:${e}|${a}`, alumnosSinIngresos: (g) => `AS:${g}`,
+      alumnosSoloPerdida: (a) => `SP:${a}`,
     },
   };
   const soloNumeros = (s) => s.replace(/[^0-9APS:|]/g, '');
@@ -488,6 +489,25 @@ function ayudantes(db, P) {
   ok('ese día vacío la base lo lista a la noche, pero no hay frase: no se le manda nada',
     [Boolean(filaRacha), filaRacha.hoy.cargados, fraseDelDia('noche', filaRacha, TX, 'es-PY')], [true, 0, null]);
   ok('y tampoco a la tarde, que es la que reta', (await quienes('tarde')).includes('tenis-racha'), false);
+
+  // El día que solo regala un producto (venta con descuento total): un
+  // movimiento, cero plata. Salía «Hoy no entró plata y gastaste Gs. 0».
+  const regalo = await montar('regalo', 'clases');
+  await regalo.A.prender(true);
+  const grip = await H.crearProducto(db, regalo.empresaId, regalo.uid, { nombre: 'Grip', costo: 5000, precio: 12000, stock: 9 });
+  await regalo.A.valor(regalo.uid, 'select public.registrar_venta(p_empresa => $1, p_items => $2::jsonb, p_descuento => $3) id',
+    [regalo.empresaId, JSON.stringify([{ producto_id: grip, cantidad: 1 }]), 12000]);
+  const ciRegalo = await regalo.A.cierre(null);
+  const filaRegalo = (await avisos('noche')).find((x) => x.empresa_id === regalo.empresaId);
+  ok('regaló un producto: la base lo trae con un movimiento, cero plata y el costo abajo',
+    [filaRegalo.hoy.cargados, num(filaRegalo.hoy.ventas), num(filaRegalo.hoy.ingresos), num(filaRegalo.hoy.gastos), num(filaRegalo.hoy.ganancia)],
+    [1, 0, 0, 0, -5000]);
+  ok('su cierre dice lo mismo: entró 0, salió 0, ganancia neta -5.000',
+    [num(ciRegalo.resumen.ventas) + num(ciRegalo.resumen.otros_ingresos), salioDelCierre(ciRegalo.resumen), num(ciRegalo.resumen.ganancia_neta)],
+    [0, 0, -5000]);
+  const fraseRegalo = fraseDelDia('noche', filaRegalo, TX, 'es-PY');
+  ok('la frase nombra los 5.000 que quedó abajo, no «gastaste Gs. 0», y lleva al cierre',
+    [soloNumeros(fraseRegalo.cuerpo), fraseRegalo.url], ['SP:5000', '/cierre']);
 
   // ═══════════════════════════════════════════════════════════
   grupo('8 · Apagarlo, y volver a prenderlo');

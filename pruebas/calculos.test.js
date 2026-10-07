@@ -770,6 +770,30 @@ ok('la agenda de a uno es solo del profe y del trainer',
   const ca = leer('src/components/CierreAlumnos.tsx');
   ok('el día sin plata del profe no reta: su texto, no el del comercio',
     [ca.includes('vp.cierre.sinPlata'), ca.includes('vp.cierre.clasesDadas('), /sinActividad/.test(ca)], [true, true, false]);
+  // Lo cobrado y lo dado son dos cosas: «Diste 1 clase» debajo de «De tus
+  // clases Gs. 400.000» se leía como el precio de esa clase.
+  ok('«Diste N clases» sale solo el día sin plata, no colgado de «De tus clases»',
+    [(ca.match(/vp\.cierre\.clasesDadas\(/g) ?? []).length, /deTusClases[^\n]*\n?[^<]*nota=/.test(ca),
+      ca.includes('<DetalleCierre etiqueta={vp.panel.deTusClases(palabras)} valor={plata(desglose.clases)} />')], [1, false, true]);
+  // Ajustes › Avisos no le describe al profe avisos que no le llegan.
+  const prefs128 = leer('src/components/Preferencias.tsx');
+  const aj128 = leer('src/app/(app)/ajustes/page.tsx');
+  ok('al profe no se le ofrece «Recordarme cerrar el día» ni su hora',
+    [prefs128.includes('{!deAlumnos && (\n        <Interruptor\n          titulo={esPersonal ? t.ajustes.avisoCarga : t.ajustes.avisoCierre}'),
+      prefs128.includes('{!deAlumnos && prefs.aviso_cierre && (')], [true, true]);
+  ok('«Tu día con Orden»: al profe solo si tiene el cierre, y con su propio detalle',
+    [prefs128.includes('{(!deAlumnos || conCierre) && ('),
+      prefs128.includes('detalle={deAlumnos ? t.ajustes.avisoDiarioDetalleAlumnos : t.ajustes.avisoDiarioDetalle}')], [true, true]);
+  ok('Ajustes lo pregunta por la CUENTA (el interruptor), no por el rubro',
+    [aj128.includes('deAlumnos={ficha.agendaDeAlumnos}'), aj128.includes("conCierre={fichaDeLaCuenta(ctx.empresa).secciones['/cierre']}")], [true, true]);
+  ok('ese detalle no promete mañana, tarde ni «contra ayer», en los dos idiomas',
+    [leer('src/i18n/textos/es.ts').includes("avisoDiarioDetalleAlumnos: 'A la noche, lo que entró y lo que te quedó, si ese día cargaste algo.'"),
+      leer('src/i18n/textos/pt.ts').includes("avisoDiarioDetalleAlumnos: 'À noite, o que entrou e o que sobrou, se nesse dia você lançou algo.'")], [true, true]);
+  // El menú del profe que vende mostraba dos relojes: Cierre del día y Agenda.
+  const nav128 = leer('src/components/Navegacion.tsx');
+  ok('la agenda tiene su ícono, y el reloj queda para el cierre solo',
+    [nav128.includes("{ href: '/agenda',      texto: t.nav.agenda,      icono: Ico.agenda }"),
+      (nav128.match(/icono: Ico\.cierre/g) ?? []).length, /\n  agenda: \(\n    <svg/.test(nav128)], [true, 1, true]);
   ok('el panel promete avisos por el RUBRO, y ya no pregunta por la pantalla del cierre',
     [pan.includes('cierraElDia: ficha.cierraElDia,'), pan.includes("ficha.secciones['/cierre']")], [true, false]);
   ok('el panel del profe suma el atajo al cierre, solo al dueño',
@@ -788,7 +812,7 @@ ok('la agenda de a uno es solo del profe y del trainer',
       vpt.includes('Productos, Vender y Cierre del día ya están en tu menú'), vpt.includes('Produtos, Vender e Fechamento do dia já estão no seu menu')],
     [2, true, true, true, true]);
   ok('y la frase de la noche, en los dos',
-    ['es', 'pt'].map((i) => ['alumnos:', 'alumnosConPerdida:', 'alumnosSinIngresos:'].every((k) => leer(`src/i18n/textos/${i}.ts`).includes(`      ${k} (`))), [true, true]);
+    ['es', 'pt'].map((i) => ['alumnos:', 'alumnosConPerdida:', 'alumnosSinIngresos:', 'alumnosSoloPerdida:'].every((k) => leer(`src/i18n/textos/${i}.ts`).includes(`      ${k} (`))), [true, true]);
 
   // Las cuentas del cierre del profe (src/lib/cierre-alumnos.ts).
   const C = require('../.compilado/cierre-alumnos.js');
@@ -2299,6 +2323,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
       alumnos: (e, q) => `AE:${e} AQ:${q}`,
       alumnosConPerdida: (e, a) => `AE:${e} AB:${a}`,
       alumnosSinIngresos: (g) => `ASI:${g}`,
+      alumnosSoloPerdida: (a) => `ASP:${a}`,
     },
   };
   const dia = (o = {}) => ({ ventas: 0, ingresos: 0, gastos: 0, ganancia: 0, cargados: 0, ...o });
@@ -2384,6 +2409,13 @@ ok('un rubro desconocido no rompe: cae en comercio',
     `AE:${gs(100000)} AB:${gs(50000)}`);
   ok('noche sin ingresos: lo que gastó, sin «todavía estás a tiempo»',
     fraseDelDia('noche', alumnos({ gastos: 50000, ganancia: -50000, cargados: 1 }, {}), tx, 'es-PY').cuerpo, `ASI:${gs(50000)}`);
+  // Regaló un producto (venta de monto cero) y nada más: no hay plata que
+  // resumir. Antes salía «Hoy no entró plata y gastaste Gs. 0».
+  ok('noche sin plata y sin gastos, pero abajo por el costo de lo regalado: se dice cuánto, y lleva al cierre',
+    [fraseDelDia('noche', alumnos({ ganancia: -5000, cargados: 1 }, {}), tx, 'es-PY').cuerpo,
+      fraseDelDia('noche', alumnos({ ganancia: -5000, cargados: 1 }, {}), tx, 'es-PY').url], [`ASP:${gs(5000)}`, '/cierre']);
+  ok('noche sin plata, sin gastos y sin pérdida: no hay nada que resumir',
+    fraseDelDia('noche', alumnos({ cargados: 1 }, {}), tx, 'es-PY'), null);
   ok('lleva al cierre, con el título de la noche',
     [fraseDelDia('noche', alumnos({ ventas: 1, ganancia: 1, cargados: 1 }, {}), tx, 'es-PY').url,
       fraseDelDia('noche', alumnos({ ventas: 1, ganancia: 1, cargados: 1 }, {}), tx, 'es-PY').titulo], ['/cierre', 'Día en Tenis']);

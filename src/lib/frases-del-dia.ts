@@ -109,6 +109,8 @@ export interface TextosDelDia {
     alumnos: (entro: string, queda: string) => string;
     alumnosConPerdida: (entro: string, abajo: string) => string;
     alumnosSinIngresos: (gastos: string) => string;
+    /** No entró plata ni cargó gastos, pero el día cerró abajo (regaló un producto). */
+    alumnosSoloPerdida: (abajo: string) => string;
   };
 }
 
@@ -212,6 +214,14 @@ export function fraseDelDia(
   if (deAlumnos) {
     // El resumen de su día, con los dos números de su cierre, y lo lleva ahí.
     const entro = n(h.ventas) + n(h.ingresos);
+    // El día que cargó algo y no movió plata: regaló un producto (venta de
+    // monto cero). «No entró plata y gastaste Gs. 0» no dice nada y calla
+    // lo único que pasó: lo que le costó ese producto. Si quedó abajo, se
+    // dice cuánto, que es lo que ve en su cierre; si no, no hay resumen.
+    if (entro <= 0 && n(h.gastos) <= 0) {
+      if (n(h.ganancia) >= 0) return null;
+      return { titulo, cuerpo: conRacha(tx.noche.alumnosSoloPerdida(plata(-n(h.ganancia))), tx.noche.rachaLinea), url: '/cierre' };
+    }
     const cuerpo = entro <= 0 ? tx.noche.alumnosSinIngresos(plata(n(h.gastos)))
       : n(h.ganancia) >= 0 ? tx.noche.alumnos(plata(entro), plata(n(h.ganancia)))
       : tx.noche.alumnosConPerdida(plata(entro), plata(-n(h.ganancia)));

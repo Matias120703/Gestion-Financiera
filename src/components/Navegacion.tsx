@@ -65,6 +65,13 @@ const Ico = {
       <circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 1.8" />
     </svg>
   ),
+  // La agenda tenía el reloj del cierre: en el menú del profe que vende
+  // (y en el de una barbería) salían dos relojes seguidos.
+  agenda: (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
+      <path d="M4.5 6.5h15v13h-15z" /><path d="M4.5 10.5h15" /><path d="M8.5 4v4M15.5 4v4" />
+    </svg>
+  ),
   organizacion: (
     <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" {...trazo}>
       <path d="M4 6.5h16v13H4z" /><path d="M4 10.5h16" /><path d="M9 10.5v9" />
@@ -213,7 +220,7 @@ export function itemsDe(
     { href: '/movimientos', texto: t.nav.historial,   icono: Ico.movimientos },
     { href: '/reto',        texto: t.nav.reto,        icono: Ico.reto },
     { href: '/organizacion', texto: t.nav.organizacion, icono: Ico.organizacion },
-    { href: '/agenda',      texto: t.nav.agenda,      icono: Ico.cierre },
+    { href: '/agenda',      texto: t.nav.agenda,      icono: Ico.agenda },
     { href: '/rutinas',     texto: t.nav.rutinas,     icono: Ico.rutinas },
     { href: '/reparto',     texto: t.nav.reparto,     icono: Ico.equipo },
     { href: '/reportes',    texto: t.nav.reportes,    icono: Ico.reportes },
