@@ -3476,6 +3476,81 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('B · el detalle se lee con números y las cuotas en orden',
     [det.saldo, det.sin_fecha, det.deudas[0].falta, det.deudas[0].cuotas.map((c) => c.numero), det.libro[0].monto, det.libro[0].fio_id, det.sin_fecha_lineas],
     [850000, 400000, 300000, [1, 2, 3], 150000, 'tv', []]);
+
+  // --- Las correcciones de la revisión del 07/10 ---
+
+  // F5 (R1.1) · «Me paga el viernes»: la fecha entendida se muestra con su
+  // día. Si el modelo devolvió el sábado 24, «sáb 24/10» lo delata.
+  ok('F5 · el día de la semana, corto y en el idioma de quien mira',
+    [Q.diaCorto('2026-10-23', 'es-PY'), Q.diaCorto('2026-10-24', 'es-PY'), Q.diaCorto('2026-10-23', 'pt-BR'), Q.diaCorto('2026-02-31', 'es-PY')],
+    ['vie', 'sáb', 'sex', '']);
+  ok('F5 · «vie 23/10», y con el año si no es el de hoy',
+    [Q.fechaConDia('2026-10-23', '2026-10-07', 'es-PY'), Q.fechaConDia('2027-01-15', '2026-10-07', 'es-PY'), Q.fechaConDia('', '2026-10-07', 'es-PY')],
+    ['vie 23/10', 'vie 15/01/27', '']);
+
+  // F7 (R2.2) · En la computadora no se podía escribir el año: al teclear
+  // 2-0-2-7 el navegador pasa por estas fechas, el campo las rechazaba y
+  // volvía a 2026. Ahora el campo guarda lo tecleado y al plan va solo la
+  // fecha terminada.
+  ok('F7 · lo que el navegador manda mientras se teclea «2027» no va al plan; la fecha terminada sí',
+    ['0002-01-15', '0020-01-15', '0202-01-15', '', '2027-01-15'].map((f) => Q.fechaQueSeManda(f, '2026-10-07')),
+    [false, false, false, false, true]);
+  ok('F7 · ni una fecha que no existe, ni antes del 2000, ni a más de diez años (la base las rechaza)',
+    ['2026-02-30', '1999-12-31', '2000-01-01', '2036-10-07', '2036-10-08', '2026-01-15']
+      .map((f) => Q.fechaQueSeManda(f, '2026-10-07')),
+    [false, false, true, true, false, true]);
+  ok('F7 · la vista previa lleva el año cuando la cuota no es de este año (enero, anotado en octubre)',
+    Q.armarPlan({ total: 450000, cuotas: 3, cada: 'mes', primera: '2026-12-15' }).map((c) => Q.fechaCorta(c.vence_el, '2026-10-07')),
+    ['15/12', '15/01/27', '15/02/27']);
+
+  // F12 (R2.6) · «12 × 104.166» da 1.249.992: se dice la última, que cierra.
+  ok('F12 · la última cuota, cuando no es igual a las demás',
+    [Q.ultimaDistinta(Q.armarPlan({ total: 1250000, cuotas: 12, cada: 'mes', primera: '2026-10-22' })),
+      Q.ultimaDistinta(Q.armarPlan({ total: 300000, cuotas: 7, cada: 'mes', primera: '2026-10-22' })),
+      Q.ultimaDistinta(Q.armarPlan({ total: 500000, cuotas: 3, cada: 'mes', primera: '2026-10-22' })),
+      Q.ultimaDistinta(Q.armarPlan({ total: 100, cuotas: 3, cada: 'mes', primera: '2026-10-22', decimales: 2 }), 2)],
+    [104174, 42858, 166668, 33.34]);
+  ok('F12 · si la división es exacta (o es una sola fecha), no se dice nada',
+    [Q.ultimaDistinta(Q.armarPlan({ total: 450000, cuotas: 3, cada: 'mes', primera: '2026-10-22' })),
+      Q.ultimaDistinta(Q.armarPlan({ total: 450000, cuotas: 1, cada: 'mes', primera: '2026-10-22' })), Q.ultimaDistinta([])],
+    [null, null, null]);
+
+  // F3 (R2.1) · El campo de fecha de una cuota: entre sus vecinas por número.
+  const tresCuotas = [{ numero: 2, vence_el: '2026-10-07' }, { numero: 1, vence_el: '2026-10-04' }, { numero: 3, vence_el: '2026-11-06' }];
+  ok('F3 · una cuota se mueve entre la anterior y la siguiente; la primera y la última, hacia un solo lado',
+    [Q.vecinasDe(tresCuotas, 2), Q.vecinasDe(tresCuotas, 1), Q.vecinasDe(tresCuotas, 3)],
+    [{ min: '2026-10-04', max: '2026-11-06' }, { max: '2026-10-07' }, { min: '2026-10-07' }]);
+  ok('F3 · una sola cuota no tiene vecinas: se mueve libre', Q.vecinasDe([{ numero: 1, vence_el: '2026-10-04' }], 1), {});
+
+  // F4 (R2.4) · Con más de una cuota atrasada se habla del total atrasado.
+  ok('F4 · dos atrasadas: cuántas y cuánto; una sola o ninguna, lo de su próxima cuota',
+    [Q.variasAtrasadas({ atrasadas: 2, monto_atrasado: 300000 }), Q.variasAtrasadas({ atrasadas: 1, monto_atrasado: 150000 }),
+      Q.variasAtrasadas({ atrasadas: 0, monto_atrasado: 0 }), Q.variasAtrasadas({})],
+    [{ cuantas: 2, monto: 300000 }, null, null, null]);
+
+  // F8 (R2.3) y G1 · «Ponerle fecha» a algo ya pagado en parte: el aviso
+  // dice lo que la BASE manda en `cubierto` para esa línea (lo que
+  // programar_cuotas le va a atar), no una cuenta hecha en la pantalla.
+  const libreta = { id: 'lib', fecha: '2026-09-01', monto: 400000, concepto: 'Libreta', venta_id: null, cubierto: 150000 };
+  const otra = { id: 'otra', fecha: '2026-09-20', monto: 100000, concepto: 'Otra', venta_id: null, cubierto: 0 };
+  ok('F8 · la base dice que la libreta tiene 150.000 cubiertos: «Ya cobraste 150.000»',
+    Q.yaCobradoAlFechar({ sin_fecha_lineas: [libreta] }, libreta), 150000);
+  ok('G1 · sirve para cualquier línea, haya una o varias: cada una dice lo suyo',
+    [Q.yaCobradoAlFechar({ sin_fecha_lineas: [libreta, otra] }, libreta), Q.yaCobradoAlFechar({ sin_fecha_lineas: [libreta, otra] }, otra)], [150000, 0]);
+  ok('G1 · no depende de que haya otras deudas en cuotas: no las mira',
+    Q.yaCobradoAlFechar({ sin_fecha_lineas: [libreta], deudas: [{ fio_id: 'tv', falta: 300000 }] }, libreta), 150000);
+  ok('G1 · si la base no manda la clave (o la línea no está), no se afirma nada',
+    [Q.yaCobradoAlFechar({ sin_fecha_lineas: [{ ...libreta, cubierto: undefined }] }, libreta), Q.yaCobradoAlFechar({ sin_fecha_lineas: [] }, libreta)], [0, 0]);
+  ok('F8 · nunca más que la línea; y con centavos no queda polvo',
+    [Q.yaCobradoAlFechar({ sin_fecha_lineas: [{ ...libreta, cubierto: 999999 }] }, libreta),
+      Q.yaCobradoAlFechar({ sin_fecha_lineas: [{ ...libreta, monto: 0.3, cubierto: 0.1 + 0.2 - 0.2 }] }, { id: 'lib', monto: 0.3 }, 2)],
+    [400000, 0.1]);
+  ok('G1 · «Ponerle fecha» se ofrece en las líneas que la base dice que todavía tienen algo sin cubrir',
+    [Q.lineasParaFechar([{ ...libreta, cubierto: 400000 }, otra], 100000).map((l) => l.id), Q.lineasParaFechar([libreta, otra], 350000).map((l) => l.id),
+      Q.lineasParaFechar([libreta, otra], 0).length],
+    [['otra'], ['lib', 'otra'], 0]);
+  ok('G1 · leerDetalleFiado trae `cubierto` de cada línea sin fecha (0 si la base no lo manda)',
+    Q.leerDetalleFiado({ sin_fecha_lineas: [{ id: 'a', monto: 10, cubierto: 4 }, { id: 'b', monto: 5 }] }).sin_fecha_lineas.map((l) => l.cubierto), [4, 0]);
 }
 
 // --- TANDA B · Fiado y Vender con fechas: las pantallas y sus textos ---
@@ -3486,6 +3561,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const fia = sinComentarios(leer('src/components/PantallaFiado.tsx'));
   const ven = sinComentarios(leer('src/components/PantallaVenta.tsx'));
   const cua = sinComentarios(leer('src/components/CuandoTePaga.tsx'));
+  const opc = sinComentarios(leer('src/components/OpcionesDeQue.tsx'));
+  const rev = sinComentarios(leer('src/components/RevisionFiado.tsx'));
+  const cap = sinComentarios(leer('src/components/CapturaInteligente.tsx'));
   const lib = leer('src/lib/cuotas.ts');
 
   ok('B · la cuenta de las cuotas es pura: solo importa tipos',
@@ -3553,6 +3631,68 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('B · la vista previa es la explicación', [cua.includes('t.fiado.vistaPrevia('), cua.includes('t.fiado.vistaPreviaLarga(')], [true, true]);
   ok('B · si cambia el total, el plan se reparte de nuevo', cua.includes('const ajustado = ajustarPlan(valor, total, dec);'), true);
 
+  // --- Las correcciones de la revisión del 07/10, en las pantallas ---
+  // F3 · el campo de fecha de la ficha, entre las cuotas vecinas.
+  ok('F3 · el campo de fecha de una cuota lleva min y max con las fechas de sus vecinas',
+    [fia.includes('const vecinas = vecinasDe(deuda.cuotas, c.numero);'), fia.includes('min={vecinas.min} max={vecinas.max}')], [true, true]);
+  // F4 · la fila y el WhatsApp con el total atrasado.
+  ok('F4 · con más de una atrasada, la fila dice cuántas y el total (y lo sin fecha, si hay)',
+    fia.includes('partes = [t.fiado.cuotasAtrasadas(varias.cuantas), plata(varias.monto), sinFecha].filter(Boolean);'), true);
+  ok('F4 · y el WhatsApp también, con su mensaje propio (negocio y personal)',
+    [fia.includes('t.fiado.mensajeVariasAtrasadas(primero, e.negocio, varias.cuantas, plata(varias.monto))'),
+      fia.includes('t.fiado.mensajeVariasAtrasadasPersonal(primero, varias.cuantas, plata(varias.monto))')], [true, true]);
+  // V4: meter el total en «que quedamos para el [fecha de la cuota 1]» sería
+  // falso (para esa fecha se pactó una cuota). El mensaje nuevo no lleva fecha.
+  const textoDe = (idioma, clave) => {
+    const s = leer(`src/i18n/textos/${idioma}.ts`);
+    const i = s.indexOf(`\n    ${clave}: `);
+    return i < 0 ? '' : s.slice(i, s.indexOf('\n', i + 1));
+  };
+  ok('F4 · el mensaje de varias atrasadas no nombra ninguna fecha, en ningún idioma',
+    ['es', 'pt', 'en'].flatMap((i) => ['mensajeVariasAtrasadas', 'mensajeVariasAtrasadasPersonal'].map((k) => textoDe(i, k)))
+      .filter((s) => !s || /fecha/.test(s)), []);
+  ok('F4 · «2 cuotas atrasadas» / «2 parcelas atrasadas»',
+    [textoDe('es', 'cuotasAtrasadas').includes('`${n} cuotas atrasadas`'), textoDe('pt', 'cuotasAtrasadas').includes('`${n} parcelas atrasadas`')], [true, true]);
+  // F7 · las fechas se pueden teclear.
+  ok('F7 · los dos campos de fecha muestran lo tecleado, no la fecha del plan',
+    [cua.includes('value={unaTexto}'), cua.includes('value={primeraTexto}'), /value=\{(fechaUna|leido\.primera)\}/.test(cua)], [true, true, false]);
+  ok('F7 · al plan va solo una fecha que la base aceptaría',
+    [cua.includes('if (fechaQueSeManda(e.target.value, hoy)) unaFecha(e.target.value);'),
+      cua.includes('if (fechaQueSeManda(e.target.value, hoy)) enCuotas({ primera: e.target.value });')], [true, true]);
+  ok('F7 · al salir del campo vuelve a la fecha del plan, y si el plan cambia por otro lado (un chip) el campo lo sigue',
+    [cua.includes('onBlur={() => setUnaTexto(fechaUna)}'), cua.includes('onBlur={() => setPrimeraTexto(fechaPrimera)}'),
+      cua.includes('useEffect(() => { setUnaTexto(fechaUna); }, [fechaUna]);'),
+      cua.includes('useEffect(() => { setPrimeraTexto(fechaPrimera); }, [fechaPrimera]);')], [true, true, true, true]);
+  ok('F7 · los chips de «Una fecha» siguen leyendo el plan, no el texto', cua.includes('aria-pressed={fechaUna === f}'), true);
+  // F5 · el día de la semana al lado de la fecha entendida.
+  ok('F5 · la primera fecha de la vista previa va con su día, y «Una fecha» también tiene su línea',
+    [cua.includes('const primera = fechaConDia(valor[0].vence_el, hoy, locale);'),
+      cua.includes("vista = [fechaConDia(fechaUna, hoy, locale), total > 0 ? plata(total) : ''].filter(Boolean).join(' · ');")], [true, true]);
+  // F12 · la última cuota cuando difiere.
+  ok('F12 · la vista previa dice la última cuota cuando no es igual a las demás',
+    cua.includes("const monto = plata(valor[0].monto) + (ultima === null ? '' : t.fiado.laUltima(plata(ultima)));"), true);
+  ok('F12 · «(la última …)» pegado al monto', [textoDe('es', 'laUltima').includes('` (la última ${monto})`'), textoDe('pt', 'laUltima').includes('` (a última ${monto})`')], [true, true]);
+  // F8 · «Ponerle fecha» avisa lo ya cobrado.
+  ok('F8 · «Ponerle fecha» calcula lo ya cobrado y el aviso sale siempre que haya (ya no solo en Rearmar)',
+    [fia.includes('const pagado = detalle ? yaCobradoAlFechar(detalle, l, e.dec) : 0;'),
+      fia.includes("aviso={encima.pagado > 0 ? t.fiado.rearmarAviso(plata(encima.pagado)) : ''}"), fia.includes('inicial: null, pagado: 0')],
+    [true, true, false]);
+  // F9 · la fecha que ya pasó, en ámbar, solo en la revisión por voz.
+  ok('F9 · el aviso en ámbar sale si la primera fecha es anterior a hoy, y solo donde se pide',
+    [cua.includes('const yaPaso = avisarSiYaPaso && !!valor && valor.length > 0 && esFecha(valor[0].vence_el) && valor[0].vence_el < hoy;'),
+      cua.includes('bg-ambar-claro'), cua.includes('{t.fiado.fechaYaPaso}'), cua.includes('avisarSiYaPaso = false')], [true, true, true, true]);
+  ok('F9 · lo piden las dos revisiones de la voz (el fiado y la venta fiada); Fiado y Vender, no',
+    [(rev.match(/<CuandoTePaga[^>]*avisarSiYaPaso/g) || []).length, (cap.match(/<CuandoTePaga[^>]*avisarSiYaPaso/g) || []).length,
+      fia.includes('avisarSiYaPaso'), ven.includes('avisarSiYaPaso')], [1, 1, false, false]);
+  ok('F9 · no se corrige sola: el saneo sigue respetando una fecha pasada',
+    require('../.compilado/captura.js').sanearCuotas({ cantidad: 1, cada: 'mes', primera: '2026-10-02' }, 'fiado', 'efectivo', '2026-10-07'),
+    { cantidad: 1, cada: 'mes', primera: '2026-10-02' });
+  // F11 · en «¿De qué?», primero la cuota y el monto; el concepto al final.
+  ok('F11 · «Cuota 2 de 3 · 50.000 · TV 32"»: lo que se corta en un teléfono es el concepto, no el monto',
+    [opc.indexOf('t.fiado.cuotaN(o.cuota.numero, o.cuota.de)') > 0,
+      opc.indexOf('t.fiado.cuotaN(o.cuota.numero, o.cuota.de)') < opc.indexOf('plata(o.cuota?.pendiente ?? o.propuesto)'),
+      opc.indexOf('plata(o.cuota?.pendiente ?? o.propuesto)') < opc.indexOf('o.concepto || t.fiado.lineaFiado')], [true, true, true]);
+
   // Vender: fiado con fecha, y la venta nunca se deshace por el plan.
   ok('B · Vender arranca sin fecha y lo ofrece solo al fiar',
     [ven.includes('useState<Plan | null>(null)'), ven.includes('{esFiado && (\n              <CuandoTePaga')], [true, true]);
@@ -3585,7 +3725,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
     'quitarCuotas', 'quitarCuotasPregunta', 'quitarCuotasDetalle', 'quitadas', 'fechaGuardada', 'cuotasGuardadas', 'noSePudoGuardar',
     'deQue', 'loSinFecha', 'todo', 'deEsaFaltan', 'proximaVence', 'leEscribisteHoy', 'pagoDe', 'teDebe', 'notaCobrar',
     'mensajeVenceHoy', 'mensajeAtrasado', 'mensajeProximo', 'mensajeVenceHoyPersonal', 'mensajeAtrasadoPersonal',
-    'mensajeProximoPersonal', 'cuotaEntreParentesis'];
+    'mensajeProximoPersonal', 'cuotaEntreParentesis',
+    // Revisión del 07/10.
+    'laUltima', 'fechaYaPaso', 'cuotasAtrasadas', 'mensajeVariasAtrasadas', 'mensajeVariasAtrasadasPersonal'];
   const CLAVES_VENTA = ['ventaFiada', 'cuotasNoQuedaron'];
   for (const idioma of ['es', 'pt', 'en']) {
     const f = bloque(idioma, 'fiado');
@@ -3594,7 +3736,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
       [CLAVES_FIADO.filter((k) => !f.includes(`\n    ${k}: `)), CLAVES_VENTA.filter((k) => !v.includes(`\n    ${k}: `))], [[], []]);
   }
   ok('B · toda clave t.fiado.* que usan las pantallas existe en español',
-    Array.from(new Set((fia + cua + ven).match(/t\.fiado\.[A-Za-z]+/g) || []))
+    Array.from(new Set((fia + cua + ven + opc).match(/t\.fiado\.[A-Za-z]+/g) || []))
       .map((k) => k.slice('t.fiado.'.length)).filter((k) => !bloque('es', 'fiado').includes(`\n    ${k}: `)), []);
   ok('B · voseo en español', bloque('es', 'venta').includes("cuotasNoQuedaron: 'La venta quedó, pero las cuotas no se guardaron. Ponéselas desde Fiado.'"), true);
   ok('B · «parcelas» en portugués, no «cuotas»',
@@ -3627,9 +3769,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const rs = (v) => dinero(v, 'BRL', true, 'pt-BR');
 
   const nada = { cuantas: 0, personas: 0, monto: 0, nombres: [] };
+  // `personas` (arriba) es la gente distinta entre las dos mitades. Si no se
+  // dice otra cosa, nadie está en las dos: es la suma.
   const cuenta = (hoy, atrasadas, extra = {}) => ({
     empresa_id: 'e1', nombre: 'Almacén Lili', moneda: 'PYG', tipo_cuenta: 'emprendedor', fecha: '2026-10-07',
     hoy: { ...nada, ...hoy }, atrasadas: { ...nada, dias_max: 0, ...atrasadas }, sin_escribir: 0,
+    personas: (hoy.personas ?? hoy.cuantas ?? 0) + (atrasadas.personas ?? atrasadas.cuantas ?? 0),
     destinatarios: [], ...extra,
   });
   const frase = (c, tx = es, locale = 'es-PY') => fraseDeCobros(c, tx, locale);
@@ -3678,6 +3823,41 @@ ok('un rubro desconocido no rompe: cae en comercio',
     `Hoy te paga Ana: ${gs(100000)}. Y 3 atrasados: ${gs(500000)}. A 5 todavía no les escribiste.`);
   ok('D · es · una cuota a medias cuenta por lo que falta (el monto viene de la base)',
     frase(cuenta({ cuantas: 1, personas: 1, monto: 50000, nombres: ['Juan'] }, {})).cuerpo, `Hoy te paga Juan: ${gs(50000)}.`);
+
+  // --- F4 (R1.2) · A la misma persona no se la cuenta dos veces ---
+  // El plan semanal: Juan no pagó la de hace 7 días y hoy vence la
+  // siguiente. Está en `hoy` y en `atrasadas`, pero es UNO. Antes salía
+  // «Hoy te paga Juan: 100.000. Y 1 atrasado: 100.000. A 2 todavía no les
+  // escribiste.», que se lee como tres personas.
+  const juanHoy = { cuantas: 1, personas: 1, monto: 100000, nombres: ['Juan'] };
+  const juanAtrasado = { cuantas: 1, personas: 1, monto: 100000, nombres: ['Juan'], dias_max: 7 };
+  ok('F4 · es · el atrasado es el mismo que paga hoy: «y debe otros…», y falta escribirle a UNO',
+    frase(cuenta(juanHoy, juanAtrasado, { personas: 1, sin_escribir: 1 })).cuerpo,
+    `Hoy te paga Juan: ${gs(100000)}. Y debe otros ${gs(100000)} atrasados. A 1 todavía no le escribiste.`);
+  ok('F4 · es · personal: lo mismo con «te devuelve»',
+    frase(cuenta(juanHoy, juanAtrasado, { personas: 1, tipo_cuenta: 'personal' })).cuerpo,
+    `Hoy te devuelve Juan: ${gs(100000)}. Y debe otros ${gs(100000)} atrasados.`);
+  ok('F4 · es · los atrasados son OTROS: se cuentan ellos, no los de hoy',
+    frase(cuenta(juanHoy, { cuantas: 3, personas: 2, monto: 450000, nombres: ['Pedro', 'Luis'], dias_max: 14 }, { personas: 3 })).cuerpo,
+    `Hoy te paga Juan: ${gs(100000)}. Y 2 atrasados: ${gs(450000)}.`);
+  ok('F4 · es · mezclados (Juan paga hoy y debe una; Pedro solo atrasado): la plata, sin contar gente',
+    frase(cuenta(juanHoy, { cuantas: 3, personas: 2, monto: 400000, nombres: ['Juan', 'Pedro'], dias_max: 7 }, { personas: 2 })).cuerpo,
+    `Hoy te paga Juan: ${gs(100000)}. Y hay ${gs(400000)} atrasados.`);
+  ok('F4 · es · dos pagan hoy y los dos arrastran una atrasada: tampoco se cuenta gente',
+    frase(cuenta({ cuantas: 2, personas: 2, monto: 200000, nombres: ['Juan', 'Ana'] },
+      { cuantas: 2, personas: 2, monto: 200000, nombres: ['Juan', 'Ana'], dias_max: 7 }, { personas: 2 })).cuerpo,
+    `Hoy te pagan 2: ${gs(200000)} (Juan y Ana). Y hay ${gs(200000)} atrasados.`);
+  ok('F4 · es · si la base no dijera cuánta gente distinta hay, no se inventa: solo la plata',
+    frase(cuenta(juanHoy, juanAtrasado, { personas: undefined })).cuerpo, `Hoy te paga Juan: ${gs(100000)}. Y hay ${gs(100000)} atrasados.`);
+  ok('F4 · es · dos «Juan» distintos NO se confunden: no se comparan nombres, manda `personas`',
+    frase(cuenta(juanHoy, juanAtrasado, { personas: 2 })).cuerpo, `Hoy te paga Juan: ${gs(100000)}. Y 1 atrasado: ${gs(100000)}.`);
+  ok('F4 · pt · o atrasado é o mesmo de hoje',
+    fraseDeCobros({ ...cuenta(juanHoy, juanAtrasado, { personas: 1, sin_escribir: 1 }), moneda: 'BRL' }, textosDeCobros('pt'), 'pt-BR').cuerpo,
+    `Hoje Juan te paga: ${rs(100000)}. E deve mais ${rs(100000)} em atraso. Pra 1 você ainda não escreveu.`);
+  ok('F4 · pt · misturados: só o valor',
+    fraseDeCobros({ ...cuenta(juanHoy, { cuantas: 3, personas: 2, monto: 400, nombres: ['Juan', 'Pedro'], dias_max: 7 }, { personas: 2 }), moneda: 'BRL' },
+      textosDeCobros('pt'), 'pt-BR').cuerpo,
+    `Hoje Juan te paga: ${rs(100000)}. E há ${rs(400)} em atraso.`);
 
   // --- La cuenta personal: «te devuelve», y el título no es un negocio ---
   ok('D · es · personal: te devuelve, con su título',
@@ -3796,7 +3976,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
     clientes: ['venceEl', 'atrasado'],
   };
   const CLAVES_COBROS = ['tituloPersonal', 'hoyUno', 'hoyVarios', 'hoyUnoPersonal', 'hoyVariosPersonal', 'masAtrasados',
-    'soloAtrasadoUno', 'soloAtrasados', 'sinEscribir', 'yMas', 'yNombre'];
+    'masAtrasadoElMismo', 'masAtrasadosSinContar', 'soloAtrasadoUno', 'soloAtrasados', 'sinEscribir', 'yMas', 'yNombre'];
   for (const idioma of ['es', 'pt', 'en']) {
     ok(`D · ${idioma}: están los textos de ajustes, panel, panel personal y clientes`,
       Object.entries(CLAVES).flatMap(([b, claves]) => claves.filter((k) => !bloque(idioma, b).includes(`\n    ${k}: `)).map((k) => `${b}.${k}`)), []);
@@ -3805,7 +3985,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
   }
   ok('D · es y pt tienen las mismas frases de cobros, ni una de más', Object.keys(es).sort(), Object.keys(pt).sort());
   ok('D · las frases que se pegan al final empiezan con un espacio',
-    [es.masAtrasados(1, 'X')[0], es.sinEscribir(1)[0], pt.masAtrasados(1, 'X')[0], pt.sinEscribir(1)[0]], [' ', ' ', ' ', ' ']);
+    [es, pt].flatMap((tx) => [tx.masAtrasados(1, 'X')[0], tx.masAtrasadoElMismo('X')[0], tx.masAtrasadosSinContar('X')[0], tx.sinEscribir(1)[0]]),
+    Array(8).fill(' '));
+  ok('F4 · los tipos dicen que `sin_escribir` son personas y traen `personas`',
+    [/personas\?: number;\s*\/\*\*[^/]*PERSONAS \(no cuotas\)[^/]*\*\/\s*sin_escribir: number;/.test(leer('src/lib/frase-cobros.ts')),
+      /personas\?: number;\s*\/\*\* Personas \(no cuotas\)[^/]*\*\/\s*sin_escribir: number;/.test(leer('src/lib/tipos.ts'))], [true, true]);
   const rcTx = leer('src/i18n/textos/reportes-comercio.ts');
   ok('D · el reporte tiene sus dos palabras en es y pt',
     [(rcTx.match(/\n    atrasado: /g) || []).length, (rcTx.match(/\n    venceEstaSemana: /g) || []).length], [2, 2]);

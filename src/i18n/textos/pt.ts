@@ -1068,6 +1068,8 @@ export const pt: Textos = {
     unaMas: 'Uma parcela a mais',
     vistaPrevia: (n: number, monto: string, fechas: string) => `${n} × ${monto} · ${fechas}`,
     vistaPreviaLarga: (n: number, monto: string, desde: string, hasta: string) => `${n} × ${monto} · de ${desde} a ${hasta}`,
+    laUltima: (monto: string) => ` (a última ${monto})`,
+    fechaYaPaso: 'Essa data já passou: fica como atrasada.',
     conCuotas: (n: number, fecha: string) => `${n} parcelas, a primeira em ${fecha}.`,
     tePagaEl: (fecha: string) => `Te paga em ${fecha}.`,
     paraCobrar: 'A receber',
@@ -1079,6 +1081,7 @@ export const pt: Textos = {
     grupoProximas: 'Próximas',
     grupoSinFecha: 'Sem data',
     cuotaN: (n: number, de: number) => `Parcela ${n} de ${de}`,
+    cuotasAtrasadas: (n: number) => `${n} parcelas atrasadas`,
     venceEl: (fecha: string) => `Vence em ${fecha}`,
     masSinFecha: (monto: string) => `+ ${monto} sem data`,
     pagada: 'Paga',
@@ -1111,6 +1114,8 @@ export const pt: Textos = {
     mensajeAtrasadoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Oi ${nombre}! Os ${monto}${cuota} que combinamos pra ${fecha} ainda estão pendentes. Quando puder, me avisa. Obrigado!`,
     mensajeProximoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Oi ${nombre}! Passando pra lembrar dos ${monto}${cuota} que combinamos pra ${fecha}. Quando puder, me avisa. Obrigado!`,
     cuotaEntreParentesis: (n: number, de: number) => (de <= 1 ? '' : ` (parcela ${n} de ${de})`),
+    mensajeVariasAtrasadas: (nombre: string, negocio: string, n: number, monto: string) => `Oi ${nombre}! Aqui é da ${negocio}. Ficaram ${n} parcelas vencidas sem pagar: ${monto} no total. Quando puder, me avisa. Obrigado!`,
+    mensajeVariasAtrasadasPersonal: (nombre: string, n: number, monto: string) => `Oi ${nombre}! Ficaram ${n} pagamentos vencidos do que combinamos: ${monto} no total. Quando puder, me avisa. Obrigado!`,
   },
 
   inscribir: {
@@ -2581,6 +2586,8 @@ export const pt: Textos = {
       hoyUnoPersonal: (nombre: string, monto: string) => `Hoje ${nombre} te devolve: ${monto}.`,
       hoyVariosPersonal: (n: number, monto: string, nombres: string) => `Hoje ${n} te devolvem: ${monto}${nombres ? ` (${nombres})` : ''}.`,
       masAtrasados: (n: number, monto: string) => ` E ${n} atrasado${n === 1 ? '' : 's'}: ${monto}.`,
+      masAtrasadoElMismo: (monto: string) => ` E deve mais ${monto} em atraso.`,
+      masAtrasadosSinContar: (monto: string) => ` E há ${monto} em atraso.`,
       soloAtrasadoUno: (nombre: string, dias: number, monto: string) => `${nombre} está com ${dias} dias de atraso: ${monto}.`,
       soloAtrasados: (n: number, monto: string, nombres: string) =>
         `${n === 1 ? '1 cobrança atrasada' : `${n} cobranças atrasadas`}: ${monto}${nombres ? ` (${nombres})` : ''}.`,

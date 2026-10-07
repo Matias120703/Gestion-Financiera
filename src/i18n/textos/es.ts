@@ -1149,6 +1149,10 @@ export const es = {
     unaMas: 'Una cuota más',
     vistaPrevia: (n: number, monto: string, fechas: string) => `${n} × ${monto} · ${fechas}`,
     vistaPreviaLarga: (n: number, monto: string, desde: string, hasta: string) => `${n} × ${monto} · del ${desde} al ${hasta}`,
+    // Se pega al monto cuando la división no es exacta: «12 × 104.166 (la última 104.174)».
+    laUltima: (monto: string) => ` (la última ${monto})`,
+    // La voz entendió una fecha que ya pasó: casi siempre es el modelo, no la persona.
+    fechaYaPaso: 'Esa fecha ya pasó: queda como atrasada.',
     conCuotas: (n: number, fecha: string) => `${n} cuotas, la primera el ${fecha}.`,
     tePagaEl: (fecha: string) => `Te paga el ${fecha}.`,
     paraCobrar: 'Para cobrar',
@@ -1160,6 +1164,8 @@ export const es = {
     grupoProximas: 'Próximas',
     grupoSinFecha: 'Sin fecha',
     cuotaN: (n: number, de: number) => `Cuota ${n} de ${de}`,
+    // Con más de una vencida, la fila habla del total atrasado.
+    cuotasAtrasadas: (n: number) => `${n} cuotas atrasadas`,
     venceEl: (fecha: string) => `Vence el ${fecha}`,
     masSinFecha: (monto: string) => `+ ${monto} sin fecha`,
     pagada: 'Pagada',
@@ -1193,6 +1199,9 @@ export const es = {
     mensajeAtrasadoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Hola ${nombre}! Los ${monto}${cuota} que quedamos para el ${fecha} todavía están pendientes. Cuando puedas, avisame. ¡Gracias!`,
     mensajeProximoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Hola ${nombre}! Te recuerdo los ${monto}${cuota} que quedamos para el ${fecha}. Cuando puedas, avisame. ¡Gracias!`,
     cuotaEntreParentesis: (n: number, de: number) => (de <= 1 ? '' : ` (cuota ${n} de ${de})`),
+    // Con más de una cuota vencida: el total, y SIN fecha (cada cuota tenía la suya).
+    mensajeVariasAtrasadas: (nombre: string, negocio: string, n: number, monto: string) => `Hola ${nombre}! Te escribo de ${negocio}. Quedaron ${n} cuotas vencidas sin pagar: ${monto} en total. Cuando puedas, avisame. ¡Gracias!`,
+    mensajeVariasAtrasadasPersonal: (nombre: string, n: number, monto: string) => `Hola ${nombre}! Quedaron ${n} pagos vencidos de lo que acordamos: ${monto} en total. Cuando puedas, avisame. ¡Gracias!`,
   },
 
   /** CLIENTES · A QUIÉN LE VENDÉS. */
@@ -2840,6 +2849,10 @@ export const es = {
       hoyUnoPersonal: (nombre: string, monto: string) => `Hoy te devuelve ${nombre}: ${monto}.`,
       hoyVariosPersonal: (n: number, monto: string, nombres: string) => `Hoy te devuelven ${n}: ${monto}${nombres ? ` (${nombres})` : ''}.`,
       masAtrasados: (n: number, monto: string) => ` Y ${n} atrasado${n === 1 ? '' : 's'}: ${monto}.`,
+      // El atrasado es el mismo que paga hoy: no es «otro atrasado».
+      masAtrasadoElMismo: (monto: string) => ` Y debe otros ${monto} atrasados.`,
+      // Parte son los de hoy y parte son otros: solo la plata, sin contar gente.
+      masAtrasadosSinContar: (monto: string) => ` Y hay ${monto} atrasados.`,
       soloAtrasadoUno: (nombre: string, dias: number, monto: string) => `${nombre} se atrasó ${dias} días: ${monto}.`,
       soloAtrasados: (n: number, monto: string, nombres: string) =>
         `${n === 1 ? '1 cobro atrasado' : `${n} cobros atrasados`}: ${monto}${nombres ? ` (${nombres})` : ''}.`,

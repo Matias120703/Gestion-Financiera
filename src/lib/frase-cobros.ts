@@ -37,7 +37,25 @@ export interface CobrosDeLaCuenta {
   tipo_cuenta: 'personal' | 'emprendedor' | string;
   hoy: ParteDeCobros;
   atrasadas: ParteDeCobros & { dias_max: number };
-  /** Cuotas de hoy o atrasadas por las que todavía no se le escribió al cliente. */
+  /**
+   * Gente distinta entre las dos mitades. Quien paga hoy y además arrastra
+   * una cuota atrasada está en `hoy` Y en `atrasadas`, pero es UNA persona:
+   * `personas − hoy.personas` son los atrasados que NO están en lo de hoy.
+   * Con un plan semanal pasa siempre que queda una cuota sin pagar (el
+   * atraso de 7 días coincide con el vencimiento siguiente), y el aviso
+   * decía «Hoy te paga Juan… Y 1 atrasado» hablando del mismo Juan.
+   */
+  personas?: number;
+  /**
+   * PERSONAS (no cuotas) con ALGUNA cuota de hoy o atrasada, con algo
+   * pendiente, por la que todavía no se les escribió. Alcanza con una: el
+   * botón de WhatsApp marca todas las vencidas de la persona de una vez, así
+   * que si le queda una sin marca es porque venció después del último
+   * mensaje. A quien se le escribió hace una semana y hoy le vence otra hay
+   * que volver a escribirle, y por eso se lo vuelve a contar. La frase dice
+   * «A 2 todavía no les escribiste»: son dos a quienes escribirles, no dos
+   * cuotas.
+   */
   sin_escribir: number;
 }
 
@@ -48,8 +66,18 @@ export interface TextosCobros {
   hoyVarios: (n: number, monto: string, nombres: string) => string;
   hoyUnoPersonal: (nombre: string, monto: string) => string;
   hoyVariosPersonal: (n: number, monto: string, nombres: string) => string;
-  /** Se agrega a la frase de hoy; empieza con un espacio. */
+  /**
+   * Se agrega a la frase de hoy; empieza con un espacio. `n` son los
+   * atrasados que NO están en lo de hoy: otra gente.
+   */
   masAtrasados: (n: number, monto: string) => string;
+  /** Lo mismo cuando el atrasado es el mismo que paga hoy: «Y debe otros…». */
+  masAtrasadoElMismo: (monto: string) => string;
+  /**
+   * Lo mismo sin contar gente: cuando los atrasados son en parte los de hoy
+   * y en parte otros, cualquier número se leería mal. La plata nunca miente.
+   */
+  masAtrasadosSinContar: (monto: string) => string;
   soloAtrasadoUno: (nombre: string, dias: number, monto: string) => string;
   soloAtrasados: (n: number, monto: string, nombres: string) => string;
   /** Se agrega al final; empieza con un espacio. */
@@ -81,6 +109,13 @@ export function listaDeNombres(nombres: string[], personas: number, tx: Pick<Tex
  *
  * Si hay algo de hoy, lo atrasado va en la misma frase («Y 1 atrasado»): un
  * solo aviso por mañana, no uno por cada cosa.
+ *
+ * A LA MISMA PERSONA NO SE LA CUENTA DOS VECES. Con `personas` (la gente
+ * distinta entre las dos mitades) se sabe cuántos atrasados son OTROS:
+ * - todos otros            → «Y 2 atrasados: 300.000.»
+ * - es el mismo que hoy    → «Hoy te paga Juan: 100.000. Y debe otros 100.000 atrasados.»
+ * - mezclados, o sin dato  → «Y hay 300.000 atrasados.» (sin contar gente)
+ * No se comparan nombres: son de pila y hasta tres; dos «Juan» se confunden.
  */
 export function fraseDeCobros(c: CobrosDeLaCuenta, tx: TextosCobros, locale: string): Frase | null {
   const plata = (v: number) => dinero(v, c.moneda, true, locale);
@@ -103,7 +138,14 @@ export function fraseDeCobros(c: CobrosDeLaCuenta, tx: TextosCobros, locale: str
     cuerpo = genteHoy === 1 && nombresHoy
       ? (personal ? tx.hoyUnoPersonal(nombresHoy, monto) : tx.hoyUno(nombresHoy, monto))
       : (personal ? tx.hoyVariosPersonal(genteHoy, monto, nombresHoy) : tx.hoyVarios(genteHoy, monto, nombresHoy));
-    if (cuotasAtrasadas > 0) cuerpo += tx.masAtrasados(genteAtrasada, plata(n(c.atrasadas.monto)));
+    if (cuotasAtrasadas > 0) {
+      const atrasado = plata(n(c.atrasadas.monto));
+      const otros = c.personas == null ? null : Math.max(0, n(c.personas) - genteHoy);
+      const repetidos = otros === null ? 0 : Math.max(0, genteAtrasada - otros);
+      if (otros !== null && otros > 0 && repetidos === 0) cuerpo += tx.masAtrasados(otros, atrasado);
+      else if (otros === 0 && genteHoy === 1 && nombresHoy) cuerpo += tx.masAtrasadoElMismo(atrasado);
+      else cuerpo += tx.masAtrasadosSinContar(atrasado);
+    }
   } else {
     const monto = plata(n(c.atrasadas.monto));
     cuerpo = genteAtrasada === 1 && nombresAtrasados

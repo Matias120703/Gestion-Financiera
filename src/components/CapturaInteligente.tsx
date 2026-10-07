@@ -1210,7 +1210,7 @@ function Revision({
             )}
             <CuandoTePaga
               total={borrador.monto} hoy={hoy} moneda={moneda}
-              valor={plan} alCambiar={onPlan} deshabilitado={guardando}
+              valor={plan} alCambiar={onPlan} deshabilitado={guardando} avisarSiYaPaso
             />
           </div>
         )}

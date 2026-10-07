@@ -143,6 +143,19 @@ const VUELTA = 'https://orden.com.py/plan/pago/1000001';
     ok('son 32 caracteres hexadecimales en minúscula',
       Object.values(B.tokens).length === 8
         && /^[0-9a-f]{32}$/.test(B.tokens.singleBuy(PRIVADA, 1, '1.00')), true);
+
+    // LA CLAVE PRIVADA DE VERDAD TRAE SIGNOS (07/10/2026): puntos, comas,
+    // paréntesis, +, $. La de estas pruebas era de letras y números, y por
+    // eso nadie vio que Orden rechazaba una clave real del portal. Esta es
+    // inventada, con todos esos signos, y la firma tiene que salir igual que
+    // armándola a mano.
+    const CON_SIGNOS = 'aB3.dE5,gH7(jK9)mN1+pQ3$sT5*vW7^yZ9.bC1d';
+    ok('una clave privada con signos (40 caracteres) firma igual que a mano',
+      [CON_SIGNOS.length,
+        B.tokens.singleBuy(CON_SIGNOS, 1000001, '190000.00') === md5(`${CON_SIGNOS}1000001190000.00PYG`),
+        B.tokens.confirm(CON_SIGNOS, 1000001, '190000.00') === md5(`${CON_SIGNOS}1000001confirm190000.00PYG`),
+        B.tokens.consulta(CON_SIGNOS, 1000001) === md5(`${CON_SIGNOS}1000001get_confirmation`)],
+      [40, true, true, true]);
   }
 
   // ═══════════════════════════════════════════════════════════

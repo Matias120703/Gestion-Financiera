@@ -11,6 +11,7 @@
  */
 const { instrucciones, ESQUEMA, sanearCampana, sanearCategoriaDeuda, sanearCuotas } = require('../.compilado/captura.js');
 const { planDeLoDictado } = require('../.compilado/cuotas-dictadas.js');
+const { bloqueTurnos } = require('../.compilado/turno-voz.js');
 
 let fallos = 0;
 let corridas = 0;
@@ -381,6 +382,31 @@ grupo('Cuándo te paga: «en 3 cuotas, la primera el 15» (127)');
     /me paga el 30"\s+→ fiado, cuotas \{"cantidad":1/.test(persona), true);
   ok('pero sin la venta a crédito, que no tiene', persona.includes('le vendí la tele a Ana'), false);
 
+  // --- F5 (R1.1) · «Me paga el viernes»: los próximos días, ya calculados ---
+  // El almacén sin agenda (el que más fía) recibía solo «FECHA DE HOY:
+  // 2026-08-31» y tenía que calcular el viernes: un modelo le erra por un
+  // día, y el aviso de la mañana salía corrido. La lista que ya usa la
+  // agenda va también acá. HOY es lunes 31/08/2026; el viernes es el 04/09.
+  const DIAS_DE_LA_LISTA = ['- lunes 2026-08-31 (hoy)', '- martes 2026-09-01 (mañana)', '- viernes 2026-09-04', '- lunes 2026-09-14'];
+  ok('F5 · sin agenda, el prompt del negocio trae los próximos días con su nombre',
+    DIAS_DE_LA_LISTA.filter((d) => !negocio.includes(`\n${d}`)), []);
+  ok('F5 · y el de la cuenta personal, que también anota «me paga el viernes»',
+    DIAS_DE_LA_LISTA.filter((d) => !persona.includes(`\n${d}`)), []);
+  ok('F5 · con la instrucción de elegir de ahí y no calcular',
+    [/Si dice un DÍA DE LA SEMANA \("el viernes", "el lunes que viene"\), no lo\s+calcules: tomá de esta lista la primera fecha con ese día que venga\s+después de hoy\./.test(negocio),
+      negocio.includes('LOS PRÓXIMOS DÍAS:')], [true, true]);
+  // V3: con «elegí SOLO de esta lista», «me paga el 30» (que no está en 15
+  // días) quedaba afuera. La lista es para los días de la semana.
+  ok('F5 · la lista no encierra a «el 15» ni a «el 30»',
+    [/Si dice un número de día \("el 15", "el 30"\) o una fecha más lejana, esa\s+lista no hace falta\./.test(negocio),
+      negocio.slice(negocio.indexOf('CUÁNDO LE PAGAN'), negocio.indexOf('"monto" sigue siendo el TOTAL')).includes('SOLO de esta lista')], [true, false]);
+  const conAgenda = instrucciones(HOY, 'PYG', [], [], false, [], [], [], [],
+    { tipos: ['turno'], bloqueTurnos: bloqueTurnos({ hoy: HOY, servicios: [{ id: 's1', nombre: 'Corte', duracion_min: 30 }], profesionales: [{ id: 'p1', nombre: 'Pedro' }] }) });
+  ok('F5 · con agenda la lista ya está en TURNOS: no se repite, se la señala',
+    [conAgenda.split('- viernes 2026-09-04').length - 1,
+      /no lo\s+calcules: tomá la fecha de la lista LOS PRÓXIMOS DÍAS, la de TURNOS\./.test(conAgenda)], [1, true]);
+  ok('F5 · y sin agenda va una sola vez', negocio.split('- viernes 2026-09-04').length - 1, 1);
+
   // --- El saneo: lo que devuelve el modelo no se cree ---
   const dicho = { cantidad: 3, cada: 'mes', primera: '2026-09-15' };
   ok('fiado: pasa tal cual', sanearCuotas(dicho, 'fiado', 'efectivo', HOY), dicho);
@@ -396,6 +422,24 @@ grupo('Cuándo te paga: «en 3 cuotas, la primera el 15» (127)');
   ok('60 cuotas sí; 61, 0, negativas, con coma o en texto, no (se tira todo)',
     [60, 61, 0, -3, 2.5, '3', null, true].map((n) => sanearCuotas({ cantidad: n, cada: 'mes', primera: null }, 'fiado', 'efectivo', HOY)?.cantidad ?? null),
     [60, null, null, null, null, null, null, null]);
+  // F6 (R1.3) · «Me paga después / en un solo pago» volvía como
+  // {cantidad 1, primera null}; la pantalla le ponía una fecha a un mes que
+  // nadie dijo, preseleccionada, y el «me debe» de siempre quedaba con
+  // vencimiento y aviso. Un solo pago sin fecha no dice nada: null.
+  ok('F6 · un solo pago sin fecha no inventa una fecha: null (fiado y venta a crédito)',
+    [sanearCuotas({ cantidad: 1, cada: 'mes', primera: null }, 'fiado', 'efectivo', HOY),
+      sanearCuotas({ cantidad: 1, cada: 'semana', primera: null }, 'venta', 'credito', HOY)], [null, null]);
+  ok('F6 · tampoco si la fecha vino pero el saneo la descartó (fuera de rango, inexistente, mal escrita)',
+    ['2020-01-01', '2026-02-30', 'el viernes', ''].map((primera) => sanearCuotas({ cantidad: 1, cada: 'mes', primera }, 'fiado', 'efectivo', HOY)),
+    [null, null, null, null]);
+  ok('F6 · y entonces no hay plan: la revisión arranca en «Sin fecha», como el fiado de siempre',
+    planDeLoDictado(sanearCuotas({ cantidad: 1, cada: 'mes', primera: null }, 'fiado', 'efectivo', HOY), 300000, HOY, 0), null);
+  ok('F6 · «en 2 cuotas» sin fecha sí propone una: dijo en cuántas',
+    planDeLoDictado(sanearCuotas({ cantidad: 2, cada: 'mes', primera: null }, 'fiado', 'efectivo', HOY), 300000, HOY, 0).map((q) => q.vence_el),
+    ['2026-09-30', '2026-10-30']);
+  ok('F6 · el prompt ya no invita a devolverlo: «me paga después» es cuotas null',
+    [/"me paga después" \/ "cuando pueda" \/ "cuando cobre"\s+→ cuotas null/.test(negocio),
+      /null si dijo en\s+cuántas cuotas pero no la fecha/.test(negocio), negocio.includes('null si no dijo fecha')], [true, true, false]);
   ok('un «cada» inventado cae en mes', sanearCuotas({ cantidad: 2, cada: 'bimestre', primera: null }, 'fiado', 'efectivo', HOY),
     { cantidad: 2, cada: 'mes', primera: null });
   ok('semana y quincena se respetan',
@@ -440,6 +484,13 @@ grupo('Cuándo te paga: «en 3 cuotas, la primera el 15» (127)');
     /rpc\('programar_cuotas', \{ p_venta: idGuardado, p_plan: plan \}\)/.test(captura), true);
   ok('y si falla, lo dice con el aviso de Vender', captura.includes('t.venta.cuotasNoQuedaron'), true);
   ok('el fiado por voz manda el plan junto con la línea', fuente('RevisionFiado.tsx').includes('p_plan: elPlan'), true);
+  // F9 (R1.4) · «Me paga el 15» dicho un 20: si el modelo devuelve el 15 que
+  // ya pasó, la revisión lo dice en ámbar antes de guardar. No se corrige.
+  ok('F9 · las dos revisiones de la voz piden el aviso de «esa fecha ya pasó»',
+    ['RevisionFiado.tsx', 'CapturaInteligente.tsx'].map((f) => /<CuandoTePaga[^>]*avisarSiYaPaso/.test(fuente(f))), [true, true]);
+  ok('F9 · y el texto existe en español y en portugués',
+    ['es', 'pt'].map((i) => /\n    fechaYaPaso: '[^']+',/.test(
+      fs.readFileSync(require('path').join(__dirname, '..', 'src', 'i18n', 'textos', `${i}.ts`), 'utf8').replace(/\r\n/g, '\n'))), [true, true]);
 }
 
 console.log('\n' + '═'.repeat(62));

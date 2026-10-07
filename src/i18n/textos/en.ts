@@ -470,6 +470,8 @@ export const en: Parcial<Textos> = {
     unaMas: 'One more installment',
     vistaPrevia: (n: number, monto: string, fechas: string) => `${n} × ${monto} · ${fechas}`,
     vistaPreviaLarga: (n: number, monto: string, desde: string, hasta: string) => `${n} × ${monto} · ${desde} to ${hasta}`,
+    laUltima: (monto: string) => ` (last one ${monto})`,
+    fechaYaPaso: 'That date has passed: it will show as overdue.',
     conCuotas: (n: number, fecha: string) => `${n} installments, the first on ${fecha}.`,
     tePagaEl: (fecha: string) => `Pays you on ${fecha}.`,
     paraCobrar: 'To collect',
@@ -481,6 +483,7 @@ export const en: Parcial<Textos> = {
     grupoProximas: 'Upcoming',
     grupoSinFecha: 'No date',
     cuotaN: (n: number, de: number) => `Installment ${n} of ${de}`,
+    cuotasAtrasadas: (n: number) => `${n} installments overdue`,
     venceEl: (fecha: string) => `Due ${fecha}`,
     masSinFecha: (monto: string) => `+ ${monto} undated`,
     pagada: 'Paid',
@@ -513,6 +516,8 @@ export const en: Parcial<Textos> = {
     mensajeAtrasadoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Hi ${nombre}! The ${monto}${cuota} we agreed for ${fecha} are still pending. Let me know when you can. Thanks!`,
     mensajeProximoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Hi ${nombre}! Just a reminder of the ${monto}${cuota} we agreed for ${fecha}. Let me know when you can. Thanks!`,
     cuotaEntreParentesis: (n: number, de: number) => (de <= 1 ? '' : ` (installment ${n} of ${de})`),
+    mensajeVariasAtrasadas: (nombre: string, negocio: string, n: number, monto: string) => `Hi ${nombre}! It's ${negocio}. There are ${n} overdue installments unpaid: ${monto} in total. Let me know when you can. Thanks!`,
+    mensajeVariasAtrasadasPersonal: (nombre: string, n: number, monto: string) => `Hi ${nombre}! There are ${n} overdue payments from what we agreed: ${monto} in total. Let me know when you can. Thanks!`,
   },
 
   venta: {
@@ -1266,6 +1271,8 @@ export const en: Parcial<Textos> = {
       hoyUnoPersonal: (nombre: string, monto: string) => `Today ${nombre} pays you back: ${monto}.`,
       hoyVariosPersonal: (n: number, monto: string, nombres: string) => `Today ${n} pay you back: ${monto}${nombres ? ` (${nombres})` : ''}.`,
       masAtrasados: (n: number, monto: string) => ` Plus ${n} overdue: ${monto}.`,
+      masAtrasadoElMismo: (monto: string) => ` And still owes ${monto} overdue.`,
+      masAtrasadosSinContar: (monto: string) => ` Plus ${monto} overdue.`,
       soloAtrasadoUno: (nombre: string, dias: number, monto: string) => `${nombre} is ${dias} days late: ${monto}.`,
       soloAtrasados: (n: number, monto: string, nombres: string) =>
         `${n === 1 ? '1 overdue payment' : `${n} overdue payments`}: ${monto}${nombres ? ` (${nombres})` : ''}.`,

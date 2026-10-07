@@ -1,6 +1,9 @@
 import type { CapturaInterpretada, CuotasDictadas, DeudaInterpretada, Producto } from './tipos';
 import { esFecha } from './cuotas';
 import { sumarDias } from './fechas';
+// Solo la lista de los próximos días: `turno-voz` no importa nada (ni del
+// servidor ni de este archivo), así que no hay vuelta.
+import { calendario } from './turno-voz';
 
 /**
  * El prompt y el esquema con los que se interpreta una captura.
@@ -409,10 +412,22 @@ ${esPersonal ? '' : `   Si además vendió productos ("le vendí tres yerbas fia
 ${esPersonal ? '' : `   - "le vendí la tele a Ana en 6 cuotas"                       → venta "credito", cuotas {"cantidad":6,"cada":"mes","primera":null}
 `}   - "cada quince días" / "por semana" / "cada 15"              → "cada": "quincena" / "semana" / "quincena"
    - "Lucas me debe 300 mil" (no dijo cuándo)                   → cuotas null
+   - "me paga después" / "cuando pueda" / "cuando cobre"        → cuotas null (no dijo ni fecha ni cuántos pagos)
    "cantidad": cuántos pagos (una sola fecha = 1). "cada": "mes" si no lo dice.
-   "primera": la fecha del primer pago en YYYY-MM-DD; null si no dijo fecha
-   (la pantalla propone una). "el 15" es el 15 que viene; "el viernes", el
-   viernes que viene: nunca una fecha anterior a hoy (${hoy}).
+   "primera": la fecha del primer pago en YYYY-MM-DD; null si dijo en
+   cuántas cuotas pero no la fecha (la pantalla propone una). "el 15" es el
+   15 que viene; "el viernes", el viernes que viene:
+   nunca una fecha anterior a hoy (${hoy}).
+${conTurnos
+    ? `   Si dice un DÍA DE LA SEMANA ("el viernes", "el lunes que viene"), no lo
+   calcules: tomá la fecha de la lista LOS PRÓXIMOS DÍAS, la de TURNOS.`
+    : `   Si dice un DÍA DE LA SEMANA ("el viernes", "el lunes que viene"), no lo
+   calcules: tomá de esta lista la primera fecha con ese día que venga
+   después de hoy.
+   LOS PRÓXIMOS DÍAS:
+${calendario(hoy)}
+   Si dice un número de día ("el 15", "el 30") o una fecha más lejana, esa
+   lista no hace falta.`}
    "monto" sigue siendo el TOTAL que le deben, no el valor de una cuota.
    Las cuotas de una TARJETA ("pagó con tarjeta en 3 cuotas") no van acá:
    esa plata ya entró. Es metodo_pago "tarjeta" y "cuotas" en null.`;
@@ -829,7 +844,14 @@ const CADAS = ['semana', 'quincena', 'mes'] as const;
  * - `cada` de la lista, o «mes».
  * - `primera` una fecha que existe, entre un año atrás y diez adelante; si
  *   no, null y la pantalla propone una. Una fecha ya pasada se respeta: «me
- *   tenía que pagar el 5» nace atrasada, y eso es justo lo que quiso anotar.
+ *   tenía que pagar el 5» nace atrasada, y eso es justo lo que quiso anotar
+ *   (la revisión lo avisa en ámbar, por si fue el modelo el que se equivocó).
+ * - UN SOLO PAGO SIN FECHA NO DICE NADA: null. «Me paga después» o «en un
+ *   solo pago» volvía como {cantidad 1, primera null}, la pantalla le
+ *   inventaba una fecha a un mes, y el «me debe» de siempre —el que no tenía
+ *   que cambiar— quedaba con un vencimiento que nadie dijo y un aviso un mes
+ *   después. Proponer una fecha solo tiene sentido si dijo en CUÁNTAS cuotas.
+ *   Vale también para la fecha que este mismo saneo descartó.
  */
 export function sanearCuotas(
   valor: unknown, tipo: string, metodoPago: string, hoy: string,
@@ -844,6 +866,7 @@ export function sanearCuotas(
   const primera = typeof v.primera === 'string' && esFecha(v.primera) && esFecha(hoy)
     && v.primera >= sumarDias(hoy, -DIAS_ATRAS) && v.primera <= sumarDias(hoy, DIAS_ADELANTE)
     ? v.primera : null;
+  if (cantidad === 1 && primera === null) return null;
   return { cantidad, cada, primera };
 }
 

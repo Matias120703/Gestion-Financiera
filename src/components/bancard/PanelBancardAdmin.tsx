@@ -27,7 +27,25 @@ export interface ConfigBancardAdmin {
   configurado: boolean;
   entorno: 'staging' | 'produccion' | null;
   motivo: 'sin_entorno' | 'clave_publica' | 'clave_privada' | null;
+  /** Qué le pasa a la clave que no sirve, sin mostrarla (`estadoDeConfiguracion`). */
+  falla?: { falta: boolean; conEspacios: boolean; largo: number } | null;
   abierto: boolean;
+}
+
+/**
+ * Por qué no sirve una clave, dicho de forma que se pueda arreglar en Vercel
+ * sin pegarla en ningún lado: si no llegó, si tiene un espacio o cuánto mide.
+ * «No llegó» casi siempre es que se cargó DESPUÉS del último deploy: las
+ * variables nuevas recién valen desde el Redeploy.
+ */
+function queLePasa(nombre: string, largoEsperado: number, falla: ConfigBancardAdmin['falla']): string {
+  if (!falla || falla.falta) {
+    return `${nombre} no llegó a este servidor. Revisá en Vercel que exista con ese nombre exacto, en Production, y hacé Redeploy.`;
+  }
+  if (falla.conEspacios) {
+    return `${nombre} tiene un espacio o un salto de línea adentro. Volvé a copiarla del portal de Bancard, sin espacios, y hacé Redeploy.`;
+  }
+  return `${nombre} tiene ${falla.largo} caracteres y la de Bancard tiene ${largoEsperado}. Volvé a copiarla entera del portal y hacé Redeploy.`;
 }
 
 interface OperacionAdmin {
@@ -143,8 +161,8 @@ export function TarjetaBancardAdmin({ config }: { config: ConfigBancardAdmin }) 
               {config.motivo === 'sin_entorno'
                 ? 'Falta BANCARD_ENTORNO (staging o produccion).'
                 : config.motivo === 'clave_publica'
-                  ? 'BANCARD_CLAVE_PUBLICA falta o no tiene 32 letras y números.'
-                  : 'BANCARD_CLAVE_PRIVADA falta o no tiene 40 letras y números.'}
+                  ? queLePasa('BANCARD_CLAVE_PUBLICA', 32, config.falla)
+                  : queLePasa('BANCARD_CLAVE_PRIVADA', 40, config.falla)}
             </p>
           )}
         </div>

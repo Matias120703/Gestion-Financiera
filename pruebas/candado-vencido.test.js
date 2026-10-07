@@ -586,6 +586,56 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
     await como(NV2.uid, "select public.anotar_fiado($1,$2,1000,'x')", [NV2.empresaId, NV2.persona]), CANDADO);
   aceptado('y sigue pudiendo vaciar', await vaciar(NV2));
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('12 · Borrar una deuda con un pago atado: el freno dice por qué, no manda a pagar el plan');
+  // ═══════════════════════════════════════════════════════════
+  // (127, revisión R4.1) Borrar anda siempre en una cuenta vencida (018,
+  // 111). Pero una deuda a la que se le habían sacado las fechas y tenía un
+  // pago atado (`fio_id`) pasaba el freno de borrar_linea_fiado —que solo
+  // miraba deudas que TODAVÍA tenían cuotas—, y el DELETE disparaba el ON
+  // DELETE SET NULL de `fio_id`: un UPDATE del libro, que el candado
+  // rechazaba con «Se te terminó la prueba» (o «Eso es del plan Pro» en la
+  // personal en Gratis). Ahora el freno mira los pagos atados, tenga o no
+  // cuotas la deuda: contesta lo que hay que hacer, y haciéndolo, se borra.
+  {
+    const conPagoAtado = async (C) => {
+      const c = { ...C };
+      c.cliente = (await val(C.uid, "select public.guardar_cliente($1,'Pedro','0981 222 000') id", [C.empresaId])).id;
+      await val(C.uid, "select public.anotar_fiado($1,$2,500000,'Libreta')", [C.empresaId, c.cliente]);
+      const hoy = (await db.query('select public.hoy_empresa($1)::text d', [C.empresaId])).rows[0].d;
+      c.deuda = (await val(C.uid, "select public.anotar_fiado($1,$2,200000,'Heladera',null,null,$3::jsonb) id",
+        [C.empresaId, c.cliente, JSON.stringify([{ vence_el: hoy, monto: 100000 }, { vence_el: hoy, monto: 100000 }])])).id;
+      const cuota = (await db.query('select id from public.fiado_cuotas where fio_id = $1 and numero = 1', [c.deuda])).rows[0].id;
+      c.pago = (await val(C.uid, 'select public.cobrar_fiado(p_empresa => $1, p_cliente => $2, p_monto => 100000, p_cuota => $3) j',
+        [C.empresaId, c.cliente, cuota])).j.id;
+      return c;
+    };
+    const BV = await conPagoAtado(await H.montarEmpresa(db, { email: 'borra@vencida.com', nombre: 'Vencido que borra' }));
+    const BG = await conPagoAtado(await H.montarEmpresa(db, { email: 'borra@casa.com', nombre: 'Gratis que borra', tipoCuenta: 'personal' }));
+    await vencer(db, BV.empresaId);
+    await vencer(db, BG.empresaId);
+    ok('una vencida y una personal en Gratis',
+      [(await fila(BV.uid, 'select public.puede_cargar($1) p', [BV.empresaId]))?.p,
+        (await db.query('select public.es_gratis_personal($1) g', [BG.empresaId])).rows[0].g], [false, true]);
+    for (const [etiqueta, C] of [['vencida', BV], ['gratis', BG]]) {
+      const saldo = async () => Number((await db.query('select public.saldo_fiado($1) s', [C.cliente])).rows[0].s);
+      aceptado(`${etiqueta}: sacarle las fechas a la deuda (es un DELETE)`, await como(C.uid, 'select public.quitar_cuotas($1)', [C.deuda]));
+      const borrar = await como(C.uid, 'select public.borrar_linea_fiado($1)', [C.deuda]);
+      rechazado(`${etiqueta}: borrar la deuda, que tiene un pago atado, pide borrar antes el pago`, borrar, 'Borrá primero esos pagos');
+      ok(`${etiqueta}: y no habla de la prueba ni del plan`, new RegExp(`${CANDADO}|${ES_DE_PAGO}`, 'i').test(borrar.error ?? ''), false);
+      ok(`${etiqueta}: el libro quedó intacto, con el pago todavía atado`,
+        [await saldo(), await contar('select count(*)::int n from public.fiado where id=$1 and fio_id=$2', [C.pago, C.deuda])], [600000, 1]);
+      aceptado(`${etiqueta}: borrar el pago anda`, await como(C.uid, 'select public.borrar_linea_fiado($1)', [C.pago]));
+      aceptado(`${etiqueta}: y después la deuda también`, await como(C.uid, 'select public.borrar_linea_fiado($1)', [C.deuda]));
+      ok(`${etiqueta}: quedó la libreta`, await saldo(), 500000);
+    }
+    // El SET NULL queda para «empezar de cero», que lleva su marca: una
+    // vencida con un pago atado igual puede vaciar.
+    const BV2 = await conPagoAtado(await H.montarEmpresa(db, { email: 'vacia@vencida.com', nombre: 'Vencido que vacía' }));
+    await vencer(db, BV2.empresaId);
+    aceptado('una vencida con un pago atado a una deuda con cuotas puede vaciar', await vaciar(BV2));
+  }
+
   console.log('\n' + '═'.repeat(62));
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL CANDADO DEL NEGOCIO VENCIDO FALLARON`);

@@ -65,6 +65,21 @@ console.log('\n── Las claves de Bancard ────────────
   ok('no existe ninguna variable NEXT_PUBLIC_BANCARD_CLAVE (iría al navegador)',
     archivos.filter((a) => /NEXT_PUBLIC_BANCARD_CLAVE/.test(leer(a))), []);
   const servidor = sinComentarios(leer('src/lib/bancard-servidor.ts'));
+  // La clave privada del portal trae signos (. , ( ) + $): exigirle «solo
+  // letras y números» dejaba a Bancard «sin configurar» con todo bien cargado
+  // (07/10/2026). Se saca del fuente la forma que se le pide y se la prueba.
+  const formaPrivada = servidor.match(/if \(!(\/\^[^\n]+?\$\/)\.test\(privada\)\)/);
+  const pideLaForma = formaPrivada ? new RegExp(formaPrivada[1].slice(1, -1)) : null;
+  ok('la clave privada se acepta con signos, y no se acepta vacía, con espacios ni de 5 caracteres',
+    pideLaForma === null ? 'no encontré la forma en bancard-servidor.ts' : [
+      pideLaForma.test('aB3.dE5,gH7(jK9)mN1+pQ3$sT5*vW7^yZ9.bC1d'),
+      pideLaForma.test('abcdefghij0123456789abcdefghij0123456789'),
+      pideLaForma.test(''), pideLaForma.test('aB3.dE5,gH7(jK9) mN1+pQ3$sT5*vW7^yZ9.bC1'), pideLaForma.test('abc12'),
+    ], [true, true, false, false, false]);
+  ok('y el panel dice qué le pasa a la clave (no llegó, tiene un espacio, cuánto mide) sin mostrarla',
+    [/falla\?: \{ falta: boolean; conEspacios: boolean; largo: number \}/.test(leer('src/components/bancard/PanelBancardAdmin.tsx')),
+      leer('src/components/bancard/PanelBancardAdmin.tsx').includes('letras y números')],
+    [true, false]);
   ok('la clave privada no se registra: el servidor no la pone en la consola',
     /console\.[a-z]+\([^)]*clavePrivada/.test(servidor), false);
   ok('bancard-flujo.ts no escribe en la consola (el registro entra por `registrar`)',

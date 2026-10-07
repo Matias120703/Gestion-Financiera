@@ -70,8 +70,10 @@ export function RevisionFiado({
   /**
    * CUÁNDO TE PAGA (127). Lo dictado («en 3 cuotas, la primera el 15») llega
    * ya armado como plan y se ve SIEMPRE antes de guardar: una fecha relativa
-   * («el viernes») la calculó el modelo, y un modelo se equivoca de viernes.
-   * Sin nada dictado arranca en «Sin fecha», que es el fiado de siempre.
+   * («el viernes») la eligió el modelo, y un modelo se equivoca de viernes.
+   * Por eso la fecha entendida se muestra con su día («vie 23/10») y, si ya
+   * pasó, se avisa en ámbar. Sin nada dictado —o con «un solo pago» sin
+   * fecha— arranca en «Sin fecha», que es el fiado de siempre.
    *
    * Solo donde la cuenta tiene la pantalla de Fiado (`con_fechas`).
    */
@@ -162,8 +164,9 @@ export function RevisionFiado({
         const { data, error: err } = await clienteNavegador().rpc('detalle_fiado', { p_cliente: quien });
         if (!err && data) datos = leerDetalleFiado(data);
       } catch {
-        // Sin el detalle el cobro entra suelto, como hasta hoy: la base lo
-        // reparte sola (primero lo sin fecha, después las cuotas por fecha).
+        // Sin el detalle el cobro va sin cuota, como hasta hoy: la base lo
+        // reparte sola (primero lo sin fecha y, si sobra, lo ata a las
+        // deudas con cuotas por fecha, en líneas separadas del libro).
         // Es mejor que no dejar cobrar porque falló una lectura.
       }
       if (vivo) setDetalle({ de: quien, datos });
@@ -357,7 +360,7 @@ export function RevisionFiado({
             )}
             <CuandoTePaga
               total={borrador.monto} hoy={hoy} moneda={moneda}
-              valor={plan} alCambiar={setPlan} deshabilitado={guardando}
+              valor={plan} alCambiar={setPlan} deshabilitado={guardando} avisarSiYaPaso
             />
           </div>
         )}

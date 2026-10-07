@@ -92,7 +92,7 @@ export const MENSAJES_PT: Record<string, string> = {
   'Esa cuota ya no existe.': 'Essa parcela já não existe.',
   'Esa cuota ya está cobrada.': 'Essa parcela já foi recebida.',
   'De esa deuda faltan %, no podés cobrarle más que eso.': 'Dessa dívida faltam %, não dá pra cobrar mais que isso.',
-  'Esa deuda tiene cuotas ya cobradas. Borrá primero esos pagos.': 'Essa dívida tem parcelas já recebidas. Apague primeiro esses pagamentos.',
+  'Esa deuda tiene pagos anotados. Borrá primero esos pagos.': 'Essa dívida tem pagamentos anotados. Apague primeiro esses pagamentos.',
   '% todavía tiene turnos agendados (%). Pasalos a otra persona o cancelalos desde Agenda, y después lo sacás del equipo.': '% ainda tem horários agendados (%). Passe pra outra pessoa ou cancele em Agenda, e depois tire da equipe.',
   '% trabaja en ese negocio: no se cobra comisión por traerse a uno mismo.': '% trabalha nesse negócio: não se cobra comissão por trazer a si mesmo.',
   'Al propietario del negocio no se lo puede sacar.': 'O dono do negócio não pode ser tirado.',
