@@ -117,7 +117,11 @@ const QUEDAN = ['ahorros', 'ajustes_cuenta', 'ajustes_orden', 'cargas_historial'
   'rutinas', 'suscripciones', 'turnos_bloqueo', 'turnos_excepcion', 'turnos_horario', 'turnos_pago',
   'turnos_profesional', 'turnos_publico', 'turnos_slug_usado', 'uso_ia',
   // videos (113): son de la biblioteca de ejercicios, que queda.
-  'videos'];
+  'videos',
+  // Bancard (124): el pago de la suscripción, la tarjeta guardada y el débito.
+  // Es la plata que la cuenta le paga a Orden, no la del negocio: vaciar no
+  // la toca (bancard_eventos no tiene empresa_id y tampoco se toca).
+  'bancard_cuentas', 'bancard_operaciones', 'bancard_pagadores', 'bancard_tarjetas'];
 
 // El insert de PantallaGastos.tsx (candado-vencido.test.js), con la campaña.
 const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria,
@@ -477,6 +481,18 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     if (C.estado === 'pagando') await pagar(C);
     if (C.estado === 'vencido') await vencer(C.empresaId);
   }
+  // Bancard (124-126): el comercio que paga renovó con tarjeta (un pago de
+  // staging, que no anota ingreso ni comisión) y la dejó guardada para el
+  // débito. Son cuatro tablas con empresa_id, y las cuatro tienen que quedar.
+  {
+    const C = CUENTAS.find((c) => c.rubro === 'comercio' && c.estado === 'pagando');
+    const S = async (sql, p) => (await H.comoServicio(db, () => db.query(sql, p))).rows[0].j;
+    const op = await S("select public.bancard_crear_operacion($1,$2,'staging','plan','formulario','pro','mensual',null) j", [C.empresaId, C.uid]);
+    await S("select public.bancard_confirmar($1,$2,'confirmacion') j",
+      [op.operacion, { response: 'S', response_code: '00', amount: String(op.importe), currency: 'PYG' }]);
+    const tarjeta = await S("select public.bancard_crear_catastro($1,$2,'staging','0981123456','Autorizo el cobro de cada renovación.') j", [C.empresaId, C.uid]);
+    await S("select public.bancard_activar_tarjeta($1,'Visa','0016','credit') j", [tarjeta.card_id]);
+  }
   await vencer(P.empresaId);
 
   // La cuenta de Orden, cargada como cualquier negocio, más lo que les pagó
@@ -546,8 +562,11 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     where not t.tgisinternal and (t.tgtype & $1::int) = $1::int
       and t.tgrelid::regclass::text = any($2)
     order by 1, 2`, [bit, tablas]);
+  // bancard_operaciones (124): el pago guarda el ingreso que dejó en la cuenta
+  // de Orden (ingreso_id); si esa cuenta se vacía, queda en null. No tiene
+  // triggers.
   ok('las tablas que quedan con un SET NULL en cascada',
-    conSetNull, ['clases_dadas', 'comisiones', 'fiado', 'movimiento_items', 'pagos_deuda', 'paquetes', 'retiros',
+    conSetNull, ['bancard_operaciones', 'clases_dadas', 'comisiones', 'fiado', 'movimiento_items', 'pagos_deuda', 'paquetes', 'retiros',
       'turnos_atribucion', 'turnos_pago', 'turnos_pago_traido', 'turnos_reserva']);
   const deUpdate = await disparadores(16, conSetNull);
   for (const d of deUpdate) console.log(`      · ${d.tabla}.${d.proname} (${d.momento})${d.lee_la_marca ? '' : ' ¡NO LEE LA MARCA!'}`);

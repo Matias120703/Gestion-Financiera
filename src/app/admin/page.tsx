@@ -6,6 +6,7 @@ import {
   traerMisEmpresas, traerReferidos, traerResumenPanel, traerRetiros, traerSocios,
 } from '@/lib/admin';
 import { PanelAdmin } from '@/components/PanelAdmin';
+import { abiertoATodos, estadoDeConfiguracion } from '@/lib/bancard-servidor';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,16 @@ export default async function PaginaAdmin() {
   // Sin número configurado el botón de WhatsApp simplemente no aparece.
   const whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP ?? '').replace(/\D/g, '') || null;
 
+  // Cómo está Bancard en este servidor: si las variables están, el entorno y
+  // si está abierto a todos. Ninguna clave sale de acá.
+  const configBancard = estadoDeConfiguracion();
+  const bancard = {
+    configurado: configBancard.configurado,
+    entorno: configBancard.configurado ? configBancard.entorno : null,
+    motivo: configBancard.configurado ? null : configBancard.motivo,
+    abierto: abiertoATodos(),
+  };
+
   return (
     <div className="min-h-screen bg-arena/40">
       {/* `zona-segura-arriba` como en la barra de la app (Navegacion.tsx): sin
@@ -85,6 +96,7 @@ export default async function PaginaAdmin() {
           rechazados={rechazados}
           retiros={retiros}
           whatsapp={whatsapp}
+          bancard={bancard}
         />
       </main>
     </div>

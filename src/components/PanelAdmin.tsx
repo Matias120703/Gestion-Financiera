@@ -14,6 +14,7 @@ import type {
 import { PanelSocios } from './PanelSocios';
 import { CampoMonto } from '@/components/CampoMonto';
 import { Hoja } from '@/components/Hoja';
+import { PagosBancardDeCuenta, TarjetaBancardAdmin, type ConfigBancardAdmin } from '@/components/bancard/PanelBancardAdmin';
 
 const trazo = {
   fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
@@ -128,7 +129,7 @@ function planesQueVan(tipo: TipoCuenta): { valor: PlanEfectivo; texto: string }[
 }
 
 export function PanelAdmin({
-  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], retiros = [], whatsapp,
+  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], retiros = [], whatsapp, bancard = null,
 }: {
   cuentas: CuentaAdmin[];
   resumen: ResumenPanel;
@@ -142,6 +143,8 @@ export function PanelAdmin({
   /** Los retiros de los socios contra su saldo (070). */
   retiros?: RetiroAdmin[];
   whatsapp: string | null;
+  /** Cómo está Bancard en este servidor (sin ninguna clave): la tarjeta «Bancard». */
+  bancard?: ConfigBancardAdmin | null;
 }) {
   const router = useRouter();
   // Quién trajo a cada negocio, por empresa: la ficha lo necesita al abrirse y
@@ -339,6 +342,9 @@ export function PanelAdmin({
           </ul>
         )}
       </section>
+
+      {/* ---------------- Bancard (02/10/2026) ---------------- */}
+      {bancard && <TarjetaBancardAdmin config={bancard} />}
 
       {/* ---------------- Socios y comisiones ---------------- */}
       <PanelSocios
@@ -922,6 +928,9 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
               Si todavía le quedan días pagos, se le suman. Nunca se le comen.
             </p>
           </div>
+
+          {/* ---- los pagos con Bancard de esta cuenta ---- */}
+          <PagosBancardDeCuenta empresaId={cuenta.empresa_id} />
 
           {/* ---- ajustes finos ---- */}
           <div className="grid gap-3 sm:grid-cols-2">

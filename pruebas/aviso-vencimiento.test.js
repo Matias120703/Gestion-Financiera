@@ -219,8 +219,38 @@ function cargarTs(relativo, reemplazos = {}) {
   ok('el asunto dice el plan y cuándo', c.asunto, 'Tu plan Pro de Orden vence el 27 de septiembre');
   ok('el texto saluda por el nombre', c.texto.startsWith('Hola Matías,'), true);
   ok('dice el precio de renovación', c.texto.includes('Renovación: Gs. 190.000 por mes.'), true);
-  ok('dice cómo pagar (una sola fuente)', c.texto.includes(es.comoPagar[L.COMO_SE_PAGA]), true);
-  ok('hoy se paga por transferencia', L.COMO_SE_PAGA, 'transferencia');
+  // Cómo se paga lo dice cada fila desde Bancard (126, 02/10/2026): débito
+  // si tiene la tarjeta guardada con el débito al día; tarjeta o QR si ve el
+  // botón de Bancard (cuenta habilitada, o abierto a todos en producción);
+  // si no, por transferencia, como siempre.
+  ok('dice cómo pagar (una sola fuente, fila por fila)', c.texto.includes(es.comoPagar[L.comoSePaga(base)]), true);
+  ok('sin tarjeta guardada ni Bancard: por transferencia', L.comoSePaga(base), 'transferencia');
+  ok('con Bancard habilitado para esa cuenta: tarjeta o QR', L.comoSePaga({ ...base, bancard: true }), 'tarjeta');
+  ok('abierto a todos (producción): tarjeta o QR', L.comoSePaga(base, true), 'tarjeta');
+  const debito = { marca: 'Visa', ultimos4: '0016', fecha_cobro: '2026-09-26' };
+  ok('con la tarjeta guardada y el débito al día: débito, aunque esté abierto', L.comoSePaga({ ...base, debito }, true), 'debito');
+  ok('un débito sin fecha de cobro no cuenta', L.comoSePaga({ ...base, debito: { marca: 'Visa', ultimos4: '0016', fecha_cobro: null } }), 'transferencia');
+  const conDebito = L.correoDeVencimiento({ ...base, importe: 370000, debito }, yo, es, 'es-PY', 'https://orden.com.py');
+  ok('con débito, el correo dice qué día, cuánto (lo que de verdad se cobra) y de qué tarjeta',
+    conDebito.texto.includes('Cómo pagar: El 26 de septiembre cobramos Gs. 370.000 de tu Visa •••• 0016. No tenés que hacer nada.'), true);
+  ok('y que se renueva solo, sin botón de renovar', [conDebito.texto.includes('Lo renovamos solos'), conDebito.texto.includes('Renovar mi plan'), conDebito.texto.includes('Ver mi plan: https://orden.com.py/plan')], [true, false, true]);
+  ok('sin importe cotizado, el del débito usa el de lista', L.textoDelDebito({ ...base, debito }, es, 'es-PY'), 'El 26 de septiembre cobramos Gs. 190.000 de tu Visa •••• 0016. No tenés que hacer nada.');
+  ok('sin ningún precio, no inventa un número', L.textoDelDebito({ ...base, precio: null, debito }, es, 'es-PY'), 'El 26 de septiembre cobramos tu plan de tu Visa •••• 0016. No tenés que hacer nada.');
+  ok('el push con débito dice lo mismo', L.pushDeVencimiento({ ...base, importe: 370000, debito }, es, 'es-PY').cuerpo, 'El 26 de septiembre cobramos Gs. 370.000 de tu Visa •••• 0016. No tenés que hacer nada.');
+  // Revisión 03/10: la tarjeta guardada en la prueba la convierte (bancard_tomar_cobro, 125).
+  const pruebaConDebito = L.correoDeVencimiento({ ...base, tipo: 'prueba', importe: 190000, debito }, yo, es, 'es-PY', 'https://orden.com.py');
+  ok('la prueba con la tarjeta guardada se cobra sola: el correo lo dice, con el día, cuánto y de qué tarjeta',
+    [pruebaConDebito.texto.includes('Después sigue tu plan Pro: lo cobramos solos con la tarjeta que guardaste'),
+      pruebaConDebito.texto.includes('Cómo pagar: El 26 de septiembre cobramos Gs. 190.000 de tu Visa •••• 0016. No tenés que hacer nada.'),
+      pruebaConDebito.texto.includes('Activar mi plan'), pruebaConDebito.texto.includes('Ver mi plan: https://orden.com.py/plan')],
+    [true, true, false, true]);
+  ok('la prueba sin tarjeta sigue diciendo «activá tu plan»',
+    L.correoDeVencimiento({ ...base, tipo: 'prueba' }, yo, es, 'es-PY', 'https://orden.com.py').texto.includes('cobramos'), false);
+  ok('en portugués, la prueba con tarjeta',
+    L.correoDeVencimiento({ ...base, tipo: 'prueba', debito }, { ...yo, idioma: 'pt' }, pt, 'pt-BR', 'https://orden.com.py').texto.includes('cobramos sozinhos no cartão que você salvou'), true);
+  ok('en portugués', L.pushDeVencimiento({ ...base, importe: 370000, debito }, pt, 'pt-BR').cuerpo, 'Em 26 de setembro cobramos Gs. 370.000 no seu Visa •••• 0016. Você não precisa fazer nada.');
+  ok('con Bancard habilitado, el correo dice «tarjeta o QR»',
+    L.correoDeVencimiento({ ...base, bancard: true }, yo, es, 'es-PY', 'https://orden.com.py').texto.includes('pagá con tarjeta o QR'), true);
   ok('el enlace lleva a /plan sin doble barra', c.texto.includes('https://orden.com.py/plan'), true);
   ok('el HTML también', c.html.includes('href="https://orden.com.py/plan"'), true);
   ok('el HTML dice el precio', c.html.includes('Gs. 190.000 por mes'), true);

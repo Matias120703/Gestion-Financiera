@@ -17,6 +17,7 @@ import { reportesPersonalPt } from './reportes-personal';
 import { avisoVencimientoPt } from './aviso-vencimiento';
 import { planGratisPt } from './plan-gratis';
 import { vendoProductosPt } from './vendo-productos';
+import { bancardPt } from './bancard';
 import { singularPt } from './singular';
 
 /**
@@ -872,7 +873,7 @@ export const pt: Textos = {
       },
       {
         pregunta: 'Como se paga?',
-        respuesta: 'Por transferência, em guaranis. Quando o teste termina, você toca em _Assinar_, abre um WhatsApp com a gente, transfere e ativamos o plano. Dá pra pagar por mês ou por ano. Nada de cadastrar cartão num formulário.',
+        respuesta: 'Em guaranis, por mês ou por ano. Por transferência: você toca em _Assinar_, abre um WhatsApp com a gente, transfere e ativamos o plano. Também estamos liberando o pagamento com cartão ou QR pela Bancard: se você vê o botão no seu plano, já está liberado. A Orden não guarda o número do seu cartão.',
       },
       {
         pregunta: 'Quem vê meus dados e onde eles ficam?',
@@ -2703,4 +2704,6 @@ export const pt: Textos = {
   avisoVencimiento: avisoVencimientoPt,
 
   vendoProductos: vendoProductosPt,
+
+  bancard: bancardPt,
 };

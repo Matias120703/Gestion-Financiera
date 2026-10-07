@@ -42,14 +42,19 @@ export const avisoVencimientoEs: TextosAvisoVencimiento = {
     frase: (plan, cuando) => `Tu plan ${plan} vence ${cuando}. Para seguir usando Orden sin cortes, renovalo antes de esa fecha.`,
     // Sin «ese día»: con `cuando` = «hoy, lunes 29…» sonaba raro.
     frasePersonal: (plan, cuando) => `Tu plan ${plan} vence ${cuando}. Si no lo renovás, pasás al plan Gratis: se cierran la voz, tu presupuesto, tus deudas y los reportes, y lo que cargaste queda guardado. Anotar tus gastos e ingresos a mano sigue gratis.`,
+    // Con la tarjeta guardada (Bancard, 02/10/2026) no hay nada que renovar.
+    fraseDebito: (plan, cuando) => `Tu plan ${plan} vence ${cuando}. Lo renovamos solos con la tarjeta que guardaste: no tenés que hacer nada.`,
     precio: (precio) => `Renovación: ${precio}.`,
     boton: 'Renovar mi plan',
+    botonDebito: 'Ver mi plan',
     pie: 'Te escribimos porque administrás esta cuenta de Orden. Si ya pagaste, no hace falta que hagas nada.',
   },
   prueba: {
     asunto: (cuando) => `Tu prueba de Orden termina ${cuando}`,
     frase: (cuando) => `Tu prueba de Orden termina ${cuando}. Para seguir usando Orden, activá tu plan.`,
     frasePersonal: (cuando) => `Tu prueba de Orden termina ${cuando}. Después pasás al plan Gratis: seguís anotando tus gastos e ingresos a mano. La voz, la foto, el presupuesto, tus deudas, lo que te deben, tus cuentas y los reportes son del Pro: quedan guardados y vuelven cuando lo actives.`,
+    // Con la tarjeta guardada (Bancard, 03/10/2026): la prueba termina y el plan sigue solo.
+    fraseDebito: (plan, cuando) => `Tu prueba de Orden termina ${cuando}. Después sigue tu plan ${plan}: lo cobramos solos con la tarjeta que guardaste, no tenés que hacer nada.`,
     precio: (plan, precio) => `Plan ${plan}: ${precio}.`,
     boton: 'Activar mi plan',
     pie: 'Te escribimos porque administrás esta cuenta de Orden y la prueba está por terminar.',
@@ -59,7 +64,10 @@ export const avisoVencimientoEs: TextosAvisoVencimiento = {
   comoPagarTitulo: 'Cómo pagar',
   comoPagar: {
     transferencia: 'Entrá a Orden, andá a tu plan y tocá «Suscribirme»: se abre un WhatsApp con nosotros, transferís y te activamos el plan.',
-    tarjeta: 'Entrá a Orden, andá a tu plan y pagá con tu tarjeta. Se activa en el momento.',
+    tarjeta: 'Entrá a Orden, andá a tu plan y pagá con tarjeta o QR. Se activa en el momento. Si preferís transferir, te atendemos por WhatsApp.',
+    debito: (fecha, importe, tarjeta) => (importe
+      ? `El ${fecha} cobramos ${importe} de tu ${tarjeta}. No tenés que hacer nada.`
+      : `El ${fecha} cobramos tu plan de tu ${tarjeta}. No tenés que hacer nada.`),
   },
 };
 
@@ -83,14 +91,17 @@ export const avisoVencimientoPt: TextosAvisoVencimiento = {
     asunto: (plan, cuando) => `Seu plano ${plan} do Orden vence ${cuando}`,
     frase: (plan, cuando) => `Seu plano ${plan} vence ${cuando}. Pra continuar usando o Orden sem interrupção, renove antes dessa data.`,
     frasePersonal: (plan, cuando) => `Seu plano ${plan} vence ${cuando}. Se não renovar, você passa pro plano Grátis: a voz, o orçamento, as dívidas e os relatórios ficam fechados, e o que você lançou fica guardado. Lançar suas despesas e entradas na mão continua grátis.`,
+    fraseDebito: (plan, cuando) => `Seu plano ${plan} vence ${cuando}. Renovamos sozinhos com o cartão que você salvou: não precisa fazer nada.`,
     precio: (precio) => `Renovação: ${precio}.`,
     boton: 'Renovar meu plano',
+    botonDebito: 'Ver meu plano',
     pie: 'Escrevemos porque você administra esta conta do Orden. Se já pagou, não precisa fazer nada.',
   },
   prueba: {
     asunto: (cuando) => `Seu teste do Orden termina ${cuando}`,
     frase: (cuando) => `Seu teste do Orden termina ${cuando}. Pra continuar usando o Orden, ative seu plano.`,
     frasePersonal: (cuando) => `Seu teste do Orden termina ${cuando}. Depois você passa pro plano Grátis: continua lançando suas despesas e entradas na mão. A voz, a foto, o orçamento, suas dívidas, o que te devem, suas contas e os relatórios são do Pro: ficam guardados e voltam quando você ativar o Pro.`,
+    fraseDebito: (plan, cuando) => `Seu teste do Orden termina ${cuando}. Depois continua seu plano ${plan}: cobramos sozinhos no cartão que você salvou, não precisa fazer nada.`,
     precio: (plan, precio) => `Plano ${plan}: ${precio}.`,
     boton: 'Ativar meu plano',
     pie: 'Escrevemos porque você administra esta conta do Orden e o teste está terminando.',
@@ -100,6 +111,9 @@ export const avisoVencimientoPt: TextosAvisoVencimiento = {
   comoPagarTitulo: 'Como pagar',
   comoPagar: {
     transferencia: 'Entre no Orden, vá até seu plano e toque em «Assinar»: abre um WhatsApp com a gente, você transfere e ativamos o plano.',
-    tarjeta: 'Entre no Orden, vá até seu plano e pague com seu cartão. Ativa na hora.',
+    tarjeta: 'Entre no Orden, vá até seu plano e pague com cartão ou QR. Ativa na hora. Se preferir transferir, atendemos você pelo WhatsApp.',
+    debito: (fecha, importe, tarjeta) => (importe
+      ? `Em ${fecha} cobramos ${importe} no seu ${tarjeta}. Você não precisa fazer nada.`
+      : `Em ${fecha} cobramos seu plano no seu ${tarjeta}. Você não precisa fazer nada.`),
   },
 };

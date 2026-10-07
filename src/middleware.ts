@@ -59,6 +59,17 @@ const PUBLICAS = [
   // quien reservó, que no tiene cuenta en Orden. No queda abierta: pide el
   // token de la reserva y la base solo contesta si además es reciente.
   '/api/aviso-reserva',
+  // La confirmación de un pago con Bancard (02/10/2026). La llaman los
+  // servidores de Bancard, por POST y SIN cookie: si pasara por el control
+  // de sesión, la redirección al login haría que la confirmación figure como
+  // inválida en la traza del portal y que ningún pago se active solo.
+  //
+  // Va la ruta ENTERA, a propósito: '/api/pagos/' abriría también el
+  // checkout, el webhook y el inicio del pago, que llevan sesión. Lo que la
+  // protege es el token md5 de cada confirmación (solo lo arma quien tiene la
+  // clave privada), que la operación exista con el mismo importe, y la
+  // consulta a Bancard cuando el token no coincide (ver su route.ts).
+  '/api/pagos/bancard/confirmacion',
 ];
 
 export async function middleware(request: NextRequest) {

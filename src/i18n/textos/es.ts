@@ -26,6 +26,7 @@ import { reportesPersonalEs } from './reportes-personal';
 import { avisoVencimientoEs } from './aviso-vencimiento';
 import { planGratisEs } from './plan-gratis';
 import { vendoProductosEs } from './vendo-productos';
+import { bancardEs } from './bancard';
 import { singularEs } from './singular';
 
 export const es = {
@@ -922,7 +923,7 @@ export const es = {
       },
       {
         pregunta: '¿Cómo se paga?',
-        respuesta: 'Por transferencia, en guaraníes. Cuando termina la prueba tocás _Suscribirme_, se abre un WhatsApp con nosotros, transferís y te activamos el plan. Podés pagar por mes o por año. Nada de cargar una tarjeta en un formulario.',
+        respuesta: 'En guaraníes, por mes o por año. Por transferencia: tocás _Suscribirme_, se abre un WhatsApp con nosotros, transferís y te activamos el plan. También estamos habilitando el pago con tarjeta o QR por Bancard: si ves el botón en tu plan, ya lo tenés. Orden no guarda el número de tu tarjeta.',
       },
       {
         pregunta: '¿Mis datos quién los ve y dónde están?',
@@ -2969,6 +2970,11 @@ export const es = {
   // «También vendo productos» (121): el interruptor de Ajustes, la tarjeta
   // del panel y la sección del reporte del profe y del trainer.
   vendoProductos: vendoProductosEs,
+
+  // El pago con Bancard (124-126, 02/10/2026): la ventana de pago con el
+  // selector de personas del Premium, el formulario, el comprobante y lo
+  // que contestan las rutas. Ver textos/bancard.ts.
+  bancard: bancardEs,
 };
 
 /**

@@ -2348,7 +2348,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
 
   // Apenas pagó es cuando escucha: el aviso de plan activo le dice cómo
   // pagar menos el mes que viene.
-  const activacion = fs.readFileSync('src/app/api/admin/aviso-activacion/route.ts', 'utf8');
+  // Desde Bancard (02/10) el aviso vive en lib/aviso-plan-activo.ts: lo
+  // comparten el panel (aviso-activacion) y la confirmación de un pago.
+  const activacion = fs.readFileSync('src/lib/aviso-plan-activo.ts', 'utf8');
+  ok('la ruta del panel usa el aviso compartido',
+    fs.readFileSync('src/app/api/admin/aviso-activacion/route.ts', 'utf8').includes('avisarPlanActivo(clienteDeServicio(), empresaId)'), true);
   ok('el aviso de plan activo invita a mantener la racha', activacion.includes('t.conRacha('), true);
   ok('con los números de la base, no escritos en el código',
     activacion.includes("servicio.rpc('promo_de_la_prueba')"), true);
@@ -2497,7 +2501,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
   ok('el aviso de cuenta nueva dice quién se registró', nueva.includes('Se registró ${persona}'), true);
   ok('y al socio también le dice quién entró', nueva.includes('t.entroTitulo(persona)'), true);
   ok('la comisión también nombra a la persona',
-    fs.readFileSync('src/app/api/admin/aviso-activacion/route.ts', 'utf8').includes('t.comisionTitulo(persona)'), true);
+    fs.readFileSync('src/lib/aviso-plan-activo.ts', 'utf8').includes('t.comisionTitulo(persona)'), true);
   ok('el nombre de la persona lo resuelve un solo lugar',
     fs.readFileSync('src/lib/avisos.ts', 'utf8').includes('export async function nombreDeLaPersona'), true);
 

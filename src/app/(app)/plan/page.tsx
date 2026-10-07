@@ -16,6 +16,13 @@ import { BotonPagar } from '@/components/BotonPagar';
 import { TarjetaRecomendar } from '@/components/TarjetaRecomendar';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { traerDescuentoRacha } from '@/lib/habito';
+import { accesoBancard } from '@/lib/bancard-servidor';
+import { HOST_BANCARD, urlDelScript } from '@/lib/bancard';
+import { BotonPagarBancard } from '@/components/bancard/BotonPagarBancard';
+import { PagoEnCurso } from '@/components/bancard/EstadoDelPago';
+import { TarjetaGuardada, type DebitoVista, type TarjetaVista } from '@/components/bancard/TarjetaGuardada';
+import { EquipoPremium } from '@/components/bancard/EquipoPremium';
+import type { DatosDelPago } from '@/components/bancard/HojaPagar';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,6 +138,95 @@ export default async function PaginaPlan({
   // expresión borra la letra D y deja espacios, signos y paréntesis, que
   // rompen el enlace de WhatsApp justo en la pantalla donde se cobra.
   const whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP ?? '').replace(/\D/g, '') || null;
+
+  /**
+   * PAGAR CON TARJETA O QR, POR BANCARD (02/10/2026).
+   *
+   * Quién lo ve lo decide UN lugar (`accesoBancard`): Bancard configurado,
+   * que administre la cuenta, y además la administración de Orden, una
+   * cuenta habilitada desde /admin (la de prueba del certificador) o todos
+   * cuando se abra (`BANCARD_ABIERTO`, solo en producción). Quien no lo ve,
+   * ve lo de siempre: el WhatsApp. Si falla la consulta, no se ve.
+   */
+  const supabase = clienteServidor();
+  const bancard = await accesoBancard(supabase, ctx.empresa.id);
+  const entornoBancard = bancard.disponible ? bancard.entorno : null;
+  const conPix = process.env.NEXT_PUBLIC_BANCARD_PIX === '1';
+  const [estadoBancard, miembros] = entornoBancard
+    ? await Promise.all([
+        Promise.resolve(supabase.rpc('bancard_estado', { p_empresa: ctx.empresa.id, p_entorno: entornoBancard }))
+          .then((r) => (r.error ? null : r.data as EstadoBancard | null))
+          .catch(() => null),
+        Promise.resolve(supabase.from('miembros').select('user_id', { count: 'exact', head: true }).eq('empresa_id', ctx.empresa.id))
+          .then((r) => r.count ?? 1)
+          .catch(() => 1),
+      ])
+    : [null, 1];
+  const ahora = Date.now();
+  const pagoVigente = sus.estado === 'activa' && !sus.en_prueba && !!sus.periodo_fin
+    && new Date(sus.periodo_fin).getTime() > ahora && ctx.planEfectivo !== 'gratis';
+  /**
+   * Con días pagos, cambiar de plan no va por Bancard (habría que prorratear
+   * un plan contra otro): esa tarjeta sigue con el WhatsApp. La base lo
+   * frena igual («Tu plan actual está pago hasta el…»).
+   */
+  const cambioConDiasPagos = (plan: PlanPago) => pagoVigente && ctx.planEfectivo !== plan;
+  /**
+   * El Premium: con cuántas personas arranca el selector. Renovar un Premium
+   * vigente que ya tiene cantidad es por esa cantidad (o la baja que
+   * programó); si no, nunca menos que el equipo de hoy ni que las 4 que trae.
+   */
+  const personasDelPremium = (() => {
+    const max = LIMITES_VISIBLES.negocio.miembros;
+    const p = estadoBancard?.personas ?? null;
+    if (pagoVigente && ctx.planEfectivo === 'negocio' && p && p.contratadas !== null) {
+      return { inicial: Math.min(max, Math.max(p.proxima ?? p.contratadas, miembros, PERSONAS_INCLUIDAS_PREMIUM)), fijas: true };
+    }
+    return { inicial: Math.min(max, Math.max(PERSONAS_INCLUIDAS_PREMIUM, miembros, p?.contratadas ?? 0)), fijas: false };
+  })();
+  /** La tarjeta guardada de la cuenta (marca y últimos cuatro), si hay. */
+  const tarjetaGuardada: TarjetaVista | null = estadoBancard?.tarjeta
+    ? { id: estadoBancard.tarjeta.id, marca: estadoBancard.tarjeta.marca, ultimos4: estadoBancard.tarjeta.ultimos4 }
+    : null;
+  /** Lo que la ventana de pago necesita para cobrar ese plan en ese período. */
+  const datosDelPago = (plan: PlanPago, esActual: boolean, periodoDelPago: PeriodoCobro): DatosDelPago | null => {
+    if (!entornoBancard) return null;
+    const conPersonas = plan === 'negocio' && !esPersonal;
+    return {
+      empresaId: ctx.empresa.id,
+      plan,
+      periodo: periodoDelPago,
+      nombrePlan: t.plan[plan],
+      entorno: entornoBancard,
+      urlScript: urlDelScript(entornoBancard),
+      origen: HOST_BANCARD[entornoBancard],
+      personasInicial: conPersonas ? personasDelPremium.inicial : null,
+      personasFijas: conPersonas && personasDelPremium.fijas,
+      yaPagoHasta: esActual && pagoVigente ? sus.periodo_fin : null,
+      zona: ctx.zonaHoraria,
+      conPix,
+      tarjeta: tarjetaGuardada,
+    };
+  };
+  const pagoBancard = (plan: PlanPago, esActual: boolean) => {
+    const datos = cambioConDiasPagos(plan) ? null : datosDelPago(plan, esActual, periodo);
+    if (!datos) return null;
+    const etiqueta = esActual
+      ? (conPix ? t.bancard.boton.renovarConPix : t.bancard.boton.renovar)
+      : (conPix ? t.bancard.boton.pagarConPix : t.bancard.boton.pagar);
+    return <BotonPagarBancard etiqueta={etiqueta} datos={datos} />;
+  };
+  /**
+   * La tarjeta guardada y su «Cobrar ahora»: cobra el plan que la cuenta
+   * paga (o pagó), en su propio período. Sin plan pago, el botón no se
+   * ofrece: se elige un plan en su tarjeta.
+   */
+  const planDelDebito = !esPersonal || ctx.planEfectivo !== 'gratis'
+    ? PLANES_PAGOS.find((p) => p === sus.plan) ?? null
+    : null;
+  const renovacionDelDebito = planDelDebito && !sus.en_prueba
+    ? datosDelPago(planDelDebito, true, sus.periodo === 'anual' ? 'anual' : 'mensual')
+    : null;
 
   const regalo = mesesDeRegalo(precioDe(precios, 'pro', 'mensual'), precioDe(precios, 'pro', 'anual'));
   // Las columnas cuentan la tarjeta Gratis de la personal.
@@ -259,6 +355,34 @@ export default async function PaginaPlan({
         etiquetaAhorro={regalo > 0 ? t.plan.ahorroAnual(regalo) : ''}
       />
 
+      {/* Mientras Bancard está en pruebas: que la administración sepa que
+          esto no lo ve nadie más, y que en staging no se cobra plata real. */}
+      {entornoBancard && (
+        (bancard.superadmin && !bancard.habilitada && !(bancard.abierto && entornoBancard === 'produccion'))
+        || entornoBancard === 'staging'
+      ) && (
+        <div className="flex flex-wrap gap-2">
+          {bancard.superadmin && !bancard.habilitada && !(bancard.abierto && entornoBancard === 'produccion') && (
+            <span className="pastilla bg-ambar-claro text-ambar">{t.bancard.pruebas.soloVos}</span>
+          )}
+          {entornoBancard === 'staging' && (
+            <span className="pastilla bg-arena text-tinta/70">{t.bancard.pruebas.ambienteDePrueba}</span>
+          )}
+        </div>
+      )}
+
+      {/* Un pago que quedó sin confirmar (cerró la ventana, o pagó con QR y
+          volvió): se pregunta un rato y, si entró, se refresca la pantalla. */}
+      {estadoBancard?.viva && entornoBancard && (
+        <PagoEnCurso
+          operacion={estadoBancard.viva.operacion}
+          estado={estadoBancard.viva.estado}
+          tresDs={estadoBancard.viva.puede_3ds
+            ? { entorno: entornoBancard, urlScript: urlDelScript(entornoBancard), origen: HOST_BANCARD[entornoBancard] }
+            : null}
+        />
+      )}
+
       {/* ---------------- Los planes ----------------
           Para un negocio no aparece una tarjeta «Gratis»: Gratis es cuenta
           vencida y no se puede usar nada de Orden. Ofrecerlo como si fuera
@@ -356,7 +480,32 @@ export default async function PaginaPlan({
                         ]
               }
               pie={
-                esActual ? null : whatsapp ? (
+                // Con Bancard: el botón de pagar (también en el plan actual,
+                // para renovar) y, si hay WhatsApp, la transferencia en chico.
+                pagoBancard(plan, esActual) ? (
+                  <div className="space-y-1.5">
+                    {pagoBancard(plan, esActual)}
+                    {whatsapp && (plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
+                      <BotonCotizar
+                        whatsapp={whatsapp}
+                        empresa={ctx.empresa.nombre}
+                        etiqueta={t.bancard.boton.prefieroTransferir}
+                        comoEnlace
+                      />
+                    ) : (
+                      <BotonSuscribirme
+                        whatsapp={whatsapp}
+                        empresa={ctx.empresa.nombre}
+                        plan={t.plan[plan]}
+                        precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
+                        periodo={periodo}
+                        etiqueta={t.bancard.boton.prefieroTransferir}
+                        esPersonal={esPersonal}
+                        comoEnlace
+                      />
+                    ))}
+                  </div>
+                ) : esActual ? null : whatsapp ? (
                   // Premium se cotiza: el precio depende de cuántos vendedores,
                   // así que se manda la pregunta y no un número.
                   plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
@@ -390,6 +539,45 @@ export default async function PaginaPlan({
           que saber ANTES de elegir que se le cobra en guaraníes. */}
       <p className="text-[12.5px] leading-relaxed text-tinta/55">{t.plan.cobroEnGuaranies}</p>
 
+      {/* La tarjeta guardada para el cobro automático (Bancard, 02/10): cuál
+          es, cuándo es el próximo cobro, cambiarla o quitarla. Solo quien
+          administra la cuenta llega acá con Bancard disponible. */}
+      {entornoBancard && estadoBancard && (
+        <TarjetaGuardada
+          empresaId={ctx.empresa.id}
+          entorno={entornoBancard}
+          urlScript={urlDelScript(entornoBancard)}
+          origen={HOST_BANCARD[entornoBancard]}
+          zona={ctx.zonaHoraria}
+          anual={(renovacionDelDebito?.periodo ?? periodo) === 'anual'}
+          tarjeta={tarjetaGuardada}
+          debito={estadoBancard.debito}
+          renovacion={renovacionDelDebito}
+        />
+      )}
+
+      {/* El equipo de un Premium pago por Bancard con cantidad (02/10):
+          sumar personas se paga hoy, prorrateado; bajar rige desde la
+          próxima renovación. Un Premium «sin número» (activado a mano) no
+          tiene esto: primero renueva eligiendo cuántas son. */}
+      {entornoBancard && estadoBancard?.personas && estadoBancard.personas.contratadas !== null
+        && pagoVigente && ctx.planEfectivo === 'negocio' && !esPersonal && (
+        <EquipoPremium
+          datos={{
+            empresaId: ctx.empresa.id,
+            entorno: entornoBancard,
+            urlScript: urlDelScript(entornoBancard),
+            origen: HOST_BANCARD[entornoBancard],
+            zona: ctx.zonaHoraria,
+            conPix,
+            periodo: sus.periodo === 'anual' ? 'anual' : 'mensual',
+            tarjeta: tarjetaGuardada,
+          }}
+          personas={{ ...estadoBancard.personas, contratadas: estadoBancard.personas.contratadas }}
+          renovacion={sus.periodo_fin}
+        />
+      )}
+
       {/* Va con los precios porque es parte de la cuenta: el que está
           mirando cuánto le sale tiene que saber que puede recuperar parte
           trayendo a otro. Está en todos los planes, también en la prueba. */}
@@ -409,7 +597,14 @@ export default async function PaginaPlan({
         <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">{t.plan.ver}</span>
       </Link>
 
-      {whatsapp && (
+      {entornoBancard ? (
+        <div className="tarjeta p-4">
+          <p className="titulo-seccion mb-1.5">{t.pantallas.comoSePaga}</p>
+          <p className="text-[13.5px] leading-relaxed text-tinta/65">
+            {conPix ? t.bancard.comoSePagaConPix : t.bancard.comoSePaga}
+          </p>
+        </div>
+      ) : whatsapp && (
         <div className="tarjeta p-4">
           <p className="titulo-seccion mb-1.5">{t.pantallas.comoSePaga}</p>
           <p className="text-[13.5px] leading-relaxed text-tinta/65">
@@ -423,6 +618,14 @@ export default async function PaginaPlan({
       </p>
     </div>
   );
+}
+
+/** Lo que usa esta pantalla de `bancard_estado` (125). */
+interface EstadoBancard {
+  tarjeta: { id: number; marca: string | null; ultimos4: string | null; tipo: string | null } | null;
+  debito: DebitoVista;
+  personas: { contratadas: number | null; proxima: number | null; miembros: number; min: number; max: number } | null;
+  viva: { operacion: number; estado: string; tipo: string; medio: string; importe: number; minutos: number; puede_3ds: boolean } | null;
 }
 
 function Tarjeta({

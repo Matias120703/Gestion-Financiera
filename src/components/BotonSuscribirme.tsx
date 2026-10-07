@@ -19,7 +19,7 @@ import { useTextos } from '@/i18n/cliente';
  * el camino de la pasarela. Nunca un botón que no lleva a ningún lado.
  */
 export function BotonSuscribirme({
-  whatsapp, empresa, plan, precio, periodo, etiqueta, esPersonal = false,
+  whatsapp, empresa, plan, precio, periodo, etiqueta, esPersonal = false, comoEnlace = false,
 }: {
   /** Solo dígitos, con código de país. Sin esto no se dibuja nada. */
   whatsapp: string | null;
@@ -34,6 +34,12 @@ export function BotonSuscribirme({
    * «Negocio: Mis finanzas». Una persona no tiene negocio.
    */
   esPersonal?: boolean;
+  /**
+   * Un enlace chico y no un botón (02/10): con Bancard, el botón grande es
+   * «Pagar con tarjeta o QR» y la transferencia queda como «Prefiero pagar
+   * por transferencia», abajo.
+   */
+  comoEnlace?: boolean;
 }) {
   const t = useTextos();
   if (!whatsapp) return null;
@@ -48,7 +54,9 @@ export function BotonSuscribirme({
       href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(mensaje)}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="boton-principal flex w-full items-center justify-center gap-2"
+      className={comoEnlace
+        ? 'flex w-full items-center justify-center gap-1.5 py-1 text-[12.5px] font-semibold text-tinta/55 underline-offset-2 hover:underline'
+        : 'boton-principal flex w-full items-center justify-center gap-2'}
     >
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor"
            strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -64,11 +72,13 @@ export function BotonSuscribirme({
  * que no se puede mandar un número — se manda la pregunta.
  */
 export function BotonCotizar({
-  whatsapp, empresa, etiqueta,
+  whatsapp, empresa, etiqueta, comoEnlace = false,
 }: {
   whatsapp: string | null;
   empresa: string;
   etiqueta?: string;
+  /** Un enlace chico, como en BotonSuscribirme. */
+  comoEnlace?: boolean;
 }) {
   const t = useTextos();
   if (!whatsapp) return null;
@@ -80,7 +90,9 @@ export function BotonCotizar({
       href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(mensaje)}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="boton-suave flex w-full items-center justify-center gap-2"
+      className={comoEnlace
+        ? 'flex w-full items-center justify-center gap-1.5 py-1 text-[12.5px] font-semibold text-tinta/55 underline-offset-2 hover:underline'
+        : 'boton-suave flex w-full items-center justify-center gap-2'}
     >
       {etiqueta ?? t.plan.pedirCotizacion}
     </a>
