@@ -27,6 +27,19 @@ export interface DestinatarioVencimiento {
   email: string | null;
 }
 
+/** La tarjeta de la que se va a cobrar, si la cuenta tiene el débito al día (126). */
+export interface DebitoDelAviso {
+  marca: string | null;
+  ultimos4: string | null;
+  /**
+   * El ambiente de Bancard de esa tarjeta ('staging' o 'produccion'). La base
+   * no sabe en cuál está el servidor: lo compara `segunElServidor`.
+   */
+  entorno?: string;
+  /** 'AAAA-MM-DD': el día del cobro (el anterior al vencimiento, o el próximo reintento). */
+  fecha_cobro: string;
+}
+
 /** Una fila de `vencimientos_por_avisar()`. */
 export interface Vencimiento {
   tipo: TipoVencimiento;
@@ -43,18 +56,65 @@ export interface Vencimiento {
   /** Precio de lista en guaraníes; null si no hay: entonces no se dice ningún número. */
   precio: number | null;
   destinatarios: DestinatarioVencimiento[];
+  /** 126: lo que de verdad se le cobra (sus personas, su descuento), o null. */
+  importe?: number | null;
+  /** 126: la tarjeta guardada con el débito al día, o null: paga la persona. */
+  debito?: DebitoDelAviso | null;
+  /** 126: si la administración le habilitó el pago con Bancard. */
+  bancard?: boolean;
 }
 
 /**
- * CÓMO SE PAGA HOY. EL ÚNICO LUGAR QUE HAY QUE CAMBIAR CUANDO LLEGUE BANCARD.
+ * CÓMO SE PAGA, FILA POR FILA (02/10/2026, Bancard).
  *
- * Hoy se paga por transferencia, arreglando por WhatsApp desde el botón
- * «Suscribirme» de /plan. Cuando entre la tarjeta guardada (Bancard vPOS),
- * se cambia este valor a 'tarjeta' y cada idioma ya tiene su texto en
- * `comoPagar.tarjeta`: los avisos y los correos cambian solos.
+ * Hasta la 126 era una constante: todos pagaban por transferencia. Ahora lo
+ * dice cada fila: 'debito' si la cuenta tiene una tarjeta guardada con el
+ * débito al día (se le cobra solo); 'tarjeta' si ve el botón de Bancard (la
+ * cuenta está habilitada, o está abierto a todos); si no, 'transferencia',
+ * como siempre. Cada idioma tiene su texto en `comoPagar`.
+ *
+ * LA PRUEBA NUNCA ES 'debito' (decisión del 07/10/2026). Una cuenta en prueba
+ * puede guardar la tarjeta, pero no se le cobra sola: toda prueba nace con
+ * el plan Pro, y cobrarla sola era cobrarle el Pro a quien nunca eligió plan.
+ * La base ya manda `debito: null` para la prueba; acá se repite para que el
+ * correo no pueda prometer un cobro aunque una fila lo traiga.
  */
-export type ComoSePaga = 'transferencia' | 'tarjeta';
-export const COMO_SE_PAGA: ComoSePaga = 'transferencia';
+export type ComoSePaga = 'transferencia' | 'tarjeta' | 'debito';
+
+export function comoSePaga(
+  v: Pick<Vencimiento, 'debito' | 'bancard'> & { tipo?: TipoVencimiento },
+  abierto = false,
+): ComoSePaga {
+  if (v.tipo !== 'prueba' && v.debito && typeof v.debito === 'object' && v.debito.fecha_cobro) return 'debito';
+  if (v.bancard === true || abierto) return 'tarjeta';
+  return 'transferencia';
+}
+
+/**
+ * LO QUE DICE LA BASE, PASADO POR LO QUE EL SERVIDOR PUEDE CUMPLIR (07/10/2026).
+ *
+ * La base sabe que la cuenta tiene una tarjeta con el débito al día, pero no
+ * sabe si este servidor va a cobrarla. No la cobra si Bancard no está
+ * configurado (se apagó borrando BANCARD_ENTORNO, o una clave quedó mal
+ * cargada: la tarea contesta «omitida») ni si la tarjeta es del otro ambiente
+ * (la que se guardó en staging durante la certificación, con el servidor ya
+ * en producción). En esos casos el aviso decía «cobramos de tu Visa, no
+ * tenés que hacer nada», nadie cobraba y el plan se cortaba; y la
+ * administración tampoco recibía el «atentos a la transferencia».
+ *
+ * `entornoDelServidor`: el de `configBancard()`, o null sin configuración.
+ *   · sin configuración → sin débito y sin botón de Bancard: transferencia;
+ *   · tarjeta de otro ambiente → sin débito (paga la persona).
+ * Así el push, el correo y el aviso a la administración caen solos al camino
+ * de siempre.
+ */
+export function segunElServidor<T extends Pick<Vencimiento, 'debito' | 'bancard'>>(
+  v: T, entornoDelServidor: string | null,
+): T {
+  const debito = entornoDelServidor && v.debito && typeof v.debito === 'object'
+    && v.debito.entorno === entornoDelServidor ? v.debito : null;
+  return { ...v, debito, bancard: entornoDelServidor ? v.bancard === true : false };
+}
 
 /** A dónde lleva el botón del correo y el toque del push. */
 export const RUTA_PARA_PAGAR = '/plan';
@@ -73,8 +133,11 @@ export interface TextosAvisoVencimiento {
     frase: (plan: string, cuando: string) => string;
     /** Ídem en el correo; ya dice que lo cargado queda guardado. */
     frasePersonal: (plan: string, cuando: string) => string;
+    /** Con el débito al día: no hay que renovar nada, se cobra solo. */
+    fraseDebito: (plan: string, cuando: string) => string;
     precio: (precio: string) => string;
     boton: string;
+    botonDebito: string;
     pie: string;
   };
   prueba: {
@@ -89,7 +152,12 @@ export interface TextosAvisoVencimiento {
   hola: (nombre: string) => string;
   guardado: string;
   comoPagarTitulo: string;
-  comoPagar: Record<ComoSePaga, string>;
+  comoPagar: {
+    transferencia: string;
+    tarjeta: string;
+    /** «El 13 de noviembre cobramos Gs. 370.000 de tu Visa •••• 0016. No tenés que hacer nada.» */
+    debito: (fecha: string, importe: string | null, tarjeta: string) => string;
+  };
 }
 
 /**
@@ -146,10 +214,26 @@ function esPersonal(v: Vencimiento): boolean {
   return v.tipo_cuenta === 'personal';
 }
 
+/**
+ * La frase del débito: qué día, cuánto y de qué tarjeta. El importe es el que
+ * de verdad se cobra (`importe`, con sus personas y su descuento); si no
+ * vino, el de lista; si tampoco, sin número.
+ */
+export function textoDelDebito(v: Vencimiento, t: TextosAvisoVencimiento, locale: string): string {
+  const d = v.debito as DebitoDelAviso;
+  const n = Number(v.importe ?? v.precio);
+  const importe = Number.isFinite(n) && n > 0 ? precioEnGuaranies(n, locale) : null;
+  const tarjeta = `${(d.marca ?? '').trim()} •••• ${(d.ultimos4 ?? '····').trim()}`.trim();
+  return t.comoPagar.debito(fechaDelAviso(d.fecha_cobro, locale), importe, tarjeta);
+}
+
 /** El push del período pago. La prueba no pasa por acá: su push es el de la 071. */
 export function pushDeVencimiento(
-  v: Vencimiento, t: TextosAvisoVencimiento, locale: string,
+  v: Vencimiento, t: TextosAvisoVencimiento, locale: string, abierto = false,
 ): { titulo: string; cuerpo: string } {
+  if (comoSePaga(v, abierto) === 'debito') {
+    return { titulo: t.periodo.titulo(v.dias), cuerpo: textoDelDebito(v, t, locale) };
+  }
   const cuerpo = esPersonal(v) ? t.periodo.cuerpoPersonal : t.periodo.cuerpo;
   return {
     titulo: t.periodo.titulo(v.dias),
@@ -176,6 +260,7 @@ export function correoDeVencimiento(
   t: TextosAvisoVencimiento,
   locale: string,
   sitio: string,
+  abierto = false,
 ): { asunto: string; texto: string; html: string } {
   const plan = nombreDelPlan(v.plan, t);
   const precio = precioDelPlan(v, t, locale);
@@ -184,17 +269,25 @@ export function correoDeVencimiento(
 
   const esPrueba = v.tipo === 'prueba';
   const personal = esPersonal(v);
+  // Con la tarjeta guardada y el débito al día no hay nada que renovar: el
+  // correo dice qué día se cobra, cuánto y de qué tarjeta. En la prueba NO
+  // (07/10/2026): una prueba nunca se cobra sola, tenga o no la tarjeta
+  // guardada, así que su correo es siempre «activá tu plan» (`comoSePaga`
+  // nunca da 'debito' para la prueba).
+  const como = comoSePaga(v, abierto);
+  const debito = como === 'debito';
   const asunto = esPrueba ? t.prueba.asunto(cuando) : t.periodo.asunto(plan, cuando);
   const frase = esPrueba
     ? (personal ? t.prueba.frasePersonal(cuando) : t.prueba.frase(cuando))
+    : debito ? t.periodo.fraseDebito(plan, cuando)
     : (personal ? t.periodo.frasePersonal(plan, cuando) : t.periodo.frase(plan, cuando));
   // La frase de la personal ya dice que lo cargado queda guardado: repetirlo con
   // `guardado` en la oración siguiente sonaba a relleno (110, 28/09/2026).
-  const cierre = personal ? frase : `${frase} ${t.guardado}`;
+  const cierre = personal || debito ? frase : `${frase} ${t.guardado}`;
   const lineaPrecio = precio ? (esPrueba ? t.prueba.precio(plan, precio) : t.periodo.precio(precio)) : null;
-  const boton = esPrueba ? t.prueba.boton : t.periodo.boton;
+  const boton = debito ? t.periodo.botonDebito : esPrueba ? t.prueba.boton : t.periodo.boton;
   const pie = esPrueba ? t.prueba.pie : t.periodo.pie;
-  const comoPagar = t.comoPagar[COMO_SE_PAGA];
+  const comoPagar = como === 'debito' ? textoDelDebito(v, t, locale) : t.comoPagar[como];
 
   const texto = [
     t.hola(d.nombre),

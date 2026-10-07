@@ -134,6 +134,9 @@
 --   · 121_tambien_vendo_productos.sql
 --   · 122_productos_desde_planilla.sql
 --   · 123_precios_prueba_y_descuentos.sql
+--   · 124_bancard_precio_y_tablas.sql
+--   · 125_bancard_pagos.sql
+--   · 126_bancard_reloj_y_avisos.sql
 --   · 127_fiado_con_fechas.sql
 -- ============================================================
 
@@ -42337,6 +42340,3619 @@ end $fn$;
 
 revoke all on function public.cambiar_tipo_cuenta(uuid, text) from public, anon;
 grant execute on function public.cambiar_tipo_cuenta(uuid, text) to authenticated;
+
+
+-- ############################################################
+-- ##  124_bancard_precio_y_tablas.sql
+-- ############################################################
+
+-- ============================================================
+-- 124 · BANCARD (1 de 3): EL PRECIO QUE SE COBRA Y LAS TABLAS
+-- ============================================================
+--
+-- Matías (02/10/2026): ya tiene contratado Bancard vPOS 2.0 y quiere que las
+-- suscripciones se paguen con tarjeta y QR sin tener que escribirle por
+-- WhatsApp. «Al momento de pagar con tarjeta o QR, el propietario elige
+-- cuántos funcionarios va a querer, y de acuerdo a eso aparece el precio».
+--
+-- Son tres migraciones chicas (se aplican de a una):
+--
+--   · 124 (esta): las secuencias, las tablas y LA ÚNICA FUENTE DEL IMPORTE.
+--   · 125: las operaciones, la confirmación, la reversa, las tarjetas, el
+--     débito, lo que leen las pantallas y la administración.
+--   · 126: el aviso de vencimiento que sabe de Bancard y el reloj.
+--
+-- HASTA ACÁ NO EXISTÍA «CUÁNTO HAY QUE COBRARLE A ESTA CUENTA»
+--
+-- La lista vivía en `precios`, las personas extra del Premium en
+-- `precios_adicionales`, el descuento en `descuento_por_racha`, y la suma la
+-- hacía una persona en el panel. Una pasarela no puede cobrar así. Desde acá
+-- hay UNA función, `precio_de_la_cuenta`: la pantalla la muestra, el inicio
+-- del pago congela su resultado en la operación, la confirmación lo compara
+-- y la tarea diaria lo vuelve a pedir. El importe nunca viaja desde el
+-- navegador.
+--
+-- LAS REGLAS DEL PRECIO (todo en guaraníes enteros)
+--
+--   · Lista: la fila de `precios` del tipo de cuenta, el plan y el período.
+--   · El año se cobra por 11 meses y da 12 de servicio (así está la lista).
+--   · Premium de un negocio: su precio trae 4 personas (el dueño y 3 más,
+--     `personas_incluidas_premium()`), y cada persona más cuesta lo que dice
+--     `precio_por_vendedor()` (050) por cada mes cobrado, hasta el tope del
+--     plan (`limites_plan('negocio')`, 15). La cantidad se elige al pagar y
+--     no puede ser menor que el equipo que la cuenta ya tiene.
+--   · Descuento: el de la racha de la prueba (18 % un negocio, 5 % una cuenta
+--     personal) SOLO en el primer pago de la cuenta; el de la constancia
+--     (5 %) en las renovaciones de quien ya pagó. Se aplica sobre UN mes de
+--     lista con sus personas, también cuando se paga el año. Esas dos
+--     decisiones están en una sola línea (`v_base`) y son preguntas abiertas
+--     para Matías.
+--   · «Ya pagó» es un hecho guardado (`cuenta_ya_pago`): antes, a una cuenta
+--     que pagó y fue cortada le volvía a aparecer el 18 % del primer mes.
+--
+-- `descuento_por_racha` NO LA PODÍA LLAMAR EL SERVIDOR SIN SESIÓN
+--
+-- Exige `es_admin` o `es_superadmin`, y ni la confirmación de Bancard ni la
+-- tarea diaria tienen sesión. Su cuerpo pasa entero a `descuento_de_la_cuenta`
+-- (interna, sin guarda, cerrada a todos) y `descuento_por_racha` queda como
+-- envoltorio con la guarda de siempre: misma firma, mismos permisos, misma
+-- respuesta.
+--
+-- LAS TABLAS
+--
+-- Cinco, todas `bancard_*`, con RLS activa, SIN policies y sin ningún permiso
+-- para `anon` ni `authenticated`: se leen y se escriben solo por funciones
+-- `security definer`. Un vendedor no ve nada de plata ni de tarjetas. No
+-- llevan los triggers `cuenta_activa_*` (110, 111): un negocio vencido tiene
+-- que poder pagar.
+--
+-- De la tarjeta se guarda el número que Orden le dio (`card_id`), la marca,
+-- los últimos cuatro y si es de crédito o débito. Nunca el número, el
+-- enmascarado completo, el vencimiento, el código ni el alias: el manual de
+-- Bancard lo prohíbe y el alias dura minutos (se pide justo antes de cobrar).
+--
+-- Cada fila guarda su `entorno` (staging | produccion): hay una sola base, y
+-- un pago de prueba no puede contar como plata.
+--
+-- MENSAJES NUEVOS (con su portugués en src/lib/mensajes-base.ts)
+--
+--   · «Ese período de cobro no existe.»
+--   · «Ese plan no está disponible para tu rubro.»
+--   · «Ese plan no tiene precio cargado.»
+--   · «Elegí cuántas personas van a usar la cuenta (entre % y %).»
+--   · «Ese plan no lleva cantidad de personas.»
+--   · «No está cargado el precio por persona.»
+--   · «Primero renová tu plan eligiendo cuántas personas son.»
+--   · «Ya tenés esa cantidad de personas o más.»
+--
+-- Idempotente: `create ... if not exists`, `create or replace` y revoke/grant.
+-- Sin una sola barra invertida (el MCP con el que se aplica las duplica).
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LAS SECUENCIAS
+--
+--    Bancard identifica todo con ENTEROS que inventa el comercio: el pedido
+--    (`shop_process_id`, hasta 15 dígitos), el usuario (`user_id`) y la
+--    tarjeta (`card_id`). Orden usa uuid en todo, así que hacen falta tres
+--    numeraciones propias. Ninguna empieza en cero ni se reusa: un intento
+--    fallido quema su número.
+-- ------------------------------------------------------------
+create sequence if not exists public.bancard_operacion_seq start 1000001;
+create sequence if not exists public.bancard_pagador_seq start 5001;
+create sequence if not exists public.bancard_tarjeta_seq start 101;
+
+revoke all on sequence public.bancard_operacion_seq from public, anon, authenticated;
+revoke all on sequence public.bancard_pagador_seq from public, anon, authenticated;
+revoke all on sequence public.bancard_tarjeta_seq from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 2. LAS TABLAS
+-- ------------------------------------------------------------
+
+-- El número de usuario que Orden le da a Bancard. Uno por cuenta y entorno:
+-- la tarjeta es de la suscripción, no de la persona que la cargó.
+create table if not exists public.bancard_pagadores (
+  id          bigint primary key default nextval('public.bancard_pagador_seq'),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  entorno     text not null check (entorno in ('staging', 'produccion')),
+  created_at  timestamptz not null default now(),
+  unique (empresa_id, entorno)
+);
+
+-- La tarjeta guardada. `id` ES el card_id de Bancard.
+create table if not exists public.bancard_tarjetas (
+  id              bigint primary key default nextval('public.bancard_tarjeta_seq'),
+  empresa_id      uuid not null references public.empresas (id) on delete cascade,
+  pagador_id      bigint not null references public.bancard_pagadores (id) on delete cascade,
+  entorno         text not null check (entorno in ('staging', 'produccion')),
+  estado          text not null default 'pendiente'
+                  check (estado in ('pendiente', 'activa', 'por_quitar', 'quitada', 'fallida')),
+  marca           text check (char_length(marca) <= 30),
+  ultimos4        text check (ultimos4 ~ '^[0-9]{4}$'),
+  tipo            text check (tipo in ('credit', 'debit')),
+  -- La respuesta «INHABILITACIÓN 30 DIAS EN COMERCIO» del manual.
+  bloqueada_hasta timestamptz,
+  creada_por      uuid references auth.users (id) on delete set null,
+  created_at      timestamptz not null default now(),
+  activada_at     timestamptz,
+  quitada_at      timestamptz,
+  quitada_por     uuid references auth.users (id) on delete set null,
+  motivo          text check (char_length(motivo) <= 200)
+);
+
+comment on table public.bancard_tarjetas is
+  'La tarjeta guardada de una cuenta. Solo card_id, marca, últimos 4 y tipo. PROHIBIDO agregar columnas para el número, el enmascarado completo, el vencimiento, el código o el alias.';
+
+-- Una sola activa por cuenta y entorno.
+create unique index if not exists bancard_tarjetas_una_activa
+  on public.bancard_tarjetas (empresa_id, entorno) where estado = 'activa';
+create index if not exists bancard_tarjetas_empresa_idx
+  on public.bancard_tarjetas (empresa_id, created_at desc);
+
+-- Lo de Bancard de cada cuenta. Una fila por empresa; nace al habilitarla,
+-- al guardar una tarjeta o al programar una baja de personas.
+create table if not exists public.bancard_cuentas (
+  empresa_id        uuid primary key references public.empresas (id) on delete cascade,
+  -- El interruptor por cuenta: lo escribe la administración desde /admin.
+  habilitada        boolean not null default false,
+  habilitada_por    uuid references auth.users (id) on delete set null,
+  habilitada_at     timestamptz,
+  -- La tarjeta del débito.
+  tarjeta_id        bigint references public.bancard_tarjetas (id) on delete set null,
+  debito_activo     boolean not null default false,
+  debito_estado     text not null default 'al_dia'
+                    check (debito_estado in ('al_dia', 'reintentando', 'requiere_3ds', 'pausado')),
+  -- El vencimiento al que pertenecen los intentos.
+  ciclo_fin         date,
+  intentos          integer not null default 0 check (intentos >= 0),
+  ultimo_intento    date,
+  -- response_description del último rechazo.
+  ultimo_error      text check (char_length(ultimo_error) <= 120),
+  ultimo_codigo     text check (char_length(ultimo_codigo) <= 4),
+  -- «Bajar desde la próxima renovación».
+  personas_proxima  integer check (personas_proxima between 4 and 15),
+  -- El consentimiento del cobro recurrente: quién, cuándo y qué texto aceptó.
+  aceptado_por      uuid references auth.users (id) on delete set null,
+  aceptado_at       timestamptz,
+  aceptado_texto    text check (char_length(aceptado_texto) <= 600),
+  updated_at        timestamptz not null default now()
+);
+
+-- Una operación = un intento = un shop_process_id. Guarda TODO lo elegido:
+-- la confirmación de Bancard trae solo el número.
+create table if not exists public.bancard_operaciones (
+  id             bigint primary key default nextval('public.bancard_operacion_seq'),
+  empresa_id     uuid not null references public.empresas (id) on delete cascade,
+  -- null = la tarea diaria.
+  usuario_id     uuid references auth.users (id) on delete set null,
+  entorno        text not null check (entorno in ('staging', 'produccion')),
+  -- 'personas' = sumar gente al Premium, prorrateado.
+  tipo           text not null check (tipo in ('plan', 'personas')),
+  -- formulario = tarjeta, QR o PIX (se elige adentro del iframe de Bancard).
+  medio          text not null check (medio in ('formulario', 'token')),
+  origen         text not null check (origen in ('usuario', 'automatico')),
+  plan           text not null check (plan in ('basico', 'pro', 'negocio')),
+  periodo        text not null check (periodo in ('mensual', 'anual')),
+  -- Solo el Premium de un negocio; si no, null.
+  personas       integer check (personas between 4 and 15),
+  -- La respuesta entera de precio_de_la_cuenta / prorrateo_de_personas.
+  desglose       jsonb not null,
+  lista          numeric(14,0) not null,
+  extras         numeric(14,0) not null default 0,
+  descuento      numeric(14,0) not null default 0,
+  -- Guaraníes enteros.
+  importe        numeric(14,0) not null check (importe > 0),
+  moneda         text not null default 'PYG' check (moneda = 'PYG'),
+  -- Lo que ve la persona en el formulario de Bancard: 20 caracteres.
+  descripcion    text not null check (char_length(descripcion) between 1 and 20),
+  estado         text not null default 'creada'
+                 check (estado in ('creada', 'en_3ds', 'incierta', 'pagada', 'rechazada', 'revertida', 'vencida')),
+  -- El de Bancard. Solo se le entrega a quien inició la operación.
+  process_id     text check (char_length(process_id) <= 100),
+  -- Si medio = 'token'.
+  tarjeta_id     bigint references public.bancard_tarjetas (id) on delete set null,
+  -- Saneada: ver bancard_sanear (125).
+  respuesta      jsonb,
+  fuente         text check (fuente in ('confirmacion', 'consulta', 'charge')),
+  confirmada_at  timestamptz,
+  -- Foto de la suscripción antes de activar, para poder revertir.
+  antes          jsonb,
+  -- El periodo_fin que dejó este pago.
+  vence_despues  timestamptz,
+  ingreso_id     uuid references public.movimientos (id) on delete set null,
+  comision_id    uuid references public.comisiones (id) on delete set null,
+  revertida_at   timestamptz,
+  revertida_por  uuid references auth.users (id) on delete set null,
+  motivo         text check (char_length(motivo) <= 300),
+  -- No null = la administración tiene que mirarla.
+  revisar        text check (char_length(revisar) <= 200),
+  consultas      integer not null default 0,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create index if not exists bancard_operaciones_empresa_idx
+  on public.bancard_operaciones (empresa_id, created_at desc);
+-- UNA SOLA OPERACIÓN VIVA POR CUENTA. Es lo que impide el cobro doble: una
+-- operación con estado incierto no se vuelve a cobrar hasta resolverla.
+create unique index if not exists bancard_operaciones_una_viva
+  on public.bancard_operaciones (empresa_id) where estado in ('creada', 'en_3ds', 'incierta');
+-- Para la conciliación: las vivas, de la más vieja a la más nueva.
+create index if not exists bancard_operaciones_vivas_idx
+  on public.bancard_operaciones (created_at) where estado in ('creada', 'en_3ds', 'incierta');
+
+-- El registro: qué se le pidió a Bancard y qué mandó. Sin llave a la
+-- operación: a la URL de confirmación también llegan números que Orden no
+-- creó (el «Cliente de prueba» del portal).
+create table if not exists public.bancard_eventos (
+  id            bigserial primary key,
+  operacion_id  bigint,
+  tarjeta_id    bigint,
+  entorno       text,
+  -- single_buy | charge | consulta | rollback | cards_new | users_cards |
+  -- delete_card | confirmacion | conexion
+  tipo          text not null check (char_length(tipo) <= 40),
+  ok            boolean not null,
+  -- messages[].key de Bancard, o 'timeout', 'no_json', 'token_invalido',
+  -- 'desconocida', 'vacia', 'importe_distinto'.
+  clave         text check (char_length(clave) <= 80),
+  http          integer,
+  -- Saneado: ver bancard_anotar_evento (125).
+  detalle       jsonb not null default '{}'::jsonb,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists bancard_eventos_operacion_idx
+  on public.bancard_eventos (operacion_id, created_at desc);
+create index if not exists bancard_eventos_fecha_idx
+  on public.bancard_eventos (created_at desc);
+
+alter table public.bancard_pagadores   enable row level security;
+alter table public.bancard_tarjetas    enable row level security;
+alter table public.bancard_cuentas     enable row level security;
+alter table public.bancard_operaciones enable row level security;
+alter table public.bancard_eventos     enable row level security;
+
+-- Sin policies y sin permisos: dos cerrojos. Supabase le da por defecto
+-- todos los privilegios de tabla a `anon` y `authenticated` sobre lo nuevo.
+revoke all on public.bancard_pagadores   from public, anon, authenticated;
+revoke all on public.bancard_tarjetas    from public, anon, authenticated;
+revoke all on public.bancard_cuentas     from public, anon, authenticated;
+revoke all on public.bancard_operaciones from public, anon, authenticated;
+revoke all on public.bancard_eventos     from public, anon, authenticated;
+revoke all on sequence public.bancard_eventos_id_seq from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 3. LOS NÚMEROS DEL PRECIO, CADA UNO EN UN SOLO LUGAR
+-- ------------------------------------------------------------
+
+-- Espejo de PERSONAS_INCLUIDAS_PREMIUM (src/lib/constantes.ts). Hasta acá
+-- la base no conocía el 4. `pruebas/precios-prueba.test.js` los ata.
+-- Sin `security definer`: no lee nada, y así no suma una puerta a la lista
+-- de funciones definer abiertas a `anon` (pruebas/permisos.test.js).
+create or replace function public.personas_incluidas_premium()
+returns integer language sql immutable set search_path = public as $fn$
+  select 4;
+$fn$;
+
+grant execute on function public.personas_incluidas_premium() to anon, authenticated;
+
+-- Cuántos meses se cobran en cada período: el año son once.
+create or replace function public.meses_que_se_cobran(p_periodo text)
+returns integer language sql immutable set search_path = public as $fn$
+  select case when p_periodo = 'anual' then 11 else 1 end;
+$fn$;
+
+grant execute on function public.meses_que_se_cobran(text) to anon, authenticated;
+
+-- El único lugar del redondeo: al guaraní.
+create or replace function public.redondeo_de_cobro(p numeric)
+returns numeric language sql immutable set search_path = public as $fn$
+  select round(p, 0);
+$fn$;
+
+grant execute on function public.redondeo_de_cobro(numeric) to anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. EL DESCUENTO, PARTIDO EN DOS
+--
+--    `descuento_de_la_cuenta` es el cuerpo de `descuento_por_racha` (123)
+--    SIN la guarda de sesión, para que lo puedan usar la confirmación de
+--    Bancard y la tarea diaria. Cerrada a todos: la llaman otras funciones
+--    definer.
+-- ------------------------------------------------------------
+create or replace function public.descuento_de_la_cuenta(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_tipo     text;
+  v_zona     text;
+  v_desde    date;
+  v_hasta    date;
+  v_hoy      date;
+  v_objetivo integer;
+  v_pct      numeric;
+  v_mejor    integer := 0;
+  v_vigente  boolean := false;
+  v_fase     text;
+  v_ajustes  record;
+  v_sus      record;
+begin
+  select coalesce(e.tipo_cuenta, 'emprendedor'), coalesce(e.zona_horaria, 'America/Asuncion')
+  into v_tipo, v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select * into v_ajustes from public.ajustes_orden where unica;
+  v_hoy := (now() at time zone v_zona)::date;
+
+  select s.* into v_sus from public.suscripciones s where s.empresa_id = p_empresa;
+
+  if v_sus.empresa_id is null then
+    -- 123: reservas 8 → 20, y la cuenta personal con sus números (antes
+    -- esta rama le contestaba los del negocio a cualquiera).
+    if v_tipo = 'personal' then
+      return jsonb_build_object(
+        'fase', 'prueba', 'objetivo', coalesce(v_ajustes.racha_objetivo_personal, 8),
+        'mejor', 0, 'faltan', coalesce(v_ajustes.racha_objetivo_personal, 8),
+        'logrado', false, 'porcentaje', coalesce(v_ajustes.descuento_racha_porcentaje_personal, 5),
+        'vigente', false);
+    end if;
+    return jsonb_build_object(
+      'fase', 'prueba', 'objetivo', coalesce(v_ajustes.racha_objetivo_negocio, 20),
+      'mejor', 0, 'faltan', coalesce(v_ajustes.racha_objetivo_negocio, 20),
+      'logrado', false, 'porcentaje', coalesce(v_ajustes.descuento_racha_porcentaje, 18),
+      'vigente', false);
+  end if;
+
+  v_fase := case
+    when v_sus.estado = 'activa' and coalesce(v_sus.plan, 'gratis') <> 'gratis' then 'constancia'
+    else 'prueba'
+  end;
+
+  if v_fase = 'constancia' then
+    v_pct      := coalesce(v_ajustes.descuento_constancia_porcentaje, 5);
+    v_objetivo := coalesce(v_ajustes.racha_objetivo_constancia, 30);
+    with dias as (
+      select d.fecha from public.dias_cargados(p_empresa, v_hoy) d(fecha)
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    ),
+    rachas as (
+      select isla, count(*)::int as largo, max(fecha) as hasta from numeradas group by isla
+    )
+    select coalesce((select largo from rachas where hasta in (v_hoy, v_hoy - 1)
+                     order by hasta desc limit 1), 0)
+    into v_mejor;
+    v_vigente := true;
+  else
+    -- 123: el porcentaje es el de su tipo de cuenta (la personal tiene el
+    -- suyo), salvo que la suscripción guarde el que ya ganó.
+    v_pct      := coalesce(
+      v_sus.racha_porcentaje,
+      case when v_tipo = 'personal'
+           then coalesce(v_ajustes.descuento_racha_porcentaje_personal, 5)
+           else coalesce(v_ajustes.descuento_racha_porcentaje, 18) end);
+    -- 123: lo mismo con el objetivo, y las reservas pasan de 5 y 8 a 8 y 20.
+    v_objetivo := coalesce(
+      v_sus.racha_objetivo,
+      case when v_tipo = 'personal' then v_ajustes.racha_objetivo_personal
+           else v_ajustes.racha_objetivo_negocio end,
+      case when v_tipo = 'personal' then 8 else 20 end);
+
+    v_desde := (v_sus.created_at at time zone v_zona)::date;
+    v_hasta := least(v_hoy, (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date);
+    v_vigente := v_sus.estado = 'prueba'
+                 and v_hoy <= (coalesce(v_sus.prueba_fin, now()) at time zone v_zona)::date;
+
+    with dias as (
+      select d.fecha from public.dias_cargados(p_empresa, v_hasta) d(fecha)
+      where d.fecha >= v_desde
+    ),
+    numeradas as (
+      select fecha, (fecha - (row_number() over (order by fecha))::int) as isla from dias
+    )
+    select coalesce(max(largo), 0) into v_mejor
+    from (select count(*)::int as largo from numeradas group by isla) r;
+  end if;
+
+  return jsonb_build_object(
+    'fase',       v_fase,
+    'objetivo',   v_objetivo,
+    'mejor',      v_mejor,
+    'faltan',     greatest(0, v_objetivo - v_mejor),
+    'logrado',    v_mejor >= v_objetivo,
+    'porcentaje', v_pct,
+    'vigente',    v_vigente
+  );
+end $fn$;
+
+revoke all on function public.descuento_de_la_cuenta(uuid) from public, anon, authenticated;
+
+-- Copia exacta de la 123. Cambia: el cuerpo, que ahora vive en
+-- `descuento_de_la_cuenta`; acá quedan la guarda de sesión de siempre y la
+-- llamada. Misma firma, mismos permisos, misma respuesta.
+create or replace function public.descuento_por_racha(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  return public.descuento_de_la_cuenta(p_empresa);
+end $fn$;
+
+revoke all on function public.descuento_por_racha(uuid) from public, anon;
+grant execute on function public.descuento_por_racha(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 5. «¿YA PAGÓ?», COMO UN HECHO
+--
+--    El mismo filtro que usan `usar_codigo_referido` (063) y
+--    `asignar_referido` (103): un renglón 'cambiar_plan' con importe. Los
+--    pagos de Bancard en producción dejan ese renglón (125); los de staging
+--    no. Un cambio deshecho o un pago revertido no cuenta.
+-- ------------------------------------------------------------
+create or replace function public.cuenta_ya_pago(p_empresa uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select exists (
+    select 1 from public.registro_admin r
+    where r.empresa_id = p_empresa and r.accion = 'cambiar_plan'
+      and coalesce(r.detalle->>'importe', '') ~ '^[0-9]+([.][0-9]+)?$'
+      and (r.detalle->>'importe')::numeric > 0
+      and coalesce(r.detalle->>'deshecho', 'false') <> 'true'
+  );
+$fn$;
+
+revoke all on function public.cuenta_ya_pago(uuid) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 6. CUÁNTO HAY QUE COBRARLE A ESTA CUENTA
+--
+--    La única fuente del importe. Sin guarda de sesión y cerrada a todos:
+--    la llaman otras funciones definer (cotizar_plan, el inicio del pago, la
+--    tarea diaria).
+-- ------------------------------------------------------------
+create or replace function public.precio_de_la_cuenta(
+  p_empresa  uuid,
+  p_plan     text,
+  p_periodo  text,
+  p_personas integer
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_tipo          text;
+  v_rubro         text;
+  v_sus           public.suscripciones;
+  v_lista         numeric;
+  v_lista_mensual numeric;
+  v_usd           numeric;
+  v_usd_mensual   numeric;
+  v_ppv           numeric;
+  v_ppv_usd       numeric;
+  v_miembros      integer;
+  v_incluidas     integer := public.personas_incluidas_premium();
+  v_max           integer := (public.limites_plan('negocio')->>'miembros')::integer;
+  v_min           integer;
+  v_lleva         boolean;
+  v_extra         integer := 0;
+  v_meses         integer;
+  v_servicio      integer;
+  v_extras        numeric := 0;
+  v_subtotal      numeric;
+  v_d             jsonb;
+  v_ya            boolean;
+  v_fase          text;
+  v_pct           numeric := 0;
+  v_base          numeric;
+  v_descuento     numeric := 0;
+  v_ref           numeric;
+begin
+  -- 1. La cuenta, el plan y el período.
+  select coalesce(e.tipo_cuenta, 'emprendedor'), e.rubro
+  into v_tipo, v_rubro
+  from public.empresas e where e.id = p_empresa;
+
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+  if p_plan is null or p_plan not in ('basico', 'pro', 'negocio') then
+    raise exception 'Plan desconocido: %', coalesce(p_plan, '') using errcode = '22023';
+  end if;
+  if p_periodo is null or p_periodo not in ('mensual', 'anual') then
+    raise exception 'Ese período de cobro no existe.' using errcode = '22023';
+  end if;
+
+  select * into v_sus from public.suscripciones where empresa_id = p_empresa;
+
+  -- 2. Los planes de su rubro, o el que ya tiene pago (un rubro que cambió
+  --    de lista no deja sin renovar a quien ya paga).
+  if not (p_plan = any (public.planes_de_rubro(v_rubro, v_tipo)))
+     and not coalesce(v_sus.estado = 'activa' and v_sus.plan = p_plan, false) then
+    raise exception 'Ese plan no está disponible para tu rubro.' using errcode = '22023';
+  end if;
+
+  -- 3. La lista, en guaraníes.
+  select pr.importe into v_lista
+  from public.precios pr
+  where pr.tipo_cuenta = v_tipo and pr.plan = p_plan and pr.moneda = 'PYG'
+    and pr.periodo = p_periodo and pr.activo;
+  select pr.importe into v_lista_mensual
+  from public.precios pr
+  where pr.tipo_cuenta = v_tipo and pr.plan = p_plan and pr.moneda = 'PYG'
+    and pr.periodo = 'mensual' and pr.activo;
+
+  if v_lista is null or v_lista_mensual is null then
+    raise exception 'Ese plan no tiene precio cargado.' using errcode = '22023';
+  end if;
+
+  -- 4. Las personas: solo el Premium de un negocio las lleva.
+  select count(*)::int into v_miembros from public.miembros m where m.empresa_id = p_empresa;
+  v_lleva := (p_plan = 'negocio' and v_tipo <> 'personal');
+  v_ppv := public.precio_por_vendedor('PYG');
+
+  if v_lleva then
+    v_min := least(greatest(v_incluidas, v_miembros), v_max);
+    if p_personas is null or p_personas < v_min or p_personas > v_max then
+      raise exception 'Elegí cuántas personas van a usar la cuenta (entre % y %).', v_min, v_max
+        using errcode = '22023';
+    end if;
+    v_extra := greatest(0, p_personas - v_incluidas);
+  elsif p_personas is not null then
+    raise exception 'Ese plan no lleva cantidad de personas.' using errcode = '22023';
+  end if;
+
+  -- 5. Sin precio por persona no se puede cobrar a nadie de más.
+  if v_extra > 0 and v_ppv is null then
+    raise exception 'No está cargado el precio por persona.' using errcode = '22023';
+  end if;
+
+  -- La cuenta. El año se cobra por 11 meses y da 12 de servicio.
+  v_meses    := public.meses_que_se_cobran(p_periodo);
+  v_servicio := case when p_periodo = 'anual' then 12 else 1 end;
+  v_extras   := v_extra * coalesce(v_ppv, 0) * v_meses;
+  v_subtotal := v_lista + v_extras;
+
+  -- El descuento: la racha de la prueba solo en el PRIMER pago; la
+  -- constancia solo en las renovaciones de quien ya pagó.
+  v_d  := public.descuento_de_la_cuenta(p_empresa);
+  v_ya := public.cuenta_ya_pago(p_empresa);
+  v_fase := case
+    when not v_ya and v_d->>'fase' = 'prueba'     and coalesce((v_d->>'logrado')::boolean, false) then 'prueba'
+    when v_ya     and v_d->>'fase' = 'constancia' and coalesce((v_d->>'logrado')::boolean, false) then 'constancia'
+    else null
+  end;
+  v_pct := case when v_fase is null then 0 else coalesce((v_d->>'porcentaje')::numeric, 0) end;
+
+  -- LAS DOS REGLAS DUDOSAS VIVEN EN ESTA LÍNEA: el descuento es sobre UN mes
+  -- (también al pagar el año) y alcanza a las personas extra.
+  v_base := v_lista_mensual + v_extra * coalesce(v_ppv, 0);
+  v_descuento := case when v_fase is null then 0
+                      else least(public.redondeo_de_cobro(v_base * v_pct / 100), v_subtotal) end;
+
+  -- La referencia en dólares: se muestra, no se cobra. Null si falta una fila.
+  select pr.importe into v_usd
+  from public.precios pr
+  where pr.tipo_cuenta = v_tipo and pr.plan = p_plan and pr.moneda = 'USD'
+    and pr.periodo = p_periodo and pr.activo;
+  select pr.importe into v_usd_mensual
+  from public.precios pr
+  where pr.tipo_cuenta = v_tipo and pr.plan = p_plan and pr.moneda = 'USD'
+    and pr.periodo = 'mensual' and pr.activo;
+  v_ppv_usd := public.precio_por_vendedor('USD');
+
+  if v_usd is null or v_usd_mensual is null or (v_extra > 0 and v_ppv_usd is null) then
+    v_ref := null;
+  else
+    v_ref := v_usd + v_extra * coalesce(v_ppv_usd, 0) * v_meses
+             - round((v_usd_mensual + v_extra * coalesce(v_ppv_usd, 0)) * v_pct / 100, 2);
+  end if;
+
+  return jsonb_build_object(
+    'plan',                 p_plan,
+    'periodo',              p_periodo,
+    'tipo_cuenta',          v_tipo,
+    'moneda',               'PYG',
+    'lista',                public.redondeo_de_cobro(v_lista),
+    'lista_mensual',        public.redondeo_de_cobro(v_lista_mensual),
+    'meses_cobrados',       v_meses,
+    'meses_de_servicio',    v_servicio,
+    'personas',             case when v_lleva then p_personas else null end,
+    'personas_incluidas',   case when v_lleva then v_incluidas else null end,
+    'personas_extra',       v_extra,
+    'personas_min',         case when v_lleva then v_min else null end,
+    'personas_max',         case when v_lleva then v_max else null end,
+    'miembros',             v_miembros,
+    'precio_por_persona',   case when v_ppv is null then null else public.redondeo_de_cobro(v_ppv) end,
+    'extras',               public.redondeo_de_cobro(v_extras),
+    'subtotal',             public.redondeo_de_cobro(v_subtotal),
+    'descuento_fase',       v_fase,
+    'descuento_porcentaje', v_pct,
+    'descuento_base',       public.redondeo_de_cobro(v_base),
+    'descuento',            v_descuento,
+    'total',                public.redondeo_de_cobro(v_subtotal - v_descuento),
+    'referencia_usd',       v_ref
+  ) || jsonb_build_object(
+    -- Las piezas en dólares, para que la pantalla recalcule la referencia
+    -- al mover la cantidad de personas (src/lib/cotizacion.ts).
+    'usd_lista',            v_usd,
+    'usd_lista_mensual',    v_usd_mensual,
+    'usd_por_persona',      v_ppv_usd,
+    'primer_pago',          not v_ya,
+    'vence_hasta',          greatest(coalesce(v_sus.periodo_fin, now()), now())
+                            + make_interval(months => v_servicio)
+  );
+end $fn$;
+
+revoke all on function public.precio_de_la_cuenta(uuid, text, text, integer) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 7. SUMAR PERSONAS A UN PREMIUM VIGENTE: EL PRORRATEO
+--
+--    Se paga en el momento por los días que faltan del período; desde la
+--    próxima renovación entran en el precio. Mensual sobre 30 días; anual
+--    sobre 365 y por los 11 meses que se cobran. Sin descuento.
+-- ------------------------------------------------------------
+create or replace function public.prorrateo_de_personas(p_empresa uuid, p_personas integer)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_sus      public.suscripciones;
+  v_tipo     text;
+  v_max      integer := (public.limites_plan('negocio')->>'miembros')::integer;
+  v_antes    integer;
+  v_ppv      numeric;
+  v_dias     integer;
+  v_periodo  integer;
+  v_precio   numeric;
+  v_importe  numeric;
+begin
+  select coalesce(e.tipo_cuenta, 'emprendedor') into v_tipo
+  from public.empresas e where e.id = p_empresa;
+  select * into v_sus from public.suscripciones where empresa_id = p_empresa;
+
+  if v_tipo is null or v_sus.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  if v_tipo = 'personal' or v_sus.plan <> 'negocio' or v_sus.estado <> 'activa' then
+    raise exception 'Ese plan no lleva cantidad de personas.' using errcode = '22023';
+  end if;
+  -- Vencido, o un Premium «sin número» (activado a mano): primero se renueva
+  -- eligiendo la cantidad, y recién ahí hay algo a lo que sumarle.
+  if v_sus.periodo_fin is null or v_sus.periodo_fin <= now() or v_sus.tope_vendedores is null then
+    raise exception 'Primero renová tu plan eligiendo cuántas personas son.' using errcode = '22023';
+  end if;
+
+  v_antes := v_sus.tope_vendedores + 1;
+  if p_personas is null or p_personas <= v_antes then
+    raise exception 'Ya tenés esa cantidad de personas o más.' using errcode = '22023';
+  end if;
+  if p_personas > v_max then
+    raise exception 'Elegí cuántas personas van a usar la cuenta (entre % y %).', v_antes + 1, v_max
+      using errcode = '22023';
+  end if;
+
+  v_ppv := public.precio_por_vendedor('PYG');
+  if v_ppv is null then
+    raise exception 'No está cargado el precio por persona.' using errcode = '22023';
+  end if;
+
+  -- Nunca menos de un día: Bancard rechaza un importe de cero.
+  v_dias    := greatest(1, ceil(extract(epoch from (v_sus.periodo_fin - now())) / 86400)::integer);
+  v_periodo := case when coalesce(v_sus.periodo, 'mensual') = 'anual' then 365 else 30 end;
+  v_precio  := v_ppv * public.meses_que_se_cobran(coalesce(v_sus.periodo, 'mensual'));
+  v_importe := greatest(1, public.redondeo_de_cobro(
+    (p_personas - v_antes) * v_precio * v_dias / v_periodo));
+
+  return jsonb_build_object(
+    'plan',               v_sus.plan,
+    'periodo',            coalesce(v_sus.periodo, 'mensual'),
+    'personas_antes',     v_antes,
+    'personas',           p_personas,
+    'personas_sumadas',   p_personas - v_antes,
+    'dias_restantes',     v_dias,
+    'dias_del_periodo',   v_periodo,
+    'precio_por_persona', public.redondeo_de_cobro(v_ppv),
+    'importe',            v_importe,
+    'total',              v_importe,
+    'moneda',             'PYG',
+    'vence_hasta',        v_sus.periodo_fin
+  );
+end $fn$;
+
+revoke all on function public.prorrateo_de_personas(uuid, integer) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 8. LO QUE PIDE LA PANTALLA
+--
+--    Las dos de arriba, con la guarda de sesión: solo quien administra la
+--    cuenta (o la administración de Orden) ve cuánto se le cobra.
+-- ------------------------------------------------------------
+create or replace function public.cotizar_plan(
+  p_empresa  uuid,
+  p_plan     text,
+  p_periodo  text default 'mensual',
+  p_personas integer default null
+)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  return public.precio_de_la_cuenta(p_empresa, p_plan, p_periodo, p_personas);
+end $fn$;
+
+revoke all on function public.cotizar_plan(uuid, text, text, integer) from public, anon;
+grant execute on function public.cotizar_plan(uuid, text, text, integer) to authenticated;
+
+create or replace function public.cotizar_personas(p_empresa uuid, p_personas integer)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  return public.prorrateo_de_personas(p_empresa, p_personas);
+end $fn$;
+
+revoke all on function public.cotizar_personas(uuid, integer) from public, anon;
+grant execute on function public.cotizar_personas(uuid, integer) to authenticated;
+
+
+-- ############################################################
+-- ##  125_bancard_pagos.sql
+-- ############################################################
+
+-- ============================================================
+-- 125 · BANCARD (2 de 3): LOS PAGOS
+-- ============================================================
+--
+-- Sobre las tablas y el precio de la 124, todo lo que hace falta para cobrar
+-- una suscripción por Bancard vPOS 2.0 sin que nadie active un plan a mano.
+--
+-- LAS REGLAS QUE ORDENAN ESTE ARCHIVO
+--
+--   · UNA OPERACIÓN = UN INTENTO = UN shop_process_id. Guarda todo lo
+--     elegido (plan, período, personas, desglose, entorno) y el importe
+--     congelado. La confirmación de Bancard trae solo el número: lo demás
+--     sale de la fila. El importe nunca viaja desde el navegador.
+--   · UNA SOLA OPERACIÓN VIVA POR CUENTA (índice de la 124). Una operación
+--     con estado incierto no se vuelve a cobrar hasta resolverla consultando
+--     a Bancard: así no hay cobro doble.
+--   · EL PLAN SE ACTIVA EN UN SOLO LUGAR, `bancard_confirmar`, una vez por
+--     operación y con la fila bloqueada. La llaman tres caminos (la
+--     confirmación que manda Bancard, la consulta, y la respuesta del cobro
+--     con tarjeta guardada) y los tres pueden llegar a la vez.
+--   · TODO LO QUE ESCRIBE ES SOLO DE `service_role` y recibe `p_usuario`;
+--     adentro se vuelve a comprobar que esa persona administra la cuenta.
+--     Las tablas no tienen permisos: las pantallas leen por función.
+--   · CADA FILA GUARDA SU ENTORNO. Un pago de staging activa el plan de la
+--     cuenta de prueba, pero NO anota ingreso en las finanzas de Orden, NO
+--     genera comisión y NO cuenta como «ya pagó».
+--   · EL PREMIUM QUEDA CON LAS PERSONAS QUE SE PAGARON: al confirmar,
+--     `tope_vendedores = personas - 1`. Nunca más un Premium «sin número»
+--     (15 personas por el precio base) cuando se paga por Bancard.
+--   · DE LA RESPUESTA DE BANCARD SE GUARDA LO JUSTO (`bancard_sanear`): ni el
+--     token, ni la IP de la persona, ni el process_id, ni el alias.
+--
+-- LO QUE `aplicar_suscripcion` (104) NO HACE Y ACÁ SÍ
+--
+-- Se la reusa tal cual (su firma está atada por las pruebas) para el upsert
+-- y la comisión, y alrededor se hace lo que le falta: calcular la fecha
+-- («nunca se le comen días», como `cambiar_plan_cuenta`), escribir el tope de
+-- personas, anotar el ingreso en la empresa de Orden, atar la comisión a ese
+-- ingreso y dejar el renglón `cambiar_plan` en `registro_admin`, que es lo que
+-- miran `usar_codigo_referido` (063) y `asignar_referido` (103) para saber si
+-- una cuenta ya pagó.
+--
+-- EL DÉBITO AUTOMÁTICO COBRA ANTES DEL CORTE
+--
+-- `plan_efectivo_calculado` corta al instante al pasar `periodo_fin`. Por eso
+-- el primer intento es el día ANTERIOR al vencimiento, y los reintentos +1 y
+-- +4 días después (`bancard_dias_de_cobro`). Un intento por día como mucho:
+-- Bancard bloquea 30 días una tarjeta con 7 rechazos en 24 horas.
+--
+-- `deshacer_ultimo_cambio` (022) SE COMÍA UN PAGO CON TARJETA
+--
+-- Deshacía el renglón del pago devolviendo la cuenta al estado anterior y
+-- anulando el ingreso, sin pedirle nada a Bancard. Ahora se niega: un pago de
+-- Bancard se revierte con `bancard_revertir`, que primero le pide la reversa
+-- a Bancard.
+--
+-- MENSAJES NUEVOS (con su portugués en src/lib/mensajes-base.ts)
+--
+--   · «Ese pedido de pago no es válido.»
+--   · «Solo el dueño de la cuenta puede pagar el plan.»
+--   · «Tu plan actual está pago hasta el %. Para cambiar de plan antes de esa
+--     fecha escribinos.»
+--   · «Para cambiar la cantidad de personas usá «Sumar personas» o «Bajar
+--     desde la próxima renovación».»
+--   · «No hay una tarjeta guardada.»
+--   · «Probaste varias veces con esta tarjeta y fue rechazada. Probá con otra
+--     o pagá con QR.»
+--   · «Demasiados intentos hoy. Probá de nuevo más tarde o escribinos.»
+--   · «Falta un teléfono para registrar la tarjeta.»
+--   · «Falta un correo para registrar la tarjeta.»
+--   · «Ese pago no existe.» (ya traducido, 082)
+--   · «Ese pago no está aprobado, no hay nada que revertir.»
+--   · «Ya pasó el día del pago: se anula por el portal de comercios (Soporte
+--     → Anulaciones) y después se marca acá.»
+--   · «Después de ese pago hubo otros cambios en la cuenta. Deshacé primero
+--     esos.»
+--   · «Ese cambio tiene un pago con Bancard: se revierte desde los pagos de
+--     Bancard de la cuenta.»
+--   · «No podés bajar a menos personas de las que hoy tiene tu equipo.»
+--
+-- LA REVISIÓN DEL 03/10 (lente: la plata del cliente y de Orden)
+--
+-- Doce hallazgos sobre esto mismo; lo que cambió acá:
+--   · Una operación que ya no está viva (rechazada, vencida) y llega
+--     aprobada SE VUELVE A COTIZAR: si hoy vale más (el 18 % del primer
+--     pago ya se usó, la lista subió, el equipo creció) o es un «sumar
+--     personas» de un período que ya se renovó, la plata se anota pero NO
+--     activa nada: queda para la administración (`revisar`).
+--   · Las rechazadas de formulario se cierran en Bancard (reversa) cuando la
+--     cuenta abre otro pago y en la conciliación: `rechazada → vencida` con
+--     motivo 'reemplazada'.
+--   · Una `vencida` con motivo 'RollbackSuccessful' (Bancard devolvió la
+--     plata en la conciliación) no se activa con una aprobación tardía.
+--   · El tope de personas (`tope_de_miembros`, sección 13) respeta la baja
+--     programada y la renovación viva por menos personas; y al confirmar se
+--     vuelve a contar el equipo.
+--   · «Sumar personas» cancela una baja programada menor.
+--   · Un cobro automático que no llegó al banco (sin red, pedido no
+--     aceptado, la conciliación no encontró pago) DEVUELVE el intento.
+--   · Los reintentos de un vencimiento cobran lo que se anunció: el
+--     descuento del primer intento del ciclo vale para sus reintentos.
+--   · `bancard_eventos` se purga (90 días) y 'desconocida' se anota una vez
+--     por número y día.
+--
+-- LA REVISIÓN FINAL DEL 07/10 (tres revisores y un escéptico por hallazgo)
+--
+--   · UNA CUENTA EN PRUEBA NUNCA SE COBRA SOLA. El 03/10 se había hecho que
+--     la tarjeta guardada en la prueba «la convirtiera»; se deshace. Toda
+--     prueba nace con plan 'pro': cobrarla sola le cobraba el Pro a quien
+--     nunca eligió plan (y quizá quería el Básico), y una prueba YA vencida
+--     que guardaba la tarjeta era cobrada dentro de la hora. La prueba sí
+--     puede guardar su tarjeta: le sirve para pagar con un toque cuando
+--     elija su plan, y desde ese primer pago las renovaciones son
+--     automáticas. `bancard_tomar_cobro`, `bancard_tarjetas_por_revisar` y
+--     `bancard_estado` (fecha e importe del próximo cobro) exigen
+--     `estado = 'activa'`.
+--   · «Bajar desde la próxima renovación» (`bancard_bajar_personas`) pasa a
+--     ser del servidor, como todo lo que escribe: la ruta comprueba que la
+--     cuenta ve Bancard. Y la baja programada CADUCA sola cuando la
+--     suscripción cambia por cualquier camino (disparador
+--     `bancard_baja_caduca`, sección 14): una renovación activada a mano
+--     por más personas ya no queda topada por una baja vieja.
+--   · Una reversa que Bancard SÍ hizo sobre una operación que quedó
+--     «pagada» deja rastro (`revisar`) y se le avisa a la administración.
+--   · Revertir un cobro pausa el débito: sin eso, la tarea volvía a cobrar
+--     la misma tarjeta al día siguiente.
+--   · El reintento cobra lo anunciado también si el primer intento falló
+--     por infraestructura (intento devuelto).
+--   · El motivo del conflicto «con el descuento del primer pago» solo se
+--     escribe si la operación de verdad usó ese descuento.
+--
+-- Idempotente: todo es `create or replace`, revoke/grant y
+-- `drop … if exists` antes de lo que no se puede reemplazar (la firma vieja
+-- de `bancard_bajar_personas`, el disparador). Sin una sola barra invertida.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. LOS NÚMEROS, CADA UNO EN UN SOLO LUGAR
+-- ------------------------------------------------------------
+
+-- Días respecto del vencimiento en que se intenta el débito: el día anterior,
+-- y dos reintentos con la cuenta ya vencida.
+create or replace function public.bancard_dias_de_cobro()
+returns integer[] language sql immutable set search_path = public as $fn$
+  select array[-1, 1, 4];
+$fn$;
+
+-- Rechazos de una misma tarjeta en 24 horas antes de frenar a la persona.
+create or replace function public.bancard_tope_de_rechazos()
+returns integer language sql immutable set search_path = public as $fn$
+  select 3;
+$fn$;
+
+-- Cuánto vive un formulario sin pagar antes de darlo por abandonado.
+create or replace function public.bancard_minutos_de_vida()
+returns integer language sql immutable set search_path = public as $fn$
+  select 30;
+$fn$;
+
+-- Cuánto se espera a que la persona confirme un pago que pidió 3D Secure.
+create or replace function public.bancard_minutos_de_3ds()
+returns integer language sql immutable set search_path = public as $fn$
+  select 60;
+$fn$;
+
+-- Operaciones que una cuenta puede iniciar en 24 horas.
+create or replace function public.bancard_operaciones_por_dia()
+returns integer language sql immutable set search_path = public as $fn$
+  select 20;
+$fn$;
+
+-- Pedidos de guardar tarjeta que una cuenta puede iniciar en 24 horas.
+create or replace function public.bancard_catastros_por_dia()
+returns integer language sql immutable set search_path = public as $fn$
+  select 5;
+$fn$;
+
+-- Lo que la persona lee en el formulario de Bancard. ASCII y hasta 20
+-- caracteres (el manual: `description` String 20).
+create or replace function public.bancard_descripcion(p_tipo text, p_plan text)
+returns text language sql immutable set search_path = public as $fn$
+  select case
+    when p_tipo = 'personas' then 'Orden mas personas'
+    when p_plan = 'basico'   then 'Orden Basico'
+    when p_plan = 'negocio'  then 'Orden Premium'
+    else 'Orden Pro'
+  end;
+$fn$;
+
+-- Qué hacer con un rechazo según su código. Criterio de Orden, no de Bancard:
+-- a la persona se le muestra `response_description`; el código solo decide
+-- si vale la pena reintentar.
+create or replace function public.bancard_clase_de_rechazo(p_codigo text)
+returns text language sql immutable set search_path = public as $fn$
+  select case
+    when c in ('06', '09', '19', '22', '46', '47', '90', '91', '92', '96', '98') then 'transitorio'
+    when c in ('51', '61', '65') then 'fondos'
+    when c in ('04', '14', '33', '34', '36', '38', '41', '43', '54', '59', '62', '9G') then 'tarjeta'
+    when c in ('01', '02', '55', '57', '73', '75', '77', '82', '83', '5C') then 'titular'
+    else 'otro'
+  end
+  from (select upper(lpad(coalesce(trim(p_codigo), ''), 2, '0')) as c) x;
+$fn$;
+
+revoke all on function public.bancard_dias_de_cobro() from public, anon, authenticated;
+revoke all on function public.bancard_tope_de_rechazos() from public, anon, authenticated;
+revoke all on function public.bancard_minutos_de_vida() from public, anon, authenticated;
+revoke all on function public.bancard_minutos_de_3ds() from public, anon, authenticated;
+revoke all on function public.bancard_operaciones_por_dia() from public, anon, authenticated;
+revoke all on function public.bancard_catastros_por_dia() from public, anon, authenticated;
+revoke all on function public.bancard_descripcion(text, text) from public, anon, authenticated;
+revoke all on function public.bancard_clase_de_rechazo(text) from public, anon, authenticated;
+grant execute on function public.bancard_dias_de_cobro() to service_role;
+grant execute on function public.bancard_tope_de_rechazos() to service_role;
+grant execute on function public.bancard_minutos_de_vida() to service_role;
+grant execute on function public.bancard_minutos_de_3ds() to service_role;
+grant execute on function public.bancard_operaciones_por_dia() to service_role;
+grant execute on function public.bancard_catastros_por_dia() to service_role;
+grant execute on function public.bancard_descripcion(text, text) to service_role;
+grant execute on function public.bancard_clase_de_rechazo(text) to service_role;
+
+-- ------------------------------------------------------------
+-- 2. QUÉ SE GUARDA DE UNA RESPUESTA DE BANCARD
+--
+--    Solo lo de esta lista, y solo valores sueltos (texto, número). Se
+--    descartan el token, la IP de la persona, el process_id, el alias, la
+--    respuesta de facturación y cualquier clave que no esté acá.
+-- ------------------------------------------------------------
+create or replace function public.bancard_sanear(p jsonb)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case
+    when p is null or jsonb_typeof(p) <> 'object' then '{}'::jsonb
+    else
+      coalesce((
+        select jsonb_object_agg(k,
+          case when jsonb_typeof(p -> k) = 'string' then to_jsonb(left(p ->> k, 200)) else p -> k end)
+        from unnest(array['response', 'response_code', 'response_description', 'response_details',
+                          'extended_response_description', 'authorization_number', 'ticket_number',
+                          'amount', 'currency']) k
+        where jsonb_typeof(p -> k) in ('string', 'number', 'boolean')
+      ), '{}'::jsonb)
+      || case
+           when jsonb_typeof(p -> 'security_information') = 'object' then jsonb_build_object(
+             'security_information', coalesce((
+               select jsonb_object_agg(k,
+                 case when jsonb_typeof(p -> 'security_information' -> k) = 'string'
+                      then to_jsonb(left(p -> 'security_information' ->> k, 60))
+                      else p -> 'security_information' -> k end)
+               from unnest(array['card_source', 'card_country', 'risk_index']) k
+               where jsonb_typeof(p -> 'security_information' -> k) in ('string', 'number', 'boolean')
+             ), '{}'::jsonb))
+           else '{}'::jsonb
+         end
+  end;
+$fn$;
+
+-- Lo mismo para el detalle de un evento del registro: un `operation` o un
+-- `confirmation` pasan por la lista de arriba; de `messages` quedan la clave,
+-- el nivel y la descripción; del resto, solo valores sueltos cuyo nombre no
+-- sea de los que nunca se guardan.
+create or replace function public.bancard_sanear_detalle(p jsonb)
+returns jsonb language sql immutable set search_path = public as $fn$
+  select case
+    when p is null or jsonb_typeof(p) <> 'object' then '{}'::jsonb
+    else
+      coalesce((
+        select jsonb_object_agg(e.key,
+          case when jsonb_typeof(e.value) = 'string' then to_jsonb(left(e.value #>> '{}', 300)) else e.value end)
+        from jsonb_each(p) e
+        where jsonb_typeof(e.value) in ('string', 'number', 'boolean')
+          and lower(e.key) not in ('token', 'alias_token', 'card_token', 'process_id', 'public_key',
+                                   'private_key', 'customer_ip', 'user_cell_phone', 'user_mail',
+                                   'card_masked_number', 'expiration_date')
+      ), '{}'::jsonb)
+      || case when p ? 'operation'
+              then jsonb_build_object('operation', public.bancard_sanear(p -> 'operation'))
+              else '{}'::jsonb end
+      || case when p ? 'confirmation'
+              then jsonb_build_object('confirmation', public.bancard_sanear(p -> 'confirmation'))
+              else '{}'::jsonb end
+      || case when jsonb_typeof(p -> 'messages') = 'array'
+              then jsonb_build_object('messages', coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'key',   left(coalesce(m ->> 'key', ''), 80),
+                  'level', left(coalesce(m ->> 'level', ''), 20),
+                  'dsc',   left(coalesce(m ->> 'dsc', ''), 200)))
+                from jsonb_array_elements(p -> 'messages') m
+                where jsonb_typeof(m) = 'object'
+              ), '[]'::jsonb))
+              else '{}'::jsonb end
+  end;
+$fn$;
+
+revoke all on function public.bancard_sanear(jsonb) from public, anon, authenticated;
+revoke all on function public.bancard_sanear_detalle(jsonb) from public, anon, authenticated;
+grant execute on function public.bancard_sanear(jsonb) to service_role;
+grant execute on function public.bancard_sanear_detalle(jsonb) to service_role;
+
+-- ------------------------------------------------------------
+-- 3. AYUDAS INTERNAS (cerradas a todos: las llaman las de abajo)
+-- ------------------------------------------------------------
+
+-- ¿Esta persona administra esta cuenta? Con `service_role` no hay
+-- `auth.uid()`, así que `es_admin()` y `es_superadmin()` no sirven acá.
+create or replace function public.bancard_administra(p_empresa uuid, p_usuario uuid)
+returns boolean language sql stable security definer set search_path = public as $fn$
+  select p_usuario is not null and (
+    exists (
+      select 1 from public.miembros m
+      where m.empresa_id = p_empresa and m.user_id = p_usuario
+        and m.rol in ('propietario', 'admin'))
+    or exists (select 1 from public.superadmins s where s.usuario_id = p_usuario)
+  );
+$fn$;
+
+-- A quién se le avisa lo de la plata de una cuenta: propietarios y
+-- administradores, como en `vencimientos_por_avisar` (107).
+create or replace function public.bancard_destinatarios(p_empresa uuid)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'user_id', mi.user_id,
+    'idioma',  coalesce(p.idioma, 'es'),
+    'nombre',  coalesce(mi.nombre, ''),
+    'email',   u.email
+  ) order by mi.rol desc, mi.created_at), '[]'::jsonb)
+  from public.miembros mi
+  left join public.preferencias p on p.user_id = mi.user_id
+  left join auth.users u on u.id = mi.user_id
+  where mi.empresa_id = p_empresa and mi.rol in ('propietario', 'admin');
+$fn$;
+
+-- Por cuántas personas se renueva el Premium de esta cuenta: la baja
+-- programada si la hay, si no lo contratado, y nunca menos que el equipo de
+-- hoy. Null si su plan no lleva cantidad de personas.
+create or replace function public.bancard_personas_de_renovacion(p_empresa uuid)
+returns integer language sql stable security definer set search_path = public as $fn$
+  select case
+    when s.plan = 'negocio' and coalesce(e.tipo_cuenta, 'emprendedor') <> 'personal' then
+      least(
+        (public.limites_plan('negocio')->>'miembros')::integer,
+        greatest(
+          coalesce(c.personas_proxima, s.tope_vendedores + 1, public.personas_incluidas_premium()),
+          (select count(*)::int from public.miembros m where m.empresa_id = e.id),
+          public.personas_incluidas_premium()))
+    else null
+  end
+  from public.empresas e
+  join public.suscripciones s on s.empresa_id = e.id
+  left join public.bancard_cuentas c on c.empresa_id = e.id
+  where e.id = p_empresa;
+$fn$;
+
+-- Cuánto se le cobraría hoy la renovación (su plan, su período y sus
+-- personas). Null si no se puede cotizar: nunca lanza.
+create or replace function public.bancard_importe_de_renovacion(p_empresa uuid)
+returns numeric language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_plan    text;
+  v_periodo text;
+begin
+  select s.plan, coalesce(s.periodo, 'mensual') into v_plan, v_periodo
+  from public.suscripciones s where s.empresa_id = p_empresa;
+
+  if v_plan is null or v_plan = 'gratis' then
+    return null;
+  end if;
+
+  return (public.precio_de_la_cuenta(
+    p_empresa, v_plan, v_periodo, public.bancard_personas_de_renovacion(p_empresa)) ->> 'total')::numeric;
+exception when others then
+  return null;
+end $fn$;
+
+revoke all on function public.bancard_administra(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.bancard_destinatarios(uuid) from public, anon, authenticated;
+revoke all on function public.bancard_personas_de_renovacion(uuid) from public, anon, authenticated;
+revoke all on function public.bancard_importe_de_renovacion(uuid) from public, anon, authenticated;
+
+-- ------------------------------------------------------------
+-- 4. INICIAR UNA OPERACIÓN
+--
+--    La interna hace todo y no confía en nadie más que en sus argumentos; la
+--    llaman `bancard_crear_operacion` (una persona, con su permiso
+--    comprobado) y `bancard_tomar_cobro` (la tarea diaria, sin persona).
+--
+--    Devuelve una de tres cosas:
+--      · la operación nueva;
+--      · la MISMA operación de hace un momento (`reusada`): doble clic, o
+--        cerrar y volver a abrir la ventana de pago;
+--      · `{viva: <id>}`: ya hay una operación sin resolver de esa cuenta. No
+--        se crea nada: el servidor la resuelve consultando a Bancard y vuelve
+--        a llamar.
+-- ------------------------------------------------------------
+create or replace function public.bancard_crear_operacion_interna(
+  p_empresa  uuid,
+  p_usuario  uuid,
+  p_entorno  text,
+  p_tipo     text,
+  p_medio    text,
+  p_origen   text,
+  p_plan     text,
+  p_periodo  text,
+  p_personas integer
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_sus       public.suscripciones;
+  v_viva      public.bancard_operaciones;
+  v_tarjeta   public.bancard_tarjetas;
+  v_plan      text;
+  v_periodo   text;
+  v_zona      text;
+  v           jsonb;
+  v_lista     numeric := 0;
+  v_extras    numeric := 0;
+  v_descuento numeric := 0;
+  v_importe   numeric;
+  v_id        bigint;
+  v_desc      text;
+begin
+  if p_entorno is null or p_entorno not in ('staging', 'produccion')
+     or p_tipo is null or p_tipo not in ('plan', 'personas')
+     or p_medio is null or p_medio not in ('formulario', 'token')
+     or p_origen is null or p_origen not in ('usuario', 'automatico') then
+    raise exception 'Ese pedido de pago no es válido.' using errcode = '22023';
+  end if;
+
+  -- 1. El candado de «una cosa a la vez por cuenta».
+  select * into v_sus from public.suscripciones where empresa_id = p_empresa for update;
+  if v_sus.empresa_id is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select coalesce(e.zona_horaria, 'America/Asuncion') into v_zona
+  from public.empresas e where e.id = p_empresa;
+
+  -- Sumar personas es sobre el plan y el período que la cuenta ya tiene.
+  if p_tipo = 'personas' then
+    v_plan    := v_sus.plan;
+    v_periodo := coalesce(v_sus.periodo, 'mensual');
+  else
+    v_plan    := p_plan;
+    v_periodo := p_periodo;
+  end if;
+
+  -- 3. ¿Hay una operación viva de esta cuenta?
+  select * into v_viva
+  from public.bancard_operaciones o
+  where o.empresa_id = p_empresa and o.estado in ('creada', 'en_3ds', 'incierta')
+  limit 1;
+
+  if v_viva.id is not null then
+    if v_viva.estado = 'creada' and v_viva.medio = 'formulario' and p_medio = 'formulario'
+       and v_viva.process_id is not null
+       and v_viva.created_at > now() - interval '10 minutes'
+       and v_viva.tipo = p_tipo and v_viva.entorno = p_entorno
+       and v_viva.plan is not distinct from v_plan
+       and v_viva.periodo is not distinct from v_periodo
+       and v_viva.personas is not distinct from p_personas
+       and p_usuario is not null and v_viva.usuario_id = p_usuario then
+      -- La misma persona pidiendo lo mismo: es la misma operación.
+      return jsonb_build_object(
+        'operacion',   v_viva.id,
+        'importe',     v_viva.importe,
+        'moneda',      v_viva.moneda,
+        'descripcion', v_viva.descripcion,
+        'desglose',    v_viva.desglose,
+        'reusada',     true,
+        'process_id',  v_viva.process_id);
+    end if;
+    return jsonb_build_object('viva', v_viva.id, 'estado', v_viva.estado, 'medio', v_viva.medio);
+  end if;
+
+  -- 4. Cuánto es.
+  if p_tipo = 'plan' then
+    -- Cambiar de plan con días pagos no va por Bancard: habría que prorratear
+    -- un plan contra otro. Se escribe y lo resuelve la administración.
+    if v_sus.estado = 'activa' and v_sus.periodo_fin is not null and v_sus.periodo_fin > now()
+       and v_sus.plan <> 'gratis' and v_plan is not null and v_sus.plan <> v_plan then
+      raise exception 'Tu plan actual está pago hasta el %. Para cambiar de plan antes de esa fecha escribinos.',
+        to_char(v_sus.periodo_fin at time zone v_zona, 'DD/MM/YYYY') using errcode = '22023';
+    end if;
+
+    v := public.precio_de_la_cuenta(p_empresa, v_plan, v_periodo, p_personas);
+
+    -- Renovar un Premium vigente es por la cantidad que tiene (o por la baja
+    -- que programó). Cambiarla tiene sus dos caminos propios.
+    if v_sus.estado = 'activa' and v_sus.plan = 'negocio' and v_plan = 'negocio'
+       and v_sus.periodo_fin is not null and v_sus.periodo_fin > now()
+       and v_sus.tope_vendedores is not null
+       and p_personas is distinct from public.bancard_personas_de_renovacion(p_empresa) then
+      raise exception 'Para cambiar la cantidad de personas usá «Sumar personas» o «Bajar desde la próxima renovación».'
+        using errcode = '22023';
+    end if;
+
+    v_lista     := (v ->> 'lista')::numeric;
+    v_extras    := (v ->> 'extras')::numeric;
+    v_descuento := (v ->> 'descuento')::numeric;
+  else
+    v := public.prorrateo_de_personas(p_empresa, p_personas);
+    v_extras := (v ->> 'total')::numeric;
+  end if;
+  v_importe := (v ->> 'total')::numeric;
+
+  -- 5. Con tarjeta guardada: que exista, que sea de este entorno y que no
+  --    venga de rebotar.
+  if p_medio = 'token' then
+    select t.* into v_tarjeta
+    from public.bancard_cuentas c
+    join public.bancard_tarjetas t on t.id = c.tarjeta_id
+    where c.empresa_id = p_empresa and t.estado = 'activa' and t.entorno = p_entorno;
+
+    if v_tarjeta.id is null then
+      raise exception 'No hay una tarjeta guardada.' using errcode = '22023';
+    end if;
+    if v_tarjeta.bloqueada_hasta is not null and v_tarjeta.bloqueada_hasta > now() then
+      raise exception 'Probaste varias veces con esta tarjeta y fue rechazada. Probá con otra o pagá con QR.'
+        using errcode = '22023';
+    end if;
+    if p_origen = 'usuario' and (
+      select count(*) from public.bancard_operaciones o
+      where o.tarjeta_id = v_tarjeta.id and o.estado = 'rechazada'
+        and o.created_at > now() - interval '24 hours'
+    ) >= public.bancard_tope_de_rechazos() then
+      raise exception 'Probaste varias veces con esta tarjeta y fue rechazada. Probá con otra o pagá con QR.'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  -- 6. El freno de abuso (a la tarea diaria no le aplica: es una por día).
+  if p_origen = 'usuario' and (
+    select count(*) from public.bancard_operaciones o
+    where o.empresa_id = p_empresa and o.created_at > now() - interval '24 hours'
+  ) >= public.bancard_operaciones_por_dia() then
+    raise exception 'Demasiados intentos hoy. Probá de nuevo más tarde o escribinos.' using errcode = '22023';
+  end if;
+
+  -- 7. La operación, con todo congelado.
+  v_desc := public.bancard_descripcion(p_tipo, v_plan);
+  begin
+    insert into public.bancard_operaciones (
+      empresa_id, usuario_id, entorno, tipo, medio, origen, plan, periodo, personas,
+      desglose, lista, extras, descuento, importe, descripcion, tarjeta_id
+    ) values (
+      p_empresa, p_usuario, p_entorno, p_tipo, p_medio, p_origen, v_plan, v_periodo, p_personas,
+      v, v_lista, v_extras, v_descuento, v_importe, v_desc, v_tarjeta.id
+    )
+    returning id into v_id;
+  exception when unique_violation then
+    -- La red de abajo del paso 3: alguien creó una viva en el medio.
+    select * into v_viva
+    from public.bancard_operaciones o
+    where o.empresa_id = p_empresa and o.estado in ('creada', 'en_3ds', 'incierta')
+    limit 1;
+    return jsonb_build_object('viva', v_viva.id, 'estado', v_viva.estado, 'medio', v_viva.medio);
+  end;
+
+  -- 8. Lo que el servidor necesita para hablar con Bancard. `reemplaza`:
+  --    las rechazadas de formulario de esta cuenta que todavía tienen un
+  --    formulario abierto en Bancard; el servidor las cierra con la reversa
+  --    (revisión 03/10: una rechazada no puede quedar pagable para siempre).
+  return jsonb_build_object(
+    'operacion',   v_id,
+    'importe',     v_importe,
+    'moneda',      'PYG',
+    'descripcion', v_desc,
+    'desglose',    v,
+    'reusada',     false,
+    'user_id',     v_tarjeta.pagador_id,
+    'card_id',     v_tarjeta.id,
+    'reemplaza',   coalesce((
+      select jsonb_agg(x.id order by x.id)
+      from (
+        select o.id from public.bancard_operaciones o
+        where o.empresa_id = p_empresa and o.entorno = p_entorno
+          and o.estado = 'rechazada' and o.medio = 'formulario' and o.process_id is not null
+          and o.created_at > now() - interval '24 hours'
+        order by o.id desc
+        limit 3
+      ) x), '[]'::jsonb));
+end $fn$;
+
+revoke all on function public.bancard_crear_operacion_interna(uuid, uuid, text, text, text, text, text, text, integer)
+  from public, anon, authenticated;
+
+create or replace function public.bancard_crear_operacion(
+  p_empresa  uuid,
+  p_usuario  uuid,
+  p_entorno  text,
+  p_tipo     text,
+  p_medio    text,
+  p_plan     text,
+  p_periodo  text,
+  p_personas integer
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  -- 2. La persona tiene que administrar la cuenta. Sin persona no hay pago:
+  --    eso es solo de la tarea diaria, que entra por otra puerta.
+  if not public.bancard_administra(p_empresa, p_usuario) then
+    raise exception 'Solo el dueño de la cuenta puede pagar el plan.' using errcode = '42501';
+  end if;
+
+  return public.bancard_crear_operacion_interna(
+    p_empresa, p_usuario, p_entorno, p_tipo, p_medio, 'usuario', p_plan, p_periodo, p_personas);
+end $fn$;
+
+revoke all on function public.bancard_crear_operacion(uuid, uuid, text, text, text, text, text, integer)
+  from public, anon, authenticated;
+grant execute on function public.bancard_crear_operacion(uuid, uuid, text, text, text, text, text, integer)
+  to service_role;
+
+-- El process_id que devolvió Bancard al abrir el formulario.
+create or replace function public.bancard_guardar_proceso(p_operacion bigint, p_process_id text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_ok boolean;
+begin
+  update public.bancard_operaciones
+  set process_id = left(p_process_id, 100), updated_at = now()
+  where id = p_operacion and estado = 'creada'
+    and coalesce(p_process_id, '') <> '';
+  v_ok := found;
+  return jsonb_build_object('ok', v_ok);
+end $fn$;
+
+revoke all on function public.bancard_guardar_proceso(bigint, text) from public, anon, authenticated;
+grant execute on function public.bancard_guardar_proceso(bigint, text) to service_role;
+
+-- Lo mínimo de una operación, para la confirmación y la conciliación. No
+-- devuelve el process_id ni la respuesta. Null si no existe.
+-- `consultas`: cuántas veces se le preguntó a Bancard por ella. La pantalla
+-- de vuelta consulta una vez aunque la confirmación ya haya llegado: es lo
+-- que marca «Recibimos pedido de confirmación del comercio» en la lista de
+-- tests del portal.
+create or replace function public.bancard_operacion_interna(p_operacion bigint)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'operacion',  o.id,
+    'empresa_id', o.empresa_id,
+    'entorno',    o.entorno,
+    'estado',     o.estado,
+    'tipo',       o.tipo,
+    'medio',      o.medio,
+    'origen',     o.origen,
+    'importe',    o.importe,
+    'user_id',    (select t.pagador_id from public.bancard_tarjetas t where t.id = o.tarjeta_id),
+    'card_id',    o.tarjeta_id,
+    'minutos',    floor(extract(epoch from (now() - o.created_at)) / 60)::integer,
+    'consultas',  o.consultas,
+    -- Revisión 03/10: hace cuántos segundos se le preguntó a Bancard por
+    -- última vez (null si nunca). Frena las consultas repetidas: la pantalla
+    -- que sondea y la URL pública con un token que no coincide.
+    'consulta_hace', (
+      select floor(extract(epoch from (now() - max(e.created_at))))::integer
+      from public.bancard_eventos e
+      where e.operacion_id = o.id and e.tipo = 'consulta')
+  )
+  from public.bancard_operaciones o
+  where o.id = p_operacion;
+$fn$;
+
+revoke all on function public.bancard_operacion_interna(bigint) from public, anon, authenticated;
+grant execute on function public.bancard_operacion_interna(bigint) to service_role;
+
+-- ------------------------------------------------------------
+-- 5. CERRAR UNA OPERACIÓN SIN UNA RESPUESTA DE PAGO
+--
+--    'en_3ds'   el banco pide que la persona confirme (guarda el process_id).
+--    'incierta' no se sabe qué pasó (se cortó el cobro): la resuelve la
+--               conciliación consultando a Bancard. NUNCA se cobra de nuevo.
+--    'vencida'  abandonada, o el pedido a Bancard falló.
+--
+--    Respeta la máquina de estados: sobre una pagada, una revertida o una ya
+--    vencida no hace nada. Una rechazada solo pasa a vencida cuando el
+--    servidor la cerró en Bancard ('reemplazada': reversa hecha, o
+--    'RollbackSuccessful': la reversa encontró plata y la devolvió).
+--
+--    Revisión 07/10: la única excepción a «sobre una pagada no hace nada».
+--    Entre que el servidor decide cerrar una operación en Bancard (la
+--    reversa) y que la reversa sale, la persona puede haber pagado en ese
+--    mismo formulario: la confirmación la deja 'pagada' y Bancard devuelve
+--    la plata igual ('RollbackSuccessful'). El plan queda activo y el
+--    ingreso anotado por plata que volvió. No se deshace solo (deshacer un
+--    plan sin una persona mirando es peor): se escribe `revisar` y se
+--    devuelve `revisar: true` con los datos de la cuenta, para que el
+--    servidor le avise a la administración. La marca sale true UNA vez.
+-- ------------------------------------------------------------
+create or replace function public.bancard_cerrar_operacion(
+  p_operacion bigint,
+  p_estado    text,
+  p_detalle   jsonb default '{}'::jsonb
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_op    public.bancard_operaciones;
+  v_clave text := left(coalesce(p_detalle ->> 'clave', ''), 80);
+begin
+  if p_estado is null or p_estado not in ('en_3ds', 'incierta', 'vencida') then
+    raise exception 'Ese pedido de pago no es válido.' using errcode = '22023';
+  end if;
+
+  select * into v_op from public.bancard_operaciones where id = p_operacion for update;
+  if v_op.id is null then
+    return jsonb_build_object('ok', false, 'motivo', 'desconocida');
+  end if;
+
+  if not (
+    (v_op.estado = 'creada')
+    or (v_op.estado in ('en_3ds', 'incierta') and p_estado = 'vencida')
+    or (v_op.estado = 'rechazada' and p_estado = 'vencida' and v_clave in ('reemplazada', 'RollbackSuccessful'))
+  ) then
+    if v_op.estado = 'pagada' and p_estado = 'vencida' and v_clave = 'RollbackSuccessful' then
+      update public.bancard_operaciones
+      set revisar = 'Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano',
+          updated_at = now()
+      where id = v_op.id;
+      return jsonb_build_object(
+        'ok', true, 'cambio', false, 'estado', v_op.estado,
+        'revisar',    v_op.revisar is distinct from
+                      'Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano',
+        'operacion',  v_op.id,
+        'empresa_id', v_op.empresa_id,
+        'nombre',     (select e.nombre from public.empresas e where e.id = v_op.empresa_id),
+        'importe',    v_op.importe,
+        'entorno',    v_op.entorno);
+    end if;
+    return jsonb_build_object('ok', true, 'cambio', false, 'estado', v_op.estado);
+  end if;
+
+  if p_estado = 'en_3ds' then
+    update public.bancard_operaciones
+    set estado = 'en_3ds',
+        process_id = left(coalesce(nullif(p_detalle ->> 'process_id', ''), process_id), 100),
+        updated_at = now()
+    where id = v_op.id;
+
+    -- La tarea diaria no puede completar un 3D Secure: hace falta la persona.
+    if v_op.origen = 'automatico' then
+      update public.bancard_cuentas
+      set debito_estado = 'requiere_3ds', updated_at = now()
+      where empresa_id = v_op.empresa_id;
+    end if;
+
+  elsif p_estado = 'incierta' then
+    update public.bancard_operaciones
+    set estado = 'incierta', updated_at = now()
+    where id = v_op.id;
+
+  else
+    update public.bancard_operaciones
+    set estado = 'vencida',
+        motivo = coalesce(nullif(v_clave, ''), motivo),
+        updated_at = now()
+    where id = v_op.id;
+
+    -- Un 3D Secure del débito que nadie confirmó: se vuelve a intentar el
+    -- día que toque.
+    if v_op.origen = 'automatico' and v_op.estado = 'en_3ds' then
+      update public.bancard_cuentas
+      set debito_estado = 'reintentando', updated_at = now()
+      where empresa_id = v_op.empresa_id and debito_estado = 'requiere_3ds';
+    end if;
+
+    -- Bancard dice que esa tarjeta ya no sirve: el débito no insiste.
+    if v_op.tarjeta_id is not null and v_clave in ('CardBlockedError', 'CardNotFoundError') then
+      update public.bancard_cuentas
+      set debito_estado = 'pausado', ultimo_error = v_clave, ultimo_codigo = null, updated_at = now()
+      where empresa_id = v_op.empresa_id and tarjeta_id = v_op.tarjeta_id;
+
+    -- Revisión 03/10: un pedido que no llegó al banco no es un rechazo. Si
+    -- el cobro automático se cierra sin que el banco haya contestado el
+    -- charge (la lista de tarjetas falló, Bancard no aceptó el pedido, la
+    -- conciliación no encontró ningún pago), el intento se devuelve y se
+    -- vuelve a probar al día siguiente (`ultimo_intento` queda: un intento
+    -- por día, también de infraestructura). Un 3D Secure que nadie
+    -- confirmó sí cuenta: el banco contestó.
+    elsif v_op.origen = 'automatico' and v_op.tarjeta_id is not null
+          and v_op.estado in ('creada', 'incierta') then
+      update public.bancard_cuentas
+      set intentos = greatest(0, intentos - 1), updated_at = now()
+      where empresa_id = v_op.empresa_id and tarjeta_id = v_op.tarjeta_id;
+    end if;
+  end if;
+
+  -- Un 3D Secure del débito: hace falta la persona, así que el servidor le
+  -- avisa. Solo acá se devuelve a quién (el resto no avisa nada).
+  if p_estado = 'en_3ds' and v_op.origen = 'automatico' then
+    return jsonb_build_object(
+      'ok', true, 'cambio', true, 'estado', p_estado,
+      'operacion',     v_op.id,
+      'empresa_id',    v_op.empresa_id,
+      'origen',        v_op.origen,
+      'nombre',        (select e.nombre from public.empresas e where e.id = v_op.empresa_id),
+      'destinatarios', public.bancard_destinatarios(v_op.empresa_id));
+  end if;
+
+  return jsonb_build_object('ok', true, 'cambio', true, 'estado', p_estado);
+end $fn$;
+
+revoke all on function public.bancard_cerrar_operacion(bigint, text, jsonb) from public, anon, authenticated;
+grant execute on function public.bancard_cerrar_operacion(bigint, text, jsonb) to service_role;
+
+-- Dejarle una nota a la administración sobre una operación.
+create or replace function public.bancard_marcar_revisar(p_operacion bigint, p_motivo text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_ok boolean;
+begin
+  update public.bancard_operaciones
+  set revisar = left(coalesce(nullif(trim(p_motivo), ''), 'Revisar'), 200), updated_at = now()
+  where id = p_operacion;
+  v_ok := found;
+  return jsonb_build_object('ok', v_ok);
+end $fn$;
+
+revoke all on function public.bancard_marcar_revisar(bigint, text) from public, anon, authenticated;
+grant execute on function public.bancard_marcar_revisar(bigint, text) to service_role;
+
+-- ------------------------------------------------------------
+-- 6. CONFIRMAR: EL ÚNICO LUGAR DONDE UN PAGO ACTIVA UN PLAN
+--
+--    `p_respuesta` es el objeto `operation` (confirmación, cobro con tarjeta
+--    guardada) o `confirmation` (consulta) de Bancard, tal como llegó.
+--
+--    La máquina de estados, entera:
+--      creada    → pagada | rechazada | en_3ds | incierta | vencida
+--      en_3ds    → pagada | rechazada | vencida
+--      incierta  → pagada | rechazada | vencida
+--      rechazada → pagada   (un reintento adentro del mismo formulario)
+--      vencida   → pagada   (un pago que entró tarde: la plata entró)
+--      pagada    → pagada   (no toca NADA: idempotencia) | revertida
+--      revertida → (nada)   (una aprobación acá no activa: queda para revisar)
+--
+--    Revisión 03/10: una aprobación sobre una operación que YA NO ESTABA
+--    VIVA (rechazada, vencida) se vuelve a cotizar antes de activar. Si hoy
+--    vale más (el 18 % del primer pago ya se usó en otro pago, la lista
+--    subió, el equipo creció) o es un «sumar personas» cotizado para un
+--    período que ya se renovó, es un conflicto: la plata se anota, el plan no
+--    se toca, y lo mira una persona. Una `vencida` con motivo
+--    'RollbackSuccessful' (Bancard devolvió la plata) se trata como revertida.
+-- ------------------------------------------------------------
+create or replace function public.bancard_confirmar(
+  p_operacion bigint,
+  p_respuesta jsonb,
+  p_fuente    text
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_op        public.bancard_operaciones;
+  v_sus       public.suscripciones;
+  v_cuenta    public.bancard_cuentas;
+  v_tarjeta   public.bancard_tarjetas;
+  v_resp      jsonb := coalesce(p_respuesta, '{}'::jsonb);
+  v_limpia    jsonb;
+  v_aprobada  boolean;
+  v_codigo    text;
+  v_desc      text;
+  v_clase     text;
+  v_dias      integer[] := public.bancard_dias_de_cobro();
+  v_proximo   date;
+  v_monto     text;
+  v_nombre    text;
+  v_tipo      text;
+  v_fin       timestamptz;
+  v_antes     jsonb;
+  v_pagador   bigint;
+  v_com_antes uuid;
+  v_com       uuid;
+  v_orden     uuid;
+  v_ingreso   uuid;
+  v_revisar   text;
+  v_tope      integer;
+  v_conflicto boolean := false;
+  v_viva      boolean;
+  v_base      jsonb;
+  v_miembros  integer;
+  v_hoy       jsonb;
+begin
+  if p_fuente is null or p_fuente not in ('confirmacion', 'consulta', 'charge') then
+    raise exception 'Ese pedido de pago no es válido.' using errcode = '22023';
+  end if;
+
+  -- 1. La operación, bloqueada: el segundo que llegue espera y ve el final.
+  select * into v_op from public.bancard_operaciones where id = p_operacion for update;
+  if v_op.id is null then
+    return jsonb_build_object('ok', false, 'motivo', 'desconocida');
+  end if;
+
+  -- 2. ¿Aprobada? `response` S y código 00 (el anexo los lista sin el cero).
+  v_limpia   := public.bancard_sanear(v_resp);
+  v_codigo   := upper(lpad(coalesce(nullif(trim(v_resp ->> 'response_code'), ''), '??'), 2, '0'));
+  v_aprobada := coalesce(v_resp ->> 'response' = 'S', false) and v_codigo = '00';
+  v_viva     := v_op.estado in ('creada', 'en_3ds', 'incierta');
+
+  select e.nombre, coalesce(e.tipo_cuenta, 'emprendedor') into v_nombre, v_tipo
+  from public.empresas e where e.id = v_op.empresa_id;
+
+  v_base := jsonb_build_object(
+    'operacion',   v_op.id,
+    'empresa_id',  v_op.empresa_id,
+    'nombre',      v_nombre,
+    'tipo_cuenta', v_tipo,
+    'tipo',        v_op.tipo,
+    'plan',        v_op.plan,
+    'periodo',     v_op.periodo,
+    'personas',    v_op.personas,
+    'importe',     v_op.importe,
+    'medio',       v_op.medio,
+    'origen',      v_op.origen,
+    'entorno',     v_op.entorno);
+
+  -- 3. Lo que ya terminó.
+  if v_op.estado = 'pagada' then
+    return v_base || jsonb_build_object('ok', true, 'ya', true, 'aprobada', true, 'vence', v_op.vence_despues);
+  end if;
+  if v_op.estado = 'revertida' then
+    if v_aprobada then
+      update public.bancard_operaciones
+      set revisar = 'Aprobación sobre una operación revertida', updated_at = now()
+      where id = v_op.id;
+    end if;
+    return v_base || jsonb_build_object('ok', false, 'motivo', 'revertida');
+  end if;
+  -- Revisión 03/10: la conciliación mandó la reversa y Bancard la hizo
+  -- (RollbackSuccessful: había un pago y lo devolvió). La aprobación de ese
+  -- pago, si llega después, no activa nada: la plata ya volvió.
+  if v_op.estado = 'vencida' and v_op.motivo = 'RollbackSuccessful' then
+    if v_aprobada then
+      update public.bancard_operaciones
+      set revisar = 'Aprobación sobre un pago que Bancard ya revirtió', updated_at = now()
+      where id = v_op.id;
+    end if;
+    return v_base || jsonb_build_object('ok', false, 'motivo', 'revertida');
+  end if;
+
+  -- Una respuesta que no dice ni S ni N no es una respuesta de pago (la del
+  -- 3D Secure viene toda vacía): no se toca nada.
+  if coalesce(v_resp ->> 'response', '') not in ('S', 'N') then
+    return v_base || jsonb_build_object('ok', false, 'motivo', 'sin_respuesta');
+  end if;
+
+  -- Orden de los candados: operación, cuenta de Bancard, suscripción.
+  select * into v_cuenta from public.bancard_cuentas where empresa_id = v_op.empresa_id for update;
+  if v_op.tarjeta_id is not null then
+    select * into v_tarjeta from public.bancard_tarjetas where id = v_op.tarjeta_id;
+  end if;
+
+  -- 4. NO aprobada.
+  if not v_aprobada then
+    v_desc  := left(coalesce(v_resp ->> 'response_description', ''), 120);
+    v_clase := public.bancard_clase_de_rechazo(v_codigo);
+
+    if v_viva then
+      update public.bancard_operaciones
+      set estado = 'rechazada', respuesta = v_limpia, fuente = p_fuente, updated_at = now()
+      where id = v_op.id;
+
+      if v_op.tarjeta_id is not null then
+        update public.bancard_cuentas
+        set ultimo_error = nullif(v_desc, ''), ultimo_codigo = left(v_codigo, 4), updated_at = now()
+        where empresa_id = v_op.empresa_id and tarjeta_id = v_op.tarjeta_id;
+
+        -- El bloqueo del manual: 7 rechazos en 24 horas o 35 en 30 días.
+        if upper(v_desc || ' ' || coalesce(v_resp ->> 'extended_response_description', '')) like '%INHABILITACI%' then
+          update public.bancard_tarjetas
+          set bloqueada_hasta = now() + interval '30 days'
+          where id = v_op.tarjeta_id;
+          update public.bancard_cuentas
+          set debito_estado = 'pausado', updated_at = now()
+          where empresa_id = v_op.empresa_id and tarjeta_id = v_op.tarjeta_id;
+        elsif v_op.origen = 'automatico' then
+          update public.bancard_cuentas
+          set debito_estado = case
+                when v_clase = 'tarjeta' or intentos >= array_length(v_dias, 1) then 'pausado'
+                else 'reintentando' end,
+              updated_at = now()
+          where empresa_id = v_op.empresa_id and tarjeta_id = v_op.tarjeta_id;
+        end if;
+      end if;
+    end if;
+
+    select * into v_cuenta from public.bancard_cuentas where empresa_id = v_op.empresa_id;
+    if v_op.origen = 'automatico' and v_cuenta.debito_estado = 'reintentando'
+       and v_cuenta.ciclo_fin is not null and v_cuenta.intentos < array_length(v_dias, 1) then
+      v_proximo := v_cuenta.ciclo_fin + v_dias[v_cuenta.intentos + 1];
+    end if;
+
+    return v_base || jsonb_build_object(
+      'ok',              true,
+      'aprobada',        false,
+      'ya',              not v_viva,
+      'clase',           v_clase,
+      'descripcion',     v_desc,
+      'proximo_intento', v_proximo,
+      'debito_estado',   v_cuenta.debito_estado,
+      -- El vencimiento al que pertenece este intento: el aviso del último
+      -- rechazo dice «tu plan vence el …».
+      'ciclo_fin',       v_cuenta.ciclo_fin,
+      'tarjeta',         case when v_tarjeta.id is null then null
+                              else jsonb_build_object('marca', v_tarjeta.marca, 'ultimos4', v_tarjeta.ultimos4) end,
+      'destinatarios',   public.bancard_destinatarios(v_op.empresa_id));
+  end if;
+
+  -- 5. Aprobada: el importe manda. Se compara como número (Bancard lo manda
+  --    como "10100.00", como 10100 o como "1100.0").
+  v_monto := coalesce(v_resp ->> 'amount', '');
+  if v_monto !~ '^[0-9]+([.][0-9]+)?$'
+     or v_monto::numeric <> v_op.importe
+     or coalesce(nullif(v_resp ->> 'currency', ''), 'PYG') <> 'PYG' then
+    update public.bancard_operaciones
+    set estado = case when v_viva then 'incierta' else estado end,
+        revisar = 'Bancard confirmó otro importe o moneda',
+        updated_at = now()
+    where id = v_op.id;
+    return v_base || jsonb_build_object('ok', false, 'motivo', 'importe');
+  end if;
+
+  -- 6. La suscripción, bloqueada, y su foto de antes (para poder revertir).
+  select * into v_sus from public.suscripciones where empresa_id = v_op.empresa_id for update;
+  if v_sus.empresa_id is null then
+    update public.bancard_operaciones
+    set revisar = 'Pago aprobado de una cuenta sin suscripción', updated_at = now()
+    where id = v_op.id;
+    return v_base || jsonb_build_object('ok', false, 'motivo', 'sin_suscripcion');
+  end if;
+
+  v_antes := jsonb_build_object(
+    'plan',              v_sus.plan,
+    'estado',            v_sus.estado,
+    'periodo',           v_sus.periodo,
+    'periodo_inicio',    v_sus.periodo_inicio,
+    'periodo_fin',       v_sus.periodo_fin,
+    'tope_vendedores',   v_sus.tope_vendedores,
+    'moneda',            v_sus.moneda,
+    'importe',           v_sus.importe,
+    'proveedor_pago',    v_sus.proveedor_pago,
+    'cancela_al_vencer', v_sus.cancela_al_vencer,
+    'personas_proxima',  v_cuenta.personas_proxima);
+
+  if v_op.estado = 'vencida' then
+    v_revisar := 'Pago que entró tarde, sobre una operación ya vencida';
+  elsif v_op.estado = 'rechazada' and exists (
+    select 1 from public.bancard_operaciones o
+    where o.empresa_id = v_op.empresa_id and o.id > v_op.id
+  ) then
+    -- Un reintento adentro del mismo formulario no tiene otra operación
+    -- después; si la hay, la persona se fue y volvió a un formulario viejo.
+    v_revisar := 'Pagó una operación rechazada después de iniciar otra';
+  end if;
+
+  -- 6a. Un plan distinto del que tiene activo y pago. Solo puede pasar con
+  --     una confirmación fuera de orden (un pago viejo que entra después de
+  --     que la cuenta pagó otro plan). Nunca se le baja el plan a nadie en
+  --     silencio: la plata se anota y lo mira una persona.
+  if v_op.tipo = 'plan' and v_sus.estado = 'activa' and v_sus.periodo_fin is not null
+     and v_sus.periodo_fin > now() and v_sus.plan <> 'gratis' and v_sus.plan <> v_op.plan then
+    v_conflicto := true;
+    v_revisar := 'Pagó un plan distinto del que tiene activo: resolver a mano';
+  end if;
+
+  -- 6b. Revisión 03/10: lo que ya no estaba vivo se vuelve a cotizar. Una
+  --     operación rechazada o vencida se cotizó en otro momento: si hoy vale
+  --     más, o pertenece a un período que ya se renovó, no activa nada.
+  if not v_viva and not v_conflicto then
+    if v_op.tipo = 'plan' then
+      begin
+        v_hoy := public.precio_de_la_cuenta(v_op.empresa_id, v_op.plan, v_op.periodo, v_op.personas);
+        -- Revisión 07/10: «con el descuento del primer pago» solo si la
+        -- operación de verdad lo usó. Toda primera operación lleva
+        -- `primer_pago`, tenga o no descuento: una sin descuento que hoy
+        -- vale lo mismo no es un conflicto (sigue al chequeo de precio y
+        -- activa, con su «para revisar» de pago tardío).
+        if coalesce((v_op.desglose ->> 'primer_pago')::boolean, false)
+           and v_op.descuento > 0
+           and v_op.desglose ->> 'descuento_fase' = 'prueba'
+           and public.cuenta_ya_pago(v_op.empresa_id) then
+          v_conflicto := true;
+          v_revisar := 'Pagó una operación vieja con el descuento del primer pago: resolver a mano';
+        elsif (v_hoy ->> 'subtotal')::numeric > v_op.lista + v_op.extras then
+          v_conflicto := true;
+          v_revisar := 'Pagó una operación vieja por menos de lo que vale hoy: resolver a mano';
+        end if;
+      exception when others then
+        v_conflicto := true;
+        v_revisar := left('Pagó una operación vieja que hoy no se puede cotizar: ' || sqlerrm, 200);
+      end;
+    elsif coalesce(nullif(v_op.desglose ->> 'vence_hasta', '')::timestamptz, v_sus.periodo_fin)
+          is distinct from v_sus.periodo_fin then
+      v_conflicto := true;
+      v_revisar := 'Sumó personas sobre un período ya renovado: resolver a mano';
+    end if;
+  end if;
+
+  -- 7. Activar.
+  if v_conflicto then
+    -- La plata se anota (paso 8), el plan no se toca.
+    v_fin  := v_sus.periodo_fin;
+    v_tope := v_sus.tope_vendedores;
+  elsif v_op.tipo = 'plan' then
+    begin
+      -- La regla de cambiar_plan_cuenta (103): «nunca se le comen días»,
+      -- tampoco los de la prueba. El año son 12 meses de servicio.
+      v_fin := greatest(coalesce(v_sus.periodo_fin, now()), now())
+               + make_interval(months => case when v_op.periodo = 'anual' then 12 else 1 end);
+
+      select p.id into v_pagador
+      from public.bancard_pagadores p
+      where p.empresa_id = v_op.empresa_id and p.entorno = v_op.entorno;
+
+      select c.id into v_com_antes from public.comisiones c where c.empresa_id = v_op.empresa_id;
+
+      -- Con importe null no hay comisión (104): un pago de staging no le
+      -- paga nada al socio.
+      perform public.aplicar_suscripcion(
+        v_op.empresa_id, v_op.plan, 'activa', now(), v_fin, 'bancard', v_pagador::text, null,
+        v_op.periodo, 'PYG', case when v_op.entorno = 'produccion' then v_op.importe else null end);
+
+      -- «Solo por lo pagado»: el Premium queda con las personas que se
+      -- cobraron. Los demás planes, con lo que dice su plan.
+      if v_op.plan = 'negocio' and v_tipo <> 'personal' then
+        v_tope := coalesce(v_op.personas, public.personas_incluidas_premium()) - 1;
+        -- Un pago fuera de orden por menos gente de la contratada no le saca
+        -- personas a un Premium vigente (salvo que sea la baja que programó).
+        if v_sus.estado = 'activa' and v_sus.plan = 'negocio'
+           and v_sus.periodo_fin is not null and v_sus.periodo_fin > now()
+           and v_sus.tope_vendedores is not null and v_tope < v_sus.tope_vendedores
+           and v_cuenta.personas_proxima is distinct from v_op.personas then
+          v_tope := v_sus.tope_vendedores;
+          v_revisar := 'Pagó por menos personas de las que tiene contratadas';
+        end if;
+        -- Revisión 03/10: el equipo se cuenta al confirmar, no solo al
+        -- crear. Si entre una cosa y la otra entró gente por encima de lo
+        -- pagado, el tope queda en lo pagado y lo mira una persona.
+        select count(*)::int into v_miembros from public.miembros m where m.empresa_id = v_op.empresa_id;
+        if v_miembros > v_tope + 1 then
+          v_revisar := 'Pagó por menos personas de las que hoy tiene el equipo';
+        end if;
+      else
+        v_tope := null;
+      end if;
+
+      update public.suscripciones
+      set tope_vendedores = v_tope, updated_at = now()
+      where empresa_id = v_op.empresa_id;
+
+      update public.bancard_cuentas
+      set personas_proxima = null, updated_at = now()
+      where empresa_id = v_op.empresa_id and personas_proxima is not null;
+    end;
+  else
+    -- Sumar personas: no toca fechas ni el plan.
+    v_fin := v_sus.periodo_fin;
+    if v_sus.plan = 'negocio' then
+      v_tope := greatest(coalesce(v_sus.tope_vendedores, 0), v_op.personas - 1);
+      update public.suscripciones
+      set tope_vendedores = v_tope, updated_at = now()
+      where empresa_id = v_op.empresa_id;
+      -- Revisión 03/10: pagó por tener esta cantidad «y queda para las
+      -- renovaciones»: una baja programada a menos personas se cancela.
+      update public.bancard_cuentas
+      set personas_proxima = null, updated_at = now()
+      where empresa_id = v_op.empresa_id
+        and personas_proxima is not null and personas_proxima < v_op.personas;
+    else
+      v_conflicto := true;
+      v_tope := v_sus.tope_vendedores;
+      v_revisar := 'Pagó por sumar personas y la cuenta ya no es Premium: resolver a mano';
+    end if;
+  end if;
+
+  -- 8. La contabilidad. Solo la plata de verdad.
+  if v_op.entorno = 'produccion' then
+    -- a. El ingreso de Orden (como cambiar_plan_cuenta, 103). Si falla, el
+    --    plan queda activo igual: no se pierde un pago por la contabilidad.
+    select a.empresa_id into v_orden from public.ajustes_orden a where a.unica;
+    if v_orden is not null and v_orden <> v_op.empresa_id then
+      begin
+        insert into public.movimientos (
+          empresa_id, tipo, estado, fecha, descripcion, categoria,
+          subtotal, descuento, monto, costo_total, metodo_pago, contraparte, creado_por
+        ) values (
+          v_orden, 'ingreso', 'activo', public.hoy_empresa(v_orden),
+          'Suscripción ' || coalesce(v_nombre, 'cliente') || ' · Bancard ' || v_op.id, 'Suscripciones',
+          v_op.importe, 0, v_op.importe, 0, 'tarjeta',
+          left(coalesce(v_nombre, ''), 80), null
+        )
+        returning id into v_ingreso;
+      exception when others then
+        v_revisar := left('El ingreso no se pudo anotar: ' || sqlerrm, 200);
+      end;
+    end if;
+
+    -- b. Si la comisión nació en ESTA llamada, se ata a su ingreso: así, si
+    --    el ingreso se anula, la comisión se cae sola (060).
+    if v_op.tipo = 'plan' and not v_conflicto and v_com_antes is null then
+      select c.id into v_com from public.comisiones c where c.empresa_id = v_op.empresa_id;
+      if v_com is not null and v_ingreso is not null then
+        begin
+          update public.comisiones set movimiento_id = v_ingreso where id = v_com;
+        exception when others then
+          v_revisar := left('La comisión no se pudo atar a su ingreso: ' || sqlerrm, 200);
+        end;
+      end if;
+    end if;
+  end if;
+
+  -- c. El renglón del registro. En producción es 'cambiar_plan' con su
+  --    importe: lo que miran `cuenta_ya_pago`, `usar_codigo_referido` (063)
+  --    y `asignar_referido` (103). En staging tiene otro nombre y no cuenta.
+  if not v_conflicto then
+    insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+    values (null, v_op.empresa_id,
+      case
+        when v_op.entorno <> 'produccion' then 'bancard_prueba'
+        when v_op.tipo = 'plan' then 'cambiar_plan'
+        else 'bancard_personas'
+      end,
+      jsonb_build_object(
+        'plan_antes',     v_sus.plan,
+        'plan_despues',   case when v_op.tipo = 'plan' then v_op.plan else v_sus.plan end,
+        'estado_antes',   v_sus.estado,
+        'estado_despues', case when v_op.tipo = 'plan' then 'activa' else v_sus.estado end,
+        'vence_antes',    v_sus.periodo_fin,
+        'vence_despues',  v_fin,
+        'meses',          case when v_op.tipo <> 'plan' then 0 when v_op.periodo = 'anual' then 12 else 1 end,
+        'importe',        v_op.importe,
+        'tope_antes',     v_sus.tope_vendedores,
+        'tope_despues',   v_tope,
+        'ingreso_id',     v_ingreso,
+        'nota',           'Bancard · pedido ' || v_op.id,
+        'via',            'bancard',
+        'tipo',           v_op.tipo,
+        'operacion',      v_op.id));
+  end if;
+
+  -- 9. Pagar por cualquier medio destraba un débito pausado.
+  update public.bancard_cuentas c
+  set debito_estado = 'al_dia', intentos = 0, ciclo_fin = null,
+      ultimo_error = null, ultimo_codigo = null, updated_at = now()
+  where c.empresa_id = v_op.empresa_id
+    and exists (
+      select 1 from public.bancard_tarjetas t
+      where t.id = c.tarjeta_id and t.estado = 'activa' and t.entorno = v_op.entorno);
+
+  -- 10. Listo.
+  update public.bancard_operaciones
+  set estado = 'pagada', confirmada_at = now(), fuente = p_fuente, respuesta = v_limpia,
+      antes = v_antes, vence_despues = v_fin, ingreso_id = v_ingreso, comision_id = v_com,
+      revisar = coalesce(v_revisar, revisar), updated_at = now()
+  where id = v_op.id;
+
+  -- 11. Lo que hace falta para avisar.
+  return v_base || jsonb_build_object(
+    'ok',            true,
+    'aprobada',      true,
+    'ya',            false,
+    'vence',         v_fin,
+    'conflicto',     v_conflicto,
+    'revisar',       v_revisar,
+    'tarjeta',       case when v_tarjeta.id is null then null
+                          else jsonb_build_object('marca', v_tarjeta.marca, 'ultimos4', v_tarjeta.ultimos4) end,
+    'comision',      (
+      select jsonb_build_object(
+        'id', c.id, 'socio_user_id', so.user_id, 'monto', c.monto, 'nombre', so.nombre)
+      from public.comisiones c
+      join public.socios so on so.id = c.socio_id
+      where c.id = v_com),
+    'destinatarios', public.bancard_destinatarios(v_op.empresa_id));
+end $fn$;
+
+revoke all on function public.bancard_confirmar(bigint, jsonb, text) from public, anon, authenticated;
+grant execute on function public.bancard_confirmar(bigint, jsonb, text) to service_role;
+
+-- ------------------------------------------------------------
+-- 7. REVERTIR UN PAGO APROBADO
+--
+--    La reversa a Bancard la pide el servidor; esto deshace en Orden lo que
+--    el pago activó. La ruta llama primero con `p_solo_comprobar` (antes de
+--    hablar con Bancard) y después de verdad.
+--
+--    Bancard solo revierte el mismo día. Después se tramita por el portal de
+--    comercios y acá se marca con `p_sin_bancard`.
+--
+--    Revisión 07/10: además pausa el débito de la cuenta (`debito_pausado`
+--    en la respuesta), para que la tarea no vuelva a cobrar lo revertido.
+-- ------------------------------------------------------------
+create or replace function public.bancard_revertir(
+  p_operacion      bigint,
+  p_actor          uuid,
+  p_motivo         text,
+  p_solo_comprobar boolean default false,
+  p_sin_bancard    boolean default false
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_op       public.bancard_operaciones;
+  v_sus      public.suscripciones;
+  v_antes    jsonb;
+  v_comision text := null;
+  v_estado   text;
+  v_anulado  boolean := false;
+  v_pausado  boolean := false;
+begin
+  if p_actor is null or not exists (select 1 from public.superadmins s where s.usuario_id = p_actor) then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_op from public.bancard_operaciones where id = p_operacion for update;
+  if v_op.id is null then
+    raise exception 'Ese pago no existe.' using errcode = 'P0002';
+  end if;
+  if v_op.estado <> 'pagada' then
+    raise exception 'Ese pago no está aprobado, no hay nada que revertir.' using errcode = '22023';
+  end if;
+
+  if not coalesce(p_sin_bancard, false)
+     and (v_op.confirmada_at at time zone 'America/Asuncion')::date
+         <> (now() at time zone 'America/Asuncion')::date then
+    raise exception 'Ya pasó el día del pago: se anula por el portal de comercios (Soporte → Anulaciones) y después se marca acá.'
+      using errcode = '22023';
+  end if;
+
+  -- Tiene que ser lo último que tocó la suscripción: la foto de «antes» es
+  -- de un solo paso, y deshacer salteando cambios lleva a un estado que
+  -- nunca existió.
+  select * into v_sus from public.suscripciones where empresa_id = v_op.empresa_id for update;
+
+  if (v_op.tipo = 'plan' and v_sus.periodo_fin is distinct from v_op.vence_despues)
+     or exists (
+       select 1 from public.registro_admin r
+       where r.empresa_id = v_op.empresa_id
+         and r.accion in ('cambiar_plan', 'extender_prueba', 'bancard_personas')
+         and r.created_at >= v_op.confirmada_at
+         and coalesce(r.detalle ->> 'operacion', '') <> v_op.id::text
+         and coalesce(r.detalle ->> 'deshecho', 'false') <> 'true')
+     or exists (
+       select 1 from public.bancard_operaciones o
+       where o.empresa_id = v_op.empresa_id and o.id <> v_op.id and o.estado = 'pagada'
+         and o.confirmada_at >= v_op.confirmada_at) then
+    raise exception 'Después de ese pago hubo otros cambios en la cuenta. Deshacé primero esos.'
+      using errcode = '22023';
+  end if;
+
+  if coalesce(p_solo_comprobar, false) then
+    return jsonb_build_object('puede', true);
+  end if;
+
+  -- La suscripción vuelve a la foto.
+  v_antes := coalesce(v_op.antes, '{}'::jsonb);
+  if v_antes ? 'plan' then
+    update public.suscripciones
+    set plan              = v_antes ->> 'plan',
+        estado            = v_antes ->> 'estado',
+        periodo           = coalesce(v_antes ->> 'periodo', 'mensual'),
+        periodo_inicio    = nullif(v_antes ->> 'periodo_inicio', '')::timestamptz,
+        periodo_fin       = nullif(v_antes ->> 'periodo_fin', '')::timestamptz,
+        tope_vendedores   = nullif(v_antes ->> 'tope_vendedores', '')::integer,
+        moneda            = v_antes ->> 'moneda',
+        importe           = nullif(v_antes ->> 'importe', '')::numeric,
+        proveedor_pago    = v_antes ->> 'proveedor_pago',
+        cancela_al_vencer = coalesce((v_antes ->> 'cancela_al_vencer')::boolean, false),
+        updated_at        = now()
+    where empresa_id = v_op.empresa_id;
+
+    perform set_config('orden.suscripcion_confiable', '1', true);
+    update public.empresas set plan = v_antes ->> 'plan' where id = v_op.empresa_id;
+    perform set_config('orden.suscripcion_confiable', '0', true);
+
+    update public.bancard_cuentas
+    set personas_proxima = nullif(v_antes ->> 'personas_proxima', '')::integer, updated_at = now()
+    where empresa_id = v_op.empresa_id;
+  end if;
+
+  -- Revisión 07/10: revertir un cobro PAUSA el débito. La suscripción vuelve
+  -- a la foto (vence mañana, o ya venció) y el débito había quedado al día:
+  -- la tarea volvía a cobrar la misma tarjeta en la corrida siguiente,
+  -- justo a quien pidió la devolución. Pagar a mano lo destraba, como
+  -- cualquier pausado (paso 9 de `bancard_confirmar`), y guardar otra
+  -- tarjeta también.
+  update public.bancard_cuentas
+  set debito_estado = 'pausado', ultimo_error = 'Pago revertido por la administración',
+      ultimo_codigo = null, updated_at = now()
+  where empresa_id = v_op.empresa_id and debito_activo;
+  v_pausado := found;
+
+  -- La comisión que nació con este pago se BORRA si todavía no se pagó: si
+  -- solo se anulara, el índice único de `comisiones.empresa_id` le impediría
+  -- al socio cobrar por el próximo pago de verdad. Si ya se pagó, queda.
+  if v_op.comision_id is not null then
+    select c.estado into v_estado from public.comisiones c where c.id = v_op.comision_id;
+    if v_estado = 'por_pagar' then
+      delete from public.comisiones where id = v_op.comision_id and estado = 'por_pagar';
+      v_comision := 'borrada';
+    elsif v_estado = 'pagada' then
+      v_comision := 'ya_pagada';
+    end if;
+  end if;
+
+  -- Y DESPUÉS el ingreso se anula (no se borra: lo que existió deja rastro).
+  -- La restricción movimientos_anulacion_auditada (002) exige quién y cuándo.
+  if v_op.ingreso_id is not null then
+    update public.movimientos
+    set estado = 'anulado',
+        anulado_por = p_actor,
+        anulado_at = now(),
+        motivo_anulacion = 'Se revirtió el pago de Bancard ' || v_op.id
+    where id = v_op.ingreso_id and estado = 'activo';
+    v_anulado := found;
+  end if;
+
+  -- El renglón de ese pago deja de contar como «ya pagó».
+  update public.registro_admin
+  set detalle = detalle || jsonb_build_object('deshecho', true, 'deshecho_at', now())
+  where empresa_id = v_op.empresa_id
+    and accion in ('cambiar_plan', 'bancard_personas', 'bancard_prueba')
+    and detalle ->> 'operacion' = v_op.id::text;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (p_actor, v_op.empresa_id, 'bancard_reversa', jsonb_build_object(
+    'operacion',       v_op.id,
+    'importe',         v_op.importe,
+    'volvio_a_plan',   v_antes ->> 'plan',
+    'volvio_a_estado', v_antes ->> 'estado',
+    'volvio_a_vencer', v_antes ->> 'periodo_fin',
+    'ingreso_anulado', v_anulado,
+    'comision',        v_comision,
+    'sin_bancard',     coalesce(p_sin_bancard, false),
+    'nota',            left(coalesce(p_motivo, ''), 300)));
+
+  update public.bancard_operaciones
+  set estado = 'revertida', revertida_at = now(), revertida_por = p_actor,
+      motivo = left(coalesce(p_motivo, ''), 300), updated_at = now()
+  where id = v_op.id;
+
+  return jsonb_build_object(
+    'ok',              true,
+    'plan',            v_antes ->> 'plan',
+    'estado',          v_antes ->> 'estado',
+    'periodo_fin',     v_antes ->> 'periodo_fin',
+    'ingreso_anulado', v_anulado,
+    'comision',        v_comision,
+    'debito_pausado',  v_pausado);
+end $fn$;
+
+revoke all on function public.bancard_revertir(bigint, uuid, text, boolean, boolean) from public, anon, authenticated;
+grant execute on function public.bancard_revertir(bigint, uuid, text, boolean, boolean) to service_role;
+
+-- ------------------------------------------------------------
+-- 8. LAS TARJETAS
+--
+--    El alias de Bancard no se guarda nunca: se pide justo antes de cobrar o
+--    de borrar. Acá vive solo el número que Orden le puso a la tarjeta, la
+--    marca, los últimos cuatro y el tipo.
+-- ------------------------------------------------------------
+
+-- Pedir el formulario para guardar una tarjeta. Guarda el consentimiento del
+-- cobro recurrente: quién, cuándo y qué texto aceptó.
+create or replace function public.bancard_crear_catastro(
+  p_empresa        uuid,
+  p_usuario        uuid,
+  p_entorno        text,
+  p_telefono       text,
+  p_consentimiento text
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_pagador  bigint;
+  v_telefono text;
+  v_correo   text;
+  v_tarjeta  bigint;
+begin
+  if p_entorno is null or p_entorno not in ('staging', 'produccion') then
+    raise exception 'Ese pedido de pago no es válido.' using errcode = '22023';
+  end if;
+  if not public.bancard_administra(p_empresa, p_usuario) then
+    raise exception 'Solo el dueño de la cuenta puede pagar el plan.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.empresas e where e.id = p_empresa) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  -- Bancard exige teléfono y correo del usuario. El teléfono es el que
+  -- escribió ahora o el que dejó al registrarse (ficha_cliente).
+  v_telefono := nullif(trim(left(coalesce(p_telefono, ''), 30)), '');
+  if v_telefono is null then
+    select nullif(trim(f.telefono), '') into v_telefono
+    from public.ficha_cliente f where f.empresa_id = p_empresa;
+  end if;
+  if v_telefono is null then
+    raise exception 'Falta un teléfono para registrar la tarjeta.' using errcode = '22023';
+  end if;
+
+  select nullif(trim(u.email), '') into v_correo from auth.users u where u.id = p_usuario;
+  if v_correo is null then
+    raise exception 'Falta un correo para registrar la tarjeta.' using errcode = '22023';
+  end if;
+
+  if (
+    select count(*) from public.bancard_tarjetas t
+    where t.empresa_id = p_empresa and t.created_at > now() - interval '24 hours'
+  ) >= public.bancard_catastros_por_dia() then
+    raise exception 'Demasiados intentos hoy. Probá de nuevo más tarde o escribinos.' using errcode = '22023';
+  end if;
+
+  insert into public.bancard_pagadores (empresa_id, entorno)
+  values (p_empresa, p_entorno)
+  on conflict (empresa_id, entorno) do nothing;
+
+  select p.id into v_pagador
+  from public.bancard_pagadores p
+  where p.empresa_id = p_empresa and p.entorno = p_entorno;
+
+  insert into public.bancard_tarjetas (empresa_id, pagador_id, entorno, creada_por)
+  values (p_empresa, v_pagador, p_entorno, p_usuario)
+  returning id into v_tarjeta;
+
+  insert into public.bancard_cuentas (empresa_id, aceptado_por, aceptado_at, aceptado_texto)
+  values (p_empresa, p_usuario, now(), left(coalesce(p_consentimiento, ''), 600))
+  on conflict (empresa_id) do update set
+    aceptado_por   = excluded.aceptado_por,
+    aceptado_at    = excluded.aceptado_at,
+    aceptado_texto = excluded.aceptado_texto,
+    updated_at     = now();
+
+  -- Si la cuenta no tenía teléfono, queda el que acaba de dar.
+  insert into public.ficha_cliente (empresa_id, telefono)
+  values (p_empresa, v_telefono)
+  on conflict (empresa_id) do update set
+    telefono = excluded.telefono, updated_at = now()
+  where coalesce(trim(public.ficha_cliente.telefono), '') = '';
+
+  return jsonb_build_object(
+    'card_id',  v_tarjeta,
+    'user_id',  v_pagador,
+    'telefono', v_telefono,
+    'email',    v_correo);
+end $fn$;
+
+revoke all on function public.bancard_crear_catastro(uuid, uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.bancard_crear_catastro(uuid, uuid, text, text, text) to service_role;
+
+-- La tarjeta apareció en Bancard: queda activa. La que estaba activa pasa a
+-- «por quitar» y se devuelve, para que el servidor la borre en Bancard.
+-- Idempotente.
+create or replace function public.bancard_activar_tarjeta(
+  p_tarjeta  bigint,
+  p_marca    text,
+  p_ultimos4 text,
+  p_tipo     text
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_t        public.bancard_tarjetas;
+  v_anterior bigint;
+begin
+  select * into v_t from public.bancard_tarjetas where id = p_tarjeta for update;
+  if v_t.id is null then
+    return jsonb_build_object('ok', false, 'motivo', 'desconocida');
+  end if;
+  if v_t.estado = 'activa' then
+    return jsonb_build_object('ok', true, 'ya', true, 'tarjeta', v_t.id, 'anterior', null,
+      'user_id', v_t.pagador_id, 'marca', v_t.marca, 'ultimos4', v_t.ultimos4);
+  end if;
+  -- 'fallida' también: la persona pudo terminar el formulario después de que
+  -- la conciliación la diera por abandonada, y Bancard la tiene.
+  if v_t.estado not in ('pendiente', 'fallida') then
+    return jsonb_build_object('ok', false, 'motivo', v_t.estado);
+  end if;
+
+  update public.bancard_tarjetas
+  set estado = 'por_quitar', motivo = 'Reemplazada por otra tarjeta'
+  where empresa_id = v_t.empresa_id and entorno = v_t.entorno and estado = 'activa'
+  returning id into v_anterior;
+
+  update public.bancard_tarjetas
+  set estado      = 'activa',
+      marca       = nullif(left(trim(coalesce(p_marca, '')), 30), ''),
+      ultimos4    = case when coalesce(p_ultimos4, '') ~ '^[0-9]{4}$' then p_ultimos4 else null end,
+      tipo        = case when p_tipo in ('credit', 'debit') then p_tipo else null end,
+      activada_at = now(),
+      motivo      = null
+  where id = v_t.id;
+
+  insert into public.bancard_cuentas (empresa_id, tarjeta_id, debito_activo, debito_estado, intentos)
+  values (v_t.empresa_id, v_t.id, true, 'al_dia', 0)
+  on conflict (empresa_id) do update set
+    tarjeta_id    = excluded.tarjeta_id,
+    debito_activo = true,
+    debito_estado = 'al_dia',
+    intentos      = 0,
+    ciclo_fin     = null,
+    ultimo_error  = null,
+    ultimo_codigo = null,
+    updated_at    = now();
+
+  select * into v_t from public.bancard_tarjetas where id = p_tarjeta;
+  return jsonb_build_object('ok', true, 'ya', false, 'tarjeta', v_t.id, 'anterior', v_anterior,
+    'user_id', v_t.pagador_id, 'marca', v_t.marca, 'ultimos4', v_t.ultimos4);
+end $fn$;
+
+revoke all on function public.bancard_activar_tarjeta(bigint, text, text, text) from public, anon, authenticated;
+grant execute on function public.bancard_activar_tarjeta(bigint, text, text, text) to service_role;
+
+-- El formulario terminó (o se abandonó) y Bancard no tiene la tarjeta.
+create or replace function public.bancard_tarjeta_fallida(p_tarjeta bigint, p_motivo text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_ok boolean;
+begin
+  update public.bancard_tarjetas
+  set estado = 'fallida', motivo = left(coalesce(p_motivo, ''), 200)
+  where id = p_tarjeta and estado = 'pendiente';
+  v_ok := found;
+  return jsonb_build_object('ok', v_ok);
+end $fn$;
+
+revoke all on function public.bancard_tarjeta_fallida(bigint, text) from public, anon, authenticated;
+grant execute on function public.bancard_tarjeta_fallida(bigint, text) to service_role;
+
+-- Quitar la tarjeta, en dos pasos. 'pedido' apaga el débito EN EL MISMO ACTO
+-- (la cancelación rige ya, aunque Bancard no conteste); 'hecho' la da por
+-- borrada en Bancard. Sin persona solo se admite 'hecho' (la conciliación).
+create or replace function public.bancard_quitar_tarjeta(
+  p_tarjeta bigint,
+  p_usuario uuid,
+  p_paso    text
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_t public.bancard_tarjetas;
+begin
+  if p_paso is null or p_paso not in ('pedido', 'hecho') then
+    raise exception 'Ese pedido de pago no es válido.' using errcode = '22023';
+  end if;
+
+  select * into v_t from public.bancard_tarjetas where id = p_tarjeta for update;
+  if v_t.id is null then
+    raise exception 'No hay una tarjeta guardada.' using errcode = 'P0002';
+  end if;
+
+  if p_paso = 'pedido' or p_usuario is not null then
+    if not public.bancard_administra(v_t.empresa_id, p_usuario) then
+      raise exception 'Solo el dueño de la cuenta puede pagar el plan.' using errcode = '42501';
+    end if;
+  end if;
+
+  if p_paso = 'pedido' then
+    if v_t.estado = 'activa' then
+      update public.bancard_tarjetas
+      set estado = 'por_quitar', quitada_por = p_usuario, motivo = 'La quitó la persona'
+      where id = v_t.id;
+    end if;
+    -- Aunque ya estuviera por quitar: el débito queda apagado.
+    update public.bancard_cuentas
+    set debito_activo = false, tarjeta_id = null, updated_at = now()
+    where empresa_id = v_t.empresa_id and tarjeta_id = v_t.id;
+  else
+    update public.bancard_tarjetas
+    set estado = 'quitada', quitada_at = now(), quitada_por = coalesce(p_usuario, quitada_por)
+    where id = v_t.id and estado = 'por_quitar';
+    -- Una activa que Bancard ya no tiene: también se va, con su débito.
+    if v_t.estado = 'activa' then
+      update public.bancard_tarjetas
+      set estado = 'quitada', quitada_at = now(), quitada_por = p_usuario,
+          motivo = 'Bancard ya no la tenía'
+      where id = v_t.id;
+      update public.bancard_cuentas
+      set debito_activo = false, tarjeta_id = null, updated_at = now()
+      where empresa_id = v_t.empresa_id and tarjeta_id = v_t.id;
+    end if;
+  end if;
+
+  select * into v_t from public.bancard_tarjetas where id = p_tarjeta;
+  return jsonb_build_object('ok', true, 'estado', v_t.estado, 'tarjeta', v_t.id,
+    'user_id', v_t.pagador_id, 'card_id', v_t.id, 'empresa_id', v_t.empresa_id);
+end $fn$;
+
+revoke all on function public.bancard_quitar_tarjeta(bigint, uuid, text) from public, anon, authenticated;
+grant execute on function public.bancard_quitar_tarjeta(bigint, uuid, text) to service_role;
+
+-- Los dos números que hacen falta para pedirle a Bancard la tarjeta activa
+-- de una cuenta. Null si no tiene.
+create or replace function public.bancard_datos_de_tarjeta(p_empresa uuid, p_entorno text)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'user_id',    t.pagador_id,
+    'card_id',    t.id,
+    'tarjeta_id', t.id,
+    'marca',      t.marca,
+    'ultimos4',   t.ultimos4)
+  from public.bancard_tarjetas t
+  where t.empresa_id = p_empresa and t.entorno = p_entorno and t.estado = 'activa';
+$fn$;
+
+revoke all on function public.bancard_datos_de_tarjeta(uuid, text) from public, anon, authenticated;
+grant execute on function public.bancard_datos_de_tarjeta(uuid, text) to service_role;
+
+-- Lo mismo para una tarjeta cualquiera (la verificación y la conciliación).
+create or replace function public.bancard_tarjeta_interna(p_tarjeta bigint)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'tarjeta_id', t.id,
+    'card_id',    t.id,
+    'user_id',    t.pagador_id,
+    'empresa_id', t.empresa_id,
+    'entorno',    t.entorno,
+    'estado',     t.estado)
+  from public.bancard_tarjetas t
+  where t.id = p_tarjeta;
+$fn$;
+
+revoke all on function public.bancard_tarjeta_interna(bigint) from public, anon, authenticated;
+grant execute on function public.bancard_tarjeta_interna(bigint) to service_role;
+
+-- ------------------------------------------------------------
+-- 9. LO QUE NECESITA LA TAREA DIARIA
+-- ------------------------------------------------------------
+
+-- Toma EL SIGUIENTE cobro que toca y lo reserva en la misma transacción
+-- (crea la operación). Null si no hay ninguno. Llamarla dos veces a la vez
+-- nunca devuelve la misma cuenta: `skip locked`, `ultimo_intento = hoy` y el
+-- índice de «una viva».
+--
+-- Revisión 07/10: SOLO cuentas con el plan 'activa'. Una cuenta en prueba
+-- nunca se cobra sola, aunque tenga la tarjeta guardada: toda prueba nace
+-- con plan 'pro' y nadie lo eligió (cobrarla sola le cobraba el Pro a quien
+-- quería el Básico, y a una prueba ya vencida, dentro de la hora). La
+-- tarjeta le queda guardada para pagar con un toque cuando elija su plan;
+-- desde ese primer pago es 'activa' y las renovaciones salen de acá.
+create or replace function public.bancard_tomar_cobro(p_entorno text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_dias    integer[] := public.bancard_dias_de_cobro();
+  v_largo   integer := array_length(public.bancard_dias_de_cobro(), 1);
+  v         record;
+  v_op      jsonb;
+  v_motivo  text;
+  v_primera public.bancard_operaciones;
+begin
+  if p_entorno is null or p_entorno not in ('staging', 'produccion') then
+    raise exception 'Ese pedido de pago no es válido.' using errcode = '22023';
+  end if;
+
+  -- Pasada la ventana de reintentos ya no se cobra solo.
+  update public.bancard_cuentas c
+  set debito_estado = 'pausado', updated_at = now()
+  from public.suscripciones s, public.empresas e, public.bancard_tarjetas t
+  where s.empresa_id = c.empresa_id and e.id = c.empresa_id and t.id = c.tarjeta_id
+    and c.debito_activo and c.debito_estado in ('al_dia', 'reintentando')
+    and t.estado = 'activa' and t.entorno = p_entorno
+    and s.estado = 'activa' and s.plan <> 'gratis' and s.periodo_fin is not null
+    and (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date
+        > (s.periodo_fin at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date + v_dias[v_largo] + 2;
+
+  select c.empresa_id, s.plan, coalesce(s.periodo, 'mensual') as periodo,
+         d.fin, d.hoy, k.n, coalesce(e.zona_horaria, 'America/Asuncion') as zona
+  into v
+  from public.bancard_cuentas c
+  join public.suscripciones s on s.empresa_id = c.empresa_id
+  join public.empresas e on e.id = c.empresa_id
+  join public.bancard_tarjetas t on t.id = c.tarjeta_id
+  cross join lateral (
+    select (s.periodo_fin at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as fin,
+           (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as hoy
+  ) d
+  cross join lateral (
+    -- Un vencimiento nuevo arranca la cuenta de intentos desde cero.
+    select case when c.ciclo_fin is distinct from d.fin then 0 else c.intentos end as n
+  ) k
+  where c.debito_activo
+    and c.debito_estado in ('al_dia', 'reintentando')
+    and t.estado = 'activa' and t.entorno = p_entorno
+    and (t.bloqueada_hasta is null or t.bloqueada_hasta <= now())
+    and s.estado = 'activa' and s.plan <> 'gratis'
+    and not coalesce(s.cancela_al_vencer, false)
+    and s.periodo_fin is not null
+    and k.n < v_largo
+    -- Le toca (y si la tarea no corrió un día, lo recupera).
+    and d.hoy >= d.fin + v_dias[k.n + 1]
+    and d.hoy <= d.fin + v_dias[v_largo] + 2
+    -- Un intento por día.
+    and coalesce(c.ultimo_intento, date '1900-01-01') < d.hoy
+    and not exists (
+      select 1 from public.bancard_operaciones o
+      where o.empresa_id = c.empresa_id and o.estado in ('creada', 'en_3ds', 'incierta'))
+  order by s.periodo_fin
+  limit 1
+  for update of c skip locked;
+
+  if v.empresa_id is null then
+    return null;
+  end if;
+
+  -- El importe es el de ESE momento (lleva la constancia si la tiene ese día).
+  begin
+    v_op := public.bancard_crear_operacion_interna(
+      v.empresa_id, null, p_entorno, 'plan', 'token', 'automatico',
+      v.plan, v.periodo, public.bancard_personas_de_renovacion(v.empresa_id));
+  exception when others then
+    -- No se pudo cotizar (un precio que falta, un plan que ya no va): el
+    -- débito se pausa y lo mira la administración.
+    v_motivo := sqlerrm;
+    update public.bancard_cuentas
+    set debito_estado = 'pausado', ultimo_error = left(v_motivo, 120), ultimo_codigo = null,
+        ultimo_intento = v.hoy, updated_at = now()
+    where empresa_id = v.empresa_id;
+    return jsonb_build_object('pausada', v.empresa_id, 'motivo', left(v_motivo, 200));
+  end;
+
+  if v_op ? 'viva' then
+    return null;
+  end if;
+
+  -- Revisión 03/10: los reintentos cobran lo que se anunció. El aviso del
+  -- día anterior dijo un importe con su descuento de constancia; si el
+  -- candado del vencimiento cortó la racha, el reintento NO puede salir más
+  -- caro. Se le respeta el descuento del primer intento de este vencimiento
+  -- mientras el resto sea lo mismo (plan, período, personas: mismo subtotal).
+  --
+  -- Revisión 07/10: sin mirar el número de intento. Si el primer intento
+  -- falló por infraestructura, el intento se devuelve (n vuelve a 0) y con
+  -- «solo si n > 0» el reintento perdía lo anunciado. La búsqueda ya está
+  -- acotada a ESTE vencimiento: operaciones automáticas del plan creadas
+  -- desde el día del primer cobro (vencimiento − 1), que no sean esta. En el
+  -- primer intento de verdad no encuentra ninguna y no cambia nada.
+  select o.* into v_primera
+  from public.bancard_operaciones o
+  where o.empresa_id = v.empresa_id and o.origen = 'automatico' and o.tipo = 'plan'
+    and o.id <> (v_op ->> 'operacion')::bigint
+    and (o.created_at at time zone v.zona)::date >= v.fin + v_dias[1]
+  order by o.id
+  limit 1;
+
+  if v_primera.id is not null and v_primera.descuento > 0
+     and v_primera.plan = v.plan and v_primera.periodo = v.periodo
+     and (v_op -> 'desglose' ->> 'descuento')::numeric = 0
+     and (v_op -> 'desglose' ->> 'subtotal')::numeric = v_primera.lista + v_primera.extras then
+    update public.bancard_operaciones
+    set descuento  = v_primera.descuento,
+        importe    = v_primera.importe,
+        desglose   = desglose || jsonb_build_object(
+          'descuento_fase',       v_primera.desglose -> 'descuento_fase',
+          'descuento_porcentaje', v_primera.desglose -> 'descuento_porcentaje',
+          'descuento_base',       v_primera.desglose -> 'descuento_base',
+          'descuento',            v_primera.descuento,
+          'total',                v_primera.importe,
+          'anunciado_en',         v_primera.id),
+        updated_at = now()
+    where id = (v_op ->> 'operacion')::bigint and estado = 'creada';
+    v_op := v_op || jsonb_build_object('importe', v_primera.importe);
+  end if;
+
+  update public.bancard_cuentas
+  set ciclo_fin      = v.fin,
+      intentos       = v.n + 1,
+      ultimo_intento = v.hoy,
+      debito_estado  = case when v.n > 0 then 'reintentando' else debito_estado end,
+      updated_at     = now()
+  where empresa_id = v.empresa_id;
+
+  return jsonb_build_object(
+    'operacion',   v_op -> 'operacion',
+    'empresa_id',  v.empresa_id,
+    'importe',     v_op -> 'importe',
+    'descripcion', v_op -> 'descripcion',
+    'user_id',     v_op -> 'user_id',
+    'card_id',     v_op -> 'card_id',
+    'intento',     v.n + 1);
+end $fn$;
+
+revoke all on function public.bancard_tomar_cobro(text) from public, anon, authenticated;
+grant execute on function public.bancard_tomar_cobro(text) to service_role;
+
+-- Las cuentas con débito al día que vencen en 5 días: para el aviso «tu
+-- tarjeta vence antes del próximo cobro», que se decide pidiéndole la
+-- tarjeta a Bancard en vivo (el vencimiento no se guarda).
+create or replace function public.bancard_tarjetas_por_revisar(p_entorno text)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'empresa_id',    c.empresa_id,
+    'user_id',       t.pagador_id,
+    'card_id',       t.id,
+    'marca',         t.marca,
+    'ultimos4',      t.ultimos4,
+    'fecha_fin',     d.fin,
+    'fecha_cobro',   d.fin + (public.bancard_dias_de_cobro())[1],
+    'destinatarios', public.bancard_destinatarios(c.empresa_id)
+  ) order by d.fin, c.empresa_id), '[]'::jsonb)
+  from public.bancard_cuentas c
+  join public.suscripciones s on s.empresa_id = c.empresa_id
+  join public.empresas e on e.id = c.empresa_id
+  join public.bancard_tarjetas t on t.id = c.tarjeta_id
+  cross join lateral (
+    select (s.periodo_fin at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as fin,
+           (now() at time zone coalesce(e.zona_horaria, 'America/Asuncion'))::date as hoy
+  ) d
+  where c.debito_activo and c.debito_estado = 'al_dia'
+    and t.estado = 'activa' and t.entorno = p_entorno
+    -- Revisión 07/10: solo planes activos (a una prueba no se le cobra sola).
+    and s.estado = 'activa' and s.plan <> 'gratis'
+    and not coalesce(s.cancela_al_vencer, false)
+    and s.periodo_fin is not null
+    and d.fin - d.hoy = 5;
+$fn$;
+
+revoke all on function public.bancard_tarjetas_por_revisar(text) from public, anon, authenticated;
+grant execute on function public.bancard_tarjetas_por_revisar(text) to service_role;
+
+-- Lo que la conciliación tiene que resolver: operaciones vivas de más de 10
+-- minutos (el manual: pasado ese tiempo, consultar), tarjetas a medio
+-- guardar y tarjetas que falta borrar en Bancard.
+create or replace function public.bancard_por_conciliar(p_entorno text, p_limite integer default 10)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select jsonb_build_object(
+    'operaciones', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',      x.id,
+        'estado',  x.estado,
+        'medio',   x.medio,
+        'origen',  x.origen,
+        'minutos', x.minutos,
+        'vencida', x.minutos >= case when x.estado = 'en_3ds' then public.bancard_minutos_de_3ds()
+                                     else public.bancard_minutos_de_vida() end,
+        'entorno', x.entorno
+      ) order by x.created_at)
+      from (
+        select o.id, o.estado, o.medio, o.origen, o.entorno, o.created_at,
+               floor(extract(epoch from (now() - o.created_at)) / 60)::integer as minutos
+        from public.bancard_operaciones o
+        where o.estado in ('creada', 'en_3ds', 'incierta')
+          and o.entorno = p_entorno
+          and o.created_at < now() - interval '10 minutes'
+        order by o.created_at
+        limit greatest(1, least(coalesce(p_limite, 10), 100))
+      ) x
+    ), '[]'::jsonb),
+    'tarjetas_pendientes', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'tarjeta_id', x.id, 'card_id', x.id, 'user_id', x.pagador_id, 'empresa_id', x.empresa_id
+      ) order by x.created_at)
+      from (
+        select t.id, t.pagador_id, t.empresa_id, t.created_at
+        from public.bancard_tarjetas t
+        where t.estado = 'pendiente' and t.entorno = p_entorno
+          and t.created_at < now() - interval '30 minutes'
+        order by t.created_at
+        limit greatest(1, least(coalesce(p_limite, 10), 100))
+      ) x
+    ), '[]'::jsonb),
+    'tarjetas_por_quitar', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'tarjeta_id', x.id, 'card_id', x.id, 'user_id', x.pagador_id, 'empresa_id', x.empresa_id
+      ) order by x.created_at)
+      from (
+        select t.id, t.pagador_id, t.empresa_id, t.created_at
+        from public.bancard_tarjetas t
+        where t.estado = 'por_quitar' and t.entorno = p_entorno
+        order by t.created_at
+        limit greatest(1, least(coalesce(p_limite, 10), 100))
+      ) x
+    ), '[]'::jsonb),
+    -- Las vivas del otro entorno (el servidor cambió de staging a
+    -- producción): se cierran sin llamar a Bancard.
+    'de_otro_entorno', coalesce((
+      select jsonb_agg(o.id order by o.created_at)
+      from public.bancard_operaciones o
+      where o.estado in ('creada', 'en_3ds', 'incierta')
+        and o.entorno <> p_entorno
+        and o.created_at < now() - make_interval(mins => public.bancard_minutos_de_3ds())
+    ), '[]'::jsonb),
+    -- Revisión 03/10: las rechazadas de formulario que todavía tienen un
+    -- formulario abierto en Bancard. Diez minutos después del rechazo (el
+    -- reintento adentro del mismo formulario ya pasó) se les manda la
+    -- reversa y se cierran: una rechazada no queda pagable para siempre.
+    'rechazadas', coalesce((
+      select jsonb_agg(x.id order by x.id)
+      from (
+        select o.id from public.bancard_operaciones o
+        where o.estado = 'rechazada' and o.medio = 'formulario' and o.entorno = p_entorno
+          and o.process_id is not null
+          and o.updated_at < now() - interval '10 minutes'
+          and o.created_at > now() - interval '24 hours'
+        order by o.id
+        limit greatest(1, least(coalesce(p_limite, 10), 100))
+      ) x
+    ), '[]'::jsonb)
+  );
+$fn$;
+
+revoke all on function public.bancard_por_conciliar(text, integer) from public, anon, authenticated;
+grant execute on function public.bancard_por_conciliar(text, integer) to service_role;
+
+-- El registro de lo que se habló con Bancard. El detalle se guarda saneado.
+create or replace function public.bancard_anotar_evento(
+  p_operacion bigint,
+  p_tarjeta   bigint,
+  p_entorno   text,
+  p_tipo      text,
+  p_ok        boolean,
+  p_clave     text,
+  p_http      integer,
+  p_detalle   jsonb
+)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  -- Revisión 03/10: un número que Orden no creó se anota una vez por día
+  -- (la URL es pública: mil POST no pueden ser mil filas). Lo mismo para
+  -- una confirmación que no cambia nada: la del otro entorno y la de un
+  -- token que no coincide sobre una operación ya terminada (los números son
+  -- correlativos: cada operación vieja es un blanco).
+  if p_tipo = 'confirmacion' and p_operacion is not null
+     and p_clave in ('desconocida', 'otro_entorno', 'token_invalido_cerrada', 'token_de_charge_cerrada')
+     and exists (
+    select 1 from public.bancard_eventos e
+    where e.operacion_id = p_operacion and e.tipo = 'confirmacion' and e.clave = p_clave
+      and e.created_at > now() - interval '24 hours'
+  ) then
+    return;
+  end if;
+
+  insert into public.bancard_eventos (operacion_id, tarjeta_id, entorno, tipo, ok, clave, http, detalle)
+  values (
+    p_operacion, p_tarjeta, left(p_entorno, 20), left(coalesce(nullif(p_tipo, ''), 'otro'), 40),
+    coalesce(p_ok, false), left(p_clave, 80), p_http, public.bancard_sanear_detalle(p_detalle));
+
+  if p_tipo = 'consulta' and p_operacion is not null then
+    update public.bancard_operaciones
+    set consultas = consultas + 1
+    where id = p_operacion;
+  end if;
+end $fn$;
+
+revoke all on function public.bancard_anotar_evento(bigint, bigint, text, text, boolean, text, integer, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.bancard_anotar_evento(bigint, bigint, text, text, boolean, text, integer, jsonb)
+  to service_role;
+
+-- ------------------------------------------------------------
+-- 10. LO QUE LEEN LAS PANTALLAS (con sesión y con la guarda adentro)
+-- ------------------------------------------------------------
+
+-- Para decidir quién ve Bancard. No dice nada de tarjetas.
+create or replace function public.bancard_acceso(p_empresa uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+begin
+  if not public.es_miembro(p_empresa) and not public.es_superadmin() then
+    raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
+  end if;
+
+  return jsonb_build_object(
+    'superadmin', public.es_superadmin(),
+    'habilitada', coalesce((select c.habilitada from public.bancard_cuentas c where c.empresa_id = p_empresa), false),
+    'admin',      public.es_admin(p_empresa));
+end $fn$;
+
+revoke all on function public.bancard_acceso(uuid) from public, anon;
+grant execute on function public.bancard_acceso(uuid) to authenticated;
+
+-- La tarjeta guardada, el débito, las personas del Premium, la operación
+-- viva y el último pago. Solo para quien administra la cuenta.
+create or replace function public.bancard_estado(p_empresa uuid, p_entorno text)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_sus      public.suscripciones;
+  v_cuenta   public.bancard_cuentas;
+  v_tarjeta  public.bancard_tarjetas;
+  v_viva     public.bancard_operaciones;
+  v_ultimo   public.bancard_operaciones;
+  v_tipo     text;
+  v_zona     text;
+  v_dias     integer[] := public.bancard_dias_de_cobro();
+  v_fin      date;
+  v_hoy      date;
+  v_n        integer;
+  v_fecha    date;
+  v_miembros integer;
+  v_max      integer := (public.limites_plan('negocio')->>'miembros')::integer;
+begin
+  if not public.es_admin(p_empresa) and not public.es_superadmin() then
+    raise exception 'Solo el dueño de la cuenta puede ver esto.' using errcode = '42501';
+  end if;
+
+  select coalesce(e.tipo_cuenta, 'emprendedor'), coalesce(e.zona_horaria, 'America/Asuncion')
+  into v_tipo, v_zona
+  from public.empresas e where e.id = p_empresa;
+  if v_tipo is null then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  select * into v_sus from public.suscripciones where empresa_id = p_empresa;
+  select * into v_cuenta from public.bancard_cuentas where empresa_id = p_empresa;
+  select * into v_tarjeta
+  from public.bancard_tarjetas t
+  where t.empresa_id = p_empresa and t.entorno = p_entorno and t.estado = 'activa';
+  select * into v_viva
+  from public.bancard_operaciones o
+  where o.empresa_id = p_empresa and o.estado in ('creada', 'en_3ds', 'incierta')
+  limit 1;
+  select * into v_ultimo
+  from public.bancard_operaciones o
+  where o.empresa_id = p_empresa and o.entorno = p_entorno and o.estado = 'pagada'
+  order by o.confirmada_at desc
+  limit 1;
+  select count(*)::int into v_miembros from public.miembros m where m.empresa_id = p_empresa;
+
+  -- Cuándo es el próximo cobro: el día anterior al vencimiento, o el
+  -- reintento que sigue. Revisión 07/10: solo con el plan 'activa'. En la
+  -- prueba (vigente o vencida) no hay fecha ni importe: la tarjeta queda
+  -- guardada y no se cobra sola, así que la pantalla no promete nada.
+  v_hoy := (now() at time zone v_zona)::date;
+  if v_tarjeta.id is not null and coalesce(v_cuenta.debito_activo, false)
+     and v_cuenta.debito_estado in ('al_dia', 'reintentando')
+     and v_sus.estado = 'activa' and v_sus.plan <> 'gratis' and v_sus.periodo_fin is not null
+     and not coalesce(v_sus.cancela_al_vencer, false) then
+    v_fin := (v_sus.periodo_fin at time zone v_zona)::date;
+    v_n   := case when v_cuenta.ciclo_fin is distinct from v_fin then 0 else v_cuenta.intentos end;
+    if v_n < array_length(v_dias, 1) then
+      v_fecha := greatest(
+        v_fin + v_dias[v_n + 1],
+        case when v_cuenta.ultimo_intento = v_hoy then v_hoy + 1 else v_hoy end);
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'tarjeta', case when v_tarjeta.id is null then null else jsonb_build_object(
+      'id', v_tarjeta.id, 'marca', v_tarjeta.marca, 'ultimos4', v_tarjeta.ultimos4, 'tipo', v_tarjeta.tipo) end,
+    'debito', jsonb_build_object(
+      'activo',       v_tarjeta.id is not null and coalesce(v_cuenta.debito_activo, false),
+      'estado',       coalesce(v_cuenta.debito_estado, 'al_dia'),
+      'fecha_cobro',  v_fecha,
+      'importe',      case when v_sus.estado = 'activa' then public.bancard_importe_de_renovacion(p_empresa) else null end,
+      'intentos',     coalesce(v_cuenta.intentos, 0),
+      'ultimo_error', v_cuenta.ultimo_error,
+      'bloqueada',    v_tarjeta.bloqueada_hasta is not null and v_tarjeta.bloqueada_hasta > now()),
+    'personas', case
+      when v_sus.plan = 'negocio' and v_tipo <> 'personal' and v_sus.estado = 'activa' then jsonb_build_object(
+        'contratadas', v_sus.tope_vendedores + 1,
+        'proxima',     v_cuenta.personas_proxima,
+        'miembros',    v_miembros,
+        'min',         least(greatest(public.personas_incluidas_premium(), v_miembros), v_max),
+        'max',         v_max)
+      else null end,
+    'viva', case when v_viva.id is null then null else jsonb_build_object(
+      'operacion', v_viva.id,
+      'estado',    v_viva.estado,
+      'tipo',      v_viva.tipo,
+      'medio',     v_viva.medio,
+      'importe',   v_viva.importe,
+      'minutos',   floor(extract(epoch from (now() - v_viva.created_at)) / 60)::integer,
+      'puede_3ds', v_viva.estado = 'en_3ds' and v_viva.entorno = p_entorno
+                   and v_viva.created_at > now() - make_interval(mins => public.bancard_minutos_de_3ds())) end,
+    'ultimo_pago', case when v_ultimo.id is null then null else jsonb_build_object(
+      'operacion', v_ultimo.id,
+      'importe',   v_ultimo.importe,
+      'fecha',     v_ultimo.confirmada_at,
+      'vence',     v_ultimo.vence_despues) end);
+end $fn$;
+
+revoke all on function public.bancard_estado(uuid, text) from public, anon;
+grant execute on function public.bancard_estado(uuid, text) to authenticated;
+
+-- Una operación, para la pantalla de resultado y el comprobante. Devuelve
+-- SOLO lo que el manual de Bancard deja mostrar: fecha, número de pedido,
+-- importe y descripción de la respuesta. Nunca el número de autorización, el
+-- código de respuesta, la respuesta extendida ni los datos de seguridad.
+-- «No es tuyo» y «no existe» contestan lo mismo.
+create or replace function public.bancard_operacion_ver(p_operacion bigint)
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare
+  v_op public.bancard_operaciones;
+begin
+  select * into v_op from public.bancard_operaciones where id = p_operacion;
+
+  if v_op.id is null or not (public.es_admin(v_op.empresa_id) or public.es_superadmin()) then
+    raise exception 'Ese pago no existe.' using errcode = 'P0002';
+  end if;
+
+  return jsonb_build_object(
+    'operacion',             v_op.id,
+    'estado',                v_op.estado,
+    'tipo',                  v_op.tipo,
+    'medio',                 v_op.medio,
+    'origen',                v_op.origen,
+    'plan',                  v_op.plan,
+    'periodo',               v_op.periodo,
+    'personas',              v_op.personas,
+    'desglose',              v_op.desglose,
+    'importe',               v_op.importe,
+    'moneda',                v_op.moneda,
+    'fecha',                 coalesce(v_op.confirmada_at, v_op.created_at),
+    'minutos',               floor(extract(epoch from (now() - v_op.created_at)) / 60)::integer,
+    'descripcion_respuesta', v_op.respuesta ->> 'response_description',
+    'vence',                 v_op.vence_despues,
+    'entorno',               v_op.entorno,
+    'tarjeta',               (
+      select jsonb_build_object('marca', t.marca, 'ultimos4', t.ultimos4)
+      from public.bancard_tarjetas t where t.id = v_op.tarjeta_id),
+    -- Solo mientras hace falta para abrir el formulario, y solo a quien la
+    -- inició (o a quien administra la cuenta, si la inició la tarea diaria).
+    'process_id',            case
+      when v_op.estado in ('creada', 'en_3ds')
+           and (v_op.usuario_id = auth.uid() or v_op.origen = 'automatico')
+      then v_op.process_id else null end);
+end $fn$;
+
+revoke all on function public.bancard_operacion_ver(bigint) from public, anon;
+grant execute on function public.bancard_operacion_ver(bigint) to authenticated;
+
+-- «Bajar desde la próxima renovación»: no cobra nada, deja anotado por
+-- cuántas personas se renueva. Null lo deshace.
+--
+-- Revisión 07/10: es del servidor, como todo lo que escribe. Estaba abierta
+-- a cualquier sesión que administrara la cuenta, sin mirar si esa cuenta ve
+-- Bancard: con Bancard apagado, una llamada directa le bajaba el tope del
+-- equipo en el acto (`tope_de_miembros` respeta la baja) a un período pago
+-- por más personas. Ahora la llama la ruta, que comprueba el acceso como
+-- las demás (`bancard_acceso` + la configuración del servidor) y pasa quién
+-- lo pide; DESHACER (null) la ruta lo deja siempre, para que nadie quede
+-- atrapado con una baja si después se le deshabilita Bancard.
+drop function if exists public.bancard_bajar_personas(uuid, integer);
+
+create or replace function public.bancard_bajar_personas(p_empresa uuid, p_usuario uuid, p_personas integer)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_sus      public.suscripciones;
+  v_tipo     text;
+  v_miembros integer;
+  v_min      integer;
+begin
+  if not public.bancard_administra(p_empresa, p_usuario) then
+    raise exception 'Solo el dueño de la cuenta puede pagar el plan.' using errcode = '42501';
+  end if;
+
+  select coalesce(e.tipo_cuenta, 'emprendedor') into v_tipo from public.empresas e where e.id = p_empresa;
+  select * into v_sus from public.suscripciones where empresa_id = p_empresa for update;
+
+  if v_sus.empresa_id is null or v_tipo = 'personal' or v_sus.plan <> 'negocio' or v_sus.estado <> 'activa' then
+    raise exception 'Ese plan no lleva cantidad de personas.' using errcode = '22023';
+  end if;
+  if v_sus.tope_vendedores is null then
+    raise exception 'Primero renová tu plan eligiendo cuántas personas son.' using errcode = '22023';
+  end if;
+
+  if p_personas is not null then
+    select count(*)::int into v_miembros from public.miembros m where m.empresa_id = p_empresa;
+    v_min := greatest(public.personas_incluidas_premium(), v_miembros);
+
+    if p_personas >= v_sus.tope_vendedores + 1 then
+      raise exception 'Para cambiar la cantidad de personas usá «Sumar personas» o «Bajar desde la próxima renovación».'
+        using errcode = '22023';
+    end if;
+    if p_personas < v_miembros then
+      raise exception 'No podés bajar a menos personas de las que hoy tiene tu equipo.' using errcode = '22023';
+    end if;
+    if p_personas < v_min then
+      raise exception 'Elegí cuántas personas van a usar la cuenta (entre % y %).', v_min, v_sus.tope_vendedores
+        using errcode = '22023';
+    end if;
+  end if;
+
+  insert into public.bancard_cuentas (empresa_id, personas_proxima)
+  values (p_empresa, p_personas)
+  on conflict (empresa_id) do update set
+    personas_proxima = excluded.personas_proxima, updated_at = now();
+
+  return jsonb_build_object(
+    'personas_proxima', p_personas,
+    'contratadas',      v_sus.tope_vendedores + 1,
+    'importe',          public.bancard_importe_de_renovacion(p_empresa));
+end $fn$;
+
+revoke all on function public.bancard_bajar_personas(uuid, uuid, integer) from public, anon, authenticated;
+grant execute on function public.bancard_bajar_personas(uuid, uuid, integer) to service_role;
+
+-- ------------------------------------------------------------
+-- 11. LA ADMINISTRACIÓN DE ORDEN
+-- ------------------------------------------------------------
+
+-- El interruptor por cuenta: quién puede pagar con Bancard mientras no está
+-- abierto a todos (la cuenta de prueba que se le da al certificador).
+create or replace function public.habilitar_bancard(p_empresa uuid, p_si boolean)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.empresas e where e.id = p_empresa) then
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';
+  end if;
+
+  insert into public.bancard_cuentas (empresa_id, habilitada, habilitada_por, habilitada_at)
+  values (p_empresa, coalesce(p_si, false), auth.uid(), now())
+  on conflict (empresa_id) do update set
+    habilitada     = excluded.habilitada,
+    habilitada_por = excluded.habilitada_por,
+    habilitada_at  = excluded.habilitada_at,
+    updated_at     = now();
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'habilitar_bancard', jsonb_build_object('habilitada', coalesce(p_si, false)));
+
+  return jsonb_build_object('habilitada', coalesce(p_si, false));
+end $fn$;
+
+revoke all on function public.habilitar_bancard(uuid, boolean) from public, anon;
+grant execute on function public.habilitar_bancard(uuid, boolean) to authenticated;
+
+-- Los pagos, con TODO: acá sí van la autorización, el ticket, el código y la
+-- respuesta extendida, lo que hay para revisar, los últimos eventos de cada
+-- uno y si se puede revertir. Con una cuenta, los de esa cuenta (y arriba,
+-- si está habilitada, su tarjeta y su débito); sin cuenta, los últimos de
+-- todas, con los que hay que revisar primero.
+create or replace function public.bancard_operaciones_admin(
+  p_empresa uuid default null,
+  p_limite  integer default 50
+)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_lista  jsonb := '[]'::jsonb;
+  v_puede  boolean;
+  v_porque text;
+  r        record;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  for r in
+    select o.*, e.nombre as empresa_nombre
+    from public.bancard_operaciones o
+    join public.empresas e on e.id = o.empresa_id
+    where p_empresa is null or o.empresa_id = p_empresa
+    order by (case when p_empresa is null and o.revisar is not null then 0 else 1 end), o.created_at desc
+    limit greatest(1, least(coalesce(p_limite, 50), 200))
+  loop
+    v_puede  := false;
+    v_porque := null;
+    if r.estado = 'pagada' then
+      begin
+        perform public.bancard_revertir(r.id, auth.uid(), '', true, false);
+        v_puede := true;
+      exception when others then
+        v_porque := sqlerrm;
+      end;
+    end if;
+
+    v_lista := v_lista || jsonb_build_array(jsonb_build_object(
+      'operacion',     r.id,
+      'empresa_id',    r.empresa_id,
+      'empresa',       r.empresa_nombre,
+      'entorno',       r.entorno,
+      'tipo',          r.tipo,
+      'medio',         r.medio,
+      'origen',        r.origen,
+      'plan',          r.plan,
+      'periodo',       r.periodo,
+      'personas',      r.personas,
+      'desglose',      r.desglose,
+      'importe',       r.importe,
+      'estado',        r.estado,
+      'creada',        r.created_at,
+      'confirmada',    r.confirmada_at,
+      'fuente',        r.fuente,
+      'descripcion',   r.respuesta ->> 'response_description',
+      'codigo',        r.respuesta ->> 'response_code',
+      'autorizacion',  r.respuesta ->> 'authorization_number',
+      'ticket',        r.respuesta ->> 'ticket_number',
+      'respuesta',     r.respuesta
+    ) || jsonb_build_object(
+      'antes',         r.antes,
+      'vence',         r.vence_despues,
+      'ingreso_id',    r.ingreso_id,
+      'comision_id',   r.comision_id,
+      'revertida',     r.revertida_at,
+      'motivo',        r.motivo,
+      'revisar',       r.revisar,
+      'consultas',     r.consultas,
+      'puede_revertir', v_puede,
+      'por_que_no',    v_porque,
+      'eventos',       coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'tipo', x.tipo, 'ok', x.ok, 'clave', x.clave, 'http', x.http,
+          'detalle', x.detalle, 'cuando', x.created_at) order by x.created_at desc)
+        from (
+          select ev.* from public.bancard_eventos ev
+          where ev.operacion_id = r.id
+          order by ev.created_at desc
+          limit 10
+        ) x
+      ), '[]'::jsonb)));
+  end loop;
+
+  return jsonb_build_object(
+    'habilitada', case when p_empresa is null then null else
+      coalesce((select c.habilitada from public.bancard_cuentas c where c.empresa_id = p_empresa), false) end,
+    'tarjeta', case when p_empresa is null then null else (
+      select jsonb_build_object(
+        'id', t.id, 'entorno', t.entorno, 'marca', t.marca, 'ultimos4', t.ultimos4, 'tipo', t.tipo,
+        'bloqueada_hasta', t.bloqueada_hasta, 'activada', t.activada_at)
+      from public.bancard_cuentas c
+      join public.bancard_tarjetas t on t.id = c.tarjeta_id
+      where c.empresa_id = p_empresa) end,
+    'debito', case when p_empresa is null then null else (
+      select jsonb_build_object(
+        'activo', c.debito_activo, 'estado', c.debito_estado, 'ciclo_fin', c.ciclo_fin,
+        'intentos', c.intentos, 'ultimo_intento', c.ultimo_intento,
+        'ultimo_error', c.ultimo_error, 'ultimo_codigo', c.ultimo_codigo,
+        'personas_proxima', c.personas_proxima, 'aceptado_at', c.aceptado_at)
+      from public.bancard_cuentas c
+      where c.empresa_id = p_empresa) end,
+    'operaciones', v_lista);
+end $fn$;
+
+revoke all on function public.bancard_operaciones_admin(uuid, integer) from public, anon;
+grant execute on function public.bancard_operaciones_admin(uuid, integer) to authenticated;
+
+-- ------------------------------------------------------------
+-- 12. «DESHACER EL ÚLTIMO CAMBIO» NO SE COME UN PAGO DE BANCARD
+--
+--    Copia exacta de la 022. Cambia: después de elegir el renglón, si ese
+--    cambio es un pago de Bancard, o si después de él hubo un pago de
+--    Bancard, se niega. Un pago con tarjeta se revierte con
+--    `bancard_revertir`, que primero le pide la reversa a Bancard.
+-- ------------------------------------------------------------
+create or replace function public.deshacer_ultimo_cambio(p_empresa uuid)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_reg     public.registro_admin;
+  v_plan    text;
+  v_estado  text;
+  v_fin     timestamptz;
+  v_ingreso uuid;
+  v_anulado boolean := false;
+begin
+  if not public.es_superadmin() then
+    raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
+  end if;
+
+  select * into v_reg
+  from public.registro_admin
+  where empresa_id = p_empresa
+    and accion in ('cambiar_plan', 'extender_prueba')
+  order by created_at desc
+  limit 1;
+
+  if v_reg.id is null then
+    raise exception 'No hay ningún cambio para deshacer en esta cuenta.' using errcode = 'P0002';
+  end if;
+
+  -- 125: un pago de Bancard no se deshace desde acá.
+  if v_reg.detalle->>'via' = 'bancard' or exists (
+    select 1 from public.bancard_operaciones o
+    where o.empresa_id = p_empresa and o.estado = 'pagada'
+      and o.confirmada_at > v_reg.created_at
+  ) then
+    raise exception 'Ese cambio tiene un pago con Bancard: se revierte desde los pagos de Bancard de la cuenta.'
+      using errcode = '22023';
+  end if;
+
+  -- Ya se deshizo: sin esto, tocar dos veces dejaría el estado de dos
+  -- cambios atrás, que es un estado que nunca existió.
+  if coalesce((v_reg.detalle->>'deshecho')::boolean, false) then
+    raise exception 'Ese cambio ya se deshizo.' using errcode = '22023';
+  end if;
+
+  v_plan   := coalesce(v_reg.detalle->>'plan_antes', 'pro');
+  v_estado := coalesce(v_reg.detalle->>'estado_antes', 'prueba');
+  v_fin    := nullif(v_reg.detalle->>'vence_antes', '')::timestamptz;
+
+  update public.suscripciones
+  set plan = v_plan,
+      estado = v_estado,
+      periodo_fin = v_fin,
+      updated_at = now()
+  where empresa_id = p_empresa;
+
+  perform set_config('orden.suscripcion_confiable', '1', true);
+  update public.empresas
+  set plan = case when v_plan = 'gratis' then 'gratis' else 'pro' end
+  where id = p_empresa;
+  perform set_config('orden.suscripcion_confiable', '0', true);
+
+  -- El cobro que se había anotado, si lo hubo.
+  v_ingreso := nullif(v_reg.detalle->>'ingreso_id', '')::uuid;
+  if v_ingreso is not null then
+    update public.movimientos
+    set estado = 'anulado',
+        anulado_por = auth.uid(),
+        anulado_at = now(),
+        motivo_anulacion = 'Se deshizo la activación desde el panel'
+    where id = v_ingreso and estado = 'activo';
+    v_anulado := found;
+  end if;
+
+  -- Se marca el registro para que no se pueda deshacer dos veces.
+  update public.registro_admin
+  set detalle = detalle || jsonb_build_object('deshecho', true, 'deshecho_at', now())
+  where id = v_reg.id;
+
+  insert into public.registro_admin (actor_id, empresa_id, accion, detalle)
+  values (auth.uid(), p_empresa, 'deshacer', jsonb_build_object(
+    'registro', v_reg.id,
+    'volvio_a_plan', v_plan,
+    'volvio_a_estado', v_estado,
+    'volvio_a_vencer', v_fin,
+    'ingreso_anulado', v_anulado
+  ));
+
+  return jsonb_build_object(
+    'plan', v_plan, 'estado', v_estado, 'periodo_fin', v_fin,
+    'ingreso_anulado', v_anulado
+  );
+end $fn$;
+
+revoke all on function public.deshacer_ultimo_cambio(uuid) from public, anon;
+grant execute on function public.deshacer_ultimo_cambio(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- 13. LA REVISIÓN DEL 03/10: EL TOPE DE PERSONAS Y LA PURGA DEL REGISTRO
+-- ------------------------------------------------------------
+
+-- El tope de personas mira lo que se está por pagar. Copia exacta de la 048.
+-- Cambia: al tope de siempre se le aplica `least` con la baja programada
+-- (`bancard_cuentas.personas_proxima`) y con la renovación VIVA del Premium
+-- por menos personas. Sin eso, entre crear la renovación por 4 y confirmarla
+-- entraban 8 con el código y nadie los sacaba.
+create or replace function public.tope_de_miembros(p_empresa uuid)
+returns integer language sql stable security definer set search_path = public as $fn$
+  select case
+    when public.plan_efectivo_calculado(p_empresa) = 'gratis'
+      then (public.limites_plan('gratis')->>'miembros')::integer
+    else least(
+      coalesce(
+        (select s.tope_vendedores + 1
+         from public.suscripciones s
+         where s.empresa_id = p_empresa and s.tope_vendedores is not null),
+        (public.limites_plan(public.plan_efectivo_calculado(p_empresa))->>'miembros')::integer
+      ),
+      coalesce((select c.personas_proxima from public.bancard_cuentas c where c.empresa_id = p_empresa), 32767),
+      coalesce((select min(o.personas) from public.bancard_operaciones o
+                where o.empresa_id = p_empresa and o.tipo = 'plan' and o.plan = 'negocio'
+                  and o.estado in ('creada', 'en_3ds', 'incierta')), 32767)
+    )
+  end;
+$fn$;
+
+revoke all on function public.tope_de_miembros(uuid) from public, anon;
+grant execute on function public.tope_de_miembros(uuid) to authenticated;
+
+-- El registro de lo hablado con Bancard no crece sin tope: la conciliación
+-- borra lo de más de 90 días (nunca menos de 30). Devuelve cuántas filas.
+create or replace function public.bancard_purgar_eventos(p_dias integer default 90)
+returns integer language plpgsql security definer set search_path = public as $fn$
+declare
+  v_n integer;
+begin
+  delete from public.bancard_eventos
+  where created_at < now() - make_interval(days => greatest(coalesce(p_dias, 90), 30));
+  get diagnostics v_n = row_count;
+  return v_n;
+end $fn$;
+
+revoke all on function public.bancard_purgar_eventos(integer) from public, anon, authenticated;
+grant execute on function public.bancard_purgar_eventos(integer) to service_role;
+
+-- ------------------------------------------------------------
+-- 14. LA REVISIÓN DEL 07/10: LA BAJA PROGRAMADA CADUCA SOLA
+--
+--    `personas_proxima` topa el equipo (`tope_de_miembros`) y fija por
+--    cuántas personas se cobra la renovación. Solo la limpiaban los caminos
+--    de Bancard. Si la cuenta renovaba por fuera (una transferencia que la
+--    administración activa con `cambiar_plan_cuenta` por MÁS personas), la
+--    baja vieja seguía viva: pagó por 10 y no podía pasar de 5, y el
+--    próximo cobro salía por 5.
+--
+--    En vez de recopiar `cambiar_plan_cuenta` (103) para sumarle una línea,
+--    un disparador sobre `suscripciones`: cuando cambia DE VERDAD el
+--    vencimiento, el tope o el plan (`is distinct from`: esa función
+--    escribe el tope aunque no cambie), la baja programada se borra. Vale
+--    para cualquier camino, presente o futuro.
+--
+--    Los caminos de Bancard dan lo mismo que antes: `bancard_confirmar` lee
+--    la baja en una variable ANTES de tocar la suscripción y después la
+--    limpiaba ella misma; `bancard_revertir` repone la baja de la foto
+--    DESPUÉS de escribir la suscripción; «sumar personas» solo cambia el
+--    tope cuando lo sube, y ahí ya cancelaba la baja (siempre menor).
+--
+--    Es lo ÚNICO de 124-126 que se cuelga de una tabla que ya existía. Con
+--    `bancard_cuentas` vacía no hace nada, y nunca puede hacer fallar un
+--    cambio de plan: lo suyo va en un bloque con `exception`. Security
+--    definer, porque `bancard_cuentas` no le da permisos a nadie.
+-- ------------------------------------------------------------
+create or replace function public.bancard_baja_caduca()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if new.periodo_fin is distinct from old.periodo_fin
+     or new.tope_vendedores is distinct from old.tope_vendedores
+     or new.plan is distinct from old.plan then
+    begin
+      update public.bancard_cuentas
+      set personas_proxima = null, updated_at = now()
+      where empresa_id = new.empresa_id and personas_proxima is not null;
+    exception when others then
+      -- Un cambio de plan no se pierde por esto.
+      null;
+    end;
+  end if;
+  return null;
+end $fn$;
+
+revoke all on function public.bancard_baja_caduca() from public, anon, authenticated;
+
+drop trigger if exists bancard_baja_caduca on public.suscripciones;
+create trigger bancard_baja_caduca
+  after update of periodo_fin, tope_vendedores, plan on public.suscripciones
+  for each row execute function public.bancard_baja_caduca();
+
+
+-- ############################################################
+-- ##  126_bancard_reloj_y_avisos.sql
+-- ############################################################
+
+-- ============================================================
+-- 126 · BANCARD (3 de 3): EL AVISO DE VENCIMIENTO Y EL RELOJ
+-- ============================================================
+--
+-- Lo último de Bancard en la base (ver 124 y 125).
+--
+-- 1. EL AVISO DE VENCIMIENTO SABE CÓMO PAGA CADA CUENTA
+--
+-- `vencimientos_por_avisar` (107) le decía lo mismo a todos: «se te vence,
+-- transferí». Con Bancard hay tres casos y el aviso tiene que distinguirlos:
+--
+--   · la cuenta tiene el plan activo, una tarjeta guardada y el débito al
+--     día → «el día X cobramos Gs. Y de tu Visa •••• 0016, no tenés que
+--     hacer nada»;
+--   · la cuenta puede pagar con Bancard pero no tiene tarjeta (o paga con
+--     QR, que no se debita solo) → «entrá y pagá con tarjeta o QR»;
+--   · la cuenta todavía no ve Bancard → lo de hoy.
+--
+-- Para eso cada fila gana tres claves: `debito` (la tarjeta y la fecha del
+-- cobro, o null), `bancard` (si la cuenta está habilitada) e `importe` (lo
+-- que de verdad se le va a cobrar: con sus personas y su descuento). `precio`
+-- sigue siendo el de lista, como siempre. Lo demás no cambia: mismas cuentas,
+-- mismos días, mismo orden, mismos permisos.
+--
+-- Revisión 07/10: el aviso no promete un cobro que no va a salir.
+--   · `debito` es null para una cuenta EN PRUEBA aunque tenga la tarjeta
+--     guardada: a una prueba no se le cobra sola (125).
+--   · `debito` trae el `entorno` de la tarjeta. La base no sabe en qué
+--     entorno corre el servidor: es el servidor el que descarta el débito
+--     si la tarjeta es de otro entorno (una de staging después de pasar a
+--     producción) o si Bancard está apagado, y avisa «pagá vos».
+--
+-- 2. EL RELOJ
+--
+-- Dos tareas nuevas en pg_cron, con `disparar_tarea` (081), que ya acepta
+-- esas rutas:
+--
+--   · `orden-cobros-bancard`: cada hora de 09:07 a 18:07 de Paraguay (12 a
+--     21 UTC). Cobra de la tarjeta guardada lo que vence. Varias corridas por
+--     día y no una: cada corrida cobra pocas cuentas (hablar con Bancard
+--     tarda), y a nadie se le cobra dos veces el mismo día
+--     (`bancard_tomar_cobro`, 125).
+--   · `orden-conciliar-bancard`: cada 10 minutos. Resuelve las operaciones
+--     que quedaron sin confirmar preguntándole a Bancard (el manual: pasado
+--     ese tiempo, consultar; si no se pagó, revertir).
+--
+-- Con Bancard sin configurar las dos rutas contestan «omitida» y no hacen
+-- nada. `vercel.json` no se toca: el reloj de Orden es pg_cron.
+--
+-- Los dos relojes se programan acá y no «el día que se prenda»: hacen falta
+-- durante la certificación, y un paso a mano más es un paso que se olvida.
+-- Como la conciliación corre 144 veces por día, se suma una tercera tarea:
+--
+--   · `orden-purgar-cron`: los domingos, borra de `cron.job_run_details`
+--     lo de más de 14 días. pg_cron no limpia esa tabla sola.
+--
+-- 3. NO SE APLICA SIN LA 124 Y LA 125
+--
+-- `vencimientos_por_avisar` es plpgsql: se crea sin mirar si existe lo que
+-- nombra adentro. Si la 125 fallaba y se aplicaba igual esta, el aviso de
+-- vencimiento de TODOS los clientes quedaba roto sin que nada lo dijera.
+-- Por eso lo primero es una guarda que frena con un mensaje claro.
+--
+-- Mensaje nuevo, solo para quien aplica la migración (no llega a ninguna
+-- pantalla): «Falta aplicar la 124 y la 125 antes que la 126: …».
+--
+-- Idempotente: la guarda, un `create or replace`, un revoke, un grant y
+-- tres `cron.schedule` (que reemplazan la tarea del mismo nombre). Sin una
+-- sola barra invertida.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 0. LA GUARDA: SIN LA 124 Y LA 125 NO SE TOCA NADA
+-- ------------------------------------------------------------
+do $guarda$
+declare
+  v_falta text := '';
+begin
+  if to_regclass('public.bancard_cuentas') is null then
+    v_falta := v_falta || ' la tabla bancard_cuentas (124);';
+  end if;
+  if to_regclass('public.bancard_tarjetas') is null then
+    v_falta := v_falta || ' la tabla bancard_tarjetas (124);';
+  end if;
+  if to_regprocedure('public.bancard_dias_de_cobro()') is null then
+    v_falta := v_falta || ' bancard_dias_de_cobro (125);';
+  end if;
+  if to_regprocedure('public.bancard_importe_de_renovacion(uuid)') is null then
+    v_falta := v_falta || ' bancard_importe_de_renovacion (125);';
+  end if;
+  -- Lo último que crea la 125: si está, la 125 terminó entera.
+  if to_regprocedure('public.bancard_baja_caduca()') is null then
+    v_falta := v_falta || ' bancard_baja_caduca (el final de la 125);';
+  end if;
+  if v_falta <> '' then
+    raise exception 'Falta aplicar la 124 y la 125 antes que la 126: no existe%', v_falta;
+  end if;
+end $guarda$;
+
+-- ------------------------------------------------------------
+-- 1. LOS VENCIMIENTOS, CON LO DE BANCARD
+--
+--    Copia exacta de la 107. Cambia: tres claves más por fila, `debito`,
+--    `bancard` e `importe`.
+-- ------------------------------------------------------------
+create or replace function public.vencimientos_por_avisar()
+returns jsonb language plpgsql stable security definer set search_path = public as $fn$
+declare v_res jsonb;
+begin
+  select coalesce(jsonb_agg(x order by (x->>'dias')::int, x->>'nombre'), '[]'::jsonb) into v_res
+  from (
+    select jsonb_build_object(
+      'tipo',        case when s.estado = 'prueba' then 'prueba' else 'periodo' end,
+      'empresa_id',  e.id,
+      'nombre',      e.nombre,
+      'tipo_cuenta', coalesce(e.tipo_cuenta, 'emprendedor'),
+      'plan',        s.plan,
+      'periodo',     coalesce(s.periodo, 'mensual'),
+      'fin',         s.periodo_fin,
+      -- La fecha en la zona del negocio: es la que se escribe en el aviso y
+      -- la que arma la clave de «una vez por vencimiento».
+      'fecha_fin',   (s.periodo_fin at time zone z.zona)::date,
+      'dias',        d.dias,
+      'moneda',      'PYG',
+      'precio', (
+        select pr.importe
+        from public.precios pr
+        where pr.tipo_cuenta = coalesce(e.tipo_cuenta, 'emprendedor')
+          and pr.plan = s.plan
+          and pr.periodo = coalesce(s.periodo, 'mensual')
+          and pr.moneda = 'PYG'
+          and pr.activo
+        limit 1
+      ),
+      'destinatarios', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'user_id', mi.user_id,
+          'idioma',  coalesce(p.idioma, 'es'),
+          'nombre',  coalesce(mi.nombre, ''),
+          'email',   u.email
+        ) order by mi.rol desc, mi.created_at), '[]'::jsonb)
+        from public.miembros mi
+        left join public.preferencias p on p.user_id = mi.user_id
+        left join auth.users u on u.id = mi.user_id
+        where mi.empresa_id = e.id and mi.rol in ('propietario', 'admin')
+      ),
+      -- 126: la tarjeta de la que se va a cobrar y qué día, si la cuenta
+      -- tiene el débito al día. Si no, null: paga la persona. Lleva el
+      -- entorno de la tarjeta: el servidor descarta el débito si no es el
+      -- suyo (la base no sabe en qué entorno corre el servidor).
+      'debito', (
+        select jsonb_build_object(
+          'marca',       t.marca,
+          'ultimos4',    t.ultimos4,
+          'entorno',     t.entorno,
+          'fecha_cobro', (s.periodo_fin at time zone z.zona)::date + (public.bancard_dias_de_cobro())[1])
+        from public.bancard_cuentas c
+        join public.bancard_tarjetas t on t.id = c.tarjeta_id
+        where c.empresa_id = e.id
+          and c.debito_activo and c.debito_estado = 'al_dia'
+          and t.estado = 'activa'
+          -- Revisión 07/10: solo planes activos. A una prueba no se le
+          -- cobra sola aunque tenga la tarjeta guardada (bancard_tomar_cobro).
+          and s.estado = 'activa'
+      ),
+      -- 126: si la administración le habilitó el pago con Bancard.
+      'bancard', coalesce((
+        select c.habilitada from public.bancard_cuentas c where c.empresa_id = e.id
+      ), false),
+      -- 126: lo que se le cobra de verdad (sus personas, su descuento). Null
+      -- si no se puede cotizar.
+      'importe', public.bancard_importe_de_renovacion(e.id)
+    ) as x
+    from public.suscripciones s
+    join public.empresas e on e.id = s.empresa_id
+    cross join lateral (
+      select coalesce(e.zona_horaria, 'America/Asuncion') as zona
+    ) z
+    cross join lateral (
+      select (s.periodo_fin at time zone z.zona)::date
+             - (now() at time zone z.zona)::date as dias
+    ) d
+    where s.periodo_fin is not null
+      and d.dias in (0, 1, 3)
+      and (
+        (s.estado = 'prueba' and s.periodo_fin > now())
+        or (s.estado = 'activa'
+            and s.plan <> 'gratis'
+            and not coalesce(s.cancela_al_vencer, false))
+      )
+  ) t;
+
+  return v_res;
+end $fn$;
+
+revoke all on function public.vencimientos_por_avisar() from public, anon, authenticated;
+grant execute on function public.vencimientos_por_avisar() to service_role;
+
+-- ------------------------------------------------------------
+-- 2. EL RELOJ (como 113: sin pg_cron no se programa nada y no revienta)
+--
+--    Horarios en UTC. 12 a 21 UTC = 09 a 18 de Paraguay.
+-- ------------------------------------------------------------
+do $cal$
+begin
+  execute format('select cron.schedule(%L, %L, %L)', 'orden-cobros-bancard', '7 12-21 * * *',
+    format('select public.disparar_tarea(%L)', '/api/tareas/cobros-bancard'));
+  execute format('select cron.schedule(%L, %L, %L)', 'orden-conciliar-bancard', '*/10 * * * *',
+    format('select public.disparar_tarea(%L)', '/api/tareas/conciliar-bancard'));
+exception when others then
+  raise notice 'Sin pg_cron acá (%): los cobros y la conciliación de Bancard no se programan en este entorno.', sqlerrm;
+end $cal$;
+
+-- La purga del registro de pg_cron, en su propio bloque: si esta falla, los
+-- dos relojes de arriba quedan programados igual. Domingos 05:15 UTC.
+do $cal$
+begin
+  execute format('select cron.schedule(%L, %L, %L)', 'orden-purgar-cron', '15 5 * * 0',
+    format('delete from cron.job_run_details where end_time < now() - interval %L', '14 days'));
+exception when others then
+  raise notice 'Sin pg_cron acá (%): la purga del registro de pg_cron no se programa en este entorno.', sqlerrm;
+end $cal$;
 
 
 -- ############################################################

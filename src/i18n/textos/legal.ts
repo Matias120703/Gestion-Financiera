@@ -148,8 +148,8 @@ export const legalEs: TextosLegal = {
   // quedan habilitadas lo escribe la administración al activar el plan
   // (`cambiar_plan_cuenta`, 103): por eso «se acuerda al activar».
   premium: ({ precio, porPersona, incluidas, tope }) => (precio && porPersona
-    ? `El plan **Premium** cuesta ${precio} por mes e incluye **${incluidas} personas**: el dueño de la cuenta y ${incluidas - 1} más. **Por cada persona más que sumes a tu equipo se suman ${porPersona} por mes**, hasta ${tope} personas. Cuántas personas quedan habilitadas en tu cuenta se acuerda con nosotros al activar el plan.`
-    : `El plan **Premium** incluye **${incluidas} personas**: el dueño de la cuenta y ${incluidas - 1} más. **Cada persona más que sumes a tu equipo se paga aparte**, hasta ${tope} personas; el importe está en la portada y en la pantalla de tu plan. Cuántas personas quedan habilitadas en tu cuenta se acuerda con nosotros al activar el plan.`),
+    ? `El plan **Premium** cuesta ${precio} por mes e incluye **${incluidas} personas**: el dueño de la cuenta y ${incluidas - 1} más. **Por cada persona más que sumes a tu equipo se suman ${porPersona} por mes**, hasta ${tope} personas. Si pagás con tarjeta o QR, **elegís la cantidad de personas al pagar** y el precio se calcula ahí mismo; si pagás por transferencia, se acuerda con nosotros al activar el plan.`
+    : `El plan **Premium** incluye **${incluidas} personas**: el dueño de la cuenta y ${incluidas - 1} más. **Cada persona más que sumes a tu equipo se paga aparte**, hasta ${tope} personas; el importe está en la portada y en la pantalla de tu plan. Si pagás con tarjeta o QR, **elegís la cantidad de personas al pagar** y el precio se calcula ahí mismo; si pagás por transferencia, se acuerda con nosotros al activar el plan.`),
   contacto: {
     whatsapp: 'Escribinos por WhatsApp',
     mensaje: 'Hola, tengo una consulta sobre Orden.',
@@ -166,7 +166,7 @@ export const legalEs: TextosLegal = {
     esencial: [
       `**${E} días gratis** si es un negocio y **${P}** si es una cuenta personal. Sin tarjeta.`,
       'Cada rubro tiene sus planes, con precio en guaraníes.',
-      'Hoy se paga **por transferencia**, coordinada por WhatsApp. No hay débito automático.',
+      'Se paga **por transferencia** o, donde ya está habilitado, **con tarjeta o QR** a través de Bancard. Nada se cobra solo, salvo que guardes tu tarjeta para eso.',
       'Si es un negocio y no pagás, **la cuenta se pausa** hasta activar el plan. Si es una cuenta personal, **pasa al plan Gratis**. En los dos casos, **tus datos no se borran.**',
       'Si traés a alguien que paga, te llevás **la mitad del precio de lista de un mes** de su plan.',
     ],
@@ -221,9 +221,27 @@ export const legalEs: TextosLegal = {
         id: 'pagos',
         titulo: 'Cómo se paga',
         bloques: [
-          'Hoy se paga **por transferencia**. En la pantalla de tu plan tocás «Suscribirme», se abre un WhatsApp con nosotros, transferís y te activamos el plan. Se paga por adelantado, por mes o por año.',
-          'Hoy no se pide ni se guarda ninguna tarjeta, y **no hay débito automático**: nada se cobra solo.',
-          'Si más adelante se suma el pago con tarjeta, esta página se actualiza antes de que empiece a funcionar.',
+          '**Por transferencia.** En la pantalla de tu plan tocás «Suscribirme», se abre un WhatsApp con nosotros, transferís y te activamos el plan. Se paga por adelantado, por mes o por año.',
+          '**Con tarjeta o QR (Bancard).** Lo estamos habilitando de a poco: si en la pantalla de tu plan ves el botón «Pagar con tarjeta o QR», ya lo tenés. El pago se hace en el formulario seguro de Bancard y el plan se activa en el momento. Se cobra en guaraníes. Al terminar ves el comprobante, con la fecha y hora, el número de pedido, el importe y la respuesta de Bancard, y te lo mandamos por correo.',
+          '**Orden no ve ni guarda el número de tu tarjeta.** Lo cargás en Bancard. Orden guarda solo la marca y los últimos cuatro números para mostrarte cuál es.',
+        ],
+      },
+      {
+        id: 'cobro-automatico',
+        titulo: 'El cobro automático',
+        bloques: [
+          '**El cobro automático es opcional.** Si guardás tu tarjeta, el día anterior al vencimiento cobramos de ella el precio de tu plan (por mes o por año, según lo que tengas). Te avisamos tres días antes, con el importe.',
+          // Decisión del 07/10/2026: una cuenta en prueba puede guardar la tarjeta, pero no se le cobra sola.
+          '**Durante la prueba gratis no se cobra nada**, aunque hayas guardado tu tarjeta: cuando termina, elegís tu plan y lo pagás vos. El cobro automático empieza recién después de ese primer pago.',
+          'Si el cobro no pasa, te avisamos y volvemos a intentar hasta dos veces más en los días siguientes; si no se puede, la cuenta vence como cualquier otra.',
+          '**Lo cancelás cuando quieras** quitando tu tarjeta desde la pantalla de tu plan: rige en el momento y el plan sigue hasta el último día pagado. Quien paga con QR no tiene cobro automático: recibe el aviso y vuelve a pagar.',
+        ],
+      },
+      {
+        id: 'devoluciones',
+        titulo: 'Cancelaciones y devoluciones',
+        bloques: [
+          'Podés dejar de pagar cuando quieras: el plan sigue hasta el final del período pagado. Los pagos de un período ya empezado no se devuelven, salvo un cobro duplicado o un error nuestro: en ese caso devolvemos el importe al mismo medio de pago. Escribinos y lo resolvemos.',
         ],
       },
       {
@@ -242,7 +260,8 @@ export const legalEs: TextosLegal = {
         id: 'dejar',
         titulo: 'Dejar de usar Orden',
         bloques: [
-          'No hace falta cancelar nada: como no hay débito automático, si no renovás, al terminar el período que ya pagaste la cuenta de un negocio se pausa y la personal pasa al plan Gratis. Hasta ese día la seguís usando entera.',
+          'Si no guardaste una tarjeta, no hace falta cancelar nada: si no renovás, al terminar el período que ya pagaste la cuenta de un negocio se pausa y la personal pasa al plan Gratis. Hasta ese día la seguís usando entera.',
+          'Si guardaste una tarjeta, quitala desde la pantalla de tu plan y no se te cobra más.',
           'Si además querés borrar tus datos, mirá [Cerrar la cuenta](/terminos#cerrar), más abajo.',
         ],
       },
@@ -336,6 +355,7 @@ export const legalEs: TextosLegal = {
         titulo: 'Contacto',
         bloques: [
           'Escribinos por WhatsApp, al mismo número con el que se coordina el pago. También se abre desde la pantalla de tu plan, que funciona aunque la cuenta esté pausada.',
+          'Para consultas sobre un pago, tené a mano el número de pedido del comprobante.',
           { especial: 'contacto' },
         ],
       },
@@ -347,7 +367,7 @@ export const legalEs: TextosLegal = {
     metaTitulo: 'Privacidad · Orden',
     metaDescripcion: 'Qué datos guarda Orden, dónde están, con quién se comparten para funcionar y cómo se borran.',
     titulo: 'Privacidad',
-    actualizado: '30 de septiembre de 2026',
+    actualizado: '2 de octubre de 2026',
     bajada: 'Escrita sobre lo que Orden hace de verdad, no copiada de una plantilla. Si cambia un proveedor o un dato que pedimos, esta página cambia con él.',
     esencialTitulo: 'Lo esencial',
     esencial: [
@@ -372,7 +392,7 @@ export const legalEs: TextosLegal = {
               '**Quién te invitó,** si entraste con el enlace de alguien, para pagarle su comisión.',
             ],
           },
-          'Para usar Orden no pedimos tu documento, tu dirección ni datos de tarjetas. El documento solo se pide si querés cobrar comisiones por invitar (más abajo).',
+          'Para usar Orden no pedimos tu documento ni tu dirección. **Los datos de tu tarjeta no los pedimos ni los vemos nosotros**: si pagás con tarjeta, los cargás en el formulario de Bancard. El documento solo se pide si querés cobrar comisiones por invitar (más abajo).',
         ],
       },
       {
@@ -474,7 +494,8 @@ export const legalEs: TextosLegal = {
           {
             lista: [
               '**OpenAI** (Estados Unidos). Cuando cargás hablando, con una foto o escribiendo, se le manda el audio, la foto o el texto para entenderlo. Para que acierte va también lo mínimo de tu cuenta: los nombres y precios de tus productos, tus categorías, los nombres y saldos de tus deudas y de quien te debe, tus gastos fijos, los servicios y profesionales de tu agenda y, en el campo, el nombre, el cultivo y las hectáreas de tus campañas abiertas. Al dictar un turno, también el nombre y el teléfono del cliente que digas. Los costos no se mandan. Según las condiciones de OpenAI para su API, esto no se usa para entrenar sus modelos. Si no usás esa función, no se le manda nada.',
-              '**Resend.** Manda los correos: tu dirección y el contenido de cada mensaje (recuperar la contraseña, el resumen de tu semana con tus números, los avisos de la prueba y del plan).',
+              '**Resend.** Manda los correos: tu dirección y el contenido de cada mensaje (recuperar la contraseña, el resumen de tu semana con tus números, los avisos de la prueba y del plan, el comprobante de un pago).',
+              '**Bancard** (Paraguay). Procesa los pagos con tarjeta, QR y PIX. Le mandamos el importe, un número de pedido y, si guardás tu tarjeta, tu correo y tu teléfono (los pide para registrar la tarjeta). Bancard nos devuelve si el pago se aprobó, la marca y los últimos cuatro números de la tarjeta. El número entero, el vencimiento y el código de seguridad los ve solo Bancard.',
               '**Supabase y Vercel.** Alojan la base de datos, las fotos y la aplicación.',
               '**El servicio de avisos de tu navegador** (de Apple, Google o Mozilla), si activás los avisos: es el que los entrega en tu celular. Viajan cifrados y ese servicio no puede leerlos.',
             ],
@@ -565,8 +586,8 @@ export const legalPt: TextosLegal = {
     pruebaDe: (plan, dias) => `${plan}, ${dias} dias`,
   },
   premium: ({ precio, porPersona, incluidas, tope }) => (precio && porPersona
-    ? `O plano **Premium** custa ${precio} por mês e inclui **${incluidas} pessoas**: o dono da conta e mais ${incluidas - 1}. **Para cada pessoa a mais na sua equipe somam-se ${porPersona} por mês**, até ${tope} pessoas. Quantas pessoas ficam liberadas na sua conta é combinado com a gente ao ativar o plano.`
-    : `O plano **Premium** inclui **${incluidas} pessoas**: o dono da conta e mais ${incluidas - 1}. **Cada pessoa a mais na sua equipe é paga à parte**, até ${tope} pessoas; o valor está na página inicial e na tela do seu plano. Quantas pessoas ficam liberadas na sua conta é combinado com a gente ao ativar o plano.`),
+    ? `O plano **Premium** custa ${precio} por mês e inclui **${incluidas} pessoas**: o dono da conta e mais ${incluidas - 1}. **Para cada pessoa a mais na sua equipe somam-se ${porPersona} por mês**, até ${tope} pessoas. Se você paga com cartão ou QR, **escolhe a quantidade de pessoas na hora de pagar** e o preço é calculado ali mesmo; se paga por transferência, é combinado com a gente ao ativar o plano.`
+    : `O plano **Premium** inclui **${incluidas} pessoas**: o dono da conta e mais ${incluidas - 1}. **Cada pessoa a mais na sua equipe é paga à parte**, até ${tope} pessoas; o valor está na página inicial e na tela do seu plano. Se você paga com cartão ou QR, **escolhe a quantidade de pessoas na hora de pagar** e o preço é calculado ali mesmo; se paga por transferência, é combinado com a gente ao ativar o plano.`),
   contacto: {
     whatsapp: 'Fale com a gente no WhatsApp',
     mensaje: 'Olá, tenho uma dúvida sobre o Orden.',
@@ -583,7 +604,7 @@ export const legalPt: TextosLegal = {
     esencial: [
       `**${E} dias grátis** se for um negócio e **${P}** se for uma conta pessoal. Sem cartão.`,
       'Cada ramo tem seus planos, com preço em guaranis.',
-      'Hoje o pagamento é **por transferência**, combinado pelo WhatsApp. Não tem débito automático.',
+      'Paga-se **por transferência** ou, onde já está liberado, **com cartão ou QR** pela Bancard. Nada é cobrado sozinho, a não ser que você salve seu cartão pra isso.',
       'Se for um negócio e você não pagar, **a conta fica pausada** até ativar o plano. Se for uma conta pessoal, **passa pro plano Grátis**. Nos dois casos, **seus dados não são apagados.**',
       'Se você trouxer alguém que paga, fica com **a metade do preço de tabela de um mês** do plano dessa pessoa.',
     ],
@@ -638,9 +659,26 @@ export const legalPt: TextosLegal = {
         id: 'pagos',
         titulo: 'Como se paga',
         bloques: [
-          'Hoje o pagamento é **por transferência**. Na tela do seu plano você toca em «Assinar», abre um WhatsApp com a gente, faz a transferência e ativamos o plano. O pagamento é adiantado, por mês ou por ano.',
-          'Hoje nenhum cartão é pedido nem guardado, e **não tem débito automático**: nada é cobrado sozinho.',
-          'Se mais adiante entrar o pagamento com cartão, esta página é atualizada antes de ele começar a funcionar.',
+          '**Por transferência.** Na tela do seu plano você toca em «Assinar», abre um WhatsApp com a gente, faz a transferência e ativamos o plano. O pagamento é adiantado, por mês ou por ano.',
+          '**Com cartão ou QR (Bancard).** Estamos liberando aos poucos: se na tela do seu plano você vê o botão «Pagar com cartão ou QR», já está liberado pra você. O pagamento é feito no formulário seguro da Bancard e o plano ativa na hora. A cobrança é em guaranis. No fim você vê o comprovante, com data e hora, número do pedido, valor e a resposta da Bancard, e mandamos por e-mail.',
+          '**A Orden não vê nem guarda o número do seu cartão.** Você preenche na Bancard. A Orden guarda só a bandeira e os quatro últimos números, pra mostrar qual é.',
+        ],
+      },
+      {
+        id: 'cobro-automatico',
+        titulo: 'A cobrança automática',
+        bloques: [
+          '**A cobrança automática é opcional.** Se você salvar seu cartão, no dia anterior ao vencimento cobramos nele o preço do seu plano (por mês ou por ano, conforme o que você tem). Avisamos três dias antes, com o valor.',
+          '**Durante o teste grátis nada é cobrado**, mesmo que você tenha salvado seu cartão: quando ele termina, você escolhe seu plano e paga você. A cobrança automática começa só depois desse primeiro pagamento.',
+          'Se a cobrança não passar, avisamos e tentamos de novo até duas vezes nos dias seguintes; se não der, a conta vence como qualquer outra.',
+          '**Você cancela quando quiser** removendo seu cartão na tela do seu plano: vale na hora e o plano continua até o último dia pago. Quem paga com QR não tem cobrança automática: recebe o aviso e paga de novo.',
+        ],
+      },
+      {
+        id: 'devoluciones',
+        titulo: 'Cancelamentos e devoluções',
+        bloques: [
+          'Você pode parar de pagar quando quiser: o plano continua até o fim do período pago. Os pagamentos de um período já começado não são devolvidos, a não ser por uma cobrança duplicada ou um erro nosso: nesse caso devolvemos o valor no mesmo meio de pagamento. Fale com a gente e resolvemos.',
         ],
       },
       {
@@ -659,7 +697,8 @@ export const legalPt: TextosLegal = {
         id: 'dejar',
         titulo: 'Parar de usar o Orden',
         bloques: [
-          'Não precisa cancelar nada: como não tem débito automático, se você não renovar, ao terminar o período que já pagou a conta de um negócio fica pausada e a pessoal passa pro plano Grátis. Até esse dia você continua usando tudo.',
+          'Se você não salvou um cartão, não precisa cancelar nada: se não renovar, ao terminar o período que já pagou a conta de um negócio fica pausada e a pessoal passa pro plano Grátis. Até esse dia você continua usando tudo.',
+          'Se você salvou um cartão, remova na tela do seu plano e não cobramos mais.',
           'Se além disso quiser apagar seus dados, veja [Encerrar a conta](/terminos#cerrar), mais abaixo.',
         ],
       },
@@ -753,6 +792,7 @@ export const legalPt: TextosLegal = {
         titulo: 'Contato',
         bloques: [
           'Fale com a gente pelo WhatsApp, no mesmo número em que se combina o pagamento. Ele também abre na tela do seu plano, que funciona mesmo com a conta pausada.',
+          'Pra dúvidas sobre um pagamento, tenha à mão o número do pedido do comprovante.',
           { especial: 'contacto' },
         ],
       },
@@ -764,7 +804,7 @@ export const legalPt: TextosLegal = {
     metaTitulo: 'Privacidade · Orden',
     metaDescripcion: 'Que dados o Orden guarda, onde ficam, com quem são compartilhados pra funcionar e como se apagam.',
     titulo: 'Privacidade',
-    actualizado: '30 de setembro de 2026',
+    actualizado: '2 de outubro de 2026',
     bajada: 'Escrita sobre o que o Orden faz de verdade, não copiada de um modelo. Se mudar um fornecedor ou um dado que pedimos, esta página muda junto.',
     esencialTitulo: 'O essencial',
     esencial: [
@@ -789,7 +829,7 @@ export const legalPt: TextosLegal = {
               '**Quem te convidou,** se você entrou pelo link de alguém, pra pagar a comissão dessa pessoa.',
             ],
           },
-          'Pra usar o Orden não pedimos seu documento, seu endereço nem dados de cartão. O documento só é pedido se você quiser receber comissões por convidar (mais abaixo).',
+          'Pra usar o Orden não pedimos seu documento nem seu endereço. **Os dados do seu cartão não pedimos nem vemos**: se você paga com cartão, preenche no formulário da Bancard. O documento só é pedido se você quiser receber comissões por convidar (mais abaixo).',
         ],
       },
       {
@@ -891,7 +931,8 @@ export const legalPt: TextosLegal = {
           {
             lista: [
               '**OpenAI** (Estados Unidos). Quando você registra falando, com uma foto ou escrevendo, o áudio, a foto ou o texto é enviado pra ser entendido. Pra acertar vai também o mínimo da sua conta: os nomes e preços dos seus produtos, suas categorias, os nomes e saldos das suas dívidas e de quem te deve, suas despesas fixas, os serviços e profissionais da sua agenda e, na lavoura, o nome, a cultura e os hectares das safras abertas. Ao ditar um horário, também o nome e o telefone do cliente que você disser. Os custos não são enviados. Pelas condições da OpenAI para a API dela, isso não é usado pra treinar os modelos. Se você não usa essa função, nada é enviado.',
-              '**Resend.** Envia os e-mails: seu endereço e o conteúdo de cada mensagem (recuperar a senha, o resumo da sua semana com os seus números, os avisos do teste e do plano).',
+              '**Resend.** Envia os e-mails: seu endereço e o conteúdo de cada mensagem (recuperar a senha, o resumo da sua semana com os seus números, os avisos do teste e do plano, o comprovante de um pagamento).',
+              '**Bancard** (Paraguai). Processa os pagamentos com cartão, QR e Pix. Enviamos o valor, um número de pedido e, se você salvar seu cartão, seu e-mail e seu telefone (ela pede pra registrar o cartão). A Bancard devolve se o pagamento foi aprovado, a bandeira e os quatro últimos números do cartão. O número inteiro, o vencimento e o código de segurança só a Bancard vê.',
               '**Supabase e Vercel.** Hospedam o banco de dados, as fotos e o aplicativo.',
               '**O serviço de notificações do seu navegador** (da Apple, do Google ou da Mozilla), se você ativar os avisos: é ele que entrega no seu celular. Os avisos viajam criptografados e esse serviço não consegue lê-los.',
             ],

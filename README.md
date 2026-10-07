@@ -67,6 +67,9 @@ Están en **Supabase → Project Settings → API**.
 | `RESEND_API_KEY` / `EMAIL_REMITENTE` | Resumen semanal por email | No sale el correo del lunes |
 | `CRON_SECRETO` | Autoriza las tareas programadas | Las tareas responden 401 |
 | `PASARELA` + sus claves | Cobrar la suscripción | La pantalla de planes avisa que no hay forma de pago |
+| `BANCARD_ENTORNO` + `BANCARD_CLAVE_PUBLICA` + `BANCARD_CLAVE_PRIVADA` | Pagar con tarjeta, QR o PIX por Bancard | Bancard apagado: /plan se ve como siempre (WhatsApp) |
+| `BANCARD_ABIERTO` | Abrir Bancard a todos los dueños (solo en producción) | Lo ven la administración y las cuentas habilitadas desde /admin |
+| `BANCARD_HTTP` | `2`: hablar con Bancard por HTTP/2 (si «Probar conexión» dice «Bloqueo») | Se usa el `fetch` de Node (HTTP/1.1) |
 | `NEXT_PUBLIC_SITIO` | Enlaces de los emails y vuelta del pago | Apunta a localhost |
 
 `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` y `VAPID_PRIVADA` **nunca** llevan el prefijo
@@ -345,6 +348,50 @@ comerciante paraguayo.
 `/plan?pago=listo` no prueba nada: esa URL se puede escribir a mano. Lo único que activa un
 plan es `aplicar_suscripcion()`, que solo puede llamar `service_role` desde un webhook con
 firma verificada.
+
+### Bancard: tarjeta, QR y PIX (02/10/2026)
+
+Va al lado de `PASARELA`, no adentro: es la pasarela paraguaya de verdad (vPOS 2.0, en
+guaraníes). Se prende con tres variables (`BANCARD_ENTORNO`, `BANCARD_CLAVE_PUBLICA`,
+`BANCARD_CLAVE_PRIVADA`); sin ellas nada cambia para nadie.
+
+- **Quién lo ve** lo decide un solo lugar (`accesoBancard`, `src/lib/bancard-servidor.ts`):
+  la administración de Orden, las cuentas habilitadas desde /admin («Puede pagar con
+  Bancard»: la de prueba que se le da al certificador) y, con `BANCARD_ABIERTO=1` en
+  producción, todos los dueños. En staging el interruptor general se ignora.
+- **El importe sale de la base** (`precio_de_la_cuenta`, 124): lista + personas extra del
+  Premium − el descuento que corresponda. Del navegador viaja solo QUÉ se paga.
+- **El plan lo activa `bancard_confirmar`** (125), una vez por operación, con la fila
+  bloqueada: lo llaman la confirmación que Bancard manda a
+  `/api/pagos/bancard/confirmacion` (pública: la protege el md5 y la consulta a Bancard),
+  la consulta de la pantalla de vuelta y el cobro con tarjeta guardada.
+- **Bancard no hace suscripciones.** Orden guarda la tarjeta (catastro en el iframe de
+  Bancard; se guardan solo marca, últimos cuatro y tipo) y cobra con el token el día
+  anterior al vencimiento, con reintentos +1 y +4 (`bancard_tomar_cobro`, un intento por
+  día). Quitar la tarjeta rige en el acto. QR y PIX son pagos de una vez.
+- **El reloj es pg_cron** (126): `orden-cobros-bancard` cada hora de 9 a 18 y
+  `orden-conciliar-bancard` cada 10 minutos, más `orden-purgar-cron` (domingos), que
+  borra el historial de corridas de más de 14 días. `vercel.json` no cambia.
+- **Nunca se registra** la clave privada, un token, un alias ni el `process_id`; el
+  comprobante no muestra el número de autorización (lo prohíbe el manual 1.23).
+- **Lo que ya no está vivo se vuelve a cotizar** (revisión 03/10): una operación
+  rechazada o vencida que llega aprobada activa el plan solo si hoy vale lo mismo; si no
+  (el 18 % del primer pago ya se usó, el equipo creció, el período ya se renovó), la
+  plata se anota y queda para la administración. Las rechazadas se cierran en Bancard
+  con la reversa; un cobro automático que no llegó al banco devuelve el intento.
+- **Una cuenta en prueba nunca se cobra sola** (revisión final 07/10): puede guardar la
+  tarjeta para pagar con un toque cuando elija su plan, y desde ese primer pago se
+  renueva sola. Toda prueba nace con el plan Pro: cobrarla sola era cobrarle un plan que
+  no eligió. Ni la pantalla ni el correo del fin de la prueba prometen un cobro.
+- **Lo demás de la revisión final**: el aviso de vencimiento no promete un cobro que el
+  servidor no va a hacer (Bancard apagado, o tarjeta del otro ambiente:
+  `segunElServidor`); un 5xx al cobrar con la tarjeta guardada queda «incierta» y lo
+  resuelve la conciliación; revertir un pago pausa el débito; una reversa que Bancard
+  hizo sobre un pago que quedó activo deja «para revisar» y avisa a la administración; la
+  baja de personas va por el servidor (`/api/pagos/bancard/personas`) y caduca con
+  cualquier renovación hecha fuera de Bancard.
+- Las pruebas corren contra un Bancard de mentira (`pruebas/bancard-falso.js`) con claves
+  inventadas: `npm run probar:bancard`.
 
 ---
 

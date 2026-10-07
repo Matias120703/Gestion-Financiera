@@ -334,7 +334,7 @@ export const vitrinaEs = {
     `Ganate ${pct} % en tu primer mes: durante la prueba, cargá algo ${dias} días seguidos.`,
   constancia: (pct: number, dias: number) =>
     `Después, con ${dias} días seguidos cargando, pagás ${pct} % menos en cada renovación.`,
-  comoSePaga: 'Hoy se paga por transferencia: al terminar la prueba tocás «Suscribirme», se abre un WhatsApp con nosotros, transferís y activamos tu plan.',
+  comoSePaga: 'Se paga por transferencia (te atendemos por WhatsApp) o con tarjeta o QR por Bancard, donde ya está habilitado.',
   finDePrueba: 'Si no pagás, la cuenta se pausa y no se puede usar hasta que actives el plan. Tus datos no se borran: vuelven intactos cuando pagás.',
   // La personal no se pausa: pasa al plan Gratis (110, 28/09/2026). Va en
   // su propia clave: `finDePrueba` es la del negocio y la lee una prueba.
@@ -754,7 +754,7 @@ export const vitrinaPt: TextosVitrina = {
     `Ganhe ${pct} % no primeiro mês: durante o teste, lance algo ${dias} dias seguidos.`,
   constancia: (pct: number, dias: number) =>
     `Depois, com ${dias} dias seguidos lançando, você paga ${pct} % menos em cada renovação.`,
-  comoSePaga: 'Hoje se paga por transferência: no fim do teste você toca em «Assinar», abre um WhatsApp com a gente, transfere e ativamos seu plano.',
+  comoSePaga: 'Paga-se por transferência (atendemos você pelo WhatsApp) ou com cartão ou QR pela Bancard, onde já está liberado.',
   finDePrueba: 'Se você não pagar, a conta fica pausada e não dá pra usar até ativar o plano. Seus dados não são apagados: voltam intactos quando você paga.',
   finDePruebaPersonal: 'Se você não pagar, a conta passa pro plano Grátis: você continua lançando suas despesas e entradas na mão. Seus dados não são apagados.',
   equipoNoPaga: 'A assinatura é paga só pelo dono da conta: o Orden não cobra nada das pessoas da sua equipe.',

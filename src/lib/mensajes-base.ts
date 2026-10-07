@@ -486,6 +486,32 @@ export const MENSAJES_PT: Record<string, string> = {
   'La fila % tiene un monto negativo.': 'A linha % tem um valor negativo.',
   'La fila % tiene un número demasiado grande.': 'A linha % tem um número grande demais.',
   'La fila % no tiene nombre.': 'A linha % não tem nome.',
+
+  // 124 · Bancard: el precio que se cobra
+  'Ese período de cobro no existe.': 'Esse período de cobrança não existe.',
+  'Ese plan no está disponible para tu rubro.': 'Esse plano não está disponível pro seu ramo.',
+  'Ese plan no tiene precio cargado.': 'Esse plano não tem preço cadastrado.',
+  'Elegí cuántas personas van a usar la cuenta (entre % y %).': 'Escolha quantas pessoas vão usar a conta (entre % e %).',
+  'Ese plan no lleva cantidad de personas.': 'Esse plano não tem quantidade de pessoas.',
+  'No está cargado el precio por persona.': 'O preço por pessoa não está cadastrado.',
+  'Primero renová tu plan eligiendo cuántas personas son.': 'Primeiro renove seu plano escolhendo quantas pessoas são.',
+  'Ya tenés esa cantidad de personas o más.': 'Você já tem essa quantidade de pessoas ou mais.',
+  // 125 · Bancard: los pagos
+  'Ese pedido de pago no es válido.': 'Esse pedido de pagamento não é válido.',
+  'Solo el dueño de la cuenta puede pagar el plan.': 'Só o dono da conta pode pagar o plano.',
+  'Tu plan actual está pago hasta el %. Para cambiar de plan antes de esa fecha escribinos.': 'Seu plano atual está pago até %. Pra mudar de plano antes dessa data, escreva pra gente.',
+  'Para cambiar la cantidad de personas usá «Sumar personas» o «Bajar desde la próxima renovación».': 'Pra mudar a quantidade de pessoas use «Adicionar pessoas» ou «Reduzir a partir da próxima renovação».',
+  'No hay una tarjeta guardada.': 'Não há um cartão salvo.',
+  'Probaste varias veces con esta tarjeta y fue rechazada. Probá con otra o pagá con QR.': 'Você tentou várias vezes com este cartão e ele foi recusado. Tente com outro ou pague com QR.',
+  'Demasiados intentos hoy. Probá de nuevo más tarde o escribinos.': 'Muitas tentativas hoje. Tente de novo mais tarde ou escreva pra gente.',
+  'Falta un teléfono para registrar la tarjeta.': 'Falta um telefone pra cadastrar o cartão.',
+  'Falta un correo para registrar la tarjeta.': 'Falta um e-mail pra cadastrar o cartão.',
+  // «Ese pago no existe.» ya está arriba (082).
+  'Ese pago no está aprobado, no hay nada que revertir.': 'Esse pagamento não está aprovado, não há nada pra estornar.',
+  'Ya pasó el día del pago: se anula por el portal de comercios (Soporte → Anulaciones) y después se marca acá.': 'O dia do pagamento já passou: o cancelamento é feito pelo portal de comércios (Suporte → Anulações) e depois se marca aqui.',
+  'Después de ese pago hubo otros cambios en la cuenta. Deshacé primero esos.': 'Depois desse pagamento houve outras mudanças na conta. Desfaça essas primeiro.',
+  'Ese cambio tiene un pago con Bancard: se revierte desde los pagos de Bancard de la cuenta.': 'Essa mudança tem um pagamento com Bancard: o estorno é feito pelos pagamentos de Bancard da conta.',
+  'No podés bajar a menos personas de las que hoy tiene tu equipo.': 'Você não pode reduzir pra menos pessoas do que sua equipe tem hoje.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */

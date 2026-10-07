@@ -340,6 +340,11 @@ async function principal() {
   {
     const incluidas = Number((leer('src/lib/constantes.ts').match(/export const PERSONAS_INCLUIDAS_PREMIUM = (\d+);/) ?? [])[1]);
     ok('se leyó PERSONAS_INCLUIDAS_PREMIUM de constantes.ts', Number.isInteger(incluidas), true);
+    // 124: la base ya conoce ese número (lo usa para cobrar por Bancard). Son
+    // el mismo: si se cambia uno sin el otro, la pantalla y el cobro dirían
+    // precios distintos.
+    ok('y es el mismo que usa la base para cobrar: personas_incluidas_premium()',
+      (await db.query('select public.personas_incluidas_premium() n')).rows[0].n, incluidas);
 
     const precio = async (plan) => Number((await db.query(
       `select importe from public.precios

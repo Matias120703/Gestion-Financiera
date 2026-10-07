@@ -21,6 +21,16 @@ import { createClient } from '@supabase/supabase-js';
  * Ojo: con el Smart CDN, una dirección firmada que ya se usó se sigue
  * sirviendo desde el CDN aunque venza; lo único que corta un video del todo
  * es borrar su archivo (ver la ruta).
+ *
+ * LA SEGUNDA EXCEPCIÓN ESCRITA (Bancard, 02/10/2026): las rutas de
+ * `/api/pagos/bancard/*` con sesión (iniciar el pago, ver su estado). Antes
+ * de tocar este cliente validan la sesión y `accesoBancard` con el cliente
+ * DEL USUARIO, y después este cliente solo llama funciones `bancard_*` que
+ * reciben `p_usuario` y vuelven a comprobar en la base que esa persona
+ * administra la cuenta. Nunca lee ni escribe una tabla. (La confirmación
+ * pública y las tareas entran por la regla de arriba: firma y secreto.)
+ * Entra acá también `/api/pagos/bancard/personas` (07/10/2026): misma
+ * sesión y mismo `accesoBancard` antes, y una sola función con `p_usuario`.
  */
 export function clienteDeServicio() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

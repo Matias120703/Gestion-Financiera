@@ -2,8 +2,9 @@ import { clienteDeServicio } from '@/lib/supabase/servicio';
 import { avisar, correoConfigurado, enviarEmail } from '@/lib/avisos';
 import { sitio } from '@/lib/pagos';
 import {
-  claveDeEnvio, correoDeVencimiento, pushDeVencimiento, RUTA_PARA_PAGAR, type Vencimiento,
+  claveDeEnvio, comoSePaga, correoDeVencimiento, pushDeVencimiento, RUTA_PARA_PAGAR, segunElServidor, type Vencimiento,
 } from '@/lib/aviso-vencimiento';
+import { abiertoATodos, configBancard } from '@/lib/bancard-servidor';
 import { diccionario } from '@/i18n/diccionarios';
 import { FICHA, esIdioma, IDIOMA_POR_DEFECTO } from '@/i18n/idiomas';
 import { fraseDelDia, type CuentaDelDia, type Momento } from '@/lib/frases-del-dia';
@@ -235,13 +236,19 @@ async function avisarPruebasPorTerminar() {
  *   · Prueba       → solo el correo: el push es el de `avisarPruebasPorTerminar`.
  *
  * Quién y cuándo lo decide la base (`vencimientos_por_avisar`); qué se dice,
- * `lib/aviso-vencimiento.ts`, en el idioma de cada uno; cómo se paga, un solo
- * valor ahí mismo (`COMO_SE_PAGA`). Acá solo se reparte, una vez por
- * vencimiento y canal (`reservar_envio`).
+ * `lib/aviso-vencimiento.ts`, en el idioma de cada uno; cómo se paga, fila
+ * por fila (`comoSePaga`, desde Bancard: débito, tarjeta o transferencia).
+ * Acá solo se reparte, una vez por vencimiento y canal (`reservar_envio`).
  *
- * A la administración le llega un resumen de los planes pagos que vencen: el
- * cobro hoy es a mano, así que es el aviso para estar atentos a la
- * transferencia.
+ * A la administración le llega un resumen de los planes pagos que vencen y
+ * que paga la persona: el aviso para estar atentos a la transferencia. Las
+ * cuentas con el débito al día no entran: se cobran solas.
+ *
+ * NO SE PROMETE UN COBRO QUE NO VA A SALIR (07/10/2026). Antes de usar cada
+ * fila se pasa por `segunElServidor`: si Bancard no está configurado en
+ * este servidor, o la tarjeta guardada es del otro ambiente, la fila queda
+ * sin débito (y sin configuración, sin «pagá con tarjeta o QR»). El push, el
+ * correo y el aviso a la administración caen así al camino de siempre.
  */
 async function avisarVencimientos() {
   const supabase = clienteDeServicio();
@@ -251,9 +258,15 @@ async function avisarVencimientos() {
     return { error: true };
   }
 
-  const lista = (Array.isArray(data) ? data : []) as Vencimiento[];
+  // Bancard, leído UNA vez para toda la corrida: null si está apagado o mal cargado.
+  const entornoBancard = configBancard()?.entorno ?? null;
+  const lista = ((Array.isArray(data) ? data : []) as Vencimiento[])
+    .map((v) => segunElServidor(v, entornoBancard));
   const hayCorreo = correoConfigurado();
   const web = sitio();
+  // «Pagá con tarjeta o QR» solo si de verdad ve el botón: abierto a todos
+  // y en producción (en staging el interruptor general no cuenta).
+  const abierto = abiertoATodos() && entornoBancard === 'produccion';
 
   let push = 0;
   let correos = 0;
@@ -274,7 +287,7 @@ async function avisarVencimientos() {
         nuevos.push(v);
         for (const d of v.destinatarios ?? []) {
           const idioma = esIdioma(d.idioma) ? d.idioma : IDIOMA_POR_DEFECTO;
-          const aviso = pushDeVencimiento(v, diccionario(idioma).avisoVencimiento, FICHA[idioma].locale);
+          const aviso = pushDeVencimiento(v, diccionario(idioma).avisoVencimiento, FICHA[idioma].locale, abierto);
           push += await avisar(d.user_id, {
             ...aviso,
             url: RUTA_PARA_PAGAR,
@@ -301,23 +314,25 @@ async function avisarVencimientos() {
       if (!reservado) continue;
 
       const idioma = esIdioma(d.idioma) ? d.idioma : IDIOMA_POR_DEFECTO;
-      const correo = correoDeVencimiento(v, d, diccionario(idioma).avisoVencimiento, FICHA[idioma].locale, web);
+      const correo = correoDeVencimiento(v, d, diccionario(idioma).avisoVencimiento, FICHA[idioma].locale, web, abierto);
       const salio = await enviarEmail({ para: d.email, asunto: correo.asunto, html: correo.html, texto: correo.texto });
       if (salio) correos += 1;
       else fallados += 1;
     }
   }
 
-  if (nuevos.length > 0) {
+  // Las que se cobran solas de la tarjeta guardada no necesitan a nadie atento.
+  const aMano = nuevos.filter((v) => comoSePaga(v, abierto) !== 'debito');
+  if (aMano.length > 0) {
     try {
       const { data: admins } = await supabase.rpc('usuarios_de_la_administracion');
       const ids: string[] = Array.isArray(admins) ? admins : [];
       // La administración es en español a propósito (ver PanelAdmin).
       const cuando = (dias: number) => (dias <= 0 ? 'hoy' : dias === 1 ? 'mañana' : `en ${dias} días`);
-      const detalle = nuevos.slice(0, 6).map((v) => `${v.nombre} (${cuando(v.dias)})`).join(', ');
+      const detalle = aMano.slice(0, 6).map((v) => `${v.nombre} (${cuando(v.dias)})`).join(', ');
       await Promise.all(ids.map((id) => avisar(id, {
-        titulo: nuevos.length === 1 ? '1 plan pago vence pronto' : `${nuevos.length} planes pagos vencen pronto`,
-        cuerpo: `${detalle}${nuevos.length > 6 ? '…' : ''}. Atentos a la transferencia.`,
+        titulo: aMano.length === 1 ? '1 plan pago vence pronto' : `${aMano.length} planes pagos vencen pronto`,
+        cuerpo: `${detalle}${aMano.length > 6 ? '…' : ''}. Atentos a la transferencia.`,
         url: '/admin',
         tag: 'planes-por-vencer',
       })));

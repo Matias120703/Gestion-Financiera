@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { clienteServidor } from '@/lib/supabase/servidor';
 import { clienteDeServicio } from '@/lib/supabase/servicio';
+import { dependencias } from '@/lib/bancard-servidor';
+import { quitarTarjeta } from '@/lib/bancard-flujo';
 import { textos } from '@/i18n';
 
 export const runtime = 'nodejs';
@@ -66,6 +68,12 @@ export async function POST(request: Request) {
     });
     if (errorVideos) console.error('[borrar-cuenta] videos_a_borrar', errorVideos.code ?? '', errorVideos.message);
 
+    // 1b. La tarjeta guardada en Bancard (02/10). A mejor esfuerzo: se le pide
+    //     a Bancard que la borre y el débito se apaga; si Bancard no contesta,
+    //     la cuenta se borra igual (al borrarse, ya no hay a quién cobrarle:
+    //     la base de Bancard la pierde con la empresa).
+    await quitarTarjetasDe(user.id).catch(() => undefined);
+
     // 2. Los datos. Si la persona es propietaria de un negocio con más gente
     //    adentro, esto falla y no se toca nada.
     const { data: resultado, error: errorDatos } = await servicio.rpc('borrar_datos_de_usuario', {
@@ -117,5 +125,23 @@ export async function POST(request: Request) {
       { error: (await textos()).servidor.borradoIncompleto },
       { status: 500 },
     );
+  }
+}
+
+/** Quita en Bancard la tarjeta guardada de cada cuenta que esta persona tiene como propietaria. */
+async function quitarTarjetasDe(userId: string): Promise<void> {
+  const d = dependencias();
+  if (!d) return;
+  const { data } = await clienteDeServicio()
+    .from('miembros')
+    .select('empresa_id')
+    .eq('user_id', userId)
+    .eq('rol', 'propietario');
+  for (const m of (data ?? []) as { empresa_id: string }[]) {
+    try {
+      await quitarTarjeta(d, { empresa: m.empresa_id, usuario: userId });
+    } catch {
+      // Sin tarjeta, o Bancard no contestó: no frena el borrado.
+    }
   }
 }

@@ -381,6 +381,19 @@ function aceptado(nombre, resultado) {
     ok('pero eso no abre el resto de la API',
       ['/api/pagos/checkout', '/api/pagos/webhook', '/api/capturar']
         .filter((r) => esPublica(r)), []);
+
+    // La confirmación de Bancard (02/10/2026) la mandan sus servidores, sin
+    // cookie: tiene que pasar. Lo demás del pago lleva sesión y NO: abrir
+    // '/api/pagos/' o '/api/pagos/bancard/' abriría el inicio del pago, su
+    // estado y las rutas de la administración.
+    ok('la confirmación de Bancard entra sin sesión', esPublica('/api/pagos/bancard/confirmacion'), true);
+    ok('y se abrió la ruta entera, no la carpeta',
+      [PUBLICAS.includes('/api/pagos/bancard/confirmacion'), PUBLICAS.some((p) => p === '/api/pagos/' || p === '/api/pagos/bancard/' || p === '/api/pagos')],
+      [true, false]);
+    ok('el resto del pago con Bancard sigue con sesión',
+      ['/api/pagos/bancard/pago', '/api/pagos/bancard/estado', '/api/pagos/bancard/cobrar', '/api/pagos/bancard/tarjeta',
+        '/api/admin/bancard/revertir', '/api/admin/bancard/consultar', '/api/admin/bancard/probar', '/plan/pago/1000001']
+        .filter((r) => esPublica(r)), []);
   }
 
   // ═══════════════════════════════════════════════════════════
