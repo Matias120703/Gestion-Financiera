@@ -2080,8 +2080,16 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const textosPortada = fs.readFileSync('src/i18n/textos/es.ts', 'utf8');
 
   ok('la portada tiene el sol y la luna', portada.includes('<BotonTema />'), true);
-  ok('y cuenta cómo se gana recomendando', portada.includes('id="recomendar"'), true);
-  ok('con los tres pasos', portada.split('<Paso').length - 1, 3);
+  // Desde el 02/10/2026 la sección es una escena (EscenaRecomendar) y los
+  // tres pasos viven en su módulo de textos, en los dos idiomas: ya no se
+  // cuentan los `<Paso` de page.tsx sino las entradas de `pasos` de es y pt.
+  const escenaRecomendar = fs.readFileSync('src/components/portada/escenas/EscenaRecomendar.tsx', 'utf8');
+  ok('y cuenta cómo se gana recomendando',
+    portada.includes('<EscenaRecomendar') && escenaRecomendar.includes('id="recomendar"'), true);
+  const pasosDe = (fuente) => fuente.split('pasos: [').slice(1)
+    .map((bloque) => (bloque.split('],')[0].match(/\{ titulo: '/g) || []).length);
+  ok('con los tres pasos, en español y en portugués',
+    pasosDe(fs.readFileSync('src/i18n/textos/escenas/recomendar.ts', 'utf8')), [3, 3]);
   ok('diciendo que se cobra una sola vez y no todos los meses',
     textosPortada.includes('Una sola vez por cada cuenta'), true);
   ok('se aclara que también vale una persona, no solo un negocio',
@@ -2150,10 +2158,14 @@ ok('un rubro desconocido no rompe: cae en comercio',
     fs.readFileSync('src/i18n/textos/es.ts', 'utf8').includes('tres puntos «···»'), true);
   // Primero quedó como un enlace chiquito en el pie, a otra página, y el
   // dueño no la encontró. Tiene que ser una sección visible de la portada,
-  // con la guía adentro y un acceso arriba.
+  // con la guía adentro y un acceso arriba. Desde el 02/10/2026 la sección
+  // es una escena (EscenaInstalar) que envuelve la guía ilustrada: la misma
+  // que `GuiaInstalar` muestra en /instalar sin `compacta`.
   const portadaInst = fs.readFileSync('src/app/page.tsx', 'utf8');
+  const escenaInst = fs.readFileSync('src/components/portada/escenas/EscenaInstalar.tsx', 'utf8');
   ok('la portada tiene la sección de instalar, con la guía adentro',
-    portadaInst.includes('id="instalar"') && portadaInst.includes('<GuiaInstalar />'), true);
+    portadaInst.includes('<EscenaInstalar') && escenaInst.includes('id="instalar"')
+    && escenaInst.includes('<GuiaInstalarIlustrada') && guia.includes('<GuiaInstalarIlustrada'), true);
   ok('y un acceso arriba, al lado de Precios', portadaInst.includes('href="#instalar"'), true);
   ok('la web de presentación enlaza la guía',
     portadaInst.includes('href="/instalar"'), true);
