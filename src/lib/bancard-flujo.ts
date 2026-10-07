@@ -2,6 +2,7 @@ import {
   ultimos4, verificarConfirmacion,
   type ClienteBancard, type EntornoBancard, type RespuestaCobro, type Resultado, type TarjetaBancard,
 } from './bancard';
+import { CATASTRO_CON_EXITO, leerLoQueDijoElFormulario, type DichoPorElFormulario } from './bancard-formulario';
 
 /**
  * ============================================================
@@ -132,7 +133,9 @@ function anotarEnRegistro(d: Deps, texto: string): void {
 /**
  * Deja constancia de lo que se habló con Bancard (`bancard_eventos`). A
  * propósito no se manda nada más que tipo, número, ok, clave y HTTP, y la
- * respuesta de Bancard (que la base sanea). Si falla, el pago sigue.
+ * respuesta de Bancard (que la base sanea) o un par de datos sueltos que no
+ * son de ninguna tarjeta (cuántas listó, qué dijo el formulario). Si falla,
+ * el pago sigue.
  */
 async function anotar(d: Deps, e: {
   operacion?: number | null;
@@ -836,7 +839,16 @@ async function tarjetaInterna(d: Deps, tarjeta: number): Promise<TarjetaInterna 
   };
 }
 
-/** Las tarjetas de un pagador en Bancard, anotando el pedido. */
+/**
+ * Las tarjetas de un pagador en Bancard, anotando el pedido.
+ *
+ * En el detalle queda CUÁNTAS vinieron y con qué `card_id` (los números que
+ * les puso Orden: no son datos de la tarjeta). Un «users_cards ok 200» a
+ * secas no decía si Bancard contestó la lista vacía o con otras tarjetas, y
+ * así no se podía saber por qué una no quedó guardada (07/10/2026). Del
+ * resto de cada tarjeta (alias, número enmascarado, vencimiento) no se anota
+ * nada, nunca.
+ */
 async function listarTarjetas(
   d: Deps, userId: number, e: { operacion?: number | null; tarjeta?: number | null; esperaMs?: number },
 ): Promise<Resultado<{ tarjetas: TarjetaBancard[] }>> {
@@ -844,6 +856,7 @@ async function listarTarjetas(
   await anotar(d, {
     operacion: e.operacion ?? null, tarjeta: e.tarjeta ?? null, tipo: 'users_cards',
     ok: r.ok, clave: r.ok === true ? null : r.clave, http: r.ok === true ? 200 : r.http,
+    detalle: r.ok === true ? { cuantas: r.tarjetas.length, ids: r.tarjetas.map((t) => t.cardId).join(',') } : {},
   });
   return r;
 }
@@ -963,10 +976,17 @@ export type VerificacionDeTarjeta =
  * que dijo el formulario («add_new_card_success») no cuenta para nada.
  *
  * `empresa`, si viene, tiene que ser la dueña de la tarjeta.
+ *
+ * `formulario`, si viene, es lo que avisó el iframe de catastro (o la
+ * dirección de vuelta), tal como lo mandó el navegador. SOLO SE ANOTA: un
+ * evento `catastro_formulario` con el estado en `clave` y la descripción en
+ * el detalle, para que de un catastro rechazado adentro del iframe quede por
+ * qué. Se anota antes de preguntarle a Bancard y no se vuelve a mirar: un
+ * «add_new_card_success» inventado no guarda ninguna tarjeta.
  */
 export async function verificarTarjeta(
   d: Deps,
-  p: { tarjeta: number; empresa?: string | null },
+  p: { tarjeta: number; empresa?: string | null; formulario?: DichoPorElFormulario | null },
 ): Promise<VerificacionDeTarjeta> {
   const info = await tarjetaInterna(d, p.tarjeta);
   if (info === undefined) return { guardada: false, motivo: 'base' };
@@ -975,6 +995,18 @@ export async function verificarTarjeta(
   if (info.entorno !== d.entorno) return { guardada: false, motivo: 'otro_entorno' };
   if (info.estado !== 'activa' && info.estado !== 'pendiente' && info.estado !== 'fallida') {
     return { guardada: false, motivo: info.estado };
+  }
+
+  // Recién acá: la tarjeta existe y es de esa cuenta (nadie anota sobre una
+  // ajena). Se vuelve a limpiar, venga de donde venga.
+  const dicho = leerLoQueDijoElFormulario(p.formulario);
+  if (dicho) {
+    await anotar(d, {
+      tarjeta: p.tarjeta, tipo: 'catastro_formulario',
+      ok: dicho.mensaje === CATASTRO_CON_EXITO,
+      clave: dicho.mensaje.slice(0, 80) || null,
+      detalle: dicho.detalle ? { descripcion: dicho.detalle } : {},
+    });
   }
 
   const lista = await listarTarjetas(d, info.userId, { tarjeta: p.tarjeta });

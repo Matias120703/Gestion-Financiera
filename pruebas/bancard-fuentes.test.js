@@ -112,8 +112,11 @@ console.log('\n── La tarjeta guardada y el cobro automático (parte 3) ─�
   ok('del navegador nunca viaja un número de tarjeta, un vencimiento ni un código',
     /cuerpo\.(numero|number|tarjeta_numero|card_number|vencimiento|expiration|cvv|cvc|codigo)/.test(tarjeta), false);
   const verificar = sinComentarios(leer('src/app/api/pagos/bancard/tarjeta/verificar/route.ts'));
+  // 07/10: la llamada lleva además `formulario` (lo que dijo el iframe, para
+  // anotarlo). La cuenta se sigue pasando igual: es la misma comprobación,
+  // con la llamada como quedó.
   ok('verificar: la tarjeta tiene que ser de esa cuenta (lo comprueba el flujo contra la base)',
-    [verificar.includes('verificarTarjeta(d, { tarjeta, empresa })'), verificar.indexOf('auth.getUser()') < verificar.indexOf('dependencias()')], [true, true]);
+    [verificar.includes('verificarTarjeta(d, { tarjeta, empresa, formulario })'), verificar.indexOf('auth.getUser()') < verificar.indexOf('dependencias()')], [true, true]);
   const cobrar = sinComentarios(leer('src/app/api/pagos/bancard/cobrar/route.ts'));
   ok('cobrar con la tarjeta guardada: mismo cuerpo que el pago (qué, nunca cuánto), 60 s de tope',
     [cobrar.includes('leerPedidoDePago(cuerpo)'), /cuerpo\.(importe|amount|monto|precio)/.test(cobrar), cobrar.includes('maxDuration = 60')], [true, false, true]);
@@ -122,7 +125,18 @@ console.log('\n── La tarjeta guardada y el cobro automático (parte 3) ─�
   const hoja = sinComentarios(leer('src/components/bancard/HojaGuardarTarjeta.tsx'));
   ok('la hoja de guardar: casilla de consentimiento obligatoria, y al terminar el iframe pide /tarjeta/verificar',
     [hoja.includes('acepto: true'), hoja.includes("fetch('/api/pagos/bancard/tarjeta/verificar'"), /disabled=\{!acepto/.test(hoja)], [true, true, true]);
-  ok('y no cree lo que dijo el iframe: `onTermino` solo dispara la verificación', /onTermino=\{\(\) => \{ void verificar\(\); \}\}/.test(hoja), true);
+  // 07/10: esto pedía, letra por letra, `onTermino={() => { void verificar(); }}`.
+  // Ahora lo que dijo el iframe viaja al servidor para quedar anotado, así que
+  // la regla se escribe por lo que cuida: `onTermino` solo dispara la
+  // verificación (pasándole lo que oyó), a «guardada» se llega por un único
+  // camino, que es la respuesta del servidor, y la hoja no mira el estado que
+  // dijo el formulario (ni lo nombra).
+  ok('y no cree lo que dijo el iframe: `onTermino` solo dispara la verificación, y «guardada» sale solo de lo que contesta el servidor',
+    [/onTermino=\{\(dicho\) => \{ void verificar\(dicho\); \}\}/.test(hoja),
+      (hoja.match(/setPaso\('guardada'\)/g) || []).length,
+      /if \(r\.ok && d\?\.guardada === true\) \{\s+setGuardada\([^\n]+\n\s+setPaso\('guardada'\);/.test(hoja),
+      /add_new_card|_success|_fail|\.mensaje\b/.test(hoja)],
+    [true, 1, true, false]);
   const vuelta = leer('src/app/(app)/plan/tarjeta/[tarjeta]/page.tsx');
   ok('/plan/tarjeta/[tarjeta] no lee searchParams: valida el número y verifica con el servidor',
     [/searchParams/.test(vuelta), vuelta.includes("/^[0-9]{1,15}$/"), vuelta.includes('<VueltaDeTarjeta')], [false, true, true]);
@@ -217,7 +231,15 @@ console.log('\n── La pantalla de vuelta no cree la dirección ────�
   const formulario = sinComentarios(leer('src/components/bancard/FormularioBancard.tsx'));
   ok('el formulario: tercer argumento { styles, responseHandler }, y un manejador de módulo',
     [/styles:\s*estilosBancard\(/.test(formulario), /responseHandler:\s*manejadorDeModulo/.test(formulario)], [true, true]);
-  ok('y lo que dice el formulario no se usa: solo avisa que terminó', /onTermino\(\)|avisar\.current\(\)/.test(formulario), true);
+  // 07/10: esto pedía `avisar.current()` sin nada adentro. Ahora el aviso
+  // lleva lo que dijo el iframe, pero SOLO pasado por la función que lo
+  // limpia, y el formulario sigue sin mirarlo: no nombra ningún estado ni lee
+  // ningún campo de lo que le llega.
+  ok('y lo que dice el formulario no se usa acá: avisa que terminó y lo pasa limpio, sin mirarlo',
+    [formulario.includes('avisar.current(leerLoQueDijoElFormulario(r) ?? undefined)'),
+      (formulario.match(/avisar\.current\(/g) || []).length,
+      /add_new_card|payment_|_success|_fail|\.message\b|\.details\b|\.status\b|\.description\b/.test(formulario)],
+    [true, 1, false]);
   ok('ancho mínimo de 320 px (manual)', formulario.includes('min-w-[320px]'), true);
 }
 
@@ -326,6 +348,116 @@ console.log('\n── La revisión final del 07/10, en las pantallas ───�
   ok('cobrarOperacionTomada solo cierra como «no se cobró» un error de Bancard por debajo de 500',
     [sinComentarios(leer('src/lib/bancard-flujo.ts')).includes("if (r.clase === 'bancard' && r.http < 500) {"),
       (sinComentarios(leer('src/lib/bancard-flujo.ts')).match(/if \(r\.clase === 'bancard'\) \{/g) || []).length], [true, 0]);
+}
+
+console.log('\n── El catastro que falla dice por qué (07/10) ──────────────');
+{
+  // Matías probó cinco veces guardar su tarjeta en pruebas y solo vio «No se
+  // pudo guardar la tarjeta.»: la respuesta del formulario de Bancard se
+  // tiraba. Ahora se muestra y se anota, sin que decida nada.
+  const hoja = sinComentarios(leer('src/components/bancard/HojaGuardarTarjeta.tsx'));
+  const vuelta = sinComentarios(leer('src/components/bancard/VueltaDeTarjeta.tsx'));
+  const ruta = sinComentarios(leer('src/app/api/pagos/bancard/tarjeta/verificar/route.ts'));
+  const flujo = sinComentarios(leer('src/lib/bancard-flujo.ts'));
+  const lector = leer('src/lib/bancard-formulario.ts');
+  const textosBancard = leer('src/i18n/textos/bancard.ts');
+  const es = textosBancard.slice(0, textosBancard.indexOf('export const bancardPt'));
+  const pt = textosBancard.slice(textosBancard.indexOf('export const bancardPt'));
+  /** La línea entera de una clave (sirve también para las que son una función). */
+  const linea = (bloque, clave) => (new RegExp(`\\n\\s+${clave}: ([^\\n]*)`).exec(bloque) || [])[1] ?? '';
+  const cuantas = (fuente, re) => (fuente.match(re) || []).length;
+  /** La ayuda aparece una sola vez y colgada de `entorno === 'staging'`. */
+  const ayudaSoloEnPruebas = (fuente) => [
+    cuantas(fuente, /k\.ayudaDePruebas/g),
+    /\{entorno === 'staging' && \(\s*<p [^>]*>\{k\.ayudaDePruebas\}<\/p>\s*\)\}/.test(fuente),
+  ];
+  /** «Bancard respondió» va debajo de «No se pudo guardar», solo si hay algo que mostrar. */
+  const respuestaDebajo = (fuente) => {
+    const fallo = fuente.slice(fuente.lastIndexOf('k.noSeGuardo}'));
+    return [fuente.lastIndexOf('k.noSeGuardo}') > 0,
+      /^k\.noSeGuardo\}<\/p>\s*\{respuestaDeBancard && <p [^>]*>\{k\.bancardRespondio\(respuestaDeBancard\)\}<\/p>\}/.test(fallo),
+      cuantas(fuente, /k\.bancardRespondio\(/g)];
+  };
+
+  ok('la hoja le manda al servidor lo que dijo el formulario (campo `formulario`), y solo si dijo algo',
+    hoja.includes("body: JSON.stringify({ empresa: empresaId, tarjeta: abierto.tarjeta, ...(formulario ? { formulario } : {}) })"), true);
+  ok('si no quedó guardada, la hoja muestra «Bancard respondió: …» debajo de «No se pudo guardar la tarjeta.»', respuestaDebajo(hoja), [true, true, 1]);
+  ok('y la ayuda de la cédula de prueba, SOLO en el ambiente de prueba', ayudaSoloEnPruebas(hoja), [1, true]);
+  ok('lo que muestra es lo que devolvió el servidor ya limpio (o lo que oyó, si el servidor no contestó)',
+    [hoja.includes('dicho = leerLoQueDijoElFormulario(d?.formulario) ?? dicho;'), hoja.includes('setRespuestaDeBancard(textoDeLoQueDijo(dicho));')], [true, true]);
+
+  ok('la vuelta por el return_url levanta `status` y `description` de la dirección y los manda igual',
+    [/leerLoQueDijoElFormulario\(\{\s+status: direccion\.get\('status'\),\s+description: direccion\.get\('description'\),\s+\}\)/.test(vuelta),
+      vuelta.includes("body: JSON.stringify({ empresa: empresaId, tarjeta, ...(formulario ? { formulario } : {}) })")], [true, true]);
+  ok('muestra lo mismo que la hoja: la respuesta de Bancard debajo y la ayuda solo en pruebas',
+    [respuestaDebajo(vuelta), ayudaSoloEnPruebas(vuelta)], [[true, true, 1], [1, true]]);
+  ok('y tampoco cree la dirección: «guardada» sale solo de lo que contesta el servidor, y no nombra ningún estado',
+    [cuantas(vuelta, /k\.guardada\(|k\.guardadaSinDetalle/g),
+      /if \(r\.ok && d\?\.guardada === true\) \{\s+setTexto\(d\.marca && d\.ultimos4 \? k\.guardada\(d\.marca, d\.ultimos4\) : k\.guardadaSinDetalle\);/.test(vuelta),
+      /add_new_card|_success|_fail|\.mensaje\b/.test(vuelta)],
+    [2, true, false]);
+  ok('la página de la vuelta le pasa el ambiente, y sigue sin leer la dirección',
+    (() => {
+      const pagina = leer('src/app/(app)/plan/tarjeta/[tarjeta]/page.tsx');
+      return [pagina.includes('entorno={bancard.configurado ? bancard.entorno : null}'), /searchParams/.test(pagina)];
+    })(), [true, false]);
+  ok('se muestra como texto: ningún componente de Bancard mete HTML a mano',
+    fs.readdirSync(path.join(RAIZ, 'src/components/bancard')).filter((n) => /dangerouslySetInnerHTML|innerHTML/.test(leer(`src/components/bancard/${n}`))), []);
+  ok('el pago y el 3D Secure siguen igual: no reciben ni miran lo que dice el formulario',
+    ['HojaPagar', 'HojaSumarPersonas', 'EstadoDelPago'].map((n) => {
+      const s = sinComentarios(leer(`src/components/bancard/${n}.tsx`));
+      return [cuantas(s, /onTermino=\{\(\) => \{/g), cuantas(s, /onTermino=/g)];
+    }), [[2, 2], [2, 2], [1, 1]]);
+
+  // El servidor: lo que manda el navegador se limpia, se anota y se devuelve; no decide.
+  ok('la ruta limpia lo que manda el navegador con la misma función, y lo devuelve cuando la tarjeta no quedó',
+    [ruta.includes('const formulario = leerLoQueDijoElFormulario(cuerpo.formulario);'),
+      ruta.includes('return NextResponse.json({ guardada: false, motivo: r.motivo, formulario },')], [true, true]);
+  ok('la ruta no decide con eso: el único «guardada: true» cuelga de lo que contestó el flujo, y no lee qué dijo el formulario',
+    [cuantas(ruta, /guardada: true/g), /if \(r\.guardada\) \{\s+return NextResponse\.json\(\s+\{ guardada: true,/.test(ruta), /formulario[?]?\.(mensaje|detalle)/.test(ruta)],
+    [1, true, false]);
+  const cuerpoVerificar = flujo.slice(flujo.indexOf('export async function verificarTarjeta('), flujo.indexOf('export type QuitarTarjeta'));
+  const desdeLaLista = cuerpoVerificar.slice(cuerpoVerificar.indexOf('const lista = await listarTarjetas('));
+  ok('verificarTarjeta anota lo que dijo el formulario (catastro_formulario) ANTES de preguntarle a Bancard, y después no lo vuelve a mirar',
+    [cuerpoVerificar.includes("tarjeta: p.tarjeta, tipo: 'catastro_formulario',"), cuerpoVerificar.includes('ok: dicho.mensaje === CATASTRO_CON_EXITO,'),
+      cuerpoVerificar.includes('const dicho = leerLoQueDijoElFormulario(p.formulario);'),
+      desdeLaLista.length > 500, /dicho|formulario/.test(desdeLaLista)],
+    [true, true, true, true, false]);
+  ok('y lo anota recién cuando la tarjeta es de esa cuenta',
+    cuerpoVerificar.indexOf("return { guardada: false, motivo: 'ajena' }") > 0
+      && cuerpoVerificar.indexOf("return { guardada: false, motivo: 'ajena' }") < cuerpoVerificar.indexOf('leerLoQueDijoElFormulario(p.formulario)'), true);
+  const cuerpoListar = flujo.slice(flujo.indexOf('async function listarTarjetas('), flujo.indexOf('async function borrarEnBancard('));
+  ok('users_cards anota cuántas tarjetas vinieron y sus card_id, y nada más de la tarjeta (ni alias, ni enmascarado, ni vencimiento, ni marca)',
+    [cuerpoListar.includes("detalle: r.ok === true ? { cuantas: r.tarjetas.length, ids: r.tarjetas.map((t) => t.cardId).join(',') } : {},"),
+      /\.alias|enmascarado|vencimiento|\.marca|clavePrivada/.test(cuerpoListar)],
+    [true, false]);
+  // La base (125, bancard_sanear_detalle) descarta del detalle algunas claves
+  // por nombre: las que se usan acá no pueden estar en esa lista.
+  const descartadas = ((/lower\(e\.key\) not in \(([^)]+)\)/.exec(leer('supabase/migrations/125_bancard_pagos.sql')) || [])[1] ?? '').match(/'[a-z_0-9]+'/g) || [];
+  ok('las claves del detalle (cuantas, ids, descripcion) no son de las que la base descarta',
+    [descartadas.length >= 10, ['cuantas', 'ids', 'descripcion'].filter((c) => descartadas.includes(`'${c}'`))], [true, []]);
+
+  // El lector: puro, y lo usan los dos lados.
+  ok('bancard-formulario.ts es puro (sin imports ni variables del servidor) y lo usan el navegador, la ruta y el flujo',
+    [/^\s*import /m.test(lector), /process\.env/.test(lector),
+      ['src/components/bancard/FormularioBancard.tsx', 'src/components/bancard/HojaGuardarTarjeta.tsx', 'src/components/bancard/VueltaDeTarjeta.tsx',
+        'src/app/api/pagos/bancard/tarjeta/verificar/route.ts'].filter((a) => !leer(a).includes("from '@/lib/bancard-formulario'")),
+      flujo.includes("from './bancard-formulario'")],
+    [false, false, [], true]);
+
+  // Los textos: en los dos idiomas, cortos, y sin nada de la tarjeta ni de las claves.
+  const nuevos = ['bancardRespondio', 'ayudaDePruebas'];
+  ok('los textos nuevos existen en es y pt', nuevos.map((k) => cuantas(textosBancard, new RegExp(`\\n\\s+${k}:`, 'g'))), [2, 2]);
+  ok('«Bancard respondió: …» / «A Bancard respondeu: …»',
+    [linea(es, 'bancardRespondio'), linea(pt, 'bancardRespondio')],
+    ['(respuesta: string) => `Bancard respondió: ${respuesta}`,', '(respuesta) => `A Bancard respondeu: ${respuesta}`,']);
+  ok('la ayuda de pruebas nombra la cédula 9661000 y una tarjeta de prueba de Bancard, en los dos idiomas',
+    [linea(es, 'ayudaDePruebas').includes('la cédula 9661000'), linea(es, 'ayudaDePruebas').includes('tarjeta de prueba de Bancard'),
+      linea(pt, 'ayudaDePruebas').includes('9661000'), linea(pt, 'ayudaDePruebas').includes('cartão de teste da Bancard')],
+    [true, true, true, true]);
+  ok('ningún texto nuevo lleva un alias, un número enmascarado, un número de tarjeta ni una clave; y son cortos',
+    [es, pt].flatMap((b) => nuevos.map((k) => linea(b, k)))
+      .filter((s) => !s || s.length > 140 || /alias|token|enmascarad|mascarad|clave|chave|senha|\*{2,}|•|[0-9]{8,}/i.test(s)), []);
 }
 
 console.log('\n── El comprobante no muestra lo que el manual prohíbe ─────');

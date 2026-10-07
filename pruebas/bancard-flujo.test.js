@@ -1692,6 +1692,164 @@ async function principal() {
     await apagar(R);
   }
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('32 · El catastro que falla deja dicho por qué, y el navegador no decide (07/10)');
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Matías probó cinco veces guardar su tarjeta en el ambiente de prueba y la
+  // pantalla solo decía «No se pudo guardar la tarjeta.». En el registro quedó
+  // «users_cards ok 200» con el detalle vacío: no se sabía cuántas tarjetas
+  // devolvió Bancard ni qué contestó el formulario (la pantalla lo tiraba).
+  //
+  // Ahora lo que dijo el formulario queda anotado (`catastro_formulario`) y la
+  // lista dice cuántas vinieron y con qué `card_id`. Y sigue decidiendo
+  // Bancard: un «add_new_card_success» que manda el navegador no guarda nada,
+  // y un «add_new_card_fail» no impide guardar la que Bancard sí lista.
+  {
+    const Fm = require('../.compilado/bancard-formulario.js');
+    const { d, falso, registro } = armar('produccion');
+    const K = await H.montarEmpresa(db, { email: 'cedula@negocio.test', nombre: 'Cédula Mal SA' });
+    /** Los eventos de una tarjeta, con el detalle ordenado por clave (jsonb no guarda el orden). */
+    const eventosDeTarjeta = async (id) => (await db.query(
+      'select tipo, ok, clave, http, detalle from public.bancard_eventos where tarjeta_id = $1 order by id', [id])).rows
+      .map((e) => [e.tipo, e.ok, e.clave, e.http, Object.entries(e.detalle).sort()]);
+    const delFormulario = async (id) => (await J(
+      `select count(*)::int n from public.bancard_eventos where tarjeta_id = $1 and tipo = 'catastro_formulario'`, [id])).n;
+    const pedir = async (c = K) => {
+      const r = await F.iniciarCatastro(d, { empresa: c.empresaId, usuario: c.uid, telefono: '0981123456', consentimiento });
+      if (r.estado !== 'listo') throw new Error(`no se pudo pedir el catastro: ${JSON.stringify(r)}`);
+      return r;
+    };
+
+    // Bancard rechaza el catastro adentro del iframe (en pruebas: la cédula no es la que acepta).
+    const r1 = await pedir();
+    const v1 = await F.verificarTarjeta(d, {
+      tarjeta: r1.tarjeta, empresa: K.empresaId,
+      formulario: { mensaje: 'add_new_card_fail', detalle: 'Los datos ingresados no son correctos' },
+    });
+    ok('catastro rechazado en el formulario: no se guarda y queda fallida, como antes',
+      [v1.guardada, v1.motivo, (await tarjetaDe(r1.tarjeta)).estado, (await cuentaDe(K)).tarjeta_id], [false, 'no_esta', 'fallida', null]);
+    ok('y ahora se sabe por qué: quedó lo que dijo el formulario (con su descripción) y que Bancard listó cero tarjetas',
+      await eventosDeTarjeta(r1.tarjeta),
+      [
+        ['cards_new', true, null, 200, []],
+        ['catastro_formulario', false, 'add_new_card_fail', null, [['descripcion', 'Los datos ingresados no son correctos']]],
+        ['users_cards', true, null, 200, [['cuantas', 0], ['ids', '']]],
+      ]);
+
+    // El navegador miente: manda «éxito» y Bancard no tiene la tarjeta.
+    const r2 = await pedir();
+    falso.pedidos.length = 0;
+    const v2 = await F.verificarTarjeta(d, {
+      tarjeta: r2.tarjeta, empresa: K.empresaId, formulario: { mensaje: 'add_new_card_success', detalle: '' },
+    });
+    ok('un «add_new_card_success» que manda el navegador NO alcanza: no se guarda, queda fallida y sin tarjeta para el débito',
+      [v2.guardada, v2.motivo, (await tarjetaDe(r2.tarjeta)).estado, (await cuentaDe(K)).tarjeta_id], [false, 'no_esta', 'fallida', null]);
+    ok('se le preguntó igual a Bancard (un users_cards), y quedó anotado lo que dijo cada uno',
+      [rutas(falso).map(simple), (await eventosDeTarjeta(r2.tarjeta)).slice(1)],
+      [['users_cards'], [
+        ['catastro_formulario', true, 'add_new_card_success', null, []],
+        ['users_cards', true, null, 200, [['cuantas', 0], ['ids', '']]],
+      ]]);
+
+    // El catastro sale bien: guardada como siempre.
+    const r3 = await pedir();
+    falso.completarCatastro(r3.processId, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    const v3 = await F.verificarTarjeta(d, {
+      tarjeta: r3.tarjeta, empresa: K.empresaId, formulario: { mensaje: 'add_new_card_success', detalle: '' },
+    });
+    ok('con el catastro bien: guardada como antes, con marca y últimos cuatro, y es la del débito',
+      [v3.guardada, v3.marca, v3.ultimos4, v3.ya, (await tarjetaDe(r3.tarjeta)).estado, Number((await cuentaDe(K)).tarjeta_id), (await cuentaDe(K)).debito_activo],
+      [true, 'Visa', '0016', false, 'activa', r3.tarjeta, true]);
+    ok('y la lista quedó anotada con cuántas vinieron y su card_id',
+      (await eventosDeTarjeta(r3.tarjeta)).slice(1),
+      [
+        ['catastro_formulario', true, 'add_new_card_success', null, []],
+        ['users_cards', true, null, 200, [['cuantas', 1], ['ids', String(r3.tarjeta)]]],
+      ]);
+
+    // Al revés: el formulario dice que falló y Bancard la tiene. Decide Bancard.
+    const r4 = await pedir();
+    falso.completarCatastro(r4.processId, { marca: 'MasterCard', enmascarado: '5400********0014', vencimiento: '08/30' });
+    falso.pedidos.length = 0;
+    const v4 = await F.verificarTarjeta(d, {
+      tarjeta: r4.tarjeta, empresa: K.empresaId, formulario: { mensaje: 'add_new_card_fail', detalle: 'Tarjeta inválida' },
+    });
+    ok('y al revés: el formulario dice «falló» pero Bancard la lista → guardada (y la anterior, quitada)',
+      [v4.guardada, v4.ultimos4, (await tarjetaDe(r4.tarjeta)).estado, (await tarjetaDe(r3.tarjeta)).estado], [true, '0014', 'activa', 'quitada']);
+    ok('con dos tarjetas en Bancard, el detalle trae las dos («101,104»)',
+      (await eventosDeTarjeta(r4.tarjeta)).slice(1),
+      [
+        ['catastro_formulario', false, 'add_new_card_fail', null, [['descripcion', 'Tarjeta inválida']]],
+        ['users_cards', true, null, 200, [['cuantas', 2], ['ids', `${r3.tarjeta},${r4.tarjeta}`]]],
+      ]);
+
+    // Sin formulario (la conciliación, la tarea diaria): no se inventa nada.
+    const v4b = await F.verificarTarjeta(d, { tarjeta: r4.tarjeta, empresa: K.empresaId });
+    ok('sin formulario no se anota ningún `catastro_formulario` (y verificar sigue siendo idempotente)',
+      [v4b.guardada, v4b.ya, await delFormulario(r4.tarjeta)], [true, true, 1]);
+
+    // Nadie anota sobre la tarjeta de otra cuenta, ni con basura en lugar de textos.
+    const vAjena = await F.verificarTarjeta(d, {
+      tarjeta: r4.tarjeta, empresa: A.empresaId, formulario: { mensaje: 'add_new_card_success', detalle: 'de otra cuenta' },
+    });
+    ok('otra cuenta no puede dejar nada anotado sobre una tarjeta ajena', [vAjena.guardada, vAjena.motivo, await delFormulario(r4.tarjeta)], [false, 'ajena', 1]);
+    await F.verificarTarjeta(d, { tarjeta: r4.tarjeta, empresa: K.empresaId, formulario: 'add_new_card_success' });
+    await F.verificarTarjeta(d, { tarjeta: r4.tarjeta, empresa: K.empresaId, formulario: { mensaje: 5, detalle: { a: 1 } } });
+    ok('lo que no son textos no se anota', await delFormulario(r4.tarjeta), 1);
+
+    // Lo que llega sucio (el navegador puede mandar cualquier cosa) se anota limpio y corto.
+    // En otra cuenta: una cuenta puede pedir hasta cinco catastros por día.
+    const K2 = await H.montarEmpresa(db, { email: 'sucio@negocio.test', nombre: 'Sucio SRL' });
+    const r5 = await pedir(K2);
+    await F.verificarTarjeta(d, {
+      tarjeta: r5.tarjeta, empresa: K2.empresaId,
+      formulario: { mensaje: 'x'.repeat(300), detalle: `<b>Rechazada</b> <script>alert(1)</script> 4000 1234 5678 9010 ${'y'.repeat(400)}` },
+    });
+    const sucio = (await J(`select clave, detalle from public.bancard_eventos where tarjeta_id = $1 and tipo = 'catastro_formulario'`, [r5.tarjeta]));
+    ok('sucio y largo: la clave en 80, la descripción en 200, sin etiquetas y sin nada que parezca un número de tarjeta',
+      [sucio.clave.length, sucio.detalle.descripcion.length, /[<>]/.test(sucio.detalle.descripcion), /[0-9]{4}/.test(sucio.detalle.descripcion),
+        sucio.detalle.descripcion.startsWith('Rechazada alert(1) … yyy')],
+      [80, 200, false, false, true]);
+
+    // Nada de la tarjeta ni de las claves en lo que se anotó.
+    const pedidas = [r1, r2, r3, r4, r5];
+    const aliasUsados = falso.pedidos.map((p) => p.cuerpo?.operation?.alias_token).filter(Boolean);
+    const anotado = JSON.stringify((await db.query(
+      'select * from public.bancard_eventos where tarjeta_id = any($1::bigint[])', [pedidas.map((r) => r.tarjeta)])).rows) + registro.join('\n');
+    ok('en esos eventos no quedó el número enmascarado, el vencimiento, un alias, el process_id ni la clave',
+      [aliasUsados.length >= 1, anotado.includes('4000****'), anotado.includes('5400****'), anotado.includes('12/30'), anotado.includes('08/30'),
+        /alias/i.test(anotado), aliasUsados.some((a) => anotado.includes(a)), pedidas.some((r) => anotado.includes(r.processId)), anotado.includes(CLAVE)],
+      [true, false, false, false, false, false, false, false, false]);
+
+    // La lectura de lo que avisa el formulario, sola.
+    ok('como lo manda la librería al responseHandler: { message, details, return_url }',
+      Fm.leerLoQueDijoElFormulario({ message: 'add_new_card_fail', details: 'Cédula inválida', return_url: `${SITIO}/plan/tarjeta/101` }),
+      { mensaje: 'add_new_card_fail', detalle: 'Cédula inválida' });
+    ok('como lo nombra el manual y llega en la dirección de vuelta: { status, description }',
+      [Fm.leerLoQueDijoElFormulario({ status: 'add_new_card_success', description: null }),
+        Fm.leerLoQueDijoElFormulario({ status: 'add_new_card_fail', description: 'No se pudo catastrar' })],
+      [{ mensaje: 'add_new_card_success', detalle: '' }, { mensaje: 'add_new_card_fail', detalle: 'No se pudo catastrar' }]);
+    ok('como texto JSON, y lo que ya leyó Orden ({ mensaje, detalle }) vuelve a pasar igual',
+      [Fm.leerLoQueDijoElFormulario('{"message":"payment_fail","details":"Sin fondos"}'),
+        Fm.leerLoQueDijoElFormulario({ mensaje: 'add_new_card_fail', detalle: 'Cédula inválida' })],
+      [{ mensaje: 'payment_fail', detalle: 'Sin fondos' }, { mensaje: 'add_new_card_fail', detalle: 'Cédula inválida' }]);
+    ok('lo que no es texto, o no trae nada, es null',
+      [null, undefined, 7, 'hola', '', {}, [{ message: 'x' }], { message: 5, details: { a: 1 } }, { message: '   ', details: '<br>' }, 'z'.repeat(5000)]
+        .map((v) => Fm.leerLoQueDijoElFormulario(v)),
+      [null, null, null, null, null, null, null, null, null, null]);
+    ok('cada texto se recorta a 200 y queda en una línea',
+      (() => {
+        const l = Fm.leerLoQueDijoElFormulario({ message: 'm'.repeat(999), details: `uno\n\tdos\u0000tres ${'d'.repeat(999)}` });
+        return [l.mensaje.length, l.detalle.length, l.detalle.startsWith('uno dos tres ddd')];
+      })(), [200, 200, true]);
+    ok('a la persona se le muestra la descripción y, si no vino, el estado',
+      [Fm.textoDeLoQueDijo({ mensaje: 'add_new_card_fail', detalle: 'Cédula inválida' }), Fm.textoDeLoQueDijo({ mensaje: 'add_new_card_fail', detalle: '' }),
+        Fm.textoDeLoQueDijo(null), Fm.textoDeLoQueDijo(undefined)],
+      ['Cédula inválida', 'add_new_card_fail', '', '']);
+    ok('el estado que cuenta como «éxito» del catastro es el del manual', Fm.CATASTRO_CON_EXITO, 'add_new_card_success');
+  }
+
   console.log(`\n${corridas - fallos}/${corridas} comprobaciones del pago ocasional con Bancard.`);
   if (fallos > 0) {
     console.log(`${fallos} fallaron.`);

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTextos } from '@/i18n/cliente';
 import { colorDeVariable, estilosBancard, PALETA_CLARA, type PaletaBancard } from '@/lib/bancard-estilos';
+import { leerLoQueDijoElFormulario, type DichoPorElFormulario } from '@/lib/bancard-formulario';
 
 /**
  * EL FORMULARIO DE BANCARD, ADENTRO DE ORDEN.
@@ -25,7 +26,12 @@ import { colorDeVariable, estilosBancard, PALETA_CLARA, type PaletaBancard } fro
  *     hay UN manejador de módulo que reenvía al vigente, y el vigente es
  *     idempotente (se resuelve una sola vez por apertura).
  *   · LO QUE DICE EL FORMULARIO NO SE CREE: el manejador solo avisa «terminó»
- *     y la pantalla le pregunta al servidor qué pasó de verdad.
+ *     y la pantalla le pregunta al servidor qué pasó de verdad. Lo que dijo
+ *     (la librería le pasa al manejador el aviso del iframe tal cual:
+ *     `{ message, details, return_url }`) viaja con ese aviso, ya limpio,
+ *     como un dato para mostrar y dejar anotado: acá no se mira ni se decide
+ *     nada con él. Tirarlo era no saber nunca por qué Bancard rechazó un
+ *     catastro adentro del iframe (07/10/2026).
  *   · ANCHO MÍNIMO 320 px (manual: «el requisito… es que se les dé un ancho
  *     mínimo de 320px»): en un teléfono angosto el contenedor va a sangre.
  *   · Si a los 12 segundos no avisó su alto, aparece la ayuda de Safari
@@ -34,11 +40,16 @@ import { colorDeVariable, estilosBancard, PALETA_CLARA, type PaletaBancard } fro
 
 export type EspacioBancard = 'Checkout' | 'Cards' | 'Charge3DS';
 
-type Manejador = (r: { message?: unknown; details?: unknown }) => void;
+/**
+ * Lo que la librería le pasa al `responseHandler`: el `event.data` del iframe,
+ * sin tocar. Suele ser `{ message, details, return_url }`, pero viene de otra
+ * ventana: se trata como desconocido y lo lee `leerLoQueDijoElFormulario`.
+ */
+type Manejador = (r: unknown) => void;
 
 /** El que está montado ahora. La librería llama siempre al de módulo. */
 let manejadorVigente: Manejador | null = null;
-function manejadorDeModulo(r: { message?: unknown; details?: unknown }) {
+function manejadorDeModulo(r: unknown) {
   manejadorVigente?.(r);
 }
 
@@ -107,8 +118,12 @@ export function FormularioBancard({
   urlScript: string;
   /** El origen de Bancard en ese entorno: solo sus mensajes cuentan. */
   origen: string;
-  /** El formulario terminó (pagó, falló o se canceló): la pantalla pregunta qué pasó. */
-  onTermino: () => void;
+  /**
+   * El formulario terminó (pagó, falló o se canceló): la pantalla pregunta qué
+   * pasó. `dicho` es lo que avisó el iframe, ya limpio, si avisó algo legible:
+   * para mostrarlo o mandarlo a anotar, nunca para decidir.
+   */
+  onTermino: (dicho?: DichoPorElFormulario) => void;
 }) {
   const t = useTextos();
   const idContenedor = `bancard-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -140,10 +155,10 @@ export function FormularioBancard({
   useEffect(() => {
     let vivo = true;
     resuelto.current = false;
-    const propio: Manejador = () => {
+    const propio: Manejador = (r) => {
       if (!vivo || resuelto.current) return;
       resuelto.current = true;
-      avisar.current();
+      avisar.current(leerLoQueDijoElFormulario(r) ?? undefined);
     };
     manejadorVigente = propio;
 
