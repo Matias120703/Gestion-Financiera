@@ -2800,6 +2800,11 @@ export const es = {
       menosQueAyer: (pct: number) => ` (${pct}% menos que ayer)`,
       igualQueAyer: ' (igual que ayer)',
       rachaLinea: (dias: number) => `🔥 Van ${dias} días seguidos.`,
+      // El profe que vende productos (128): lo que entró y lo que le queda,
+      // los dos números de su cierre. Sin «vendiste» ni «todavía estás a tiempo».
+      alumnos: (entro: string, queda: string) => `Hoy te entraron ${entro} y te quedan ${queda}.`,
+      alumnosConPerdida: (entro: string, abajo: string) => `Hoy te entraron ${entro}, pero quedaste ${abajo} abajo.`,
+      alumnosSinIngresos: (gastos: string) => `Hoy no entró plata y gastaste ${gastos}.`,
     },
     prueba: {
       titulo: (dias: number) => (dias <= 0 ? 'Tu prueba de Orden termina hoy'

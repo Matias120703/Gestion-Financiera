@@ -17,6 +17,12 @@ import { dinero } from './formato';
  *   · A la noche solo si cargó algo: el resumen de un día vacío no dice nada.
  *     Ese caso lo cubre el aviso de la racha (tareas/recordatorio).
  *
+ * EL PROFE QUE VENDE PRODUCTOS (128). Las cuentas de alumnos (`de_alumnos`)
+ * no reciben ni el de la mañana ni el de la tarde: los dos retan un día sin
+ * clases, que es lo que la 090 sacó. A la noche, si cargó plata, le llega su
+ * resumen con frases propias —no «vendiste», no «todavía estás a tiempo»— y
+ * lo lleva a su cierre.
+ *
  * Los textos llegan como parámetro con esta forma y no importando el
  * diccionario: este archivo se compila suelto para las pruebas y no puede
  * traer i18n (ver probar:calculos).
@@ -54,6 +60,12 @@ export interface CuentaDelDia {
   hoy: NumerosDelDia;
   ayer: NumerosDelDia;
   racha?: RachaDelDia;
+  /**
+   * Un negocio de alumnos: el profe, el trainer (128). La base solo lo
+   * manda a la noche, y con «También vendo productos» prendido. Sin la 128
+   * no llega: es una cuenta como las de siempre.
+   */
+  de_alumnos?: boolean;
 }
 
 export interface TextosDelDia {
@@ -88,6 +100,15 @@ export interface TextosDelDia {
     igualQueAyer: string;
     /** Se agrega al final cuando hoy extendió una racha que ya vale la pena decir. */
     rachaLinea: (dias: number) => string;
+    /**
+     * El día del profe que vende (128). «Entraron» es todo lo que entró
+     * (clases, productos, otros ingresos) y «quedan» la ganancia neta: los
+     * dos números de su cierre. No dicen «gastaste» para no dar un tercer
+     * número distinto al «Salió» de esa pantalla.
+     */
+    alumnos: (entro: string, queda: string) => string;
+    alumnosConPerdida: (entro: string, abajo: string) => string;
+    alumnosSinIngresos: (gastos: string) => string;
   };
 }
 
@@ -132,6 +153,13 @@ export function fraseDelDia(
   const rachaEnRiesgo = Boolean(cuenta.racha?.en_riesgo);
   const conRacha = (base: string, linea: (dias: number) => string) =>
     rachaDias >= RACHA_MINIMA ? `${base} ${linea(rachaDias)}` : base;
+  const deAlumnos = !personal && cuenta.de_alumnos === true;
+
+  // Al profe no se lo empuja a cargar (090, 128): ni «anotá tu primera venta
+  // de hoy» un lunes por no haber trabajado el domingo, ni «todavía no
+  // cargaste nada» un sábado sin clases. La base ya no lo manda en estos dos
+  // momentos; esto es el segundo candado.
+  if (deAlumnos && momento !== 'noche') return null;
 
   if (momento === 'manana') {
     const a = cuenta.ayer;
@@ -179,6 +207,15 @@ export function fraseDelDia(
       : n(h.gastos) > 0 ? tx.noche.personalSoloGastos(plata(n(h.gastos)))
       : tx.noche.personalSoloIngresos(plata(entro));
     return { titulo, cuerpo: conRacha(cuerpo, tx.noche.rachaLinea), url };
+  }
+
+  if (deAlumnos) {
+    // El resumen de su día, con los dos números de su cierre, y lo lleva ahí.
+    const entro = n(h.ventas) + n(h.ingresos);
+    const cuerpo = entro <= 0 ? tx.noche.alumnosSinIngresos(plata(n(h.gastos)))
+      : n(h.ganancia) >= 0 ? tx.noche.alumnos(plata(entro), plata(n(h.ganancia)))
+      : tx.noche.alumnosConPerdida(plata(entro), plata(-n(h.ganancia)));
+    return { titulo, cuerpo: conRacha(cuerpo, tx.noche.rachaLinea), url: '/cierre' };
   }
 
   if (n(h.ventas) === 0) {

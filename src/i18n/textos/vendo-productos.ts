@@ -4,7 +4,8 @@
  *
  * El diccionario lo incluye como `t.vendoProductos` (ver es.ts y pt.ts). Lo
  * llenan el interruptor de Ajustes (VendoProductos.tsx), la tarjeta del
- * panel (PanelProfe.tsx) y la sección del reporte (ReporteAlumnos.tsx). Los
+ * panel (PanelProfe.tsx), la sección del reporte (ReporteAlumnos.tsx) y el
+ * cierre del día de quien lo prendió (CierreAlumnos.tsx, 128). Los
  * textos del Excel NO van acá: el libro se compila suelto para las pruebas y
  * los lleva en src/lib/reportes/textos-alumnos.ts.
  *
@@ -27,11 +28,11 @@ export const vendoProductosEs = {
       trainer: 'Proteína, guantes, bandas, suplementos…',
     },
     detalle: (ejemplos: string, p: PalabrasAlumnos) =>
-      `${ejemplos} Cargalos con su costo y vendelos desde Orden: vas a ver cuánto ganás con ellos, aparte de tus ${p.clases}.`,
-    prendido: 'Listo: Productos y Vender ya están en tu menú.',
+      `${ejemplos} Cargalos con su costo y vendelos desde Orden: vas a ver cuánto ganás con ellos, aparte de tus ${p.clases}, y a la noche cerrás el día con lo que entró y lo que salió.`,
+    prendido: 'Listo: Productos, Vender y Cierre del día ya están en tu menú.',
     cargarPrimero: 'Cargar productos',
     irAVender: 'Ir a Vender',
-    apagado: 'Productos y Vender salen del menú. Lo que cargaste y lo que vendiste queda guardado, y sigue en tus reportes.',
+    apagado: 'Productos, Vender y Cierre del día salen del menú. Lo que cargaste, lo que vendiste y los días que cerraste quedan guardados, y siguen en tus reportes.',
     /** El detalle de «Tu negocio» en la lista de Ajustes, en estos dos rubros. */
     listaNegocio: 'Nombre, moneda y si vendés productos',
   },
@@ -54,6 +55,21 @@ export const vendoProductosEs = {
     teQuedaConProductos: 'cobrado menos gastado y lo que te costó lo vendido',
     mercaderiaAparte: (compras: string) =>
       `La mercadería que compraste (${compras}) no se resta entera: solo lo que costó lo que ya vendiste.`,
+  },
+
+  /**
+   * El cierre del día de quien vende productos (128). Lo demás de esa
+   * pantalla usa los textos del cierre de siempre y los del panel de arriba.
+   */
+  cierre: {
+    /** El día sin plata. No reta: no dice «todavía no cargaste nada». */
+    sinPlata: 'No entró ni salió plata',
+    sinPlataDetalle: (p: PalabrasAlumnos) =>
+      `Cuando cobres tus ${p.clases}, vendas un producto o cargues un gasto, lo vas a ver acá.`,
+    clasesDadas: (n: number, p: PalabrasAlumnos) => `Diste ${n} ${uno(n, p.clase, p.clases)}.`,
+    /** Debajo de «De productos»: lo vendido menos lo que costó. */
+    teDejaron: (ganancia: string) => `te dejaron ${ganancia}`,
+    perdiste: (perdida: string) => `perdiste ${perdida}`,
   },
 
   /** La sección del reporte. */
@@ -89,11 +105,11 @@ export const vendoProductosPt: typeof vendoProductosEs = {
       trainer: 'Proteína, luvas, elásticos, suplementos…',
     },
     detalle: (ejemplos, p) =>
-      `${ejemplos} Cadastre com o custo e venda pelo Orden: você vê quanto ganha com eles, separado das suas ${p.clases}.`,
-    prendido: 'Pronto: Produtos e Vender já estão no seu menu.',
+      `${ejemplos} Cadastre com o custo e venda pelo Orden: você vê quanto ganha com eles, separado das suas ${p.clases}, e à noite você fecha o dia com o que entrou e o que saiu.`,
+    prendido: 'Pronto: Produtos, Vender e Fechamento do dia já estão no seu menu.',
     cargarPrimero: 'Cadastrar produtos',
     irAVender: 'Ir pra Vender',
-    apagado: 'Produtos e Vender saem do menu. O que você cadastrou e vendeu fica guardado e continua nos seus relatórios.',
+    apagado: 'Produtos, Vender e Fechamento do dia saem do menu. O que você cadastrou, o que vendeu e os dias que fechou ficam guardados e continuam nos seus relatórios.',
     listaNegocio: 'Nome, moeda e se você vende produtos',
   },
 
@@ -113,6 +129,15 @@ export const vendoProductosPt: typeof vendoProductosEs = {
     teQuedaConProductos: 'recebido menos gasto e o custo do que você vendeu',
     mercaderiaAparte: (compras) =>
       `A mercadoria que você comprou (${compras}) não desconta inteira: só o custo do que você já vendeu.`,
+  },
+
+  cierre: {
+    sinPlata: 'Não entrou nem saiu dinheiro',
+    sinPlataDetalle: (p) =>
+      `Quando você receber das suas ${p.clases}, vender um produto ou lançar uma despesa, aparece aqui.`,
+    clasesDadas: (n, p) => `Você deu ${n} ${uno(n, p.clase, p.clases)}.`,
+    teDejaron: (ganancia) => `deixaram ${ganancia}`,
+    perdiste: (perdida) => `você perdeu ${perdida}`,
   },
 
   reporte: {

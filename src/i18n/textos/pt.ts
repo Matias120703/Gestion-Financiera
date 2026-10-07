@@ -2552,6 +2552,9 @@ export const pt: Textos = {
       menosQueAyer: (pct: number) => ` (${pct}% a menos que ontem)`,
       igualQueAyer: ' (igual a ontem)',
       rachaLinea: (dias: number) => `🔥 São ${dias} dias seguidos.`,
+      alumnos: (entro: string, queda: string) => `Hoje entraram ${entro} e sobram ${queda}.`,
+      alumnosConPerdida: (entro: string, abajo: string) => `Hoje entraram ${entro}, mas você ficou ${abajo} no negativo.`,
+      alumnosSinIngresos: (gastos: string) => `Hoje não entrou dinheiro e você gastou ${gastos}.`,
     },
     prueba: {
       titulo: (dias: number) => (dias <= 0 ? 'Seu teste do Orden termina hoje'

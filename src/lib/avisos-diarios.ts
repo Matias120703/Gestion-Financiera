@@ -21,7 +21,9 @@ import type { CobrosDeHoy } from '@/lib/tipos';
  *     pagos que se vencen (107, push y correo) y a quién toca cobrarle
  *     hoy (127, solo push);
  *   · tarde  → «todavía no cargaste nada hoy», solo a quien no cargó;
- *   · noche  → cómo fue hoy, contra ayer, solo a quien cargó.
+ *   · noche  → cómo fue hoy, contra ayer, solo a quien cargó. Es el único
+ *     que recibe el profe que vende productos (128): no reta, y lo lleva a
+ *     su cierre del día.
  *
  * Cada corrida es una tarea diaria aparte: el plan Hobby de Vercel permite
  * muchas tareas pero cada una una sola vez por día, así que tres momentos son
@@ -40,7 +42,14 @@ import type { CobrosDeHoy } from '@/lib/tipos';
 export async function correrAvisosDiarios(momento: Momento): Promise<{ estado: number; cuerpo: Record<string, unknown> }> {
 
   const supabase = clienteDeServicio();
-  const { data, error } = await supabase.rpc('avisos_del_dia');
+  // El momento viaja a la base (128): con 'noche' suma a las cuentas que
+  // tienen Cierre del día por «También vendo productos». Si la base todavía
+  // no tiene la 128 (código nuevo, base vieja) no conoce el parámetro: se
+  // pide como antes, sin él, y nadie se queda sin su aviso.
+  let { data, error } = await supabase.rpc('avisos_del_dia', { p_momento: momento });
+  if (error && sinElParametro(error)) {
+    ({ data, error } = await supabase.rpc('avisos_del_dia'));
+  }
   if (error) {
     console.error('[avisos-diarios]', momento, error.message);
     return { estado: 503, cuerpo: { error: 'No se pudo leer.' } };
@@ -342,4 +351,16 @@ async function avisarVencimientos() {
   }
 
   return { cuentas: lista.length, push, correos, fallados, sinCorreo: !hayCorreo };
+}
+
+/**
+ * ¿La base contestó que no existe `avisos_del_dia` con ese parámetro? (128)
+ *
+ * PostgREST lo dice con PGRST202 («no encontré la función con esos
+ * argumentos») y PostgreSQL con 42883. Cualquier otro error es un error de
+ * verdad y no se reintenta.
+ */
+function sinElParametro(error: { code?: string; message?: string }): boolean {
+  return error.code === 'PGRST202' || error.code === '42883'
+    || /avisos_del_dia/.test(error.message ?? '') && /p_momento|schema cache|does not exist/i.test(error.message ?? '');
 }

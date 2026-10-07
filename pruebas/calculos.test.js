@@ -568,14 +568,21 @@ ok('la agenda de a uno es solo del profe y del trainer',
   ok('se ofrece solo al profe y al trainer', conInterruptor, ['clases', 'entrenamiento']);
   ok('que son los de agenda de alumnos', conInterruptor, TODOS.filter((r) => fichaDe(r, 'emprendedor').agendaDeAlumnos));
   ok('nunca a una cuenta personal', ofreceInterruptor(fichaDe('clases', 'personal'), 'vendeProductos'), false);
-  ok('suma Productos y Vender, y nada más',
-    conInterruptor.map((r) => fichaDe(r, 'emprendedor').interruptores.vendeProductos), [['/productos', '/vender'], ['/productos', '/vender']]);
+  // Y el Cierre del día desde la 128 (07/10): «cuando el profesor activa
+  // venta de productos, tiene que tener un cierre del día también».
+  ok('suma Productos, Vender y el Cierre del día, y nada más',
+    conInterruptor.map((r) => fichaDe(r, 'emprendedor').interruptores.vendeProductos),
+    [['/productos', '/vender', '/cierre'], ['/productos', '/vender', '/cierre']]);
   for (const r of conInterruptor) {
     const apagado = fichaDe(r, 'emprendedor');
     const prendido = fichaDe(r, 'emprendedor', { vendeProductos: true });
-    ok(`${r}: prendido gana Productos y Vender, y ninguna otra pantalla cambia`,
-      Object.keys(apagado.secciones).filter((s) => apagado.secciones[s] !== prendido.secciones[s]).sort(), ['/productos', '/vender']);
-    ok(`${r}: el fiado y el cierre siguen afuera (090, 091)`, [prendido.secciones['/fiado'], prendido.secciones['/cierre']], [false, false]);
+    ok(`${r}: prendido gana Productos, Vender y el Cierre, y ninguna otra pantalla cambia`,
+      Object.keys(apagado.secciones).filter((s) => apagado.secciones[s] !== prendido.secciones[s]).sort(), ['/cierre', '/productos', '/vender']);
+    ok(`${r}: el fiado sigue afuera (091)`, prendido.secciones['/fiado'], false);
+    // Tiene la pantalla, pero el RUBRO sigue sin cerrar el día: `cierraElDia`
+    // es la llave de los avisos que retan (090), y esos no le llegan.
+    ok(`${r}: con el Cierre prendido, el rubro sigue sin «cerrar el día» (los avisos de la 090)`,
+      [prendido.secciones['/cierre'], prendido.cierraElDia, apagado.secciones['/cierre'], apagado.cierraElDia], [true, false, false, false]);
     ok(`${r}: la barra de abajo no cambia (Vender queda en «Más»)`, prendido.barra, apagado.barra);
     ok(`${r}: apagado, sin decir o null es la ficha de siempre (el mismo objeto)`,
       [fichaDe(r, 'emprendedor', { vendeProductos: false }), fichaDe(r, 'emprendedor', {}), fichaDe(r, 'emprendedor', { vendeProductos: null })]
@@ -713,13 +720,96 @@ ok('la agenda de a uno es solo del profe y del trainer',
     }
   };
   recorrer('src');
-  const preguntan = fuentes.filter(([, s]) => /'\/(productos|vender)'/.test(s) && /\b(fichaDe|fichaDeLaCuenta|tieneSeccion)\(/.test(s));
-  ok('las que arman la ficha y preguntan por Productos o Vender se encontraron', preguntan.length >= 6, true);
+  // Desde la 128 también el Cierre del día lo prende el interruptor.
+  const preguntan = fuentes.filter(([, s]) => /'\/(productos|vender|cierre)'/.test(s) && /\b(fichaDe|fichaDeLaCuenta|tieneSeccion)\(/.test(s));
+  ok('las que arman la ficha y preguntan por Productos, Vender o el Cierre se encontraron', preguntan.length >= 7, true);
+  ok('entre ellas, la página del cierre', preguntan.some(([r]) => r === 'src/app/(app)/cierre/page.tsx'), true);
   ok('y todas pasan el interruptor',
     preguntan.filter(([, s]) => !/fichaDeLaCuenta\(|vendeProductos|vende_productos/.test(s)).map(([r]) => r), []);
   ok('sin bg-white opaco ni dark: en lo nuevo',
     ['src/components/VendoProductos.tsx', 'src/components/PanelProfe.tsx', 'src/components/reportes/ReporteAlumnos.tsx']
       .filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+
+  // --- EL PROFE QUE VENDE CIERRA EL DÍA (128, 07/10) ---
+  //
+  // Dos preguntas distintas: `cierraElDia` es del RUBRO (espejo de
+  // `rubro_cierra_el_dia`, los avisos que empujan a cargar) y
+  // `secciones['/cierre']` de la ficha de la CUENTA es la pantalla (espejo de
+  // `cuenta_cierra_el_dia`). La base se prueba en cierre-profe.test.js.
+  ok('en la ficha del rubro, sin interruptores, las dos preguntas coinciden',
+    [...TODOS.map((r) => [r, 'emprendedor']), ...TODOS.map((r) => [r, 'personal'])]
+      .filter(([r, t]) => fichaDe(r, t).cierraElDia !== fichaDe(r, t).secciones['/cierre']), []);
+  ok('con el interruptor, la pantalla la ganan solo el profe y el trainer',
+    TODOS.filter((r) => fichaDe(r, 'emprendedor', { vendeProductos: true }).secciones['/cierre'] !== fichaDe(r, 'emprendedor').secciones['/cierre']),
+    ['clases', 'entrenamiento']);
+  ok('fichaDeLaCuenta: el cierre sale de la columna de la cuenta, y la personal manda',
+    [{ vende_productos: true }, { vende_productos: false }, {}, { vende_productos: null }, { vende_productos: true, tipo_cuenta: 'personal' }]
+      .map((e) => fichaDeLaCuenta({ rubro: 'clases', tipo_cuenta: 'emprendedor', ...e }).secciones['/cierre']),
+    [true, false, false, false, false]);
+  const cie128 = leer('src/app/(app)/cierre/page.tsx');
+  ok('la página del cierre pregunta por la CUENTA, no por el rubro',
+    [cie128.includes('const ficha = fichaDeLaCuenta(ctx.empresa);'), cie128.includes("if (!ficha.secciones['/cierre']) redirect('/panel');"),
+      /tieneSeccion\(/.test(sinComentarios(cie128))], [true, true, false]);
+  ok('y sigue siendo la vista del dueño', cie128.includes("if (!ctx.esAdmin) redirect('/panel');"), true);
+  ok('el menú la ofrece solo a administración', /const SOLO_ADMIN: Seccion\[\] = \[[^\]]*'\/cierre'/.test(nav), true);
+  ok('la barra de abajo del profe no cambia: la suya no tiene el cierre',
+    ['clases', 'entrenamiento'].map((r) => fichaDe(r, 'emprendedor', { vendeProductos: true }).barra.includes('/cierre')), [false, false]);
+  // El desglose solo para la cuenta de alumnos: pide el panel de ese día.
+  const ramaAlumnos = cie128.slice(cie128.indexOf('{deAlumnos ? ('), cie128.indexOf(') : !cierre.hubo_actividad ? ('));
+  ok('la rama del profe: sus números, sin la comparación con la semana pasada',
+    [ramaAlumnos.includes('<NumerosCierreAlumnos'), ramaAlumnos.includes('desgloseDelCierre(panelDelDia, fechaPanel, cierre.fecha)'),
+      ramaAlumnos.includes('<Comparacion'), ramaAlumnos.length > 200], [true, true, false, true]);
+  ok('pide panel_profe solo si es de alumnos, y si falla el cierre sale igual',
+    [/deAlumnos\s*\?\s*Promise\.resolve\(clienteServidor\(\)\.rpc\('panel_profe'/.test(cie128),
+      (cie128.match(/rpc\('panel_profe'/g) ?? []).length, cie128.includes('.then((r) => (r.error ? null : r.data)).catch(() => null)')], [true, 1, true]);
+  ok('«Salió» del profe es el «Gastado» de su panel; el del comercio, los gastos de siempre',
+    cie128.includes('const salio = deAlumnos ? salioDelCierre(r) : Number(r.gastos);'), true);
+  ok('la racha del profe lleva a su agenda', cie128.includes('<TarjetaRacha racha={cierre.racha} t={t} destino="/agenda" />'), true);
+  ok('el comercio conserva su comparación y su texto de día vacío',
+    [cie128.includes('<Comparacion valor={vsSemana}'), cie128.includes('<Vacio titulo={t.cierre.sinActividad} detalle={t.cierre.sinActividadDetalle} />')], [true, true]);
+  const ca = leer('src/components/CierreAlumnos.tsx');
+  ok('el día sin plata del profe no reta: su texto, no el del comercio',
+    [ca.includes('vp.cierre.sinPlata'), ca.includes('vp.cierre.clasesDadas('), /sinActividad/.test(ca)], [true, true, false]);
+  ok('el panel promete avisos por el RUBRO, y ya no pregunta por la pantalla del cierre',
+    [pan.includes('cierraElDia: ficha.cierraElDia,'), pan.includes("ficha.secciones['/cierre']")], [true, false]);
+  ok('el panel del profe suma el atajo al cierre, solo al dueño',
+    pan.includes("...(ctx.esAdmin ? [{ href: '/cierre' as Ruta, texto: t.nav.cierre }] : []),"), true);
+  const avd = leer('src/lib/avisos-diarios.ts');
+  ok('los avisos mandan el momento a la base, y sin la 128 piden como antes',
+    [avd.includes("supabase.rpc('avisos_del_dia', { p_momento: momento })"), avd.includes("supabase.rpc('avisos_del_dia'))"),
+      avd.includes('if (error && sinElParametro(error))')], [true, true, true]);
+  ok('sin bg-white opaco ni dark: en lo del cierre del profe',
+    ['src/components/CierreAlumnos.tsx', 'src/app/(app)/cierre/page.tsx', 'src/app/(app)/panel/page.tsx']
+      .filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+  ok('nadie creó un loading.tsx (rompe todas las pantallas, Next 15)', fuentes.filter(([r]) => /\/loading\.tsx$/.test(r)).map(([r]) => r), []);
+  const vpt = leer('src/i18n/textos/vendo-productos.ts');
+  ok('los textos del cierre del profe, en español y en portugués',
+    [(vpt.match(/\n  cierre: \{/g) ?? []).length, vpt.includes("sinPlata: 'No entró ni salió plata'"), vpt.includes("sinPlata: 'Não entrou nem saiu dinheiro'"),
+      vpt.includes('Productos, Vender y Cierre del día ya están en tu menú'), vpt.includes('Produtos, Vender e Fechamento do dia já estão no seu menu')],
+    [2, true, true, true, true]);
+  ok('y la frase de la noche, en los dos',
+    ['es', 'pt'].map((i) => ['alumnos:', 'alumnosConPerdida:', 'alumnosSinIngresos:'].every((k) => leer(`src/i18n/textos/${i}.ts`).includes(`      ${k} (`))), [true, true]);
+
+  // Las cuentas del cierre del profe (src/lib/cierre-alumnos.ts).
+  const C = require('../.compilado/cierre-alumnos.js');
+  const resumenDia = { ventas: 750000, otros_ingresos: 0, gastos: 50000, costo_mercaderia: 300000, compras_mercaderia: 0, mercaderia_aparte: false, pagado_a_profesionales: 0 };
+  ok('«Salió» sin mercadería aparte: los gastos', C.salioDelCierre(resumenDia), 50000);
+  ok('con mercadería aparte la suma: todo lo que salió',
+    C.salioDelCierre({ ...resumenDia, compras_mercaderia: 900000, mercaderia_aparte: true }), 950000);
+  ok('la mercadería que NO fue aparte ya está en gastos: no se suma dos veces',
+    [C.salioDelCierre({ ...resumenDia, gastos: 950000, compras_mercaderia: 900000, mercaderia_aparte: false }),
+      C.mercaderiaAparteDelCierre({ ...resumenDia, compras_mercaderia: 900000, mercaderia_aparte: false })], [950000, 0]);
+  ok('un resumen viejo, sin las claves de la 106, da los gastos y no NaN', C.salioDelCierre({ ventas: 1, otros_ingresos: 0, gastos: '50000' }), 50000);
+  ok('al que no ve sueldos le llega null: cuenta como cero', C.salioDelCierre({ ...resumenDia, pagado_a_profesionales: null }), 50000);
+  const panelDia = { cobrado: 760000, cobrado_clases: 300000, clases_periodo: 2, productos: { vendido: 450000, unidades: 1, operaciones: 1, costo: 300000, ganancia: 150000, margen: 33.3, lista: [] } };
+  ok('el desglose: clases, productos, lo que dejaron, y lo que no es ni una cosa ni la otra',
+    C.desgloseDelCierre(panelDia, '2026-10-07', '2026-10-07'), { clases: 300000, productos: 450000, gananciaProductos: 150000, otros: 10000, clasesDadas: 2 });
+  ok('a quien no ve costos, la ganancia de los productos llega en null',
+    C.desgloseDelCierre({ ...panelDia, productos: { ...panelDia.productos, costo: null, ganancia: null } }, '2026-10-07', '2026-10-07').gananciaProductos, null);
+  ok('el panel de otro día, o sin panel: sin desglose',
+    [C.desgloseDelCierre(panelDia, '2026-10-06', '2026-10-07'), C.desgloseDelCierre(null, '2026-10-07', '2026-10-07')], [null, null]);
+  ok('el resto de una división no es «otros ingresos»',
+    C.desgloseDelCierre({ ...panelDia, cobrado: 750000.0000001 }, '2026-10-07', '2026-10-07').otros, 0);
 }
 
 // --- El personal trainer (097) ---
@@ -2206,6 +2296,9 @@ ok('un rubro desconocido no rompe: cae en comercio',
       menosQueAyer: (p) => ` -${p}%`,
       igualQueAyer: ' =',
       rachaLinea: (d) => `R${d}`,
+      alumnos: (e, q) => `AE:${e} AQ:${q}`,
+      alumnosConPerdida: (e, a) => `AE:${e} AB:${a}`,
+      alumnosSinIngresos: (g) => `ASI:${g}`,
     },
   };
   const dia = (o = {}) => ({ ventas: 0, ingresos: 0, gastos: 0, ganancia: 0, cargados: 0, ...o });
@@ -2274,6 +2367,34 @@ ok('un rubro desconocido no rompe: cae en comercio',
     `SV:${gs(5000)} R6`);
   ok('sin racha en la cuenta, no explota ni la menciona',
     fraseDelDia('manana', cuenta({}, {}), tx, 'es-PY').cuerpo, 'NADA');
+
+  // EL PROFE QUE VENDE PRODUCTOS (128). No se lo empuja a cargar: ni a la
+  // mañana ni a la tarde, pase lo que pase. A la noche, su resumen, y lo
+  // lleva a su cierre.
+  const alumnos = (hoy, ayer, racha) => ({ ...cuenta(hoy, ayer, 'emprendedor', racha), nombre: 'Tenis', de_alumnos: true });
+  ok('profe que vende, mañana: nada, haya cargado ayer o no',
+    [fraseDelDia('manana', alumnos({}, {}), tx, 'es-PY'), fraseDelDia('manana', alumnos({}, { ventas: 200000, ganancia: 90000, cargados: 3 }), tx, 'es-PY')], [null, null]);
+  ok('profe que vende, tarde: nada, ni con la racha en riesgo',
+    [fraseDelDia('tarde', alumnos({}, {}), tx, 'es-PY'), fraseDelDia('tarde', alumnos({}, {}, { dias: 5, en_riesgo: true }), tx, 'es-PY')], [null, null]);
+  ok('profe que vende, noche sin nada cargado: nada', fraseDelDia('noche', alumnos({}, {}), tx, 'es-PY'), null);
+  ok('noche con ganancia: lo que entró (ventas + ingresos) y lo que le queda',
+    fraseDelDia('noche', alumnos({ ventas: 750000, ingresos: 10000, gastos: 50000, ganancia: 410000, cargados: 4 }, {}), tx, 'es-PY').cuerpo,
+    `AE:${gs(760000)} AQ:${gs(410000)}`);
+  ok('noche con pérdida', fraseDelDia('noche', alumnos({ ventas: 100000, gastos: 150000, ganancia: -50000, cargados: 2 }, {}), tx, 'es-PY').cuerpo,
+    `AE:${gs(100000)} AB:${gs(50000)}`);
+  ok('noche sin ingresos: lo que gastó, sin «todavía estás a tiempo»',
+    fraseDelDia('noche', alumnos({ gastos: 50000, ganancia: -50000, cargados: 1 }, {}), tx, 'es-PY').cuerpo, `ASI:${gs(50000)}`);
+  ok('lleva al cierre, con el título de la noche',
+    [fraseDelDia('noche', alumnos({ ventas: 1, ganancia: 1, cargados: 1 }, {}), tx, 'es-PY').url,
+      fraseDelDia('noche', alumnos({ ventas: 1, ganancia: 1, cargados: 1 }, {}), tx, 'es-PY').titulo], ['/cierre', 'Día en Tenis']);
+  ok('y suma la racha, como las demás',
+    fraseDelDia('noche', alumnos({ ventas: 100000, ganancia: 100000, cargados: 1 }, {}, { dias: 4, en_riesgo: false }), tx, 'es-PY').cuerpo,
+    `AE:${gs(100000)} AQ:${gs(100000)} R4`);
+  ok('una cuenta personal nunca es «de alumnos», aunque la clave llegue en true',
+    fraseDelDia('noche', { ...cuenta({ gastos: 40000, cargados: 1 }, {}, 'personal'), de_alumnos: true }, tx, 'es-PY').cuerpo, `G:${gs(40000)}`);
+  ok('sin la clave (base sin la 128) o en false, las frases del negocio de siempre, que llevan al panel',
+    [undefined, false].map((v) => { const f = fraseDelDia('noche', { ...cuenta({ gastos: 5000, ganancia: -5000, cargados: 1 }, {}), de_alumnos: v }, tx, 'es-PY'); return [f.cuerpo, f.url]; }),
+    [[`SV:${gs(5000)}`, '/panel'], [`SV:${gs(5000)}`, '/panel']]);
 
   // Las tres corridas existen y cada una a su hora (Hobby: una vez por día cada una).
   const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));

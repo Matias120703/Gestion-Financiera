@@ -126,7 +126,15 @@ export interface FichaRubro {
    * muestra el acumulado del año.
    */
   ciclosLargos: boolean;
-  /** Espejo de `rubro_cierra_el_dia()`. La autoridad es la base. */
+  /**
+   * Espejo de `rubro_cierra_el_dia()`. La autoridad es la base.
+   *
+   * Es lo que decide el RUBRO: si vive al día, y por eso recibe los avisos
+   * que empujan a cargar (mañana, tarde, la racha). Si ESTA cuenta tiene la
+   * pantalla del cierre lo dice `secciones['/cierre']` de
+   * `fichaDeLaCuenta`, espejo de `cuenta_cierra_el_dia()` (128): el profe
+   * que vende productos tiene la pantalla y sigue sin esos avisos.
+   */
   cierraElDia: boolean;
   /**
    * Si vende sus servicios en paquetes: «ocho clases por 400.000» (088).
@@ -197,8 +205,8 @@ export interface FichaRubro {
    *
    * Lista positiva, como `secciones`: un interruptor solo puede PRENDER lo
    * que está acá, nunca otra cosa, y nunca apaga nada. «También vendo
-   * productos» le suma al profe y al trainer el catálogo y la pantalla de
-   * cobrar; el fiado y el cierre siguen afuera (090, 091).
+   * productos» le suma al profe y al trainer el catálogo, la pantalla de
+   * cobrar y el cierre del día (128); el fiado sigue afuera (091).
    *
    * Vacía es que el interruptor no se le ofrece: el almacén y la barbería ya
    * tienen catálogo, el campo lo apagó a propósito en la fase 0, una persona
@@ -433,6 +441,7 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     //
     // Salvo que prenda «También vendo productos» (121, abajo en
     // `interruptores`): el profe de tenis que vende raquetas y pelotas.
+    // Ese sí compra y vende, y por eso también cierra el día (128).
     secciones: {
       ...NUCLEO,
       '/agenda': true,
@@ -476,9 +485,15 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // «TAMBIÉN VENDO PRODUCTOS» (121). Matías, 01/10: «¿Qué pasa si un
     // profesor de tenis vende raquetas, pelotas…? ¿Cómo va a saber su
     // ganancia de eso?». Prendido en Ajustes, suma el catálogo (con costo,
-    // precio y stock) y la pantalla de cobrar. Nada más: sin fiado ni cierre
-    // del día, por lo mismo de arriba. Apagado, el profe queda como siempre.
-    interruptores: { vendeProductos: ['/productos', '/vender'] },
+    // precio y stock) y la pantalla de cobrar. Sin fiado, por lo mismo de
+    // arriba. Apagado, el profe queda como siempre.
+    //
+    // Y EL CIERRE DEL DÍA (128). Matías, 07/10: «cuando el profesor activa
+    // venta de productos, tiene que tener un cierre del día también». El que
+    // vende tiene algo que cerrar a la noche: lo que cobró de sus clases y
+    // lo que vendió, contra lo que gastó. `cierraElDia` sigue en false: eso
+    // es del rubro y decide los avisos que retan (090), que no le llegan.
+    interruptores: { vendeProductos: ['/productos', '/vender', '/cierre'] },
   },
 
   /**
@@ -530,8 +545,9 @@ export const RUBROS: Record<Rubro, FichaRubro> = {
     // Como el profe: trabaja solo, así que el plan de uno solo. Pagar por
     // gente cargando a la vez sería pagar por nadie.
     planes: ['basico'],
-    // Como el profe (121): la proteína, los guantes, las bandas.
-    interruptores: { vendeProductos: ['/productos', '/vender'] },
+    // Como el profe (121): la proteína, los guantes, las bandas. Y con
+    // ellos, su cierre del día (128).
+    interruptores: { vendeProductos: ['/productos', '/vender', '/cierre'] },
   },
 };
 
@@ -665,7 +681,7 @@ export function seccionesCerradas(gratisPersonal: boolean): Seccion[] {
  * (`interruptores` del rubro). Sin `opciones`, todo apagado: olvidarse de
  * pasarlas esconde una pantalla, nunca muestra una de más. Lo que importa
  * pasarlas lo controla una prueba de fuente (calculos.test.js): todo lugar
- * que pregunta por Productos o Vender.
+ * que pregunta por Productos, Vender o el Cierre del día (128).
  */
 export function fichaDe(
   rubro: string | null | undefined,

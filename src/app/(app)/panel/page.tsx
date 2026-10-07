@@ -77,7 +77,10 @@ export default async function PaginaPanel({
     esPersonal: ctx.empresa.tipo_cuenta === 'personal',
     esAdmin: ctx.esAdmin,
     enPrueba,
-    cierraElDia: ficha.secciones['/cierre'],
+    // La pregunta del RUBRO (espejo de `rubro_cierra_el_dia`), no la de la
+    // pantalla: qué avisos se le prometen. El profe que vende tiene Cierre
+    // (128) y sigue sin los avisos que empujan a cargar.
+    cierraElDia: ficha.cierraElDia,
     tieneAgenda: ficha.secciones['/agenda'],
     agendaDeAlumnos: ficha.agendaDeAlumnos,
   });
@@ -305,6 +308,9 @@ async function ContenidoPanel({
             // Solo si vende productos (121): Atajos deja lo que la ficha tiene.
             { href: '/vender', texto: palabra(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, 'vender', t.nav.vender, (await idiomaActual())) },
             { href: '/gastos', texto: t.panel.cargarGasto },
+            // El cierre del día del que vende productos (128): es la vista
+            // del dueño, y Atajos lo deja solo si la ficha lo tiene.
+            ...(ctx.esAdmin ? [{ href: '/cierre' as Ruta, texto: t.nav.cierre }] : []),
             ...(ctx.esAdmin ? [{ href: '/billetera' as Ruta, texto: t.nav.billetera }] : []),
           ]}
         />

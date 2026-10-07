@@ -93,7 +93,8 @@ const debe = (estado, historial, ahora = AHORA, yaEnEstaSesion = false) =>
     const f = fichaDe(rubro, tipo);
     return I.casoDeInvitacion({
       esPersonal: tipo === 'personal', esAdmin, enPrueba,
-      cierraElDia: f.secciones['/cierre'], tieneAgenda: f.secciones['/agenda'],
+      // Como el panel (128): la pregunta del rubro, no la de la pantalla.
+      cierraElDia: f.cierraElDia, tieneAgenda: f.secciones['/agenda'],
       agendaDeAlumnos: f.agendaDeAlumnos,
     });
   };

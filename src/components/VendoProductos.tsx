@@ -66,7 +66,7 @@ export function VendoProductos({
       verificarAfectados(data, t.ajustes.soloAdminDatos);
       setAviso(valor ? 'prendido' : 'apagado');
       // El menú se arma en el layout, en el servidor: así aparecen (o se van)
-      // Productos y Vender sin recargar la página.
+      // Productos, Vender y el Cierre del día (128) sin recargar la página.
       router.refresh();
     } catch (err: any) {
       setEncendido(!valor);

@@ -156,7 +156,11 @@ export function casoDeInvitacion({
   esAdmin: boolean;
   /** `suscripcion.en_prueba`: el único momento en que sale el fin de la prueba. */
   enPrueba: boolean;
-  /** `secciones['/cierre']` de la ficha: el mismo corte que `rubro_cierra_el_dia`. */
+  /**
+   * `cierraElDia` de la ficha: el corte de `rubro_cierra_el_dia`. Es la
+   * pregunta del rubro, no la de la pantalla: el profe que vende productos
+   * tiene Cierre (128) y no recibe estos avisos.
+   */
   cierraElDia: boolean;
   tieneAgenda: boolean;
   /** Profe o trainer: agenda sin link público. */
