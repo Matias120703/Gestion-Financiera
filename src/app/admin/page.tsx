@@ -59,6 +59,7 @@ export default async function PaginaAdmin() {
     configurado: configBancard.configurado,
     entorno: configBancard.configurado ? configBancard.entorno : null,
     motivo: configBancard.configurado ? null : configBancard.motivo,
+    falla: configBancard.configurado ? null : configBancard.falla ?? null,
     abierto: abiertoATodos(),
   };
 
