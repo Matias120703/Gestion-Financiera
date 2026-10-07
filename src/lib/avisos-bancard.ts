@@ -19,7 +19,8 @@ import { FICHA, esIdioma, IDIOMA_POR_DEFECTO, type Idioma } from '@/i18n/idiomas
  *     autorización ni código: el manual 1.23 no deja mostrarlos.
  *   · Algo para revisar (Bancard confirmó otro importe, un pago que entró
  *     sobre uno revertido, el ingreso que no se pudo anotar, un débito que
- *     no se pudo cotizar, el bloqueo de Cloudflare): push a la administración
+ *     no se pudo cotizar, el bloqueo de Cloudflare, una reversa que Bancard
+ *     hizo sobre un pago que en Orden quedó activo): push a la administración
  *     de Orden, una vez por pedido (o cuenta) y por día.
  *   · Los del cobro automático con la tarjeta guardada: «no pudimos cobrar»
  *     con qué hacer según el motivo; «confirmá el pago» cuando el banco pide
@@ -190,14 +191,20 @@ async function mandarComprobante(servicio: ClienteDeServicio, r: AvisoDePago): P
   }
 }
 
-/** A la administración de Orden: algo de un pago (o de una cuenta) hay que mirarlo a mano. */
-async function avisarAdministracion(servicio: ClienteDeServicio, r: AvisoDePago, motivo: string): Promise<void> {
+/**
+ * A la administración de Orden: algo de un pago (o de una cuenta) hay que mirarlo a mano.
+ *
+ * `asunto` separa un aviso de otro del mismo pedido en el mismo día: la
+ * reversa sobre un pago activo tiene que salir aunque ese pedido ya haya
+ * avisado otra cosa hoy (un pago tardío, por ejemplo).
+ */
+async function avisarAdministracion(servicio: ClienteDeServicio, r: AvisoDePago, motivo: string, asunto = ''): Promise<void> {
   const operacion = String(r.operacion ?? '');
   const referencia = operacion || String(r.empresa_id ?? '');
   const dia = new Date().toISOString().slice(0, 10);
   const { data: reservado } = await servicio.rpc('reservar_envio', {
     p_tipo: 'bancard_revisar',
-    p_clave: `bancard_revisar:${referencia}:${dia}`,
+    p_clave: `bancard_revisar:${referencia}:${dia}${asunto ? `:${asunto}` : ''}`,
     p_user: null,
     p_empresa: typeof r.empresa_id === 'string' ? r.empresa_id : null,
     p_canal: 'push',
@@ -214,6 +221,9 @@ async function avisarAdministracion(servicio: ClienteDeServicio, r: AvisoDePago,
   })));
 }
 
+/** El mismo texto que la base deja en `bancard_operaciones.revisar` (125, bancard_cerrar_operacion). */
+const MOTIVO_REVERSA_SOBRE_PAGADA = 'Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano';
+
 export async function avisarResultado(servicio: ClienteDeServicio, r: AvisoDePago): Promise<void> {
   try {
     // Los avisos que no salen de bancard_confirmar.
@@ -221,6 +231,14 @@ export async function avisarResultado(servicio: ClienteDeServicio, r: AvisoDePag
     if (r.aviso === 'tarjeta_vence') { await avisarTarjetaPorVencer(servicio, r); return; }
     if (r.aviso === 'pausada') {
       await avisarAdministracion(servicio, r, `Débito pausado: no se pudo cotizar la renovación (${String(r.motivo ?? '')})`);
+      return;
+    }
+    // Revisión 07/10: Bancard devolvió la plata de un pago que en Orden
+    // quedó pagado (la reversa y la confirmación se cruzaron). La base dejó
+    // el «para revisar» y no tocó nada: el plan sigue activo y el ingreso
+    // anotado hasta que alguien lo revierta desde /admin.
+    if (r.aviso === 'reversa_sobre_pagada') {
+      await avisarAdministracion(servicio, r, MOTIVO_REVERSA_SOBRE_PAGADA, 'reversa');
       return;
     }
     if (r.aviso === 'bloqueo') {

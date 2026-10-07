@@ -26,6 +26,29 @@ export interface OperacionVista {
   process_id: string | null;
 }
 
+/**
+ * ¿Se le cobra sola a esta cuenta si guarda la tarjeta? (decisión del 07/10/2026)
+ *
+ *   · 'activa'   tiene un plan pago activo: el día anterior al vencimiento se
+ *                cobra de la tarjeta guardada (lo decide `bancard_tomar_cobro`).
+ *   · 'prueba'   está probando: la tarjeta queda guardada y NO se cobra sola;
+ *                cuando termine la prueba elige su plan y paga con un toque.
+ *   · 'sin_plan' la prueba ya terminó, o el plan está vencido o cancelado:
+ *                lo mismo, sin «cuando termine la prueba».
+ *
+ * Las pantallas no prometen ningún cobro automático fuera de 'activa'.
+ */
+export type MomentoDelDebito = 'activa' | 'prueba' | 'sin_plan';
+
+/**
+ * Lo que la base deja en `bancard_cuentas.ultimo_error` cuando la
+ * administración revierte un pago y el débito queda pausado
+ * (`bancard_revertir`, 125). La pantalla lo reconoce para no decir «no
+ * pudimos cobrar: …» de algo que no fue un rechazo; el texto que ve la
+ * persona es `t.bancard.tarjeta.pagoRevertido`, en su idioma.
+ */
+export const ERROR_PAGO_REVERTIDO = 'Pago revertido por la administración';
+
 export const ESTADOS_VIVOS: OperacionVista['estado'][] = ['creada', 'en_3ds', 'incierta'];
 
 export function estaViva(estado: string | null | undefined): boolean {

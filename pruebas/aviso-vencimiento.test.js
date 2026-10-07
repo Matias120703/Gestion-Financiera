@@ -237,17 +237,57 @@ function cargarTs(relativo, reemplazos = {}) {
   ok('sin importe cotizado, el del débito usa el de lista', L.textoDelDebito({ ...base, debito }, es, 'es-PY'), 'El 26 de septiembre cobramos Gs. 190.000 de tu Visa •••• 0016. No tenés que hacer nada.');
   ok('sin ningún precio, no inventa un número', L.textoDelDebito({ ...base, precio: null, debito }, es, 'es-PY'), 'El 26 de septiembre cobramos tu plan de tu Visa •••• 0016. No tenés que hacer nada.');
   ok('el push con débito dice lo mismo', L.pushDeVencimiento({ ...base, importe: 370000, debito }, es, 'es-PY').cuerpo, 'El 26 de septiembre cobramos Gs. 370.000 de tu Visa •••• 0016. No tenés que hacer nada.');
-  // Revisión 03/10: la tarjeta guardada en la prueba la convierte (bancard_tomar_cobro, 125).
+  // Decisión del 07/10: UNA CUENTA EN PRUEBA NUNCA SE COBRA SOLA. Esto
+  // reemplaza a lo que se afirmaba desde el 03/10 («la prueba con la tarjeta
+  // guardada se cobra sola: el correo lo dice»). Se deshizo porque toda
+  // prueba nace con el plan Pro: cobrarla sola era cobrarle el Pro a quien
+  // nunca eligió plan. La base ya manda `debito: null` para la prueba (grupo
+  // 3); acá se fija que el correo no promete un cobro NI SIQUIERA si una fila
+  // de prueba llegara con débito.
   const pruebaConDebito = L.correoDeVencimiento({ ...base, tipo: 'prueba', importe: 190000, debito }, yo, es, 'es-PY', 'https://orden.com.py');
-  ok('la prueba con la tarjeta guardada se cobra sola: el correo lo dice, con el día, cuánto y de qué tarjeta',
-    [pruebaConDebito.texto.includes('Después sigue tu plan Pro: lo cobramos solos con la tarjeta que guardaste'),
-      pruebaConDebito.texto.includes('Cómo pagar: El 26 de septiembre cobramos Gs. 190.000 de tu Visa •••• 0016. No tenés que hacer nada.'),
-      pruebaConDebito.texto.includes('Activar mi plan'), pruebaConDebito.texto.includes('Ver mi plan: https://orden.com.py/plan')],
-    [true, true, false, true]);
+  ok('el correo del fin de la prueba no promete ningún cobro automático, aunque la fila trajera una tarjeta',
+    [/cobramos|No tenés que hacer nada|Visa|0016/.test(pruebaConDebito.texto + pruebaConDebito.html),
+      pruebaConDebito.texto.includes('Para seguir usando Orden, activá tu plan.'),
+      pruebaConDebito.texto.includes('Activar mi plan: https://orden.com.py/plan'), pruebaConDebito.texto.includes('Ver mi plan')],
+    [false, true, true, false]);
+  ok('y dice cómo pagar como a cualquiera: por transferencia, o con tarjeta o QR si ve el botón',
+    [pruebaConDebito.texto.includes(`Cómo pagar: ${es.comoPagar.transferencia}`),
+      L.correoDeVencimiento({ ...base, tipo: 'prueba', bancard: true, debito }, yo, es, 'es-PY', 'https://orden.com.py').texto.includes(`Cómo pagar: ${es.comoPagar.tarjeta}`)],
+    [true, true]);
+  ok('para una prueba, «cómo se paga» nunca es débito', [L.comoSePaga({ ...base, tipo: 'prueba', debito }), L.comoSePaga({ ...base, tipo: 'prueba', debito }, true)], ['transferencia', 'tarjeta']);
   ok('la prueba sin tarjeta sigue diciendo «activá tu plan»',
     L.correoDeVencimiento({ ...base, tipo: 'prueba' }, yo, es, 'es-PY', 'https://orden.com.py').texto.includes('cobramos'), false);
-  ok('en portugués, la prueba con tarjeta',
-    L.correoDeVencimiento({ ...base, tipo: 'prueba', debito }, { ...yo, idioma: 'pt' }, pt, 'pt-BR', 'https://orden.com.py').texto.includes('cobramos sozinhos no cartão que você salvou'), true);
+  ok('en portugués tampoco promete nada',
+    /cobramos|não precisa fazer nada|Visa/.test(L.correoDeVencimiento({ ...base, tipo: 'prueba', debito }, { ...yo, idioma: 'pt' }, pt, 'pt-BR', 'https://orden.com.py').texto), false);
+  ok('los textos de la prueba ya no tienen frase de débito (ni en es ni en pt)', ['fraseDebito' in es.prueba, 'fraseDebito' in pt.prueba], [false, false]);
+
+  // Decisión del 07/10 (R2.1 y R1.2): EL AVISO NO PROMETE UN COBRO QUE NO VA
+  // A SALIR. La base no sabe en qué ambiente está el servidor ni si Bancard
+  // está configurado; `segunElServidor` pasa cada fila por eso antes de que
+  // se arme el push, el correo o el resumen de la administración.
+  const deProd = { ...base, importe: 190000, bancard: true, debito: { ...debito, entorno: 'produccion' } };
+  const deStaging = { ...base, importe: 190000, bancard: true, debito: { ...debito, entorno: 'staging' } };
+  ok('servidor en producción, tarjeta de producción: se cobra sola, el aviso lo dice',
+    [L.comoSePaga(L.segunElServidor(deProd, 'produccion')), L.segunElServidor(deProd, 'produccion').debito.ultimos4], ['debito', '0016']);
+  ok('servidor en producción, tarjeta guardada en staging (la de la certificación): nadie la va a cobrar → paga la persona',
+    [L.segunElServidor(deStaging, 'produccion').debito, L.comoSePaga(L.segunElServidor(deStaging, 'produccion'))], [null, 'tarjeta']);
+  ok('y al revés: servidor en staging, tarjeta de producción', L.segunElServidor(deProd, 'staging').debito, null);
+  ok('Bancard apagado o con una clave mal cargada (sin configuración): ni débito ni «pagá con tarjeta o QR», aunque la cuenta esté habilitada',
+    [L.segunElServidor(deProd, null).debito, L.segunElServidor(deProd, null).bancard, L.comoSePaga(L.segunElServidor(deProd, null))], [null, false, 'transferencia']);
+  ok('un débito sin ambiente (una base vieja) no se da por bueno', L.segunElServidor({ ...base, debito }, 'produccion').debito, null);
+  ok('una fila sin nada de Bancard queda igual', [L.segunElServidor(base, 'produccion').debito, L.segunElServidor(base, 'produccion').bancard, L.segunElServidor(base, null).bancard], [null, false, false]);
+  ok('no toca la fila que recibe ni sus otras claves',
+    [deStaging.debito.entorno, L.segunElServidor(deStaging, 'produccion').importe, L.segunElServidor(deStaging, 'produccion').nombre], ['staging', 190000, 'Pizzería Sur']);
+  const apagado = L.correoDeVencimiento(L.segunElServidor(deProd, null), yo, es, 'es-PY', 'https://orden.com.py');
+  ok('con Bancard apagado, el correo de quien tenía la tarjeta guardada vuelve a decir «renovalo» y por transferencia',
+    [/cobramos|No tenés que hacer nada/.test(apagado.texto), apagado.texto.includes('renovalo antes de esa fecha'),
+      apagado.texto.includes(`Cómo pagar: ${es.comoPagar.transferencia}`), apagado.texto.includes('Renovar mi plan: https://orden.com.py/plan')],
+    [false, true, true, true]);
+  ok('y el push también', /cobramos/.test(L.pushDeVencimiento(L.segunElServidor(deStaging, 'produccion'), es, 'es-PY').cuerpo), false);
+  // El resumen «atentos a la transferencia» de la administración filtra con
+  // `comoSePaga(v) !== 'debito'`: esas cuentas vuelven a entrar.
+  ok('esas cuentas vuelven a entrar en el «atentos a la transferencia» de la administración',
+    [deProd, deStaging].map((v) => L.segunElServidor(v, 'produccion')).filter((v) => L.comoSePaga(v) !== 'debito').map((v) => v.debito), [null]);
   ok('en portugués', L.pushDeVencimiento({ ...base, importe: 370000, debito }, pt, 'pt-BR').cuerpo, 'Em 26 de setembro cobramos Gs. 370.000 no seu Visa •••• 0016. Você não precisa fazer nada.');
   ok('con Bancard habilitado, el correo dice «tarjeta o QR»',
     L.correoDeVencimiento({ ...base, bancard: true }, yo, es, 'es-PY', 'https://orden.com.py').texto.includes('pagá con tarjeta o QR'), true);
@@ -311,6 +351,58 @@ function cargarTs(relativo, reemplazos = {}) {
   // Los dos idiomas tienen texto para cada forma de pago.
   ok('cada forma de pago tiene su texto en es y pt',
     ['transferencia', 'tarjeta'].every((k) => es.comoPagar[k] && pt.comoPagar[k]), true);
+
+  // =====================================================================
+  grupo('3 · La fila de la base, pasada por lo que el servidor puede cumplir (07/10)');
+  // =====================================================================
+  // La sonda del escéptico (esceptico-debito.js), fijada: una cuenta con el
+  // plan activo que vence mañana guarda una tarjeta EN STAGING. La base la
+  // devuelve con débito (ahora con su ambiente); el servidor en producción
+  // no la cobra, así que el aviso tiene que ser el de pagar a mano.
+  {
+    const S = async (sql, p) => (await H.comoServicio(db, () => db.query(sql, p))).rows[0].j;
+    // El grupo 1 volvió a aplicar la 107 para probar que es idempotente, y eso
+    // dejó la función como era antes de Bancard: se repone la de la 126.
+    await H.aplicarMigracion(db, '126');
+    const D = await H.montarEmpresa(db, { email: 'debito@staging.com', nombre: 'Tarjeta de staging' });
+    await venceEn(D.empresaId, 1);
+    ok('sin tarjeta guardada: sin débito', (await de(D.empresaId)).debito, null);
+    const cat = await S(`select public.bancard_crear_catastro($1,$2,'staging','0981123456','Autorizo') j`, [D.empresaId, D.uid]);
+    await S(`select public.bancard_activar_tarjeta($1,'Visa','0016','credit') j`, [cat.card_id]);
+    const fila = await de(D.empresaId);
+    ok('con la tarjeta de staging y el débito al día, la base manda el débito CON su ambiente',
+      [fila.tipo, fila.dias, fila.debito?.marca, fila.debito?.ultimos4, fila.debito?.entorno, typeof fila.debito?.fecha_cobro],
+      ['periodo', 1, 'Visa', '0016', 'staging', 'string']);
+    ok('la tarea de producción no la cobra (por eso el aviso no puede prometerlo)',
+      [await S(`select public.bancard_tomar_cobro('produccion') j`), L.comoSePaga(L.segunElServidor(fila, 'produccion'))], [null, 'transferencia']);
+    ok('el servidor de staging sí: ahí el aviso dice que se cobra sola', L.comoSePaga(L.segunElServidor(fila, 'staging')), 'debito');
+    ok('sin Bancard configurado: transferencia', L.comoSePaga(L.segunElServidor(fila, null)), 'transferencia');
+    const correo = L.correoDeVencimiento(L.segunElServidor(fila, 'produccion'), yo, es, 'es-PY', 'https://orden.com.py');
+    ok('el correo de esa cuenta, con el servidor en producción: «renovalo», sin «cobramos de tu Visa»',
+      [/cobramos|0016/.test(correo.texto), correo.texto.includes('Renovar mi plan')], [false, true]);
+
+    // La prueba con tarjeta: la base no manda débito (D1), en ningún ambiente.
+    const E = await H.montarEmpresa(db, { email: 'prueba@tarjeta.com', nombre: 'Prueba con tarjeta' });
+    const cat2 = await S(`select public.bancard_crear_catastro($1,$2,'produccion','0981123456','Autorizo') j`, [E.empresaId, E.uid]);
+    await S(`select public.bancard_activar_tarjeta($1,'Visa','0016','credit') j`, [cat2.card_id]);
+    await venceEn(E.empresaId, 1, 'prueba', 'pro');
+    const filaE = await de(E.empresaId);
+    ok('una cuenta en prueba con la tarjeta guardada: la fila sale como prueba y sin débito', [filaE?.tipo, filaE?.debito], ['prueba', null]);
+    const correoE = L.correoDeVencimiento(L.segunElServidor(filaE, 'produccion'), yo, es, 'es-PY', 'https://orden.com.py');
+    ok('y su correo de fin de prueba no promete ningún cobro', [/cobramos|No tenés que hacer nada/.test(correoE.texto), correoE.texto.includes('Activar mi plan')], [false, true]);
+  }
+
+  // avisarVencimientos (avisos-diarios.ts) no se puede correr sin Supabase:
+  // se fija leyendo que pasa cada fila por `segunElServidor` ANTES de usarla
+  // y que lee la configuración de Bancard una sola vez.
+  {
+    const fuente = fs.readFileSync(path.join(__dirname, '..', 'src/lib/avisos-diarios.ts'), 'utf8').replace(/\r\n/g, '\n');
+    const f = fuente.slice(fuente.indexOf('async function avisarVencimientos'));
+    ok('avisarVencimientos pasa todas las filas por segunElServidor antes del primer envío',
+      [f.includes('.map((v) => segunElServidor(v, entornoBancard))'),
+        f.indexOf('segunElServidor(v, entornoBancard)') < f.indexOf("rpc('reservar_envio'")], [true, true]);
+    ok('y lee configBancard() una sola vez', (f.match(/configBancard\(\)/g) || []).length, 1);
+  }
 
   console.log(`\n${'═'.repeat(62)}`);
   if (fallos > 0) {

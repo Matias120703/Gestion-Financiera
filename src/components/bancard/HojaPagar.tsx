@@ -334,7 +334,8 @@ export function HojaPagar({ datos, onCerrar }: { datos: DatosDelPago; onCerrar: 
           urlScript={datos.urlScript}
           origen={datos.origen}
           zona={datos.zona}
-          anual={anual}
+          antes={k.guardarYPagarDetalle}
+          despues={k.guardarYPagarDetalle}
           onCerrar={() => setGuardar(false)}
           onGuardada={(g) => {
             setTarjeta({ id: g.tarjeta, marca: g.marca, ultimos4: g.ultimos4 });

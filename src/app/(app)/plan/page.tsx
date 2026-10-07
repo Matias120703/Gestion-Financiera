@@ -23,6 +23,7 @@ import { PagoEnCurso } from '@/components/bancard/EstadoDelPago';
 import { TarjetaGuardada, type DebitoVista, type TarjetaVista } from '@/components/bancard/TarjetaGuardada';
 import { EquipoPremium } from '@/components/bancard/EquipoPremium';
 import type { DatosDelPago } from '@/components/bancard/HojaPagar';
+import type { MomentoDelDebito } from '@/components/bancard/tipos';
 
 export const dynamic = 'force-dynamic';
 
@@ -227,6 +228,15 @@ export default async function PaginaPlan({
   const renovacionDelDebito = planDelDebito && !sus.en_prueba
     ? datosDelPago(planDelDebito, true, sus.periodo === 'anual' ? 'anual' : 'mensual')
     : null;
+  /**
+   * ¿Se le cobra sola si guarda la tarjeta? Solo con un plan pago activo: es
+   * la misma condición de la base (`bancard_tomar_cobro`, 125). En la prueba
+   * —vigente o ya terminada— la tarjeta queda guardada y no se cobra sola
+   * (decisión del 07/10/2026), y la pantalla no puede prometer otra cosa.
+   */
+  const momentoDelDebito: MomentoDelDebito = sus.estado === 'activa' && sus.plan !== 'gratis' ? 'activa'
+    : sus.en_prueba ? 'prueba'
+    : 'sin_plan';
 
   const regalo = mesesDeRegalo(precioDe(precios, 'pro', 'mensual'), precioDe(precios, 'pro', 'anual'));
   // Las columnas cuentan la tarjeta Gratis de la personal.
@@ -550,6 +560,7 @@ export default async function PaginaPlan({
           origen={HOST_BANCARD[entornoBancard]}
           zona={ctx.zonaHoraria}
           anual={(renovacionDelDebito?.periodo ?? periodo) === 'anual'}
+          momento={momentoDelDebito}
           tarjeta={tarjetaGuardada}
           debito={estadoBancard.debito}
           renovacion={renovacionDelDebito}

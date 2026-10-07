@@ -132,6 +132,16 @@ async function principal() {
       [c.empresaId, uid, entorno, tipo, medio, plan, periodo, personas]);
   const confirmar = (op, respuesta, fuente = 'confirmacion') =>
     S('select public.bancard_confirmar($1,$2,$3) j', [op, respuesta, fuente]);
+  /**
+   * «Bajar desde la próxima renovación». Revisión 07/10: es del servidor
+   * (service_role) y lleva quién lo pide, como todo lo que escribe; antes la
+   * llamaba la pantalla con su sesión, sin que nadie mirara si la cuenta ve
+   * Bancard.
+   */
+  const bajar = (c, personas, uid = c.uid) =>
+    S('select public.bancard_bajar_personas($1,$2,$3) j', [c.empresaId, uid, personas]);
+  const intentoBajar = (c, personas, uid = c.uid) =>
+    intentoS('select public.bancard_bajar_personas($1,$2,$3) j', [c.empresaId, uid, personas]);
   /** Crear y pagar de una. */
   const pagar = async (c, entorno, plan, periodo, personas) => {
     const o = await crear(c, entorno, 'plan', 'formulario', plan, periodo, personas);
@@ -840,12 +850,14 @@ async function principal() {
     for (let i = 0; i < 4; i++) await H.sumarMiembro(db, L.empresaId, `emp${i}@rio.test`);
     const vendL = (await db.query(`select user_id from public.miembros where empresa_id = $1 and rol = 'vendedor' limit 1`, [L.empresaId])).rows[0].user_id;
     rechazado('con 5 personas en el equipo no se puede bajar a 4',
-      await intentoU(L.uid, 'select public.bancard_bajar_personas($1,$2)', [L.empresaId, 4]), 'menos personas de las que hoy tiene tu equipo');
+      await intentoBajar(L, 4), 'menos personas de las que hoy tiene tu equipo');
     rechazado('«bajar» a las mismas o a más no es bajar',
-      await intentoU(L.uid, 'select public.bancard_bajar_personas($1,$2)', [L.empresaId, 8]), 'Sumar personas');
+      await intentoBajar(L, 8), 'Sumar personas');
     rechazado('un vendedor no puede',
-      await intentoU(vendL, 'select public.bancard_bajar_personas($1,$2)', [L.empresaId, 6]), 'Solo el dueño de la cuenta');
-    const baja = await U(L.uid, 'select public.bancard_bajar_personas($1,$2) j', [L.empresaId, 6]);
+      await intentoBajar(L, 6, vendL), 'Solo el dueño de la cuenta');
+    rechazado('ni el dueño de otra cuenta', await intentoBajar(L, 6, ajeno.uid), 'Solo el dueño de la cuenta');
+    rechazado('ni nadie (sin persona no hay baja)', await intentoBajar(L, 6, null), 'Solo el dueño de la cuenta');
+    const baja = await bajar(L, 6);
     ok('bajar a 6: no cobra nada, queda programado, y dice cuánto va a pagar',
       [baja, (await sus(L)).tope_vendedores], [{ importe: 370000, contratadas: 8, personas_proxima: 6 }, 7]);
     rechazado('la renovación tiene que ser por la cantidad programada',
@@ -856,8 +868,8 @@ async function principal() {
         (await J('select personas_proxima from public.bancard_cuentas where empresa_id = $1', [L.empresaId])).personas_proxima],
       [370000, 5, null]);
     ok('deshacer una baja programada: null',
-      [(await U(L.uid, 'select public.bancard_bajar_personas($1,$2) j', [L.empresaId, 5])).personas_proxima,
-        (await U(L.uid, 'select public.bancard_bajar_personas($1,$2) j', [L.empresaId, null])).personas_proxima], [5, null]);
+      [(await bajar(L, 5)).personas_proxima,
+        (await bajar(L, null)).personas_proxima], [5, null]);
 
     // ---- el Premium viejo «sin número» (activado a mano con 15 por el precio base)
     const viejo = await H.montarEmpresa(db, { email: 'viejo@negocio.test', nombre: 'Premium sin número' });
@@ -865,7 +877,7 @@ async function principal() {
     ok('un Premium activado a mano sin número deja entrar 15', (await J('select public.tope_de_miembros($1) n', [viejo.empresaId])).n, 15);
     rechazado('no se le puede «sumar personas»: primero renueva eligiendo cuántas son',
       await intentoU(viejo.uid, 'select public.cotizar_personas($1,$2)', [viejo.empresaId, 8]), 'Primero renová tu plan');
-    rechazado('ni «bajar»', await intentoU(viejo.uid, 'select public.bancard_bajar_personas($1,$2)', [viejo.empresaId, 4]), 'Primero renová tu plan');
+    rechazado('ni «bajar»', await intentoBajar(viejo, 4), 'Primero renová tu plan');
     await pagar(viejo, 'produccion', 'negocio', 'mensual', 4);
     ok('al renovar por Bancard eligiendo 4, queda con 4: nunca más 15 por 250.000',
       [(await sus(viejo)).tope_vendedores, (await J('select public.tope_de_miembros($1) n', [viejo.empresaId])).n], [3, 4]);
@@ -1232,7 +1244,8 @@ async function principal() {
 
     // Toda función nueva de Bancard, por catálogo: lo abierto a una sesión es
     // esta lista y nada más; a quien no inició sesión, nada.
-    const paraSesion = ['bancard_acceso', 'bancard_bajar_personas', 'bancard_estado', 'bancard_operacion_ver',
+    // Revisión 07/10: bancard_bajar_personas ya no está acá (es del servidor).
+    const paraSesion = ['bancard_acceso', 'bancard_estado', 'bancard_operacion_ver',
       'bancard_operaciones_admin', 'cotizar_personas', 'cotizar_plan', 'habilitar_bancard'];
     const INTERNAS = ['precio_de_la_cuenta', 'prorrateo_de_personas', 'descuento_de_la_cuenta', 'cuenta_ya_pago'];
     const funciones = (await db.query(
@@ -1246,12 +1259,14 @@ async function principal() {
     ok('abiertas a una sesión: exactamente las de las pantallas y la administración',
       funciones.filter((f) => f.sesion).map((f) => f.proname), paraSesion);
     ok('abiertas a quien no inició sesión: ninguna', funciones.filter((f) => f.anon).map((f) => f.proname), []);
-    const delServidor = ['bancard_activar_tarjeta', 'bancard_anotar_evento', 'bancard_cerrar_operacion', 'bancard_confirmar',
+    const delServidor = ['bancard_activar_tarjeta', 'bancard_anotar_evento', 'bancard_bajar_personas', 'bancard_cerrar_operacion', 'bancard_confirmar',
       'bancard_crear_catastro', 'bancard_crear_operacion', 'bancard_datos_de_tarjeta', 'bancard_guardar_proceso',
       'bancard_marcar_revisar', 'bancard_operacion_interna', 'bancard_por_conciliar', 'bancard_quitar_tarjeta',
       'bancard_revertir', 'bancard_tarjeta_fallida', 'bancard_tarjeta_interna', 'bancard_tarjetas_por_revisar', 'bancard_tomar_cobro'];
     ok('el servidor puede ejecutar lo que le toca',
       delServidor.filter((n) => !funciones.find((f) => f.proname === n && f.servicio)), []);
+    ok('la firma vieja de bancard_bajar_personas (empresa, personas), la que se llamaba con sesión, ya no existe',
+      (await J(`select count(*)::int n from pg_proc where pronamespace = 'public'::regnamespace and proname = 'bancard_bajar_personas'`)).n, 1);
     ok('y la interna de crear operación (la de la tarea diaria, sin persona) no la puede llamar ni el servidor directo',
       funciones.filter((f) => f.proname === 'bancard_crear_operacion_interna').map((f) => [f.anon, f.sesion, f.servicio]), [[false, false, false]]);
     ok('todas las que llevan security definer… lo llevan (y permisos.test.js comprueba su search_path)',
@@ -1265,6 +1280,8 @@ async function principal() {
       ['bancard_crear_operacion', 'select public.bancard_crear_operacion($1,$2,$3,$4,$5,$6,$7,$8)', [A.empresaId, A.uid, 'produccion', 'plan', 'formulario', 'pro', 'mensual', null]],
       ['bancard_crear_operacion_interna', 'select public.bancard_crear_operacion_interna($1,$2,$3,$4,$5,$6,$7,$8,$9)', [A.empresaId, null, 'produccion', 'plan', 'token', 'automatico', 'pro', 'mensual', null]],
       ['bancard_cerrar_operacion', `select public.bancard_cerrar_operacion($1,'vencida','{}')`, [opA.operacion]],
+      ['bancard_bajar_personas', 'select public.bancard_bajar_personas($1,$2,$3)', [A.empresaId, A.uid, 5]],
+      ['bancard_baja_caduca', 'select public.bancard_baja_caduca()', []],
       ['bancard_revertir', 'select public.bancard_revertir($1,$2,$3)', [opA.operacion, jefe.uid, 'x']],
       ['bancard_crear_catastro', 'select public.bancard_crear_catastro($1,$2,$3,$4,$5)', [A.empresaId, A.uid, 'produccion', '0981', 'x']],
       ['bancard_activar_tarjeta', `select public.bancard_activar_tarjeta(101,'Visa','0016','credit')`, []],
@@ -1328,7 +1345,7 @@ async function principal() {
     const L2 = await H.montarEmpresa(db, { email: 'l2@negocio.test', nombre: 'Baja y suma' });
     await pagar(L2, 'produccion', 'negocio', 'mensual', 8);
     await db.query(`update public.suscripciones set periodo_fin = now() + interval '15 days' where empresa_id = $1`, [L2.empresaId]);
-    await U(L2.uid, 'select public.bancard_bajar_personas($1,$2) j', [L2.empresaId, 6]);
+    await bajar(L2, 6);
     const op = await crear(L2, 'produccion', 'personas', 'formulario', null, null, 10);
     ok('baja programada a 6 y después suma hasta 10: paga 2 × 60.000 × 15/30', op.importe, 60000);
     await confirmar(op.operacion, aprobada(op.operacion, op.importe));
@@ -1337,18 +1354,18 @@ async function principal() {
         (await J('select public.bancard_importe_de_renovacion($1)::float i', [L2.empresaId])).i], [9, null, 610000]);
 
     // Hallazgo 3: el tope mira la renovación viva por menos personas y la baja programada.
-    await U(L2.uid, 'select public.bancard_bajar_personas($1,$2) j', [L2.empresaId, 5]);
+    await bajar(L2, 5);
     ok('con la baja a 5: tope_de_miembros 5', (await J('select public.tope_de_miembros($1) n', [L2.empresaId])).n, 5);
-    await U(L2.uid, 'select public.bancard_bajar_personas($1,$2) j', [L2.empresaId, null]);
+    await bajar(L2, null);
     await db.query(`update public.suscripciones set periodo_fin = now() + interval '1 day' where empresa_id = $1`, [L2.empresaId]);
-    await U(L2.uid, 'select public.bancard_bajar_personas($1,$2) j', [L2.empresaId, 4]);
+    await bajar(L2, 4);
     const ren = await crear(L2, 'produccion', 'plan', 'formulario', 'negocio', 'mensual', 4);
     ok('con la renovación por 4 abierta: tope 4; cerrada, vuelve la baja (4) y sin baja, 10',
       await (async () => {
         const a = (await J('select public.tope_de_miembros($1) n', [L2.empresaId])).n;
         await S(`select public.bancard_cerrar_operacion($1,'vencida','{}') j`, [ren.operacion]);
         const b = (await J('select public.tope_de_miembros($1) n', [L2.empresaId])).n;
-        await U(L2.uid, 'select public.bancard_bajar_personas($1,$2) j', [L2.empresaId, null]);
+        await bajar(L2, null);
         const c = (await J('select public.tope_de_miembros($1) n', [L2.empresaId])).n;
         return [a, b, c];
       })(), [4, 4, 10]);
@@ -1378,10 +1395,20 @@ async function principal() {
         return b.reemplaza;
       })(), [(await J('select max(id)::int id from public.bancard_operaciones where empresa_id = $1 and estado = $2', [R2.empresaId, 'rechazada'])).id]);
 
-    // Hallazgo 2 en la base: una vencida del primer pago, pagada después de que la cuenta ya pagó.
+    // Hallazgo 2 en la base: una vencida del primer pago CON SU 18 %, pagada
+    // después de que la cuenta ya pagó. Ese descuento era de una sola vez.
+    //
+    // Revisión 07/10 (R3.7): esta prueba afirmaba el conflicto sobre una
+    // operación SIN descuento, con el motivo «con el descuento del primer
+    // pago». Era falso: toda primera operación lleva `primer_pago`, tenga o
+    // no descuento. Ahora el conflicto exige el descuento de verdad (acá) y
+    // la operación sin descuento activa (más abajo, el caso de la sonda).
     const V2 = await H.montarEmpresa(db, { email: 'v2@negocio.test', nombre: 'Primer pago dos veces' });
+    await nacio(V2, 19);
+    await cargar(V2, rango(20));
     const vieja = await crear(V2, 'produccion', 'plan', 'formulario', 'pro', 'mensual', null);
-    ok('la operación vieja dice que es el primer pago', vieja.desglose.primer_pago, true);
+    ok('la operación vieja es el primer pago y lleva el 18 % de la prueba: 190.000 − 34.200',
+      [vieja.desglose.primer_pago, vieja.desglose.descuento_fase, vieja.desglose.descuento, vieja.importe], [true, 'prueba', 34200, 155800]);
     await S(`select public.bancard_cerrar_operacion($1,'vencida','{"clave":"abandonada"}') j`, [vieja.operacion]);
     await pagar(V2, 'produccion', 'pro', 'mensual', null);
     const finV = (await sus(V2)).fin;
@@ -1390,6 +1417,29 @@ async function principal() {
       [rv.aprobada, rv.conflicto, rv.revisar, (await sus(V2)).fin === finV, (await ingresos(`Bancard ${vieja.operacion}`)).length],
       [true, true, 'Pagó una operación vieja con el descuento del primer pago: resolver a mano', true, 1]);
     ok('y no deja renglón «cambiar_plan» (sigue habiendo uno solo)', (await registroDe(V2, 'cambiar_plan')).length, 1);
+
+    // R3.7, el escenario de la sonda (plata-1-base, bloque D): primer pago
+    // SIN descuento, rechazado en el formulario; paga con la tarjeta guardada
+    // (que no cierra las rechazadas); después se aprueba el formulario viejo.
+    // Pagó dos veces el precio entero: son dos meses, no un conflicto con un
+    // motivo que no es cierto.
+    const V3 = await H.montarEmpresa(db, { email: 'v3@negocio.test', nombre: 'Doble pago sin descuento' });
+    const a3 = await crear(V3, 'produccion', 'plan', 'formulario', 'pro', 'mensual', null);
+    ok('la operación A: primer pago, sin descuento', [a3.importe, a3.desglose.descuento, a3.desglose.primer_pago], [190000, 0, true]);
+    await confirmar(a3.operacion, rechazo(a3.operacion, a3.importe, '05', 'NO APROBADO'));
+    const cat3 = await S('select public.bancard_crear_catastro($1,$2,$3,$4,$5) j', [V3.empresaId, V3.uid, 'produccion', '0981123456', 'Autorizo']);
+    await S('select public.bancard_activar_tarjeta($1,$2,$3,$4) j', [cat3.card_id, 'Visa', '0016', 'credit']);
+    const b3 = await crear(V3, 'produccion', 'plan', 'token', 'pro', 'mensual', null);
+    await confirmar(b3.operacion, aprobada(b3.operacion, b3.importe), 'charge');
+    const fin3 = (await sus(V3)).fin;
+    const r3 = await confirmar(a3.operacion, aprobada(a3.operacion, a3.importe));
+    ok('A aprobada después, sin descuento usado: NO es conflicto; activa y queda para revisar con el motivo cierto',
+      [r3.aprobada, r3.conflicto, r3.revisar], [true, false, 'Pagó una operación rechazada después de iniciar otra']);
+    ok('dos pagos enteros, dos meses: el vencimiento corre un mes más, y hay dos ingresos y dos renglones',
+      [(await J(`select (periodo_fin = $2::timestamptz + interval '1 month') v from public.suscripciones where empresa_id = $1`, [V3.empresaId, fin3])).v,
+        (await ingresos('Doble pago sin descuento')).map((i) => [i.monto, i.estado]), (await registroDe(V3, 'cambiar_plan')).length],
+      [true, [[190000, 'activo'], [190000, 'activo']], 2]);
+    await db.query('update public.bancard_cuentas set debito_activo = false where empresa_id = $1', [V3.empresaId]);
 
     // Hallazgo 1 en la base: «sumar personas» de un período ya renovado.
     const P3 = await H.montarEmpresa(db, { email: 'p3@negocio.test', nombre: 'Período viejo' });
@@ -1417,6 +1467,130 @@ async function principal() {
   }
 
   // ═══════════════════════════════════════════════════════════
+  grupo('13d · La revisión final del 07/10, en la base');
+  // ═══════════════════════════════════════════════════════════
+  {
+    const tope = async (c) => (await J('select public.tope_de_miembros($1) n', [c.empresaId])).n;
+    const proxima = async (c) => (await J('select personas_proxima from public.bancard_cuentas where empresa_id = $1', [c.empresaId]))?.personas_proxima ?? null;
+    const filasDeBancard = async (c) => (await J('select count(*)::int n from public.bancard_cuentas where empresa_id = $1', [c.empresaId])).n;
+    const entraOtro = (c, email) => H.sumarMiembro(db, c.empresaId, email).then(() => 'entró', (e) => e.message);
+
+    // ---- R1.1 (sonda-bajar-sin-bancard): con Bancard apagado nadie escribe una baja
+    // Premium activado a mano por transferencia con 9 vendedores (10 personas),
+    // equipo de 5, ninguna fila en bancard_cuentas. La llamada directa del
+    // dueño por la API le bajaba el tope a 5 con el período de 10 pago.
+    const F1 = await H.montarEmpresa(db, { email: 'f1@final.test', nombre: 'Ferretería sin Bancard' });
+    await cobrarAMano(F1, 'negocio', 790000, 9);
+    for (let i = 0; i < 4; i++) await H.sumarMiembro(db, F1.empresaId, `f1v${i}@final.test`);
+    ok('Premium a mano por 10, equipo de 5, sin nada de Bancard', [await tope(F1), await filasDeBancard(F1)], [10, 0]);
+    rechazado('el dueño, con su sesión, ya no puede programar una baja por la API',
+      await intentoU(F1.uid, 'select public.bancard_bajar_personas($1,$2,$3)', [F1.empresaId, F1.uid, 5]), 'permission denied');
+    rechazado('ni con la firma vieja (ya no existe)',
+      await intentoU(F1.uid, 'select public.bancard_bajar_personas($1,$2)', [F1.empresaId, 5]), 'does not exist');
+    ok('no se escribió nada: sigue sin fila en bancard_cuentas, el tope sigue en 10 y la sexta persona entra',
+      [await filasDeBancard(F1), await tope(F1), await entraOtro(F1, 'f1-sexto@final.test')], [0, 10, 'entró']);
+
+    // ---- R3.3 (esceptico-baja-vieja, plata-1-base bloque C): la baja vieja caduca
+    // Premium pago por Bancard por 8, equipo de 5. Programa bajar a 5; se
+    // arrepiente y paga por transferencia por 10: la administración activa.
+    const F2 = await H.montarEmpresa(db, { email: 'f2@final.test', nombre: 'Baja vieja' });
+    await pagar(F2, 'produccion', 'negocio', 'mensual', 8);
+    for (let i = 0; i < 4; i++) await H.sumarMiembro(db, F2.empresaId, `f2v${i}@final.test`);
+    await bajar(F2, 5);
+    ok('pagó por 8, son 5, programó bajar a 5: el tope ya es 5', [(await sus(F2)).tope_vendedores, await tope(F2), await proxima(F2)], [7, 5, 5]);
+    // Lo que NO es un cambio de verdad no la toca (cambiar_plan_cuenta escribe el tope aunque no cambie).
+    await db.query('update public.suscripciones set tope_vendedores = tope_vendedores, plan = plan, periodo_fin = periodo_fin, updated_at = now() where empresa_id = $1', [F2.empresaId]);
+    ok('escribir la suscripción sin cambiar vencimiento, tope ni plan: la baja sigue', await proxima(F2), 5);
+    await cobrarAMano(F2, 'negocio', 610000, 9);
+    ok('la administración activa la renovación por 10: la baja programada caduca y el tope es 10',
+      [(await sus(F2)).tope_vendedores, await proxima(F2), await tope(F2)], [9, null, 10]);
+    ok('la sexta persona entra con el código', await entraOtro(F2, 'f2-sexto@final.test'), 'entró');
+    ok('y la próxima renovación se cobra por 10 (250.000 + 6 × 60.000), no por 5',
+      await J('select public.bancard_personas_de_renovacion($1) p, public.bancard_importe_de_renovacion($1)::float i', [F2.empresaId]), { p: 10, i: 610000 });
+
+    // Cualquiera de los tres cambios la hace caducar. El vencimiento solo:
+    // una renovación a mano «sin tocar vendedores» también es una renovación.
+    const F3 = await H.montarEmpresa(db, { email: 'f3@final.test', nombre: 'Renueva a mano sin número' });
+    await pagar(F3, 'produccion', 'negocio', 'mensual', 8);
+    await bajar(F3, 5);
+    await cobrarAMano(F3, 'negocio', 430000, null);
+    ok('renovación a mano sin decir vendedores (cambia el vencimiento): la baja caduca y queda lo contratado',
+      [(await sus(F3)).tope_vendedores, await proxima(F3), await tope(F3)], [7, null, 8]);
+    await bajar(F3, 5);
+    await db.query(`update public.suscripciones set plan = 'pro' where empresa_id = $1`, [F3.empresaId]);
+    ok('cambia el plan: caduca', await proxima(F3), null);
+    await db.query(`update public.suscripciones set plan = 'negocio' where empresa_id = $1`, [F3.empresaId]);
+    await bajar(F3, 5);
+    await db.query('update public.suscripciones set tope_vendedores = 11 where empresa_id = $1', [F3.empresaId]);
+    ok('cambia el tope: caduca', await proxima(F3), null);
+
+    // ---- Los caminos propios de Bancard dan lo mismo que antes del disparador
+    const F4 = await H.montarEmpresa(db, { email: 'f4@final.test', nombre: 'Baja por Bancard y reversa' });
+    await pagar(F4, 'produccion', 'negocio', 'mensual', 8);
+    await bajar(F4, 5);
+    const ren4 = await pagar(F4, 'produccion', 'negocio', 'mensual', 5);
+    ok('renovar por Bancard con la baja a 5: se aplica (tope 4), sin «para revisar», y se limpia lo programado',
+      [ren4.importe, ren4.r.aprobada, ren4.r.conflicto, ren4.r.revisar ?? null, (await sus(F4)).tope_vendedores, await proxima(F4)],
+      [310000, true, false, null, 4, null]);
+    const rev4 = await S('select public.bancard_revertir($1,$2,$3,$4,$5) j', [ren4.operacion, jefe.uid, 'prueba', false, false]);
+    ok('revertir esa renovación repone la foto ENTERA: tope 7 y la baja a 5 otra vez programada (se escribe después del disparador)',
+      [rev4.ok, (await sus(F4)).tope_vendedores, await proxima(F4), await tope(F4)], [true, 7, 5, 5]);
+    await db.query(`update public.suscripciones set periodo_fin = now() + interval '15 days' where empresa_id = $1`, [F4.empresaId]);
+    await bajar(F4, 5);
+    const sum4 = await crear(F4, 'produccion', 'personas', 'formulario', null, null, 10);
+    await confirmar(sum4.operacion, aprobada(sum4.operacion, sum4.importe));
+    ok('«sumar personas» con una baja programada: tope 9 y la baja cancelada, como antes',
+      [(await sus(F4)).tope_vendedores, await proxima(F4), await tope(F4)], [9, null, 10]);
+
+    // ---- El disparador y lo que ya existía: cuentas SIN fila en bancard_cuentas
+    const F5 = await H.montarEmpresa(db, { email: 'f5@final.test', nombre: 'Nunca vio Bancard' });
+    const pasos = [];
+    const paso = async (nombre, fn) => { try { await fn(); pasos.push([nombre, 'ok']); } catch (e) { pasos.push([nombre, e.message]); } };
+    await paso('extender_prueba', () => U(jefe.uid, 'select public.extender_prueba($1,$2,$3) j', [F5.empresaId, 7, '']));
+    await paso('cambiar_tipo_cuenta', () => U(jefe.uid, 'select public.cambiar_tipo_cuenta($1,$2) j', [F5.empresaId, 'personal']));
+    await paso('cambiar_tipo_cuenta (vuelve)', () => U(jefe.uid, 'select public.cambiar_tipo_cuenta($1,$2) j', [F5.empresaId, 'emprendedor']));
+    await paso('cambiar_plan_cuenta', () => cobrarAMano(F5, 'negocio', 430000, 6));
+    await paso('deshacer_ultimo_cambio', () => U(jefe.uid, 'select public.deshacer_ultimo_cambio($1) j', [F5.empresaId]));
+    await paso('aplicar_suscripcion', () => H.comoServicio(db, () => db.query(`select public.aplicar_suscripcion($1,'pro','activa',now(),now() + interval '1 month')`, [F5.empresaId])));
+    await paso('cambiar_plan_cuenta (cortar)', () => cobrarAMano(F5, 'gratis', null));
+    ok('con el disparador puesto, lo de siempre anda en una cuenta sin nada de Bancard',
+      pasos.map((p) => p[1]), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    ok('y el disparador no le creó ninguna fila', await filasDeBancard(F5), 0);
+    ok('el disparador existe, sobre suscripciones, para esas tres columnas y por fila',
+      (await db.query(`select tgrelid::regclass::text t, pg_get_triggerdef(oid) d from pg_trigger where tgname = 'bancard_baja_caduca'`)).rows
+        .map((r) => [r.t, /AFTER UPDATE OF periodo_fin, tope_vendedores, plan ON public.suscripciones FOR EACH ROW/.test(r.d)]),
+      [['suscripciones', true]]);
+
+    // ---- R3.2: una reversa que Bancard SÍ hizo sobre una operación «pagada» deja rastro
+    // La conciliación decide cerrar una rechazada en Bancard; en ese instante
+    // la persona reintenta en el mismo formulario y se aprueba; la reversa
+    // sale igual y Bancard devuelve la plata (RollbackSuccessful).
+    const F6 = await H.montarEmpresa(db, { email: 'f6@final.test', nombre: 'Pagada y devuelta' });
+    const o6 = await crear(F6, 'produccion', 'plan', 'formulario', 'pro', 'mensual', null);
+    await confirmar(o6.operacion, rechazo(o6.operacion, o6.importe));
+    await confirmar(o6.operacion, aprobada(o6.operacion, o6.importe));
+    ok('una pagada cerrada «porque sí» sigue sin tocarse: misma respuesta de siempre y sin nota',
+      [await S(`select public.bancard_cerrar_operacion($1,'vencida','{"clave":"abandonada"}') j`, [o6.operacion]), (await opDe(o6.operacion)).revisar],
+      [{ ok: true, cambio: false, estado: 'pagada' }, null]);
+    const c6 = await S(`select public.bancard_cerrar_operacion($1,'vencida','{"clave":"RollbackSuccessful"}') j`, [o6.operacion]);
+    ok('llega el cierre con RollbackSuccessful sobre la pagada: no cambia el estado, pero devuelve la marca para avisar',
+      c6, { ok: true, cambio: false, estado: 'pagada', nombre: 'Pagada y devuelta', entorno: 'produccion', importe: 190000, revisar: true, operacion: o6.operacion, empresa_id: F6.empresaId });
+    ok('queda «para revisar» con el motivo, y NO se tocó solo ni el plan ni el ingreso',
+      [(await opDe(o6.operacion)).estado, (await opDe(o6.operacion)).revisar, (await sus(F6)).estado, (await sus(F6)).efectivo,
+        (await ingresos(`Bancard ${o6.operacion}`)).map((i) => [i.monto, i.estado])],
+      ['pagada', 'Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano', 'activa', 'pro', [[190000, 'activo']]]);
+    ok('aparece entre los pagos por revisar de la administración',
+      (await U(jefe.uid, 'select public.bancard_operaciones_admin($1,$2) j', [F6.empresaId, 10])).operaciones
+        .filter((x) => x.operacion === o6.operacion).map((x) => x.revisar),
+      ['Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano']);
+    ok('si el cierre llega dos veces, la marca sale una sola (un solo aviso)',
+      (await S(`select public.bancard_cerrar_operacion($1,'vencida','{"clave":"RollbackSuccessful"}') j`, [o6.operacion])).revisar, false);
+    ok('y la administración lo puede revertir a mano desde ahí (la plata ya volvió: sin pedirle nada a Bancard)',
+      [(await S('select public.bancard_revertir($1,$2,$3,$4,$5) j', [o6.operacion, jefe.uid, 'Bancard ya lo devolvió', false, true])).ok,
+        (await sus(F6)).estado, (await ingresos(`Bancard ${o6.operacion}`)).map((i) => i.estado)], [true, 'prueba', ['anulado']]);
+  }
+
+  // ═══════════════════════════════════════════════════════════
   grupo('14 · Las migraciones, como texto, y aplicadas dos veces');
   // ═══════════════════════════════════════════════════════════
   {
@@ -1437,6 +1611,12 @@ async function principal() {
       [s126.includes("'orden-cobros-bancard', '7 12-21 * * *'"), s126.includes("'/api/tareas/cobros-bancard'"),
         s126.includes("'orden-conciliar-bancard', '*/10 * * * *'"), s126.includes("'/api/tareas/conciliar-bancard'"),
         /exception when others then\s+raise notice 'Sin pg_cron/.test(s126)], [true, true, true, true, true]);
+    // Revisión 07/10 (R1.3/R2.3): los relojes se quedan y se suma la purga.
+    ok('la purga semanal del registro de pg_cron (más de 14 días), en su propio bloque con exception',
+      [s126.includes("'orden-purgar-cron', '15 5 * * 0'"),
+        s126.includes("format('delete from cron.job_run_details where end_time < now() - interval %L', '14 days')"),
+        /exception when others then\s+raise notice 'Sin pg_cron acá \(%\): la purga/.test(s126),
+        (s126.match(/do \$cal\$/g) || []).length], [true, true, true, 2]);
     ok('y esas rutas son de las que disparar_tarea acepta',
       ['/api/tareas/cobros-bancard', '/api/tareas/conciliar-bancard'].map((r) => /^\/api\/tareas\/[a-z-]+$/.test(r)), [true, true]);
     ok('vercel.json no se tocó: el reloj es pg_cron', JSON.parse(leer('vercel.json')).crons.length, 6);
@@ -1472,6 +1652,39 @@ async function principal() {
     ok('descuento_de_la_cuenta es el cuerpo de descuento_por_racha (123) sin la guarda de sesión',
       [de123.includes(guarda), de123.replace(guarda, '').replace('descuento_por_racha', 'descuento_de_la_cuenta') === de124], [true, true]);
 
+    // ---- Revisión 07/10 (R2.2, sonda4): la 126 se niega sin la 124 y la 125
+    // Es plpgsql: se creaba sin error aunque no existiera nada de Bancard y
+    // dejaba roto el aviso de vencimiento de todos los clientes.
+    for (const hasta of ['123', '124']) {
+      const sola = await H.crearBase({ hasta });
+      const c = await H.montarEmpresa(sola, { email: `sola${hasta}@final.test`, nombre: 'Sin Bancard' });
+      await sola.query(`update public.suscripciones set periodo_fin = now() + interval '1 day' where empresa_id = $1`, [c.empresaId]);
+      let err = null;
+      try { await sola.exec(leer(MIGRACIONES[2])); } catch (e) { err = e.message; }
+      const aviso = await H.intentarComo(sola, 'service_role', null, () => sola.query('select public.vencimientos_por_avisar() j'));
+      ok(`la 126 sobre una base hasta la ${hasta}: se niega con un mensaje claro, y el aviso de vencimiento sigue andando (el de la 107)`,
+        [/^Falta aplicar la 124 y la 125 antes que la 126: no existe/.test(err ?? ''), aviso.ok, aviso.valor?.rows[0].j.length,
+          Object.keys(aviso.valor?.rows[0].j[0] ?? {}).includes('debito')],
+        [true, true, 1, false]);
+      await sola.close();
+    }
+    {
+      // Con la 124 y la 125 sí, y con un pg_cron de mentira se ve qué programa
+      // (sonda1): tres tareas, y aplicarla otra vez no duplica ninguna.
+      const conCron = await H.crearBase({ hasta: '125' });
+      await conCron.exec(`create schema cron; create table cron.job (jobname text primary key, schedule text, command text);
+        create function cron.schedule(a text, b text, c text) returns bigint language sql as $f$
+          insert into cron.job values (a, b, c) on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command returning 1::bigint $f$;`);
+      await conCron.exec(leer(MIGRACIONES[2]));
+      await conCron.exec(leer(MIGRACIONES[2]));
+      ok('con la 124 y la 125 aplicadas, la 126 entra (dos veces) y programa los dos relojes y la purga',
+        (await conCron.query('select jobname, schedule, command from cron.job order by 1')).rows.map((r) => [r.jobname, r.schedule, r.command]),
+        [['orden-cobros-bancard', '7 12-21 * * *', "select public.disparar_tarea('/api/tareas/cobros-bancard')"],
+          ['orden-conciliar-bancard', '*/10 * * * *', "select public.disparar_tarea('/api/tareas/conciliar-bancard')"],
+          ['orden-purgar-cron', '15 5 * * 0', "delete from cron.job_run_details where end_time < now() - interval '14 days'"]]);
+      await conCron.close();
+    }
+
     // ---- idempotentes: aplicadas otra vez sobre la base con datos
     const cuenta = async () => JSON.stringify([
       (await J('select count(*)::int n from public.bancard_operaciones')).n,
@@ -1486,6 +1699,8 @@ async function principal() {
     try { for (const m of MIGRACIONES) await db.exec(leer(m)); } catch (e) { error = e.message; }
     ok('las tres migraciones se aplican otra vez sin error', error, null);
     ok('y no tocan ningún dato ni reinician las secuencias', await cuenta(), antes);
+    ok('el disparador de la baja sigue siendo uno solo (drop if exists + create)',
+      (await J(`select count(*)::int n from pg_trigger where tgname = 'bancard_baja_caduca'`)).n, 1);
     ok('los permisos siguen cerrados después de aplicarlas dos veces',
       [(await H.intentarComo(db, 'authenticated', A.uid, () => db.query('select * from public.bancard_operaciones'))).ok,
         (await H.intentarComo(db, 'authenticated', A.uid, () => db.query('select public.bancard_confirmar(1,$1,$2)', [{}, 'consulta']))).ok],

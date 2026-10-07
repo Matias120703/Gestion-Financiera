@@ -17,6 +17,11 @@ import type { TextosAvisoVencimiento } from '@/lib/aviso-vencimiento';
  *
  * El precio es el de lista en guaraníes, sin promesas de descuento: el de
  * constancia (079, 093) se decide el día que paga, no tres días antes.
+ *
+ * La prueba no tiene frase de débito (07/10/2026): una cuenta en prueba no
+ * se cobra sola aunque haya guardado la tarjeta, así que su correo no
+ * promete ningún cobro. `fraseDebito` y `comoPagar.debito` son solo del
+ * plan pago.
  */
 export const avisoVencimientoEs: TextosAvisoVencimiento = {
   planes: { basico: 'Básico', pro: 'Pro', negocio: 'Premium' },
@@ -53,8 +58,6 @@ export const avisoVencimientoEs: TextosAvisoVencimiento = {
     asunto: (cuando) => `Tu prueba de Orden termina ${cuando}`,
     frase: (cuando) => `Tu prueba de Orden termina ${cuando}. Para seguir usando Orden, activá tu plan.`,
     frasePersonal: (cuando) => `Tu prueba de Orden termina ${cuando}. Después pasás al plan Gratis: seguís anotando tus gastos e ingresos a mano. La voz, la foto, el presupuesto, tus deudas, lo que te deben, tus cuentas y los reportes son del Pro: quedan guardados y vuelven cuando lo actives.`,
-    // Con la tarjeta guardada (Bancard, 03/10/2026): la prueba termina y el plan sigue solo.
-    fraseDebito: (plan, cuando) => `Tu prueba de Orden termina ${cuando}. Después sigue tu plan ${plan}: lo cobramos solos con la tarjeta que guardaste, no tenés que hacer nada.`,
     precio: (plan, precio) => `Plan ${plan}: ${precio}.`,
     boton: 'Activar mi plan',
     pie: 'Te escribimos porque administrás esta cuenta de Orden y la prueba está por terminar.',
@@ -101,7 +104,6 @@ export const avisoVencimientoPt: TextosAvisoVencimiento = {
     asunto: (cuando) => `Seu teste do Orden termina ${cuando}`,
     frase: (cuando) => `Seu teste do Orden termina ${cuando}. Pra continuar usando o Orden, ative seu plano.`,
     frasePersonal: (cuando) => `Seu teste do Orden termina ${cuando}. Depois você passa pro plano Grátis: continua lançando suas despesas e entradas na mão. A voz, a foto, o orçamento, suas dívidas, o que te devem, suas contas e os relatórios são do Pro: ficam guardados e voltam quando você ativar o Pro.`,
-    fraseDebito: (plan, cuando) => `Seu teste do Orden termina ${cuando}. Depois continua seu plano ${plan}: cobramos sozinhos no cartão que você salvou, não precisa fazer nada.`,
     precio: (plan, precio) => `Plano ${plan}: ${precio}.`,
     boton: 'Ativar meu plano',
     pie: 'Escrevemos porque você administra esta conta do Orden e o teste está terminando.',

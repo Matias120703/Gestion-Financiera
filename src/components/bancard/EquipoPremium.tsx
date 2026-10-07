@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Hoja, MensajeError, PieHoja } from '@/components/Hoja';
 import { useIdioma, useTextos } from '@/i18n/cliente';
 import { FICHA } from '@/i18n/idiomas';
-import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { SelectorPersonas } from './SelectorPersonas';
 import { HojaSumarPersonas, type DatosDelEquipo } from './HojaSumarPersonas';
@@ -28,9 +27,11 @@ export interface PersonasVista {
  *   · SUMAR PERSONAS se paga hoy, prorrateado por los días que faltan del
  *     período, y queda para las renovaciones (`HojaSumarPersonas`).
  *   · BAJAR rige desde la próxima renovación, no cobra nada y nunca por
- *     debajo de las personas que hoy tiene el equipo (`bancard_bajar_personas`,
- *     con la guarda de la base). Si hay una baja programada se muestra, con
- *     «Deshacer».
+ *     debajo de las personas que hoy tiene el equipo. Va por el servidor
+ *     (`/api/pagos/bancard/personas`, revisión 07/10/2026): la función de la
+ *     base ya no se puede llamar con la sesión, porque escribía aunque la
+ *     cuenta no viera Bancard. Si hay una baja programada se muestra, con
+ *     «Deshacer», que el servidor deja siempre.
  *
  * Solo aparece con un Premium pago vigente que tiene cantidad (se pagó por
  * Bancard eligiendo las personas): un Premium «sin número», activado a mano,
@@ -64,9 +65,14 @@ export function EquipoPremium({ datos, personas, renovacion }: {
     setOcupado(true);
     setError('');
     try {
-      const { error: e } = await clienteNavegador().rpc('bancard_bajar_personas', { p_empresa: datos.empresaId, p_personas: n });
-      if (e) {
-        setError(mensajeDeError(e, q.noSePudo));
+      const r = await fetch('/api/pagos/bancard/personas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa: datos.empresaId, personas: n }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || d?.ok !== true) {
+        setError(mensajeDeError(d?.error, q.noSePudo));
         return;
       }
       setBajando(false);

@@ -1,5 +1,5 @@
 import { crearBancard, disponibleParaLaCuenta, transporteDe, type ConfigBancard, type EntornoBancard } from './bancard';
-import type { Deps } from './bancard-flujo';
+import type { BaseBancard, Deps } from './bancard-flujo';
 import { clienteDeServicio } from './supabase/servicio';
 import type { clienteServidor } from './supabase/servidor';
 import { sitio } from './pagos';
@@ -117,6 +117,26 @@ export async function accesoBancard(
   }
 }
 
+/** El cliente de servicio, reducido a lo único que usa Bancard: llamar funciones, nunca tablas. */
+function baseSobre(servicio: ReturnType<typeof clienteDeServicio>): BaseBancard {
+  return {
+    async rpc(nombre, args) {
+      const { data, error } = await servicio.rpc(nombre, args);
+      return { data, error: error ? { message: error.message, code: error.code } : null };
+    },
+  };
+}
+
+/**
+ * La base sola, sin Bancard: para lo único que tiene que andar con Bancard
+ * apagado, deshacer una baja de personas programada
+ * (`/api/pagos/bancard/personas`). Como `dependencias()`, se arma DESPUÉS
+ * de validar la sesión y el acceso con el cliente del usuario.
+ */
+export function baseDeServicio(): BaseBancard {
+  return baseSobre(clienteDeServicio());
+}
+
 /**
  * Las piezas de `bancard-flujo.ts`, armadas de verdad: la base con la clave
  * de servicio (solo funciones `bancard_*`, nunca tablas), Bancard con
@@ -127,12 +147,7 @@ export function dependencias(): Deps | null {
   if (!config) return null;
   const servicio = clienteDeServicio();
   return {
-    bd: {
-      async rpc(nombre, args) {
-        const { data, error } = await servicio.rpc(nombre, args);
-        return { data, error: error ? { message: error.message, code: error.code } : null };
-      },
-    },
+    bd: baseSobre(servicio),
     bancard: crearBancard(config, transporteDe(process.env.BANCARD_HTTP)),
     entorno: config.entorno,
     clavePrivada: config.clavePrivada,

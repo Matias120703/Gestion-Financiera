@@ -27,17 +27,25 @@ type Paso = 'consentir' | 'abriendo' | 'formulario' | 'verificando' | 'guardada'
  *   3. LO QUE DICE EL FORMULARIO NO CUENTA: al terminar (diga «éxito» o
  *      «falló»), el servidor le pide a Bancard la lista de tarjetas y solo si
  *      la tarjeta está, queda guardada («Tarjeta guardada: Visa •••• 0016»).
+ *
+ * QUÉ PASA CON LA TARJETA lo dice quien abre la hoja (`antes` de aceptar y
+ * `despues` de guardarla), porque depende de la cuenta: con un plan pago
+ * activo se cobra el día anterior al vencimiento; en la prueba queda
+ * guardada y no se cobra sola (07/10/2026); en la ventana de pago se paga
+ * con ella en el momento. Esta hoja no promete nada por su cuenta.
  */
 export function HojaGuardarTarjeta({
-  empresaId, entorno, urlScript, origen, zona, anual, onCerrar, onGuardada,
+  empresaId, entorno, urlScript, origen, zona, antes, despues, onCerrar, onGuardada,
 }: {
   empresaId: string;
   entorno: 'staging' | 'produccion';
   urlScript: string;
   origen: string;
   zona: string;
-  /** El plan es anual: el texto dice «de cada año». */
-  anual: boolean;
+  /** Qué va a pasar con la tarjeta, antes de la casilla del consentimiento. */
+  antes: string;
+  /** Lo mismo, ya guardada. */
+  despues: string;
   onCerrar: () => void;
   onGuardada: (t: TarjetaGuardadaVista) => void;
 }) {
@@ -173,7 +181,7 @@ export function HojaGuardarTarjeta({
               {guardada.marca && guardada.ultimos4 ? k.guardada(guardada.marca, guardada.ultimos4) : k.guardadaSinDetalle}
             </p>
           </div>
-          <p className="text-[13.5px] leading-relaxed text-tinta/65">{k.guardadaDetalle}</p>
+          <p className="text-[13.5px] leading-relaxed text-tinta/65">{despues}</p>
         </div>
       ) : paso === 'fallo' ? (
         <p role="alert" className="rounded-xl bg-ambar-claro px-3 py-2.5 text-[13.5px] font-medium leading-relaxed text-ambar">
@@ -182,7 +190,7 @@ export function HojaGuardarTarjeta({
       ) : (
         <div className="space-y-4">
           <p className="text-[13.5px] leading-relaxed text-tinta/70">{k.formularioSeguro}</p>
-          <p className="text-[13.5px] leading-relaxed text-tinta/70">{anual ? k.guardarAnual : k.guardar}. {k.cuando}</p>
+          <p className="text-[13.5px] leading-relaxed text-tinta/70">{antes}</p>
           <label className="flex items-start gap-3 rounded-2xl border border-borde bg-arena/40 p-4 text-[13.5px] leading-relaxed">
             <input
               type="checkbox"

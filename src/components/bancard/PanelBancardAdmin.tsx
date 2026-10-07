@@ -337,7 +337,13 @@ function HojaRevertir({ op, onCerrar, onHecho }: {
       });
       const d = await r.json().catch(() => null);
       if (!r.ok || !d?.ok) { setError(d?.error ?? 'No se pudo revertir.'); return; }
-      onHecho(d.bancard === 'sin_bancard' ? 'Marcado como anulado. La cuenta volvió a como estaba.' : 'Revertido en Bancard y en Orden.');
+      // Revisión 07/10: revertir pausa el cobro automático de esa cuenta
+      // (si no, la tarea la cobraba de nuevo al día siguiente). Que quien
+      // revierte lo sepa: se reactiva cuando la persona paga a mano.
+      const pausa = d.debito_pausado === true
+        ? ' Su cobro automático quedó pausado: vuelve cuando la persona pague a mano o guarde otra tarjeta.'
+        : '';
+      onHecho((d.bancard === 'sin_bancard' ? 'Marcado como anulado. La cuenta volvió a como estaba.' : 'Revertido en Bancard y en Orden.') + pausa);
     } catch {
       setError('No se pudo revertir.');
     } finally {

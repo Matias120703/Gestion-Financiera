@@ -29,6 +29,8 @@ import { createClient } from '@supabase/supabase-js';
  * reciben `p_usuario` y vuelven a comprobar en la base que esa persona
  * administra la cuenta. Nunca lee ni escribe una tabla. (La confirmación
  * pública y las tareas entran por la regla de arriba: firma y secreto.)
+ * Entra acá también `/api/pagos/bancard/personas` (07/10/2026): misma
+ * sesión y mismo `accesoBancard` antes, y una sola función con `p_usuario`.
  */
 export function clienteDeServicio() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

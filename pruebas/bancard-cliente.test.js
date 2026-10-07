@@ -457,6 +457,20 @@ const VUELTA = 'https://orden.com.py/plan/pago/1000001';
       await llamar(() => b.singleBuy(pedido)),
       { ok: false, clave: 'http_500', http: 500, clase: 'bancard' });
 
+    // Revisión 07/10 (R3.4): un 5xx con JSON sigue siendo clase 'bancard',
+    // pero el cliente CONSERVA el HTTP. Con eso el flujo distingue un «no»
+    // de Bancard (4xx o 200 con status error: no se cobró) de un 502 de un
+    // proxy que pudo llegar después de cobrar (queda incierta).
+    f.registrarTarjeta(5001, 1);
+    const aliasDe5xx = (await llamar(() => b.tarjetas(5001))).tarjetas[0].alias;
+    const cobro = { operacion: 1000011, importe: 250000, descripcion: 'Orden Premium', alias: aliasDe5xx, returnUrl: VUELTA };
+    f.programar('/charge', { status: 502, json: { message: 'Bad Gateway' } });
+    ok('charge con 502 y JSON (un proxy): clase bancard, con su 502 a la vista',
+      await llamar(() => b.cobrar(cobro)), { ok: false, clave: 'http_502', http: 502, clase: 'bancard' });
+    f.programar('/charge', { status: 500, json: { status: 'error', messages: [{ key: 'InternalError', level: 'error', dsc: 'x' }] } });
+    ok('charge con 500 y status error: la clave de Bancard, y el 500',
+      await llamar(() => b.cobrar(cobro)), { ok: false, clave: 'InternalError', http: 500, clase: 'bancard' });
+
     // El 403 en HTML de un bloqueo delante de vPOS.
     f.programar('/single_buy', { status: 403, texto: '<!DOCTYPE html><html><title>Attention Required!</title></html>' });
     ok('HTTP 403 con HTML → no_json (se distingue de un rechazo)',

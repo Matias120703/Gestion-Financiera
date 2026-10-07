@@ -187,6 +187,33 @@ async function cerrar(d: Deps, operacion: number, estado: 'en_3ds' | 'incierta' 
 }
 
 /**
+ * CERRAR DESPUÉS DE UNA REVERSA, MIRANDO QUÉ ENCONTRÓ LA BASE (revisión 07/10).
+ *
+ * Entre que Orden decide mandar la reversa y Bancard la hace pasan
+ * milisegundos, y en ese hueco puede entrar el pago: la persona reintenta en
+ * el formulario rechazado, o paga justo el que se iba a vencer. Bancard
+ * devuelve la plata (RollbackSuccessful) y en Orden la operación ya está
+ * «pagada», con el plan activo y el ingreso anotado. La base no deshace nada
+ * sola (es plata: lo mira una persona), pero deja el «para revisar» y avisa
+ * UNA vez con `revisar: true`; acá se le pasa a la administración.
+ *
+ * Devuelve cómo quedó de verdad: 'pagada' si la base no la cerró porque ya
+ * estaba pagada (nunca se informa «vencida» de algo que sigue activo).
+ */
+async function cerrarTrasReversa(
+  d: Deps, operacion: number, clave: string,
+): Promise<'vencida' | 'pagada' | 'incierta'> {
+  const c = await cerrar(d, operacion, 'vencida', { clave });
+  if (c.ok === false) return 'incierta';
+  if (!esObjeto(c.data) || c.data.cambio !== false || c.data.estado !== 'pagada') return 'vencida';
+  if (c.data.revisar === true) {
+    anotarEnRegistro(d, `reversa hecha en Bancard sobre un pago que quedó activo · pedido ${operacion}`);
+    await avisarSeguro(d, { ...c.data, aviso: 'reversa_sobre_pagada', operacion });
+  }
+  return 'pagada';
+}
+
+/**
  * EL ÚNICO CAMINO HACIA `bancard_confirmar`. Después avisa: plan activo y
  * comprobante si se acaba de aprobar, la administración si hay algo que
  * mirar. Null si la base no contestó (el pago no se pierde: la operación
@@ -236,6 +263,7 @@ function claveDe<T>(r: Resultado<T>): string {
  * Lo que se sabe de una operación después de preguntarle a Bancard:
  *   · 'pagada' / 'rechazada'  Bancard tiene la respuesta y la base la aplicó.
  *   · 'vencida'               no se pagó y quedó cerrada (con su reversa).
+ *                             Si al ir a cerrarla ya estaba pagada, 'pagada'.
  *   · 'revertida'             se había revertido.
  *   · 'sigue'                 todavía no se pagó (un QR que se está por pagar).
  *   · 'incierta'              no se pudo saber (Bancard o la base no contestaron,
@@ -304,19 +332,18 @@ export async function resolverOperacion(
     // El motivo real: 'abandonada' si no había pago; si la reversa SÍ
     // encontró plata y la devolvió (RollbackSuccessful: el pago entró entre
     // la consulta y la reversa), queda escrito, y una aprobación que llegue
-    // después no activa nada (bancard_confirmar).
-    const c = await cerrar(d, operacion, 'vencida', {
-      clave: rv.ok === true ? 'RollbackSuccessful' : rv.clave === 'PaymentNotFoundError' ? 'abandonada' : rv.clave,
-    });
-    return c.ok ? 'vencida' : 'incierta';
+    // después no activa nada (bancard_confirmar). Y si la confirmación de
+    // ese pago llegó ANTES que este cierre, la operación ya está pagada:
+    // se informa 'pagada' y la administración recibe el aviso.
+    return cerrarTrasReversa(d, operacion,
+      rv.ok === true ? 'RollbackSuccessful' : rv.clave === 'PaymentNotFoundError' ? 'abandonada' : rv.clave);
   }
 
   // Bancard no conoce el pedido (el formulario nunca se abrió) o ya lo
   // revirtió: no hay nada que cobrar.
   if (r.clave === 'BuyNotFoundError' || r.clave === 'AlreadyRollbackedError') {
     if (!viva) return estadoActual(info.estado);
-    const c = await cerrar(d, operacion, 'vencida', { clave: r.clave });
-    return c.ok ? 'vencida' : 'incierta';
+    return cerrarTrasReversa(d, operacion, r.clave);
   }
 
   anotarEnRegistro(d, `consulta sin respuesta útil · pedido ${operacion} · ${r.clave} · http ${r.http}`);
@@ -485,6 +512,11 @@ export async function iniciarPago(d: Deps, p: PedidoDePago): Promise<InicioDePag
  * revertida o desconocida → `vencida` con motivo 'reemplazada'; si la
  * reversa encontró plata y la devolvió → 'RollbackSuccessful'. Si Bancard no
  * contesta, queda rechazada y la conciliación vuelve a intentar.
+ *
+ * Devuelve true solo si quedó cerrada. Si en el medio la persona reintentó
+ * en ese formulario y el pago entró, la operación está pagada: no se cuenta
+ * como «rechazada cerrada» y `cerrarTrasReversa` avisa a la administración
+ * (revisión 07/10).
  */
 async function cerrarRechazada(d: Deps, operacion: number): Promise<boolean> {
   if (!Number.isSafeInteger(operacion) || operacion <= 0) return false;
@@ -497,8 +529,7 @@ async function cerrarRechazada(d: Deps, operacion: number): Promise<boolean> {
     anotarEnRegistro(d, `reversa de rechazada sin éxito · pedido ${operacion} · ${claveDe(rv)}`);
     return false;
   }
-  const c = await cerrar(d, operacion, 'vencida', { clave });
-  return c.ok;
+  return (await cerrarTrasReversa(d, operacion, clave)) === 'vencida';
 }
 
 // ------------------------------------------------ la confirmación de Bancard
@@ -668,6 +699,49 @@ async function atenderConfirmacion(d: Deps, crudo: string): Promise<RespuestaHtt
   // Con la tarjeta guardada no se contesta 400: en la traza quedaría
   // «inválida» cada vez, y es la conciliación la que la resuelve igual.
   return deCharge ? EXITO : PEDIDO_MALO;
+}
+
+// ------------------------------------------------ la baja de personas
+
+export type BajaDePersonas =
+  | { estado: 'listo'; proxima: number | null }
+  /** La cuenta no ve Bancard y pidió PROGRAMAR una baja: no se escribe nada. */
+  | { estado: 'no_disponible' }
+  | { estado: 'error_base'; mensaje: string; codigo: string };
+
+/**
+ * «BAJAR DESDE LA PRÓXIMA RENOVACIÓN» (un número) Y «DESHACER» (null), para
+ * la ruta `/api/pagos/bancard/personas` (revisión 07/10/2026).
+ *
+ * `bancard_bajar_personas` es solo del servidor y no sabe si la cuenta ve
+ * Bancard (la configuración vive en Vercel): eso llega en `veBancard`, que
+ * la ruta saca de `accesoBancard` con la sesión de quien lo pide.
+ *
+ *   · Programar una baja sin ver Bancard: no se llama a la base. Una cuenta
+ *     que no puede pagar por Bancard no tiene por qué quedar con el tope del
+ *     equipo bajado por una renovación que no va a pasar por acá.
+ *   · Deshacer (null) se permite SIEMPRE: nadie queda atrapado con una baja
+ *     si después se le deshabilita Bancard. La base igual comprueba que
+ *     `usuario` administre la cuenta.
+ *
+ * Recibe solo la base (no `Deps`): no le habla a Bancard, y tiene que andar
+ * con Bancard sin configurar.
+ */
+export async function programarBajaDePersonas(
+  bd: BaseBancard,
+  p: { empresa: string; usuario: string; personas: number | null; veBancard: boolean },
+): Promise<BajaDePersonas> {
+  if (p.personas !== null && !p.veBancard) return { estado: 'no_disponible' };
+  try {
+    const { data, error } = await bd.rpc('bancard_bajar_personas', {
+      p_empresa: p.empresa, p_usuario: p.usuario, p_personas: p.personas,
+    });
+    if (error) return { estado: 'error_base', mensaje: error.message ?? '', codigo: error.code ?? '' };
+    const proxima = esObjeto(data) && typeof data.personas_proxima === 'number' ? data.personas_proxima : null;
+    return { estado: 'listo', proxima };
+  } catch (e) {
+    return { estado: 'error_base', mensaje: e instanceof Error ? e.message : '', codigo: '' };
+  }
 }
 
 // ---------------------------------------------------------------- revertir
@@ -1057,7 +1131,11 @@ export async function cobrarConTarjeta(
  *      por la URL: el segundo no hace nada). Si todo viene vacío menos
  *      `process_id`, es 3D Secure: la operación queda esperando a la persona.
  *   4. Si Bancard no contestó, la operación queda INCIERTA y no se vuelve a
- *      cobrar: la conciliación consulta y decide.
+ *      cobrar: la conciliación consulta y decide. Lo mismo si contestó un
+ *      error de servidor (5xx), aunque traiga JSON: un proxy puede devolver
+ *      un 502 DESPUÉS de que Bancard cobró, y darlo por «no se cobró»
+ *      devolvía el intento y cobraba otra vez al día siguiente (revisión
+ *      07/10). Solo un «no» de Bancard por debajo de 500 cierra el cobro.
  */
 export async function cobrarOperacionTomada(
   d: Deps,
@@ -1126,14 +1204,16 @@ export async function cobrarOperacionTomada(
     return { estado: 'incierta', operacion };
   }
 
-  if (r.clase === 'bancard') {
+  if (r.clase === 'bancard' && r.http < 500) {
     // Bancard no aceptó el pedido (no es el banco rechazando): no se cobró.
+    // Un pedido que ni salió (http 0, armado acá arriba) entra también.
     await cerrar(d, operacion, 'vencida', { clave: r.clave });
     anotarEnRegistro(d, `charge no aceptado · pedido ${operacion} · ${r.clave} · http ${r.http}`);
     return { estado: 'vencida', operacion, clave: r.clave };
   }
 
-  // Se cortó: puede haberse cobrado. NUNCA otro charge encima.
+  // Se cortó, o contestó un 5xx: puede haberse cobrado. NUNCA otro charge
+  // encima; la conciliación le pregunta a Bancard y decide.
   await cerrar(d, operacion, 'incierta');
   if (r.clase === 'no_json') await avisarSeguro(d, { aviso: 'bloqueo', operacion, clave: r.clave });
   anotarEnRegistro(d, `charge sin respuesta · pedido ${operacion} · ${r.clave} · http ${r.http}`);

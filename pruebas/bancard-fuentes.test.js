@@ -117,14 +117,37 @@ console.log('\n── La tarjeta guardada y el cobro automático (parte 3) ─�
       return [s.includes("method: 'DELETE'"), s.includes('<Confirmar'), /vencimiento|expiration|enmascarado|masked/.test(s)];
     })(), [true, true, false]);
 
-  // El equipo del Premium: sumar se paga (tipo 'personas', sin importe); bajar es un rpc con guarda en la base.
+  // El equipo del Premium: sumar se paga (tipo 'personas', sin importe); bajar va por el servidor (07/10).
   const sumar = sinComentarios(leer('src/components/bancard/HojaSumarPersonas.tsx'));
   const cuerpoSumar = sumar.slice(sumar.indexOf('const cuerpo = () =>'), sumar.indexOf('const cuerpo = () =>') + 160);
   ok('sumar personas manda tipo personas y la cantidad, nunca un importe',
     [cuerpoSumar.includes("tipo: 'personas'"), /importe|total|amount/.test(cuerpoSumar)], [true, false]);
   ok('y cotiza con la base (cotizar_personas), no con una cuenta propia', sumar.includes("rpc('cotizar_personas'"), true);
   const equipo = sinComentarios(leer('src/components/bancard/EquipoPremium.tsx'));
-  ok('bajar personas es bancard_bajar_personas (null deshace), sin cobro', [equipo.includes("rpc('bancard_bajar_personas'"), equipo.includes('programar(null)')], [true, true]);
+  // Revisión 07/10 (R1.1): esto afirmaba que la pantalla llamaba el rpc
+  // `bancard_bajar_personas` con la sesión. Esa función escribía aunque la
+  // cuenta no viera Bancard; ahora es solo del servidor y se entra por una
+  // ruta con el molde de las demás (sesión → acceso → cliente de servicio).
+  ok('bajar personas va por /api/pagos/bancard/personas (null deshace), sin cobro y sin rpc desde el navegador',
+    [equipo.includes("fetch('/api/pagos/bancard/personas'"), equipo.includes('programar(null)'), equipo.includes('personas: n'),
+      /rpc\(|clienteNavegador|importe|amount/.test(equipo.slice(equipo.indexOf('async function programar'), equipo.indexOf('async function programar') + 700))],
+    [true, true, true, false]);
+  ok('ningún archivo de src llama bancard_bajar_personas fuera del flujo del servidor',
+    archivos.filter((a) => sinComentarios(leer(a)).includes('bancard_bajar_personas')), ['src/lib/bancard-flujo.ts']);
+  const personas = sinComentarios(leer('src/app/api/pagos/bancard/personas/route.ts'));
+  ok('la ruta de la baja: sesión, después el acceso con el cliente del usuario, y recién ahí el cliente de servicio',
+    [personas.indexOf('auth.getUser()') > 0, personas.indexOf('auth.getUser()') < personas.indexOf('accesoBancard('),
+      personas.indexOf('accesoBancard(') < personas.indexOf('baseDeServicio()'), personas.includes('status: 401')],
+    [true, true, true, true]);
+  ok('le pasa a la regla quién lo pide y si la cuenta ve Bancard; programar sin verlo contesta 403',
+    [personas.includes('usuario: user.id'), personas.includes('veBancard: acceso.disponible'), /case 'no_disponible':\s+return NextResponse\.json\(\{ error: t\.bancard\.noDisponible \}, \{ status: 403 \}\)/.test(personas)],
+    [true, true, true]);
+  ok('no anda con dependencias() (tiene que poder deshacer con Bancard apagado) ni lee un importe',
+    [personas.includes('dependencias('), /cuerpo\.(importe|amount|monto|precio)/.test(personas)], [false, false]);
+  ok('un cuerpo sin «personas» no deshace nada por descuido', personas.includes("!('personas' in cuerpo)"), true);
+  const flujoFuente = sinComentarios(leer('src/lib/bancard-flujo.ts'));
+  ok('la regla vive en programarBajaDePersonas: programar exige ver Bancard, deshacer (null) no',
+    flujoFuente.includes("if (p.personas !== null && !p.veBancard) return { estado: 'no_disponible' };"), true);
   ok('/plan monta el equipo solo con un Premium pago vigente con cantidad',
     (() => {
       const p = leer('src/app/(app)/plan/page.tsx');
@@ -216,12 +239,78 @@ console.log('\n── La revisión del 03/10, en las pantallas y los avisos ─�
   ok('«Sumar personas» avisa que cancela la baja programada, y el equipo le pasa la baja',
     [sumar.includes('q.cancelaBaja(datos.proxima)'), sinComentarios(leer('src/components/bancard/EquipoPremium.tsx')).includes('proxima: personas.proxima')], [true, true]);
   ok('el texto existe en es y pt', (leer('src/i18n/textos/bancard.ts').match(/cancelaBaja:/g) || []).length, 2);
-  ok('el correo del fin de la prueba sabe decir que se cobra solo, en es y pt',
-    (leer('src/i18n/textos/aviso-vencimiento.ts').match(/fraseDebito:/g) || []).length, 4);
+  // Decisión del 07/10: esto afirmaba «el correo del fin de la prueba sabe
+  // decir que se cobra solo» (4 frases de débito: período y prueba, es y pt).
+  // Una cuenta en prueba ya no se cobra sola, así que la prueba no tiene
+  // frase de débito: quedan las 2 del plan pago.
+  ok('solo el plan pago tiene frase de débito (es y pt); el correo del fin de la prueba no promete ningún cobro',
+    [(leer('src/i18n/textos/aviso-vencimiento.ts').match(/fraseDebito:/g) || []).length,
+      /fraseDebito/.test(sinComentarios(leer('src/lib/aviso-vencimiento.ts')).split('prueba: {')[1].split('};')[0])],
+    [2, false]);
   const avisos = sinComentarios(leer('src/lib/avisos-bancard.ts'));
   ok('un conflicto (la plata se anota, el plan no) no manda «tu plan está activo»', avisos.includes("r.conflicto !== true && typeof r.empresa_id === 'string'"), true);
   ok('«Bloqueo» en /admin dice qué hacer (BANCARD_HTTP=2)',
     [leer('src/components/bancard/PanelBancardAdmin.tsx').includes('BANCARD_HTTP=2'), leer('.env.example').includes('BANCARD_HTTP='), leer('README.md').includes('`BANCARD_HTTP`')], [true, true, true]);
+}
+
+console.log('\n── La revisión final del 07/10, en las pantallas ───────────');
+{
+  const textosBancard = leer('src/i18n/textos/bancard.ts');
+  const es = textosBancard.slice(0, textosBancard.indexOf('export const bancardPt'));
+  const pt = textosBancard.slice(textosBancard.indexOf('export const bancardPt'));
+  const valor = (bloque, clave) => (new RegExp(`\\n\\s+${clave}: '([^']*)'`).exec(bloque) || [])[1] ?? '';
+  const guardada = sinComentarios(leer('src/components/bancard/TarjetaGuardada.tsx'));
+  const hojaGuardar = sinComentarios(leer('src/components/bancard/HojaGuardarTarjeta.tsx'));
+  const plan = sinComentarios(leer('src/app/(app)/plan/page.tsx'));
+
+  // D1 · una cuenta en prueba nunca se cobra sola: las pantallas no lo prometen.
+  ok('los textos nuevos existen en es y pt',
+    ['guardarSinCobro', 'enPrueba', 'sinPlanActivo', 'pagoRevertido', 'guardarYPagarDetalle'].map((k) => (textosBancard.match(new RegExp(`\\n\\s+${k}:`, 'g')) || []).length),
+    [2, 2, 2, 2, 2]);
+  ok('en prueba: «Tu tarjeta queda guardada. Cuando termine la prueba elegís tu plan y pagás con un toque; desde ahí se renueva sola.»',
+    valor(es, 'enPrueba'), 'Tu tarjeta queda guardada. Cuando termine la prueba elegís tu plan y pagás con un toque; desde ahí se renueva sola.');
+  ok('ni ese texto ni el de «sin plan activo» ni el botón prometen un cobro, en ningún idioma',
+    [es, pt].map((b) => ['enPrueba', 'sinPlanActivo', 'guardarSinCobro'].map((k) => valor(b, k)))
+      .flat().filter((s) => !s || /cobramos|cobro de cada|cobrança de cada|día anterior|dia anterior|vencimiento|vencimento/i.test(s)), []);
+  ok('/plan decide si se cobra sola con la misma condición que la base: solo con un plan pago activo',
+    [plan.includes("sus.estado === 'activa' && sus.plan !== 'gratis' ? 'activa'"), plan.includes(": sus.en_prueba ? 'prueba'"), plan.includes('momento={momentoDelDebito}')],
+    [true, true, true]);
+  ok('la tarjeta de /plan, sin plan activo: «Guardar mi tarjeta» a secas y el texto sin promesa, también con la tarjeta ya guardada',
+    [guardada.includes("momento === 'prueba' ? k.enPrueba : momento === 'sin_plan' ? k.sinPlanActivo : null"),
+      guardada.includes('{sinCobro ?? k.cuando}'), guardada.includes('sinCobro ? k.guardarSinCobro : anual ? k.guardarAnual : k.guardar'),
+      guardada.includes('sinCobro ?? k.sinPlan')],
+    [true, true, true, true]);
+  ok('y la hoja de guardar no promete nada por su cuenta: lo que dice antes y después se lo pasa quien la abre',
+    [/k\.(cuando|guardadaDetalle|guardar|guardarAnual)\b/.test(hojaGuardar), hojaGuardar.includes('{antes}'), hojaGuardar.includes('{despues}'),
+      guardada.includes('despues={sinCobro ?? k.guardadaDetalle}'),
+      sinComentarios(leer('src/components/bancard/HojaPagar.tsx')).includes('despues={k.guardarYPagarDetalle}')],
+    [false, true, true, true, true]);
+
+  // D6 · el pago revertido por la administración no es «no pudimos cobrar».
+  const tipos = leer('src/components/bancard/tipos.ts');
+  const m125 = leer('supabase/migrations/125_bancard_pagos.sql');
+  const motivo = (/ERROR_PAGO_REVERTIDO = '([^']+)'/.exec(tipos) || [])[1];
+  ok('el motivo que reconoce la pantalla es, letra por letra, el que escribe bancard_revertir (125)',
+    [motivo, m125.includes(`ultimo_error = '${motivo}'`)], ['Pago revertido por la administración', true]);
+  ok('con ese motivo la pantalla dice «te devolvimos el último pago», antes de llegar a «no pudimos cobrar»',
+    [guardada.includes("estado === 'pausado' && debito.ultimo_error === ERROR_PAGO_REVERTIDO) linea = { texto: k.pagoRevertido"),
+      guardada.indexOf('ERROR_PAGO_REVERTIDO) linea') < guardada.indexOf('`${errorTexto} ${k.pausado}`'),
+      /No pudimos|Não deu pra cobrar/.test(valor(es, 'pagoRevertido') + valor(pt, 'pagoRevertido')), valor(es, 'pagoRevertido').includes('Te devolvimos el último pago')],
+    [true, true, false, true]);
+  ok('/admin avisa que el débito quedó pausado al revertir', leer('src/components/bancard/PanelBancardAdmin.tsx').includes('d.debito_pausado === true'), true);
+
+  // D4 · la reversa que Bancard hizo sobre una pagada llega a la administración con el texto de la base.
+  const avisosB = leer('src/lib/avisos-bancard.ts');
+  const motivoReversa = (/MOTIVO_REVERSA_SOBRE_PAGADA = '([^']+)'/.exec(avisosB) || [])[1];
+  ok('el aviso de «reversa sobre una pagada» usa el mismo texto que la base deja en «para revisar», y no lo tapa otro aviso del mismo pedido',
+    [m125.includes(`'${motivoReversa}'`), sinComentarios(avisosB).includes("r.aviso === 'reversa_sobre_pagada'"),
+      sinComentarios(avisosB).includes("avisarAdministracion(servicio, r, MOTIVO_REVERSA_SOBRE_PAGADA, 'reversa')")],
+    [true, true, true]);
+
+  // D5 · un 5xx al cobrar con la tarjeta guardada queda incierta.
+  ok('cobrarOperacionTomada solo cierra como «no se cobró» un error de Bancard por debajo de 500',
+    [sinComentarios(leer('src/lib/bancard-flujo.ts')).includes("if (r.clase === 'bancard' && r.http < 500) {"),
+      (sinComentarios(leer('src/lib/bancard-flujo.ts')).match(/if \(r\.clase === 'bancard'\) \{/g) || []).length], [true, 0]);
 }
 
 console.log('\n── El comprobante no muestra lo que el manual prohíbe ─────');

@@ -231,6 +231,8 @@ export const legalEs: TextosLegal = {
         titulo: 'El cobro automático',
         bloques: [
           '**El cobro automático es opcional.** Si guardás tu tarjeta, el día anterior al vencimiento cobramos de ella el precio de tu plan (por mes o por año, según lo que tengas). Te avisamos tres días antes, con el importe.',
+          // Decisión del 07/10/2026: una cuenta en prueba puede guardar la tarjeta, pero no se le cobra sola.
+          '**Durante la prueba gratis no se cobra nada**, aunque hayas guardado tu tarjeta: cuando termina, elegís tu plan y lo pagás vos. El cobro automático empieza recién después de ese primer pago.',
           'Si el cobro no pasa, te avisamos y volvemos a intentar hasta dos veces más en los días siguientes; si no se puede, la cuenta vence como cualquier otra.',
           '**Lo cancelás cuando quieras** quitando tu tarjeta desde la pantalla de tu plan: rige en el momento y el plan sigue hasta el último día pagado. Quien paga con QR no tiene cobro automático: recibe el aviso y vuelve a pagar.',
         ],
@@ -667,6 +669,7 @@ export const legalPt: TextosLegal = {
         titulo: 'A cobrança automática',
         bloques: [
           '**A cobrança automática é opcional.** Se você salvar seu cartão, no dia anterior ao vencimento cobramos nele o preço do seu plano (por mês ou por ano, conforme o que você tem). Avisamos três dias antes, com o valor.',
+          '**Durante o teste grátis nada é cobrado**, mesmo que você tenha salvado seu cartão: quando ele termina, você escolhe seu plano e paga você. A cobrança automática começa só depois desse primeiro pagamento.',
           'Se a cobrança não passar, avisamos e tentamos de novo até duas vezes nos dias seguintes; se não der, a conta vence como qualquer outra.',
           '**Você cancela quando quiser** removendo seu cartão na tela do seu plano: vale na hora e o plano continua até o último dia pago. Quem paga com QR não tem cobrança automática: recebe o aviso e paga de novo.',
         ],

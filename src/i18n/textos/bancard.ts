@@ -145,6 +145,18 @@ export const bancardEs = {
     guardar: 'Guardar mi tarjeta para el cobro de cada mes',
     guardarAnual: 'Guardar mi tarjeta para el cobro de cada año',
     cuando: 'El día anterior al vencimiento cobramos tu plan de esta tarjeta. La quitás cuando quieras.',
+    /**
+     * SIN PLAN PAGO ACTIVO NO SE PROMETE NINGÚN COBRO (decisión del 07/10/2026).
+     * Una cuenta en prueba puede guardar la tarjeta, pero no se le cobra sola:
+     * toda prueba nace con el plan Pro, y cobrarla sola era cobrarle el Pro a
+     * quien nunca eligió plan. La tarjeta le sirve para pagar con un toque
+     * cuando elija; desde ese primer pago las renovaciones sí son automáticas.
+     * Estas tres claves reemplazan a `guardar`, `cuando` y `guardadaDetalle`
+     * mientras la suscripción no esté activa.
+     */
+    guardarSinCobro: 'Guardar mi tarjeta',
+    enPrueba: 'Tu tarjeta queda guardada. Cuando termine la prueba elegís tu plan y pagás con un toque; desde ahí se renueva sola.',
+    sinPlanActivo: 'Tu tarjeta queda guardada. Elegís tu plan y pagás con un toque; desde ahí se renueva sola.',
     tuTarjeta: (marca: string, ultimos4: string) => `${marca} •••• ${ultimos4}`,
     sinMarca: 'Tarjeta guardada',
     proximoCobro: (fecha: string, importe: string | null) =>
@@ -153,6 +165,8 @@ export const bancardEs = {
     noPudimos: (error: string) => `No pudimos cobrar: ${error}`,
     noPudimosSinDetalle: 'No pudimos cobrar de esta tarjeta.',
     pausado: 'El cobro automático quedó pausado. Pagá vos desde tu plan y se vuelve a activar solo.',
+    /** La administración devolvió un pago (07/10/2026): no es «no pudimos cobrar», y no se vuelve a cobrar solo. */
+    pagoRevertido: 'Te devolvimos el último pago, así que el cobro automático quedó pausado. Pagá vos desde tu plan y se vuelve a activar solo.',
     requiere3ds: 'Tu banco pide que confirmes el cobro: tocá «Confirmar el pago» más arriba.',
     bloqueada: 'Esta tarjeta quedó bloqueada 30 días por los rechazos. Cambiala, o pagá con QR.',
     sinPlan: 'Cuando tengas un plan pago, lo cobramos de esta tarjeta en cada renovación.',
@@ -182,6 +196,8 @@ export const bancardEs = {
     pagarConGuardada: (marca: string, ultimos4: string) => `Pagar con mi ${marca} •••• ${ultimos4}`,
     guardarYPagar: 'Guardar mi tarjeta y que se cobre sola cada mes',
     guardarYPagarAnual: 'Guardar mi tarjeta y que se cobre sola cada año',
+    /** En la ventana de pago: se guarda y se paga en el mismo paso. Vale también para una cuenta en prueba. */
+    guardarYPagarDetalle: 'Tu tarjeta queda guardada y pagás este plan con ella. Desde ese pago se renueva sola; la quitás cuando quieras.',
     cobrando: 'Cobrando de tu tarjeta…',
     noSeCobroConGuardada: 'No se pudo cobrar con la tarjeta guardada. Probá con el formulario de Bancard.',
     vueltaComprobando: 'Comprobando tu tarjeta…',
@@ -369,6 +385,9 @@ export const bancardPt: typeof bancardEs = {
     guardar: 'Salvar meu cartão para a cobrança de cada mês',
     guardarAnual: 'Salvar meu cartão para a cobrança de cada ano',
     cuando: 'No dia anterior ao vencimento cobramos seu plano neste cartão. Você remove quando quiser.',
+    guardarSinCobro: 'Salvar meu cartão',
+    enPrueba: 'Seu cartão fica salvo. Quando o teste terminar, você escolhe seu plano e paga com um toque; a partir daí ele renova sozinho.',
+    sinPlanActivo: 'Seu cartão fica salvo. Você escolhe seu plano e paga com um toque; a partir daí ele renova sozinho.',
     tuTarjeta: (marca, ultimos4) => `${marca} •••• ${ultimos4}`,
     sinMarca: 'Cartão salvo',
     proximoCobro: (fecha, importe) =>
@@ -377,6 +396,7 @@ export const bancardPt: typeof bancardEs = {
     noPudimos: (error) => `Não deu pra cobrar: ${error}`,
     noPudimosSinDetalle: 'Não deu pra cobrar neste cartão.',
     pausado: 'A cobrança automática ficou pausada. Pague você pela tela do seu plano e ela volta a ativar sozinha.',
+    pagoRevertido: 'Devolvemos seu último pagamento, por isso a cobrança automática ficou pausada. Pague você pela tela do seu plano e ela volta a ativar sozinha.',
     requiere3ds: 'Seu banco pede que você confirme a cobrança: toque em «Confirmar o pagamento» mais acima.',
     bloqueada: 'Este cartão ficou bloqueado por 30 dias pelas recusas. Troque o cartão, ou pague com QR.',
     sinPlan: 'Quando você tiver um plano pago, cobramos neste cartão a cada renovação.',
@@ -406,6 +426,7 @@ export const bancardPt: typeof bancardEs = {
     pagarConGuardada: (marca, ultimos4) => `Pagar com meu ${marca} •••• ${ultimos4}`,
     guardarYPagar: 'Salvar meu cartão e cobrar sozinho todo mês',
     guardarYPagarAnual: 'Salvar meu cartão e cobrar sozinho todo ano',
+    guardarYPagarDetalle: 'Seu cartão fica salvo e você paga este plano com ele. A partir desse pagamento ele renova sozinho; você remove quando quiser.',
     cobrando: 'Cobrando no seu cartão…',
     noSeCobroConGuardada: 'Não deu pra cobrar no cartão salvo. Tente pelo formulário da Bancard.',
     vueltaComprobando: 'Conferindo seu cartão…',

@@ -370,15 +370,26 @@ guaraníes). Se prende con tres variables (`BANCARD_ENTORNO`, `BANCARD_CLAVE_PUB
   anterior al vencimiento, con reintentos +1 y +4 (`bancard_tomar_cobro`, un intento por
   día). Quitar la tarjeta rige en el acto. QR y PIX son pagos de una vez.
 - **El reloj es pg_cron** (126): `orden-cobros-bancard` cada hora de 9 a 18 y
-  `orden-conciliar-bancard` cada 10 minutos. `vercel.json` no cambia.
+  `orden-conciliar-bancard` cada 10 minutos, más `orden-purgar-cron` (domingos), que
+  borra el historial de corridas de más de 14 días. `vercel.json` no cambia.
 - **Nunca se registra** la clave privada, un token, un alias ni el `process_id`; el
   comprobante no muestra el número de autorización (lo prohíbe el manual 1.23).
 - **Lo que ya no está vivo se vuelve a cotizar** (revisión 03/10): una operación
   rechazada o vencida que llega aprobada activa el plan solo si hoy vale lo mismo; si no
   (el 18 % del primer pago ya se usó, el equipo creció, el período ya se renovó), la
   plata se anota y queda para la administración. Las rechazadas se cierran en Bancard
-  con la reversa; un cobro automático que no llegó al banco devuelve el intento; la
-  tarjeta guardada en la prueba la convierte al terminar.
+  con la reversa; un cobro automático que no llegó al banco devuelve el intento.
+- **Una cuenta en prueba nunca se cobra sola** (revisión final 07/10): puede guardar la
+  tarjeta para pagar con un toque cuando elija su plan, y desde ese primer pago se
+  renueva sola. Toda prueba nace con el plan Pro: cobrarla sola era cobrarle un plan que
+  no eligió. Ni la pantalla ni el correo del fin de la prueba prometen un cobro.
+- **Lo demás de la revisión final**: el aviso de vencimiento no promete un cobro que el
+  servidor no va a hacer (Bancard apagado, o tarjeta del otro ambiente:
+  `segunElServidor`); un 5xx al cobrar con la tarjeta guardada queda «incierta» y lo
+  resuelve la conciliación; revertir un pago pausa el débito; una reversa que Bancard
+  hizo sobre un pago que quedó activo deja «para revisar» y avisa a la administración; la
+  baja de personas va por el servidor (`/api/pagos/bancard/personas`) y caduca con
+  cualquier renovación hecha fuera de Bancard.
 - Las pruebas corren contra un Bancard de mentira (`pruebas/bancard-falso.js`) con claves
   inventadas: `npm run probar:bancard`.
 

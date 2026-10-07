@@ -8,6 +8,7 @@ import { FICHA } from '@/i18n/idiomas';
 import { precio } from '@/lib/formato';
 import { HojaGuardarTarjeta } from './HojaGuardarTarjeta';
 import { HojaPagar, type DatosDelPago } from './HojaPagar';
+import { ERROR_PAGO_REVERTIDO, type MomentoDelDebito } from './tipos';
 
 export interface TarjetaVista {
   id: number;
@@ -42,9 +43,17 @@ function fechaCorta(iso: string, locale: string): string {
  * el próximo cobro y cuánto, o qué pasó si no se pudo cobrar, con «Cobrar
  * ahora» para destrabarlo; y «Cambiar» y «Quitar». Quitar rige en el acto:
  * el servidor apaga el débito antes de hablar con Bancard.
+ *
+ * EN LA PRUEBA NO SE PROMETE NINGÚN COBRO (decisión del 07/10/2026). Una
+ * cuenta en prueba, o con la prueba o el plan ya vencidos, puede guardar la
+ * tarjeta, pero la base no la cobra sola (`bancard_tomar_cobro` exige el
+ * plan activo): el botón dice «Guardar mi tarjeta» a secas y el texto, que
+ * queda guardada para pagar con un toque cuando elija su plan. Recién con un
+ * plan pago activo (`momento = 'activa'`) aparecen «el cobro de cada mes» y
+ * la fecha del próximo cobro.
  */
 export function TarjetaGuardada({
-  empresaId, entorno, urlScript, origen, zona, anual, tarjeta, debito, renovacion,
+  empresaId, entorno, urlScript, origen, zona, anual, momento, tarjeta, debito, renovacion,
 }: {
   empresaId: string;
   entorno: 'staging' | 'produccion';
@@ -52,6 +61,8 @@ export function TarjetaGuardada({
   origen: string;
   zona: string;
   anual: boolean;
+  /** Si a esta cuenta se le cobra sola o no: ver `MomentoDelDebito`. */
+  momento: MomentoDelDebito;
   tarjeta: TarjetaVista | null;
   debito: DebitoVista | null;
   /** Lo que se cobra si toca «Cobrar ahora» (el plan que paga); null si no hay plan pago. */
@@ -95,11 +106,18 @@ export function TarjetaGuardada({
   const estado = debito?.estado ?? 'al_dia';
   const conProblema = !!tarjeta && (debito?.bloqueada || estado === 'pausado' || estado === 'reintentando' || estado === 'requiere_3ds');
 
+  // Sin plan pago activo: qué pasa con la tarjeta, sin prometer un cobro.
+  const sinCobro = momento === 'prueba' ? k.enPrueba : momento === 'sin_plan' ? k.sinPlanActivo : null;
+
   let linea: { texto: string; ambar: boolean } | null = null;
   if (tarjeta && debito) {
     const errorTexto = debito.ultimo_error ? k.noPudimos(debito.ultimo_error) : k.noPudimosSinDetalle;
     if (debito.bloqueada) linea = { texto: k.bloqueada, ambar: true };
     else if (estado === 'requiere_3ds') linea = { texto: k.requiere3ds, ambar: true };
+    // La administración devolvió un pago (bancard_revertir pausa el débito
+    // para no cobrarlo de nuevo al día siguiente): no fue un rechazo, así que
+    // no va «no pudimos cobrar» adelante.
+    else if (estado === 'pausado' && debito.ultimo_error === ERROR_PAGO_REVERTIDO) linea = { texto: k.pagoRevertido, ambar: true };
     else if (estado === 'pausado') linea = { texto: `${errorTexto} ${k.pausado}`, ambar: true };
     else if (estado === 'reintentando') {
       linea = { texto: `${errorTexto}${debito.fecha_cobro ? ` ${k.reintentamos(fechaCorta(debito.fecha_cobro, locale))}` : ''}`, ambar: true };
@@ -108,7 +126,7 @@ export function TarjetaGuardada({
         texto: k.proximoCobro(fechaCorta(debito.fecha_cobro, locale), debito.importe !== null ? precio(Number(debito.importe), 'PYG', locale) : null),
         ambar: false,
       };
-    } else linea = { texto: k.sinPlan, ambar: false };
+    } else linea = { texto: sinCobro ?? k.sinPlan, ambar: false };
   }
 
   return (
@@ -136,9 +154,9 @@ export function TarjetaGuardada({
         </>
       ) : (
         <>
-          <p className="text-[13px] leading-relaxed text-tinta/65">{k.cuando}</p>
+          <p className="text-[13px] leading-relaxed text-tinta/65">{sinCobro ?? k.cuando}</p>
           <button type="button" className="boton-suave mt-3 px-4 py-2 text-[13.5px]" onClick={() => setGuardando(true)}>
-            {anual ? k.guardarAnual : k.guardar}
+            {sinCobro ? k.guardarSinCobro : anual ? k.guardarAnual : k.guardar}
           </button>
         </>
       )}
@@ -152,7 +170,8 @@ export function TarjetaGuardada({
           urlScript={urlScript}
           origen={origen}
           zona={zona}
-          anual={anual}
+          antes={sinCobro ?? `${anual ? k.guardarAnual : k.guardar}. ${k.cuando}`}
+          despues={sinCobro ?? k.guardadaDetalle}
           onCerrar={() => setGuardando(false)}
           onGuardada={() => { setGuardando(false); setAviso(''); router.refresh(); }}
         />

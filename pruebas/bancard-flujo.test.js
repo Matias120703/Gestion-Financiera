@@ -121,6 +121,17 @@ async function principal() {
     'select tipo, ok, clave from public.bancard_eventos where operacion_id = $1 order by id', [op])).rows;
   const rutas = (falso) => falso.pedidos.map((p) => p.ruta);
   const cuerpo = (falso, op) => JSON.stringify(falso.confirmacionDe(op));
+  /**
+   * La baja de personas como la pide la ruta /api/pagos/bancard/personas
+   * (revisión 07/10): por el servidor, con quién lo pide y si esa cuenta ve
+   * Bancard. Antes estas pruebas llamaban `bancard_bajar_personas` con la
+   * sesión del dueño; esa firma ya no existe (escribía aunque la cuenta no
+   * viera Bancard).
+   */
+  const bdDeLaBaja = crearBd(db);
+  const bajar = (c, uid, personas, veBancard = true) =>
+    F.programarBajaDePersonas(bdDeLaBaja, { empresa: c.empresaId, usuario: uid, personas, veBancard });
+  const proximaDe = async (c) => (await J('select personas_proxima from public.bancard_cuentas where empresa_id = $1', [c.empresaId]))?.personas_proxima ?? null;
 
   // ═══════════════════════════════════════════════════════════
   grupo('1 · Pago ocasional entero: formulario → confirmación → plan activo');
@@ -233,11 +244,11 @@ async function principal() {
       [(await F.iniciarPago(d, { empresa: B.empresaId, usuario: B.uid, tipo: 'personas', plan: null, periodo: null, personas: 7 })).estado], ['error_base']);
 
     // BAJAR rige desde la próxima renovación: no cobra, y nunca por debajo del equipo de hoy.
-    const baja = await H.intentar(db, B.uid, () => db.query('select public.bancard_bajar_personas($1, 5) j', [B.empresaId]));
+    const baja = await bajar(B, B.uid, 5);
     ok('bajar a 5 desde la próxima renovación: queda programado, sin operación ni cobro',
-      [baja.ok, (await J('select personas_proxima from public.bancard_cuentas where empresa_id = $1', [B.empresaId])).personas_proxima, (await sus(B)).tope_vendedores,
+      [baja.estado, baja.proxima, await proximaDe(B), (await sus(B)).tope_vendedores,
         (await db.query('select count(*)::int n from public.bancard_operaciones where empresa_id = $1', [B.empresaId])).rows[0].n],
-      [true, 5, 7, 2]);
+      ['listo', 5, 5, 7, 2]);
     await H.sumarMiembro(db, B.empresaId, 'v2@kiosco.test');
     await H.sumarMiembro(db, B.empresaId, 'v3@kiosco.test');
     await H.sumarMiembro(db, B.empresaId, 'v4@kiosco.test');
@@ -246,14 +257,44 @@ async function principal() {
     let sexto = null;
     try { await H.sumarMiembro(db, B.empresaId, 'v6-bloqueado@kiosco.test'); } catch (e) { sexto = e.message; }
     ok('con la baja programada a 5, el sexto no entra por el código', [/ya tiene sus 5 personas/.test(sexto ?? ''), (await J('select public.tope_de_miembros($1) n', [B.empresaId])).n], [true, 5]);
-    const deshacer = await H.intentar(db, B.uid, () => db.query('select public.bancard_bajar_personas($1, null) j', [B.empresaId]));
-    ok('null deshace la baja', [deshacer.ok, (await J('select personas_proxima from public.bancard_cuentas where empresa_id = $1', [B.empresaId])).personas_proxima], [true, null]);
+    const deshacer = await bajar(B, B.uid, null);
+    ok('null deshace la baja', [deshacer.estado, deshacer.proxima, await proximaDe(B)], ['listo', null, null]);
     await H.sumarMiembro(db, B.empresaId, 'v6@kiosco.test');
     ok('sin la baja, vuelve a entrar (son 6 de 8)', (await J('select count(*)::int n from public.miembros where empresa_id = $1', [B.empresaId])).n, 6);
-    const menos = await H.intentar(db, B.uid, () => db.query('select public.bancard_bajar_personas($1, 4) j', [B.empresaId]));
-    ok('con 6 en el equipo no se puede bajar a 4', [menos.ok, /menos personas de las que hoy tiene tu equipo/.test(menos.error ?? '')], [false, true]);
+    const menos = await bajar(B, B.uid, 4);
+    ok('con 6 en el equipo no se puede bajar a 4', [menos.estado, /menos personas de las que hoy tiene tu equipo/.test(menos.mensaje ?? '')], ['error_base', true]);
     const vend = await H.sumarMiembro(db, B.empresaId, 'v7@kiosco.test');
-    ok('un vendedor no puede bajar ni subir nada', (await H.intentar(db, vend, () => db.query('select public.bancard_bajar_personas($1, 5) j', [B.empresaId]))).ok, false);
+    const delVendedor = await bajar(B, vend, 7);
+    ok('un vendedor no puede bajar ni subir nada (lo dice la base, con quién lo pide)', [delVendedor.estado, delVendedor.codigo, await proximaDe(B)], ['error_base', '42501', null]);
+
+    // Revisión 07/10 (R1.1, sonda-bajar-sin-bancard.js): la baja no puede
+    // escribir para una cuenta que no ve Bancard. Con Bancard apagado, una
+    // llamada directa bajaba el tope del equipo en el acto a un período pago
+    // por más personas. Ahora la función es del servidor y la regla es de
+    // `programarBajaDePersonas`: programar exige ver Bancard; deshacer, no.
+    const antes = bdDeLaBaja.llamadas;
+    const sinVer = await bajar(B, B.uid, 7, false);
+    ok('una cuenta que no ve Bancard no puede programar una baja: ni siquiera se llama a la base, y el tope no se mueve',
+      [sinVer.estado, bdDeLaBaja.llamadas - antes, await proximaDe(B), (await J('select public.tope_de_miembros($1) n', [B.empresaId])).n], ['no_disponible', 0, null, 8]);
+    const conSesion = await H.intentar(db, B.uid, () => db.query('select public.bancard_bajar_personas($1, $2, 7) j', [B.empresaId, B.uid]));
+    ok('y la función ya no se puede llamar con la sesión, ni siendo el dueño', [conSesion.ok, /permission denied/.test(conSesion.error ?? '')], [false, true]);
+    ok('la firma vieja (empresa, personas) no existe más',
+      /does not exist/.test((await H.intentar(db, B.uid, () => db.query('select public.bancard_bajar_personas($1, 7) j', [B.empresaId]))).error ?? ''), true);
+    // Deshacer se permite siempre: si después de programarla se le
+    // deshabilita Bancard, no puede quedar atrapada con el tope bajado.
+    await bajar(B, B.uid, 7);
+    ok('con una baja programada a 7, el tope ya es 7', [await proximaDe(B), (await J('select public.tope_de_miembros($1) n', [B.empresaId])).n], [7, 7]);
+    const deshaceSinVer = await bajar(B, B.uid, null, false);
+    ok('deshacerla se permite aunque la cuenta ya no vea Bancard: vuelve a lo contratado',
+      [deshaceSinVer.estado, await proximaDe(B), (await J('select public.tope_de_miembros($1) n', [B.empresaId])).n], ['listo', null, 8]);
+    ok('pero no a cualquiera: otro dueño no deshace la baja de una cuenta ajena',
+      await (async () => {
+        await bajar(B, B.uid, 7);
+        const ajeno = await bajar(B, A.uid, null, false);
+        const quedo = await proximaDe(B);
+        await bajar(B, B.uid, null);
+        return [ajeno.estado, ajeno.codigo, quedo];
+      })(), ['error_base', '42501', 7]);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1170,11 +1211,16 @@ async function principal() {
   {
     const { d, falso, avisos } = armar('produccion');
     const U2 = await premiumPago(d, falso, 'h3@revision.test', 'Ultramarinos U', 8);
-    await H.intentar(db, U2.uid, () => db.query('select public.bancard_bajar_personas($1, 4) j', [U2.empresaId]));
+    await bajar(U2, U2.uid, 4);
     ok('con la baja programada a 4, el tope ya es 4', (await J('select public.tope_de_miembros($1) n', [U2.empresaId])).n, 4);
-    await H.intentar(db, U2.uid, () => db.query('select public.bancard_bajar_personas($1, null) j', [U2.empresaId]));
+    // Revisión 07/10 (R3.3): mover el vencimiento a mano (acá, la prueba; en
+    // la vida real, una renovación activada desde /admin) hace caducar la
+    // baja programada: el disparador de `suscripciones` la borra. Por eso se
+    // programa de nuevo DESPUÉS de mover la fecha.
     await db.query(`update public.suscripciones set periodo_fin = now() + interval '1 day' where empresa_id = $1`, [U2.empresaId]);
-    await H.intentar(db, U2.uid, () => db.query('select public.bancard_bajar_personas($1, 4) j', [U2.empresaId]));
+    ok('mover el vencimiento por fuera de Bancard borra la baja programada: vuelve lo contratado (8)',
+      [await proximaDe(U2), (await J('select public.tope_de_miembros($1) n', [U2.empresaId])).n], [null, 8]);
+    await bajar(U2, U2.uid, 4);
     const ren = await F.iniciarPago(d, { empresa: U2.empresaId, usuario: U2.uid, tipo: 'plan', plan: 'negocio', periodo: 'mensual', personas: 4 });
     ok('la renovación por 4 queda abierta (viva): Gs. 250.000', [ren.estado, ren.importe], ['listo', 250000]);
     let unidos = 0;
@@ -1328,25 +1374,68 @@ async function principal() {
   }
 
   // ═══════════════════════════════════════════════════════════
-  grupo('26 · La tarjeta guardada en la prueba la convierte (hallazgo 7)');
+  grupo('26 · Una cuenta en prueba nunca se cobra sola, tenga o no la tarjeta guardada (07/10)');
   // ═══════════════════════════════════════════════════════════
+  // Este grupo afirmaba lo contrario desde el 03/10 («la tarjeta guardada en
+  // la prueba la convierte»: el día anterior al fin de la prueba se cobraba
+  // sola). La revisión final lo deshizo (R3.1, gravedad alta): toda prueba
+  // nace con el plan Pro, así que cobrarla sola era cobrarle el Pro
+  // (Gs. 190.000) a un negocio que nunca eligió plan y quizá quería el
+  // Básico (110.000); y una prueba YA vencida que guardaba la tarjeta era
+  // cobrada dentro de la hora. La prueba sí puede guardar la tarjeta: le
+  // sirve para pagar con un toque cuando elige su plan, y desde ese primer
+  // pago las renovaciones son automáticas.
   {
     const { d, falso, avisos } = armar('produccion');
+    const correr = () => F.correrCobros(d, { hastaMs: Date.now() + 120_000 }, { esperaMs: 2_000 });
+    const estadoDe = async (c) => (await H.comoUsuario(db, c.uid, () => db.query(`select public.bancard_estado($1,'produccion') j`, [c.empresaId]))).rows[0].j;
+    const operacionesDe = async (c) => (await J('select count(*)::int n from public.bancard_operaciones where empresa_id = $1', [c.empresaId])).n;
+
+    // La prueba vigente, con la tarjeta guardada a tiempo.
     const T2 = await H.montarEmpresa(db, { email: 'h7@revision.test', nombre: 'En prueba' });
     await guardarTarjeta(d, falso, T2, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
     await venceEn(T2, 1);
-    const est = (await H.comoUsuario(db, T2.uid, () => db.query(`select public.bancard_estado($1,'produccion') j`, [T2.empresaId]))).rows[0].j;
-    ok('en prueba, la pantalla ya dice el próximo cobro y cuánto', [(await sus(T2)).estado, est.debito.fecha_cobro !== null, est.debito.importe], ['prueba', true, 190000]);
+    const est = await estadoDe(T2);
+    ok('en prueba, con la tarjeta guardada: la pantalla tiene la tarjeta y ni fecha ni importe de ningún cobro',
+      [(await sus(T2)).estado, est.tarjeta?.ultimos4, est.debito.activo, est.debito.estado, est.debito.fecha_cobro, est.debito.importe],
+      ['prueba', '0016', true, 'al_dia', null, null]);
     const fila = ((await H.comoServicio(db, () => db.query('select public.vencimientos_por_avisar() j'))).rows[0].j || []).find((x) => x.empresa_id === T2.empresaId);
-    ok('y el aviso del fin de la prueba trae el débito', [fila?.tipo, fila?.debito?.ultimos4], ['prueba', '0016']);
+    ok('el aviso del fin de la prueba sale como siempre, sin débito (el correo no promete un cobro)', [fila?.tipo, fila?.debito ?? null], ['prueba', null]);
+    falso.pedidos.length = 0;
     avisos.length = 0;
-    const res = await F.correrCobros(d, { hastaMs: Date.now() + 120_000 }, { esperaMs: 2_000 });
-    ok('el día anterior al fin de la prueba se cobra solo: activa, un mes desde el fin de la prueba',
-      [res.tomados, res.pagados, (await sus(T2)).estado, (await sus(T2)).efectivo,
-        (await J(`select (s.periodo_fin = (o.antes->>'periodo_fin')::timestamptz + interval '1 month') v from public.suscripciones s, public.bancard_operaciones o where s.empresa_id = $1 and o.empresa_id = $1 and o.estado = 'pagada'`, [T2.empresaId])).v,
-        avisos[0]?.aprobada, avisos[0]?.origen],
-      [1, 1, 'activa', 'pro', true, true, 'automatico']);
+    let res = await correr();
+    ok('el día anterior al fin de la prueba la tarea NO la cobra: ni la toma, ni revisa su tarjeta, ni le habla a Bancard',
+      [res.tomados, res.pagados, res.pausados, res.tarjetasRevisadas, rutas(falso), (await sus(T2)).estado, await operacionesDe(T2), avisos.length],
+      [0, 0, 0, 0, [], 'prueba', 0, 0]);
+
+    // R3.1: la prueba YA vencida que guarda la tarjeta (antes: cobrada en la corrida siguiente, por el Pro).
+    const V2 = await H.montarEmpresa(db, { email: 'r31@revision.test', nombre: 'Prueba vencida' });
+    await venceEn(V2, -2);
+    await guardarTarjeta(d, falso, V2, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    falso.pedidos.length = 0;
+    res = await correr();
+    ok('una prueba vencida hace 2 días que guarda la tarjeta: la corrida siguiente no le cobra nada y el débito no se pausa',
+      [res.tomados, res.pausados, charges(falso), (await sus(V2)).estado, (await sus(V2)).efectivo, (await cuentaDe(V2)).debito_estado, await operacionesDe(V2),
+        (await estadoDe(V2)).debito.fecha_cobro, (await estadoDe(V2)).debito.importe],
+      [0, 0, 0, 'prueba', 'gratis', 'al_dia', 0, null, null]);
+
+    // Lo que sí: elige SU plan y paga con un toque; desde ahí se renueva sola.
+    const toque = await F.cobrarConTarjeta(d, { empresa: V2.empresaId, usuario: V2.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null }, { esperaMs: 2_000 });
+    ok('elige el Básico y paga con la tarjeta guardada: Gs. 110.000 (no los 190.000 del Pro), y queda activa en SU plan',
+      [toque.estado, Number((await opDe(toque.operacion)).importe), (await opDe(toque.operacion)).origen, (await sus(V2)).plan, (await sus(V2)).estado, (await sus(V2)).efectivo],
+      ['pagada', 110000, 'usuario', 'basico', 'activa', 'basico']);
+    const estV = await estadoDe(V2);
+    ok('y recién ahora la pantalla tiene fecha e importe del próximo cobro', [estV.debito.fecha_cobro !== null, estV.debito.importe], [true, 110000]);
+    await venceEn(V2, 1);
+    await db.query('update public.bancard_cuentas set ultimo_intento = ultimo_intento - 30 where empresa_id = $1', [V2.empresaId]);
+    await db.query(`update public.bancard_operaciones set created_at = created_at - interval '30 days' where empresa_id = $1`, [V2.empresaId]);
+    avisos.length = 0;
+    res = await correr();
+    const renovacion = await J(`select * from public.bancard_operaciones where empresa_id = $1 and origen = 'automatico' order by id desc limit 1`, [V2.empresaId]);
+    ok('la renovación siguiente sí la cobra la tarea, sola: su Básico',
+      [res.tomados, res.pagados, renovacion?.plan, Number(renovacion?.importe), avisos[0]?.origen], [1, 1, 'basico', 110000, 'automatico']);
     await apagar(T2);
+    await apagar(V2);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1399,6 +1488,208 @@ async function principal() {
         const x = (await H.comoServicio(db, () => db.query(`select public.bancard_cerrar_operacion($1,'vencida','{"clave":"abandonada"}') j`, [b.operacion]))).rows[0].j;
         return [x.cambio, (await opDe(b.operacion)).estado];
       })(), [false, 'rechazada']);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('29 · Una reversa que Bancard SÍ hizo sobre una operación que quedó pagada deja rastro (07/10)');
+  // ═══════════════════════════════════════════════════════════
+  // R3.2 (sonda plata-2-flujo.js, bloques A1 y A2; el control A3 es el grupo
+  // 27). Entre que Orden decide mandar la reversa y Bancard la hace, entra el
+  // pago y otra función de Vercel procesa su confirmación. Bancard devuelve
+  // la plata y en Orden la operación queda «pagada», con el plan activo y el
+  // ingreso anotado. Antes no quedaba nada escrito ni se avisaba a nadie, y
+  // la conciliación la contaba como «rechazada cerrada» o «vencida».
+  {
+    const { d, falso, avisos, registro } = armar('produccion');
+    const pro = (c) => ({ empresa: c.empresaId, usuario: c.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null });
+    const TEXTO = 'Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano';
+    /** En el medio de la reversa: la persona paga y OTRA función procesa la confirmación de Bancard. */
+    const pagaEnElMedio = (op) => falso.programar('/single_buy/rollback', async () => {
+      falso.pagar(op);
+      await F.recibirConfirmacion(armar('produccion').d, cuerpo(falso, op));
+      return 'atender';
+    });
+    const deReversa = () => avisos.filter((a) => a.aviso === 'reversa_sobre_pagada');
+
+    // A1 · una rechazada de formulario de 11 minutos: la conciliación le manda la reversa.
+    const C1 = await H.montarEmpresa(db, { email: 'a1@reversa.test', nombre: 'Carrera rechazada' });
+    const r1 = await F.iniciarPago(d, pro(C1));
+    falso.rechazar(r1.operacion);
+    await F.recibirConfirmacion(d, cuerpo(falso, r1.operacion));
+    await db.query(`update public.bancard_operaciones set updated_at = now() - interval '11 minutes' where id = $1`, [r1.operacion]);
+    pagaEnElMedio(r1.operacion);
+    avisos.length = 0;
+    const res1 = await F.correrConciliacion(d, { hastaMs: Date.now() + 60_000 });
+    const o1 = await opDe(r1.operacion);
+    ok('A1: Bancard devolvió la plata y en Orden el pago sigue pagado, con el plan activo y el ingreso anotado (no se toca solo)',
+      [falso.compras.get(r1.operacion).estado, o1.estado, (await sus(C1)).estado, await ingresos(`Bancard ${r1.operacion}`)],
+      ['revertida', 'pagada', 'activa', [{ monto: 190000, metodo_pago: 'tarjeta', estado: 'activo' }]]);
+    ok('pero ahora queda escrito para revisar', o1.revisar, TEXTO);
+    ok('y la administración recibe UN aviso, con el pedido, la cuenta y el importe',
+      deReversa().map((a) => [a.operacion, a.nombre, Number(a.importe), a.entorno, a.empresa_id === C1.empresaId]),
+      [[r1.operacion, 'Carrera rechazada', 190000, 'produccion', true]]);
+    ok('la conciliación no la cuenta como «rechazada cerrada»', res1.rechazadasCerradas, 0);
+    ok('y queda en el registro del servidor', registro.some((t) => t.includes(`reversa hecha en Bancard sobre un pago que quedó activo · pedido ${r1.operacion}`)), true);
+    ok('el aviso no lleva nada secreto', ['token', 'process_id', 'authorization_number', 'response_code'].filter((k) => JSON.stringify(deReversa()).includes(k)), []);
+
+    // A2 · un formulario de 31 minutos: la consulta dice «sin pago», la persona paga, y sale la reversa.
+    const C2 = await H.montarEmpresa(db, { email: 'a2@reversa.test', nombre: 'Carrera abandonada' });
+    const r2 = await F.iniciarPago(d, pro(C2));
+    await db.query(`update public.bancard_operaciones set created_at = now() - interval '31 minutes' where id = $1`, [r2.operacion]);
+    pagaEnElMedio(r2.operacion);
+    avisos.length = 0;
+    const res2 = await F.correrConciliacion(d, { hastaMs: Date.now() + 60_000 });
+    const o2 = await opDe(r2.operacion);
+    ok('A2: lo mismo con un formulario que se iba a vencer: la conciliación informa «pagada», no «vencida»',
+      [res2.pagadas, res2.vencidas, falso.compras.get(r2.operacion).estado, o2.estado, o2.revisar, (await sus(C2)).estado, deReversa().map((a) => a.operacion)],
+      [1, 0, 'revertida', 'pagada', TEXTO, 'activa', [r2.operacion]]);
+
+    // Lo mismo por la puerta de resolverOperacion (la pantalla de vuelta, «Consultar a Bancard»).
+    const C3 = await H.montarEmpresa(db, { email: 'a3@reversa.test', nombre: 'Carrera consultada' });
+    const r3 = await F.iniciarPago(d, pro(C3));
+    await db.query(`update public.bancard_operaciones set created_at = now() - interval '31 minutes' where id = $1`, [r3.operacion]);
+    pagaEnElMedio(r3.operacion);
+    avisos.length = 0;
+    ok('resolverOperacion devuelve «pagada» cuando la base no la cerró porque ya estaba pagada',
+      [await F.resolverOperacion(d, r3.operacion, { vencerSiNoPago: true }), (await opDe(r3.operacion)).revisar, deReversa().length], ['pagada', TEXTO, 1]);
+    // Un solo aviso: la base devuelve `revisar: true` solo la primera vez.
+    const otraVez = (await H.comoServicio(db, () => db.query(`select public.bancard_cerrar_operacion($1,'vencida','{"clave":"RollbackSuccessful"}') j`, [r3.operacion]))).rows[0].j;
+    ok('si el cierre se repite, la base ya no pide otro aviso', [otraVez.cambio, otraVez.estado, otraVez.revisar], [false, 'pagada', false]);
+
+    // Lo de siempre no cambió: una reversa sin pago cierra y no avisa nada.
+    const C4 = await H.montarEmpresa(db, { email: 'a4@reversa.test', nombre: 'Sin carrera' });
+    const r4 = await F.iniciarPago(d, pro(C4));
+    await db.query(`update public.bancard_operaciones set created_at = now() - interval '31 minutes' where id = $1`, [r4.operacion]);
+    avisos.length = 0;
+    ok('un formulario abandonado sin pago: vencida, «abandonada», sin aviso',
+      [await F.resolverOperacion(d, r4.operacion, { vencerSiNoPago: true }), (await opDe(r4.operacion)).estado, (await opDe(r4.operacion)).motivo, (await opDe(r4.operacion)).revisar, avisos.length],
+      ['vencida', 'vencida', 'abandonada', null, 0]);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('30 · Un 5xx de Bancard al cobrar con la tarjeta guardada no es «no se cobró» (07/10)');
+  // ═══════════════════════════════════════════════════════════
+  // R3.4 (sondas plata-2-flujo.js bloque E y esceptico-de-502.js). Bancard
+  // cobra, y la respuesta que vuelve es un 502 con JSON (un proxy en el
+  // medio). Antes: clase 'bancard' → «no se cobró» → vencida y el intento
+  // devuelto → al día siguiente, OTRO cobro: dos cobros, un mes. Ahora un
+  // 5xx queda incierta y la conciliación le pregunta a Bancard.
+  {
+    const { d, falso } = armar('produccion');
+    const correr = () => F.correrCobros(d, { hastaMs: Date.now() + 120_000 }, { esperaMs: 2_000 });
+    const ultimaAuto = (c) => J(`select * from public.bancard_operaciones where empresa_id = $1 and origen = 'automatico' order by id desc limit 1`, [c.empresaId]);
+    const hace15 = (op) => db.query(`update public.bancard_operaciones set created_at = now() - interval '15 minutes' where id = $1`, [op]);
+    /** Cuántos cobros con token de esa cuenta aprobó Bancard de verdad. */
+    const cobradosEnBancard = async (c) => (await db.query(`select id from public.bancard_operaciones where empresa_id = $1 and medio = 'token'`, [c.empresaId]))
+      .rows.filter((o) => falso.compras.get(Number(o.id))?.estado === 'pagada').length;
+    /** Bancard procesa el cobro (lo aprueba) y lo que vuelve es otra cosa. */
+    const cobraYContesta = (status, json) => falso.programar('/charge', async (p, init) => {
+      await falso.transporte(p.url, init);
+      return { status, json };
+    });
+    const nueva = async (email, nombre) => {
+      const c = await cuentaActiva(d, falso, email, nombre);
+      await guardarTarjeta(d, falso, c, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+      await venceEn(c, 1);
+      return c;
+    };
+
+    for (const [nombre, email, status, json] of [
+      ['X1 · 502 con JSON de un proxy', 'x1@5xx.test', 502, { message: 'Bad Gateway' }],
+      ['X2 · 500 con status error', 'x2@5xx.test', 500, { status: 'error', messages: [{ key: 'InternalError', level: 'error', dsc: 'x' }] }],
+    ]) {
+      const c = await nueva(email, nombre);
+      cobraYContesta(status, json);
+      const res = await correr();
+      let o = await ultimaAuto(c);
+      ok(`${nombre}, y Bancard SÍ cobró: queda incierta (no «vencida») y el intento no se devuelve`,
+        [res.tomados, res.inciertos, res.vencidos, o.estado, (await cuentaDe(c)).intentos, falso.compras.get(Number(o.id)).estado],
+        [1, 1, 0, 'incierta', 1, 'pagada']);
+      ok('el mismo día no se le manda otro cobro encima', [(await correr()).tomados, charges(falso) >= 1], [0, true]);
+      await hace15(o.id);
+      const con = await F.correrConciliacion(d, { hastaMs: Date.now() + 60_000 });
+      o = await opDe(o.id);
+      ok('la conciliación le pregunta a Bancard y la da por pagada: el plan se renueva una vez',
+        [con.pagadas, o.estado, o.fuente, o.revisar, (await sus(c)).efectivo, (await cuentaDe(c)).debito_estado], [1, 'pagada', 'consulta', null, 'pro', 'al_dia']);
+      await pasanDias(c, 1);
+      ok('al día siguiente no hay nada que cobrar: UN solo cobro en Bancard (antes eran dos)', [(await correr()).tomados, await cobradosEnBancard(c)], [0, 1]);
+      await apagar(c);
+    }
+
+    // X3 · 503 y Bancard NO cobró: incierta igual; la consulta dice que no existe y recién ahí se devuelve el intento.
+    const X3 = await nueva('x3@5xx.test', 'X3 · 503 sin cobro');
+    falso.programar('/charge', { status: 503, json: { message: 'Service Unavailable' } });
+    let res = await correr();
+    let o3 = await ultimaAuto(X3);
+    ok('X3 · 503 y Bancard NO cobró: también incierta (no se puede saber sin preguntar)', [res.inciertos, res.vencidos, o3.estado, (await cuentaDe(X3)).intentos], [1, 0, 'incierta', 1]);
+    await hace15(o3.id);
+    const con3 = await F.correrConciliacion(d, { hastaMs: Date.now() + 60_000 });
+    o3 = await opDe(o3.id);
+    ok('la conciliación consulta: Bancard no la conoce → vencida, y el intento vuelve',
+      [con3.vencidas, o3.estado, o3.motivo, (await cuentaDe(X3)).intentos, (await cuentaDe(X3)).debito_estado], [1, 'vencida', 'BuyNotFoundError', 0, 'al_dia']);
+    await pasanDias(X3, 1);
+    res = await correr();
+    ok('al día siguiente se cobra, una sola vez', [res.tomados, res.pagados, await cobradosEnBancard(X3)], [1, 1, 1]);
+    await apagar(X3);
+
+    // X4 · un «no» de Bancard por debajo de 500 sigue cerrando en el acto, como siempre.
+    const X4 = await nueva('x4@5xx.test', 'X4 · 422');
+    falso.programar('/charge', { status: 422, json: { status: 'error', messages: [{ key: 'InvalidJsonError', level: 'error', dsc: 'x' }] } });
+    res = await correr();
+    const o4 = await ultimaAuto(X4);
+    ok('X4 · 422 con status error (Bancard no aceptó el pedido): vencida en el acto y el intento vuelve, como antes',
+      [res.vencidos, res.inciertos, o4.estado, o4.motivo, (await cuentaDe(X4)).intentos], [1, 0, 'vencida', 'InvalidJsonError', 0]);
+    await apagar(X4);
+
+    // Con la persona delante es el mismo cobro: «incierta», y no se le ofrece pagar de nuevo.
+    const X5 = await cuentaActiva(d, falso, 'x5@5xx.test', 'X5 · con la persona');
+    await guardarTarjeta(d, falso, X5, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    cobraYContesta(502, { message: 'Bad Gateway' });
+    const pedido = { empresa: X5.empresaId, usuario: X5.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null };
+    const c5 = await F.cobrarConTarjeta(d, pedido, { esperaMs: 2_000 });
+    const charges5 = charges(falso);
+    const otro = await F.cobrarConTarjeta(d, pedido, { esperaMs: 2_000 });
+    ok('«Pagar con mi Visa» con un 502: incierta; tocar de nuevo no manda otro cobro («en curso»)',
+      [c5.estado, otro.estado, otro.operacion === c5.operacion, charges(falso) - charges5], ['incierta', 'en_curso', true, 0]);
+    await apagar(X5);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('31 · Revertir un cobro pausa el débito: no se vuelve a cobrar al día siguiente (07/10)');
+  // ═══════════════════════════════════════════════════════════
+  // R3.5 (sonda plata-3-prueba-y-reversa.js, bloque R). El cliente reclama,
+  // la administración revierte el cobro automático el mismo día, la
+  // suscripción vuelve a «vence mañana»… y el débito seguía al día: la tarea
+  // le cobraba otra vez al día siguiente.
+  {
+    const { d, falso } = armar('produccion');
+    const correr = () => F.correrCobros(d, { hastaMs: Date.now() + 120_000 }, { esperaMs: 2_000 });
+    const MOTIVO = 'Pago revertido por la administración';
+    const R = await cuentaActiva(d, falso, 'r35@revision.test', 'Reversa y débito');
+    await guardarTarjeta(d, falso, R, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    await venceEn(R, 1);
+    let res = await correr();
+    const cobro = await J(`select * from public.bancard_operaciones where empresa_id = $1 and origen = 'automatico' order by id desc limit 1`, [R.empresaId]);
+    ok('el cobro automático del día anterior entra', [res.pagados, cobro.estado], [1, 'pagada']);
+
+    const rv = await F.revertirPago(d, { operacion: Number(cobro.id), actor: jefe.uid, motivo: 'el cliente pidió la devolución', sinBancard: false });
+    const cta = await cuentaDe(R);
+    ok('la administración lo revierte: Bancard devuelve la plata, Orden deshace el plan y PAUSA el débito, con su motivo',
+      [rv.ok, rv.bancard, rv.datos.debito_pausado, (await opDe(cobro.id)).estado, cta.debito_activo, cta.debito_estado, cta.ultimo_error, cta.ultimo_codigo],
+      [true, 'revertida', true, 'revertida', true, 'pausado', MOTIVO, null]);
+    ok('el mismo día la tarea no toma nada', (await correr()).tomados, 0);
+    await pasanDias(R, 1);
+    const antes = charges(falso);
+    res = await correr();
+    ok('y al día siguiente TAMPOCO (antes: otro cobro de 190.000 a la misma tarjeta)', [res.tomados, res.pagados, charges(falso) - antes], [0, 0, 0]);
+    const est = (await H.comoUsuario(db, R.uid, () => db.query(`select public.bancard_estado($1,'produccion') j`, [R.empresaId]))).rows[0].j;
+    ok('lo que lee la pantalla: pausado, con ese motivo y sin fecha de cobro (ahí dice «te devolvimos el último pago», no «no pudimos cobrar»)',
+      [est.debito.estado, est.debito.ultimo_error, est.debito.fecha_cobro, est.tarjeta?.ultimos4], ['pausado', MOTIVO, null, '0016']);
+
+    const mano = await F.cobrarConTarjeta(d, { empresa: R.empresaId, usuario: R.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null }, { esperaMs: 2_000 });
+    const despues = await cuentaDe(R);
+    ok('pagar a mano lo destraba, como cualquier pausado', [mano.estado, despues.debito_estado, despues.ultimo_error, (await sus(R)).efectivo], ['pagada', 'al_dia', null, 'pro']);
+    await apagar(R);
   }
 
   console.log(`\n${corridas - fallos}/${corridas} comprobaciones del pago ocasional con Bancard.`);

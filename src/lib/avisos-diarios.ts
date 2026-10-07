@@ -2,7 +2,7 @@ import { clienteDeServicio } from '@/lib/supabase/servicio';
 import { avisar, correoConfigurado, enviarEmail } from '@/lib/avisos';
 import { sitio } from '@/lib/pagos';
 import {
-  claveDeEnvio, comoSePaga, correoDeVencimiento, pushDeVencimiento, RUTA_PARA_PAGAR, type Vencimiento,
+  claveDeEnvio, comoSePaga, correoDeVencimiento, pushDeVencimiento, RUTA_PARA_PAGAR, segunElServidor, type Vencimiento,
 } from '@/lib/aviso-vencimiento';
 import { abiertoATodos, configBancard } from '@/lib/bancard-servidor';
 import { diccionario } from '@/i18n/diccionarios';
@@ -179,6 +179,12 @@ async function avisarPruebasPorTerminar() {
  * A la administración le llega un resumen de los planes pagos que vencen y
  * que paga la persona: el aviso para estar atentos a la transferencia. Las
  * cuentas con el débito al día no entran: se cobran solas.
+ *
+ * NO SE PROMETE UN COBRO QUE NO VA A SALIR (07/10/2026). Antes de usar cada
+ * fila se pasa por `segunElServidor`: si Bancard no está configurado en
+ * este servidor, o la tarjeta guardada es del otro ambiente, la fila queda
+ * sin débito (y sin configuración, sin «pagá con tarjeta o QR»). El push, el
+ * correo y el aviso a la administración caen así al camino de siempre.
  */
 async function avisarVencimientos() {
   const supabase = clienteDeServicio();
@@ -188,12 +194,15 @@ async function avisarVencimientos() {
     return { error: true };
   }
 
-  const lista = (Array.isArray(data) ? data : []) as Vencimiento[];
+  // Bancard, leído UNA vez para toda la corrida: null si está apagado o mal cargado.
+  const entornoBancard = configBancard()?.entorno ?? null;
+  const lista = ((Array.isArray(data) ? data : []) as Vencimiento[])
+    .map((v) => segunElServidor(v, entornoBancard));
   const hayCorreo = correoConfigurado();
   const web = sitio();
   // «Pagá con tarjeta o QR» solo si de verdad ve el botón: abierto a todos
   // y en producción (en staging el interruptor general no cuenta).
-  const abierto = abiertoATodos() && configBancard()?.entorno === 'produccion';
+  const abierto = abiertoATodos() && entornoBancard === 'produccion';
 
   let push = 0;
   let correos = 0;
