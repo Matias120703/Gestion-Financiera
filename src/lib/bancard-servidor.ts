@@ -16,8 +16,10 @@ import { avisarResultado } from './avisos-bancard';
  *   BANCARD_ENTORNO        'staging' | 'produccion'. Sin ella (o con otro
  *                          valor), Bancard está apagado para todos.
  *   BANCARD_CLAVE_PUBLICA  la del portal (32 letras y números).
- *   BANCARD_CLAVE_PRIVADA  la del portal (40). SECRETA: nunca va a una
- *                          respuesta, a un error, a un registro ni al navegador.
+ *   BANCARD_CLAVE_PRIVADA  la del portal (40 caracteres, con letras, números Y
+ *                          SIGNOS: puntos, comas, paréntesis, +, $…). SECRETA:
+ *                          nunca va a una respuesta, a un error, a un registro
+ *                          ni al navegador.
  *   BANCARD_ABIERTO        '1' lo abre a todos los dueños. En staging no
  *                          cuenta nunca: con plata de mentira no se le abre
  *                          el pago a ningún cliente de verdad.
@@ -33,17 +35,43 @@ import { avisarResultado } from './avisos-bancard';
 
 export type MotivoSinBancard = 'sin_entorno' | 'clave_publica' | 'clave_privada';
 
-/** ¿Están las variables, con la forma que dice el manual? Sin mostrar ningún valor. */
-export function estadoDeConfiguracion(): { configurado: true; entorno: EntornoBancard } | { configurado: false; motivo: MotivoSinBancard } {
+/**
+ * Qué le pasa a la clave que no sirve, SIN mostrarla: si directamente no
+ * está, si tiene un espacio adentro o cuántos caracteres trae. Con eso quien
+ * la cargó sabe qué revisar en Vercel sin pegarla en ningún lado.
+ */
+export interface FallaDeClave { falta: boolean; conEspacios: boolean; largo: number }
+
+export type EstadoDeBancard =
+  | { configurado: true; entorno: EntornoBancard }
+  | { configurado: false; motivo: MotivoSinBancard; falla?: FallaDeClave };
+
+function fallaDe(valor: string): FallaDeClave {
+  return { falta: valor === '', conEspacios: /\s/.test(valor), largo: valor.length };
+}
+
+/** ¿Están las variables, con una forma razonable? Sin mostrar ningún valor. */
+export function estadoDeConfiguracion(): EstadoDeBancard {
   const entorno = (process.env.BANCARD_ENTORNO ?? '').trim().toLowerCase();
   if (entorno !== 'staging' && entorno !== 'produccion') return { configurado: false, motivo: 'sin_entorno' };
   // Manual, «Autenticación»: «La clave pública será única, y de la forma:
-  // [a-zA-Z0-9] {32}»; la privada, de 40.
-  if (!/^[a-zA-Z0-9]{32}$/.test((process.env.BANCARD_CLAVE_PUBLICA ?? '').trim())) {
-    return { configurado: false, motivo: 'clave_publica' };
+  // [a-zA-Z0-9] {32}».
+  const publica = (process.env.BANCARD_CLAVE_PUBLICA ?? '').trim();
+  if (!/^[a-zA-Z0-9]{32}$/.test(publica)) {
+    return { configurado: false, motivo: 'clave_publica', falla: fallaDe(publica) };
   }
-  if (!/^[a-zA-Z0-9]{40}$/.test((process.env.BANCARD_CLAVE_PRIVADA ?? '').trim())) {
-    return { configurado: false, motivo: 'clave_privada' };
+  // LA PRIVADA TRAE SIGNOS (07/10/2026). El manual dice «de la forma
+  // [a-zA-Z0-9…] {40}» y en el PDF los signos de esa lista salen ilegibles;
+  // acá se había leído «solo letras y números», y una clave verdadera del
+  // portal (con puntos, comas, paréntesis, +, $) quedaba rechazada: el panel
+  // decía «Bancard no está configurado» con todo bien cargado. No se adivina
+  // la lista de signos: alcanza con que esté, sin espacios y con un largo
+  // creíble (el manual dice 40; no se exige justo 40 por si Bancard cambia).
+  // Si la clave está mal, lo dice Bancard en «Probar conexión»
+  // (InvalidTokenError), que es quien lo sabe.
+  const privada = (process.env.BANCARD_CLAVE_PRIVADA ?? '').trim();
+  if (!/^\S{20,80}$/.test(privada)) {
+    return { configurado: false, motivo: 'clave_privada', falla: fallaDe(privada) };
   }
   return { configurado: true, entorno };
 }
