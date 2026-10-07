@@ -192,6 +192,10 @@ export const bancardEs = {
     guardadaDetalle: 'Desde ahora, el día anterior al vencimiento cobramos tu plan de esta tarjeta.',
     noSeGuardo: 'No se pudo guardar la tarjeta.',
     noSeGuardoDetalle: (detalle: string) => `No se pudo guardar la tarjeta. ${detalle}`,
+    /** Debajo de «No se pudo guardar»: lo que contestó Bancard en su formulario, tal cual (07/10/2026). */
+    bancardRespondio: (respuesta: string) => `Bancard respondió: ${respuesta}`,
+    /** Solo en el ambiente de prueba: ahí Bancard acepta una única cédula. */
+    ayudaDePruebas: 'En pruebas, la tarjeta se guarda solo con una tarjeta de prueba de Bancard y la cédula 9661000.',
     probarDeNuevo: 'Probar de nuevo',
     pagarConGuardada: (marca: string, ultimos4: string) => `Pagar con mi ${marca} •••• ${ultimos4}`,
     guardarYPagar: 'Guardar mi tarjeta y que se cobre sola cada mes',
@@ -422,6 +426,8 @@ export const bancardPt: typeof bancardEs = {
     guardadaDetalle: 'A partir de agora, no dia anterior ao vencimento cobramos seu plano neste cartão.',
     noSeGuardo: 'Não deu pra salvar o cartão.',
     noSeGuardoDetalle: (detalle) => `Não deu pra salvar o cartão. ${detalle}`,
+    bancardRespondio: (respuesta) => `A Bancard respondeu: ${respuesta}`,
+    ayudaDePruebas: 'Em testes, o cartão só é salvo com um cartão de teste da Bancard e a cédula (documento) 9661000.',
     probarDeNuevo: 'Tentar de novo',
     pagarConGuardada: (marca, ultimos4) => `Pagar com meu ${marca} •••• ${ultimos4}`,
     guardarYPagar: 'Salvar meu cartão e cobrar sozinho todo mês',

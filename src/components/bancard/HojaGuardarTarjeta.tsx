@@ -5,6 +5,7 @@ import { Hoja, MensajeError, PieHoja } from '@/components/Hoja';
 import { useTextos } from '@/i18n/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { telefonoInternacional } from '@/lib/telefono';
+import { leerLoQueDijoElFormulario, textoDeLoQueDijo, type DichoPorElFormulario } from '@/lib/bancard-formulario';
 import { FormularioBancard } from './FormularioBancard';
 
 export interface TarjetaGuardadaVista {
@@ -27,6 +28,11 @@ type Paso = 'consentir' | 'abriendo' | 'formulario' | 'verificando' | 'guardada'
  *   3. LO QUE DICE EL FORMULARIO NO CUENTA: al terminar (diga «éxito» o
  *      «falló»), el servidor le pide a Bancard la lista de tarjetas y solo si
  *      la tarjeta está, queda guardada («Tarjeta guardada: Visa •••• 0016»).
+ *      Lo que dijo el formulario viaja igual al servidor, que lo deja anotado
+ *      y lo devuelve limpio: si la tarjeta NO quedó, se muestra debajo
+ *      («Bancard respondió: …»), porque «No se pudo guardar la tarjeta.» a
+ *      secas no le decía a nadie qué corregir (07/10/2026). En el ambiente
+ *      de prueba se suma la ayuda de la cédula que Bancard acepta ahí.
  *
  * QUÉ PASA CON LA TARJETA lo dice quien abre la hoja (`antes` de aceptar y
  * `despues` de guardarla), porque depende de la cuenta: con un plan pago
@@ -59,6 +65,8 @@ export function HojaGuardarTarjeta({
   const [abierto, setAbierto] = useState<{ tarjeta: number; processId: string } | null>(null);
   const [guardada, setGuardada] = useState<TarjetaGuardadaVista | null>(null);
   const [motivoFallo, setMotivoFallo] = useState('');
+  /** Lo que contestó Bancard en el formulario, para mostrarlo si la tarjeta no quedó. */
+  const [respuestaDeBancard, setRespuestaDeBancard] = useState('');
 
   const telefonoVale = !pideTelefono || telefonoInternacional(telefono, zona) !== '';
 
@@ -90,15 +98,19 @@ export function HojaGuardarTarjeta({
     setPaso('consentir');
   }
 
-  // El formulario terminó: se le pregunta a Bancard, no al formulario.
-  async function verificar() {
+  // El formulario terminó: se le pregunta a Bancard, no al formulario. Lo que
+  // dijo el formulario (`formulario`) va de pasajero: el servidor lo anota y
+  // lo devuelve limpio, y acá solo se muestra si la tarjeta no quedó.
+  async function verificar(formulario?: DichoPorElFormulario) {
     if (!abierto) return;
     setPaso('verificando');
+    // Si el servidor no llega a contestar, queda lo que se oyó acá.
+    let dicho = formulario ?? null;
     try {
       const r = await fetch('/api/pagos/bancard/tarjeta/verificar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa: empresaId, tarjeta: abierto.tarjeta }),
+        body: JSON.stringify({ empresa: empresaId, tarjeta: abierto.tarjeta, ...(formulario ? { formulario } : {}) }),
       });
       const d = await r.json().catch(() => null);
       if (r.ok && d?.guardada === true) {
@@ -107,9 +119,11 @@ export function HojaGuardarTarjeta({
         return;
       }
       setMotivoFallo(typeof d?.error === 'string' ? mensajeDeError(d.error, '') : '');
+      dicho = leerLoQueDijoElFormulario(d?.formulario) ?? dicho;
     } catch {
       setMotivoFallo('');
     }
+    setRespuestaDeBancard(textoDeLoQueDijo(dicho));
     setPaso('fallo');
   }
 
@@ -160,7 +174,7 @@ export function HojaGuardarTarjeta({
             entorno={entorno}
             urlScript={urlScript}
             origen={origen}
-            onTermino={() => { void verificar(); }}
+            onTermino={(dicho) => { void verificar(dicho); }}
           />
           <p className="text-[12px] leading-relaxed text-tinta/50">{k.formularioSeguro}</p>
         </div>
@@ -184,9 +198,15 @@ export function HojaGuardarTarjeta({
           <p className="text-[13.5px] leading-relaxed text-tinta/65">{despues}</p>
         </div>
       ) : paso === 'fallo' ? (
-        <p role="alert" className="rounded-xl bg-ambar-claro px-3 py-2.5 text-[13.5px] font-medium leading-relaxed text-ambar">
-          {motivoFallo ? k.noSeGuardoDetalle(motivoFallo) : k.noSeGuardo}
-        </p>
+        <div className="space-y-3">
+          <div role="alert" className="space-y-1 rounded-xl bg-ambar-claro px-3 py-2.5 text-[13.5px] leading-relaxed text-ambar">
+            <p className="font-medium">{motivoFallo ? k.noSeGuardoDetalle(motivoFallo) : k.noSeGuardo}</p>
+            {respuestaDeBancard && <p className="break-words">{k.bancardRespondio(respuestaDeBancard)}</p>}
+          </div>
+          {entorno === 'staging' && (
+            <p className="rounded-xl bg-arena px-3 py-2.5 text-[12.5px] leading-relaxed text-tinta/65">{k.ayudaDePruebas}</p>
+          )}
+        </div>
       ) : (
         <div className="space-y-4">
           <p className="text-[13.5px] leading-relaxed text-tinta/70">{k.formularioSeguro}</p>
