@@ -1537,8 +1537,13 @@ export interface DetalleFiado {
   desde: string | null;
   dias: number | null;
   deudas: DeudaConCuotas[];
-  /** Las líneas fiadas que todavía no tienen fecha: a esas se les puede poner. */
-  sin_fecha_lineas: { id: string; fecha: string; monto: number; concepto: string; venta_id: string | null }[];
+  /**
+   * Las líneas fiadas que todavía no tienen fecha: a esas se les puede poner.
+   * `cubierto` es lo que esa línea ya tiene pagado (los pagos sueltos cubren
+   * primero lo que se anotó primero): lo mismo que la base le ata si se le
+   * pone fecha, y lo que la hoja avisa antes de guardar («Ya cobraste…»).
+   */
+  sin_fecha_lineas: { id: string; fecha: string; monto: number; concepto: string; venta_id: string | null; cubierto: number }[];
   libro: LineaFiado[];
 }
 
@@ -1560,6 +1565,9 @@ export interface CobrosDeHoy {
   /** `cuantas` son cuotas; `personas`, gente distinta (la frase habla de personas). */
   hoy: { cuantas: number; personas?: number; monto: number; nombres: string[] };
   atrasadas: { cuantas: number; personas?: number; monto: number; nombres: string[]; dias_max: number };
+  /** Gente distinta entre `hoy` y `atrasadas`: quien está en las dos cuenta una vez. */
+  personas?: number;
+  /** Personas (no cuotas) con ALGUNA cuota de hoy o atrasada, con algo pendiente, por la que todavía no se les escribió. */
   sin_escribir: number;
   destinatarios: { user_id: string; idioma: string }[];
 }

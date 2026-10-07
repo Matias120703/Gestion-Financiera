@@ -226,7 +226,10 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     await val(U, "select public.anotar_fiado($1,$2,3000,'a cuenta')", [E, C.cliente]);
     // (127) La venta fiada, en dos cuotas, con un pago que dice ser de esa
     // venta; y un fiado anotado a mano, también en cuotas. Al vaciar se van
-    // las cuotas de la venta, el pago queda suelto y lo anotado a mano queda.
+    // las cuotas de la venta y lo anotado a mano queda. Los pagos que eran de
+    // la venta (7.000) quedan sin su deuda: 3.000 cubren lo «a cuenta» y los
+    // 4.000 que sobran se ATAN a lo anotado a mano en cuotas (el derrame no
+    // queda nunca): el pago de 5.000 se parte en 1.000 sueltos y 4.000 atados.
     const cuotas = (montos) => JSON.stringify(montos.map((monto, i) => ({ vence_el: `2027-0${i + 1}-15`, monto })));
     const plan = (await val(U, 'select public.programar_cuotas(p_venta => $1, p_plan => $2::jsonb) j', [C.ventaFiada, cuotas([10000, 10000])])).j;
     await val(U, 'select public.cobrar_fiado(p_empresa => $1, p_cliente => $2, p_monto => 2000, p_cuota => $3)', [E, C.cliente, plan.cuotas[0].id]);
@@ -771,12 +774,22 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     ok(`${quien}: la cuenta, el plan, el código, la IA y las deudas, iguales`,
       [d.nombre, d.suscripcion, d.codigo, d.ia, d.saldo_deudas, d.traidos],
       [a.nombre, a.suscripcion, a.codigo, a.ia, a.saldo_deudas, a.traidos]);
-    ok(`${quien}: del fiado y de la agenda cobrada se fue solo lo que colgaba de una venta`,
-      [d.fiado, d.turnos_atribucion], [a.fiado - a.fiado_de_venta, a.turnos_atribucion - a.atribuciones_cobradas]);
-    // (127) Con cuotas: se fueron las de la venta, quedaron las de lo anotado
-    // a mano, y el pago que era de la venta quedó como pago suelto.
-    ok(`${quien}: de las cuotas se fueron solo las de la venta fiada, y su pago quedó suelto`,
-      [d.fiado_cuotas, d.cuotas_de_venta, d.pagos_de_una_deuda], [a.fiado_cuotas - a.cuotas_de_venta, 0, 0]);
+    // (127) Una línea más que las que quedaban: el pago de 5.000 se partió en
+    // dos al atarle 4.000 a lo anotado a mano. El libro suma lo mismo. (Solo
+    // donde quedó una deuda en cuotas: la personal en Gratis no tiene.)
+    const ata = a.fiado_cuotas - a.cuotas_de_venta > 0 ? 1 : 0;
+    ok(`${quien}: del fiado y de la agenda cobrada se fue solo lo que colgaba de una venta (y un pago quedó partido en dos)`,
+      [d.fiado, d.turnos_atribucion], [a.fiado - a.fiado_de_venta + ata, a.turnos_atribucion - a.atribuciones_cobradas]);
+    // (127) Con cuotas: se fueron las de la venta y quedaron las de lo anotado
+    // a mano. De los pagos que quedaron sin su venta, lo que sobraba de lo sin
+    // fecha quedó atado a esa deuda: una sola línea, de 4.000.
+    ok(`${quien}: de las cuotas se fueron solo las de la venta fiada, y lo que sobraba de sus pagos quedó atado a la deuda que queda`,
+      [d.fiado_cuotas, d.cuotas_de_venta, d.pagos_de_una_deuda,
+        await n(`select coalesce(sum(k.monto), 0)::int n from public.fiado k where k.empresa_id=$1 and k.fio_id is not null`, [E]),
+        await n(`select count(*)::int n from public.clientes c cross join lateral public.partes_fiado(c.id) p
+                 where c.empresa_id = $1 and p.u > p.f0
+                   and exists (select 1 from public.estado_cuotas(c.id) e where e.pendiente > 0)`, [E])],
+      [a.fiado_cuotas - a.cuotas_de_venta, 0, ata, ata * 4000, 0]);
     ok(`${quien}: y lo que debe cada uno sigue cerrando con sus cuotas`,
       await n(`select count(*)::int n from public.clientes c where c.empresa_id = $1
                and public.sin_fecha_fiado(c.id) + coalesce((select sum(e.pendiente) from public.estado_cuotas(c.id) e), 0)

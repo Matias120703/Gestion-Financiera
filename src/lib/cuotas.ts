@@ -160,6 +160,93 @@ export function fechaCorta(iso: string, anioDe?: string): string {
 }
 
 /**
+ * 'vie', 'sex': el día de la semana, corto y en el idioma de quien mira.
+ *
+ * «Me paga el viernes» por voz lo convierte en fecha un modelo, y un modelo
+ * se equivoca de viernes. Con «24/10» a secas no hay con qué notarlo; con
+ * «sáb 24/10» se ve de un vistazo que no era ese día.
+ */
+export function diaCorto(iso: string, locale = 'es'): string {
+  if (!esFecha(iso)) return '';
+  const [a, m, d] = partes(iso);
+  try {
+    // En UTC: la fecha no tiene hora, y en la zona del teléfono un día a
+    // medianoche puede caer en el anterior. El portugués trae «sex.»: sin punto.
+    return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' })
+      .format(new Date(Date.UTC(a, m - 1, d))).replace(/[.]$/, '');
+  } catch {
+    return '';
+  }
+}
+
+/** 'vie 23/10' (y 'vie 15/01/27' si no es de este año). */
+export function fechaConDia(iso: string, hoy: string, locale = 'es'): string {
+  return [diaCorto(iso, locale), fechaCorta(iso, hoy)].filter(Boolean).join(' ');
+}
+
+/** La base no acepta una cuota antes del 2000 ni a más de diez años. */
+const PRIMER_DIA = '2000-01-01';
+
+/**
+ * ¿Lo que hay ESCRITO en un campo de fecha ya es una fecha para el plan?
+ *
+ * En la computadora la fecha se teclea, y al escribir el año el navegador
+ * pasa por «0002-01-15», «0020-…», «0202-…» antes de llegar a 2027. Si cada
+ * una de esas fuera al plan (o se rechazara y el campo volviera atrás), el
+ * año no se podía escribir y la cuota quedaba en el año en curso, ya
+ * vencida. Al plan va solo lo que la base aceptaría.
+ */
+export function fechaQueSeManda(iso: string | null | undefined, hoy: string): iso is string {
+  if (!esFecha(iso) || iso < PRIMER_DIA) return false;
+  return !esFecha(hoy) || iso <= sumarPeriodo(hoy, 'mes', 120);
+}
+
+/**
+ * La última cuota, cuando NO es igual a las demás; si no, null.
+ *
+ * 1.250.000 en 12 son once de 104.166 y una de 104.174. «12 × 104.166» a
+ * secas da 1.249.992: la vista previa tiene que decir la que cierra la cuenta.
+ */
+export function ultimaDistinta(plan: Plan, decimales = 0): number | null {
+  if (plan.length < 2) return null;
+  const f = 10 ** decimales;
+  const ultima = plan[plan.length - 1].monto;
+  return Math.round(ultima * f) === Math.round(plan[0].monto * f) ? null : ultima;
+}
+
+/**
+ * Entre qué fechas se puede correr una cuota: las de sus vecinas por número.
+ *
+ * Los pagos de una deuda tapan las cuotas POR NÚMERO. Si la cuota 1 se
+ * corría más allá de la 2, quien pagaba la de hoy quedaba con la de hoy sin
+ * pagar y la de dentro de un mes pagada: atrasado habiendo pagado a tiempo.
+ * La base lo rechaza (`mover_cuota`); el campo ya no lo deja elegir. La
+ * misma fecha que la vecina sí vale. Para saltar una por encima de otra
+ * está «Rearmar».
+ */
+export function vecinasDe(cuotas: Pick<CuotaFiado, 'numero' | 'vence_el'>[], numero: number): { min?: string; max?: string } {
+  const antes = cuotas.filter((c) => c.numero < numero && esFecha(c.vence_el)).map((c) => c.vence_el).sort();
+  const despues = cuotas.filter((c) => c.numero > numero && esFecha(c.vence_el)).map((c) => c.vence_el).sort();
+  return {
+    ...(antes.length ? { min: antes[antes.length - 1] } : {}),
+    ...(despues.length ? { max: despues[0] } : {}),
+  };
+}
+
+/**
+ * Cuántas cuotas atrasadas tiene y cuánto suman, cuando son MÁS DE UNA.
+ *
+ * Con dos vencidas, la fila decía «Cuota 1 de 3 · 150.000» y el WhatsApp
+ * reclamaba esa sola: la mitad de lo que ya venció. Con más de una se habla
+ * del total atrasado. Con una sola (o ninguna), null: vale lo de su próxima.
+ */
+export function variasAtrasadas(d: Pick<DeudorFiado, 'atrasadas' | 'monto_atrasado'>): { cuantas: number; monto: number } | null {
+  const cuantas = Number(d.atrasadas ?? 0);
+  const monto = Number(d.monto_atrasado ?? 0);
+  return cuantas > 1 && monto > 0 ? { cuantas, monto } : null;
+}
+
+/**
  * ¿Hoy toca avisar por una cuota que lleva `diasDeAtraso` días vencida?
  *
  * El día que vence, a los 3 días y después una vez por semana (0, 3, 7, 14,
@@ -315,6 +402,7 @@ export function leerDetalleFiado(d: any): DetalleFiado {
       monto: Number(l.monto ?? 0),
       concepto: String(l.concepto ?? ''),
       venta_id: l.venta_id ?? null,
+      cubierto: Number(l.cubierto ?? 0),
     })),
     libro: lista(d?.libro).map((l) => ({
       id: String(l.id),
@@ -331,17 +419,49 @@ export function leerDetalleFiado(d: any): DetalleFiado {
 }
 
 /**
+ * Lo que ya se cobró de una línea sin fecha, para avisarlo al «Ponerle fecha».
+ *
+ * Las cuotas tienen que sumar la línea ENTERA (400.000), no lo que falta
+ * (250.000): lo ya pagado tapa las primeras. Sin decirlo, la hoja mostraba
+ * «2 × 200.000» y nadie entendía por qué no 2 × 125.000.
+ *
+ * El número NO se calcula acá: lo manda la base en cada línea sin fecha
+ * (`detalle_fiado.sin_fecha_lineas[].cubierto`), y es exactamente lo que
+ * `programar_cuotas` va a dejar atado a esa deuda al guardar (los pagos
+ * sueltos cubren primero lo que se anotó primero). Así el aviso dice la
+ * verdad con una línea o con diez, y haya o no otras deudas en cuotas. Si la
+ * base no manda la clave, 0: no se dice nada.
+ */
+export function yaCobradoAlFechar(
+  d: Pick<DetalleFiado, 'sin_fecha_lineas'>, linea: { id: string; monto: number }, decimales = 0,
+): number {
+  const cubierto = Number(d.sin_fecha_lineas.find((l) => l.id === linea.id)?.cubierto ?? 0);
+  if (!(cubierto > 0)) return 0;
+  const f = 10 ** decimales;
+  return Math.min(linea.monto, Math.round(cubierto * f) / f);
+}
+
+/**
  * A cuáles líneas sin fecha tiene sentido ofrecerles «Ponerle fecha».
  *
  * Un cliente de años tiene decenas de líneas viejas ya pagadas, y un botón
  * en cada una taparía el libro. Lo que hoy debe sin fecha son sus líneas más
- * NUEVAS (los pagos sueltos tapan primero lo más viejo): se toman de la más
- * nueva hacia atrás hasta cubrir lo que debe sin fecha.
+ * NUEVAS (los pagos sueltos tapan primero lo más viejo).
+ *
+ * Cuáles son lo dice la base: cada línea trae `cubierto` (lo que ya tiene
+ * pagado) y el botón va en las que todavía tienen algo sin cubrir. Es la
+ * misma regla con la que `programar_cuotas` ata los pagos, así que nunca se
+ * ofrece ponerle fecha a una línea que nacería pagada entera. Sin esa clave
+ * (una lista armada a mano), la cuenta de antes: de la más nueva hacia atrás
+ * hasta cubrir lo que debe sin fecha.
  */
-export function lineasParaFechar<L extends { id: string; fecha: string; monto: number }>(
+export function lineasParaFechar<L extends { id: string; fecha: string; monto: number; cubierto?: number }>(
   lineas: L[], sinFecha: number,
 ): L[] {
   if (!(sinFecha > 0)) return [];
+  if (lineas.length > 0 && lineas.every((l) => typeof l.cubierto === 'number')) {
+    return lineas.filter((l) => (l.cubierto ?? 0) < l.monto);
+  }
   const deNuevaAVieja = lineas
     .map((l, i) => ({ l, i }))
     .sort((a, b) => b.l.fecha.localeCompare(a.l.fecha) || a.i - b.i);

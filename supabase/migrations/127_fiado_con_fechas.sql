@@ -53,8 +53,10 @@
 --    «estado» ni de «saldo»: eso se calcula (bloque 4).
 --
 --    INVARIANTE (la cuida programar_cuotas): las cuotas de una línea suman
---    el monto de esa línea. `fiado.monto` no se puede modificar por ninguna
---    función ni por RLS, así que no se desacomoda.
+--    el monto de esa línea. El monto de una línea 'fio' no lo modifica
+--    ninguna función ni la RLS, así que no se desacomoda. (Lo único que
+--    cambia de monto en el libro es un 'cobro' cuando se parte en dos al
+--    atarlo, bloque 4b; las dos partes suman lo mismo.)
 -- ------------------------------------------------------------
 create table if not exists public.fiado_cuotas (
   id          uuid primary key default gen_random_uuid(),
@@ -202,8 +204,16 @@ revoke all on function public.rubro_tiene_fiado(text, text) from public, anon, a
 --    paso): sin fecha + lo pendiente de todas las cuotas = el saldo del
 --    libro (o cero, si el libro quedó por debajo de cero).
 --
---    El derrame es la red, no el mecanismo: la pantalla manda siempre de qué
---    cuota es el pago cuando hay deudas con cuotas.
+--    EL DERRAME ES LA RED, Y NO QUEDA NUNCA GUARDADO. Como se calcula al
+--    leer, es movedizo: si el cliente lleva después algo sin fecha, F0 sube,
+--    el derrame se achica y una cuota que figuraba pagada vuelve a figurar
+--    atrasada (con aviso al comerciante y todo). Por eso cada operación que
+--    podría dejar pagos sueltos de más los ATA en esa misma transacción a la
+--    deuda que tapan (bloque 4b): cobrar parte el cobro (bloque 10), ponerle
+--    fecha a algo ya pagado ata lo que esa línea tenía cubierto (bloque 5), y
+--    borrar una línea sin fecha, anular una venta fiada o empezar de cero
+--    atan lo que sobra (bloques 15, 16 y 19). La segunda pasada queda para
+--    que la cuenta cierre igual si alguna vez sobrara algo.
 -- ------------------------------------------------------------
 
 -- F0 y U, en un solo lugar: de acá salen «lo sin fecha» y el derrame.
@@ -307,6 +317,225 @@ revoke all on function public.estado_cuotas(uuid) from public, anon, authenticat
 
 
 -- ------------------------------------------------------------
+-- 4b. LOS PAGOS SUELTOS QUE SOBRAN SE ATAN (el derrame no queda nunca)
+--
+--    Tres ayudas internas; ninguna se le da a nadie.
+--
+--    QUÉ LÍNEA SIN FECHA ESTÁ PAGADA (`fiado_cubierto`). Lo sin fecha de un
+--    cliente es un solo número (F0 menos U), pero al «ponerle fecha» a UNA
+--    línea hay que saber cuánto de ESA ya se cobró. La regla, una sola:
+--      · primero, cada línea con sus pagos propios (los que quedaron
+--        apuntándole cuando se le sacaron las cuotas);
+--      · después, los pagos sueltos (sin `fio_id`) cubren las líneas por
+--        antigüedad, de la que se anotó primero a la última.
+--    «Antigüedad» es el orden en que se anotaron (`created_at`), no la fecha
+--    que llevan: una venta fiada recién hecha, aunque se cargue con fecha de
+--    ayer, es la última de la fila y no se lleva pagos de la libreta vieja.
+--    La suma de lo cubierto es lo mismo que descuenta `sin_fecha_fiado`.
+--
+--    ATAR (`fiado_atar_a`). Re-etiqueta líneas 'cobro' sueltas poniéndoles el
+--    `fio_id` de la deuda, de la más vieja a la más nueva. Si una alcanza
+--    para más de lo que hay que atar, se PARTE en dos líneas con la misma
+--    fecha, forma de pago, cuenta, autor y hora: la que ya existía se queda
+--    con lo que sigue suelto y la nueva lleva lo atado. El libro suma lo
+--    mismo antes y después: no entra ni sale un guaraní, y la billetera no
+--    se toca. `p_saltar` deja pasar la plata suelta que cubre líneas más
+--    viejas, para atar el pago que de verdad era de esa línea.
+--
+--    QUE NO SOBRE (`fiado_atar_sueltos`). Con `p_primero`, ata primero ahí
+--    lo que se le pide (hasta lo que a esa deuda le falta). Después, si
+--    todavía hay pagos sueltos de más (U mayor que F0), ata a cada deuda
+--    EXACTAMENTE lo que la segunda pasada de `estado_cuotas` le estaba
+--    tapando: ninguna cuota cambia de estado al atar; lo que cambia es que
+--    ya no se puede desatar sola. No hace nada si no sobra o si no hay
+--    cuotas pendientes.
+--
+--    Atar es un UPDATE (y, si hay que partir, un INSERT) sobre el libro, y
+--    pasa también después de un BORRADO, que anda siempre (111): el guardián
+--    lo deja pasar por la marca `orden.atando_fiado` (bloque 19), que vale
+--    solo para líneas 'cobro' de ese negocio y solo mientras dura el atado.
+-- ------------------------------------------------------------
+create or replace function public.fiado_cubierto(p_cliente uuid)
+returns table (
+  fio_id   uuid,
+  monto    numeric,
+  -- Sus pagos propios (cobros con fio_id = esta línea).
+  atado    numeric,
+  -- Lo que tiene cubierto en total: lo propio más lo que le toca de lo suelto.
+  cubierto numeric,
+  -- La plata suelta que se llevan las líneas anotadas antes que esta.
+  antes    numeric
+)
+language sql stable security definer set search_path = public as $fn$
+  with lineas as (
+    select f.id, f.monto, f.created_at,
+           least(f.monto, coalesce((select sum(c.monto) from public.fiado c
+                                    where c.fio_id = f.id and c.tipo = 'cobro'), 0)) as atado
+    from public.fiado f
+    where f.cliente_id = p_cliente and f.tipo = 'fio'
+      and not exists (select 1 from public.fiado_cuotas q where q.fio_id = f.id)
+  ),
+  sueltos as (
+    select coalesce(sum(c.monto), 0) as total
+    from public.fiado c
+    where c.cliente_id = p_cliente and c.tipo = 'cobro' and c.fio_id is null
+  ),
+  fila as (
+    select l.id, l.monto, l.atado,
+           coalesce(sum(l.monto - l.atado) over (
+             order by l.created_at, l.id
+             rows between unbounded preceding and 1 preceding), 0) as delante
+    from lineas l
+  )
+  select f.id, f.monto, f.atado,
+         f.atado + greatest(0, least(f.monto - f.atado, s.total - f.delante)),
+         least(s.total, f.delante)
+  from fila f cross join sueltos s;
+$fn$;
+
+revoke all on function public.fiado_cubierto(uuid) from public, anon, authenticated;
+
+create or replace function public.fiado_atar_a(
+  p_cliente uuid,
+  p_fio     uuid,
+  p_monto   numeric,
+  p_saltar  numeric default 0
+)
+returns numeric language plpgsql security definer set search_path = public as $fn$
+declare
+  v_empresa uuid;
+  v_resta   numeric := coalesce(p_monto, 0);
+  v_saltar  numeric := greatest(coalesce(p_saltar, 0), 0);
+  v_atado   numeric := 0;
+  v_libre   numeric;
+  v_toma    numeric;
+  c         public.fiado;
+begin
+  if v_resta <= 0 then return 0; end if;
+
+  -- La deuda tiene que ser una línea 'fio' de ese cliente.
+  select f.empresa_id into v_empresa from public.fiado f
+  where f.id = p_fio and f.cliente_id = p_cliente and f.tipo = 'fio';
+  if v_empresa is null then return 0; end if;
+
+  perform set_config('orden.atando_fiado', v_empresa::text, true);
+
+  for c in
+    select * from public.fiado k
+    where k.cliente_id = p_cliente and k.tipo = 'cobro' and k.fio_id is null
+    order by k.created_at, k.id
+  loop
+    exit when v_resta <= 0;
+
+    v_libre := c.monto;
+    if v_saltar > 0 then
+      if v_saltar >= c.monto then
+        v_saltar := v_saltar - c.monto;
+        continue;
+      end if;
+      v_libre  := c.monto - v_saltar;
+      v_saltar := 0;
+    end if;
+
+    v_toma := least(v_libre, v_resta);
+
+    if v_toma = c.monto then
+      update public.fiado set fio_id = p_fio where id = c.id;
+    else
+      -- Se parte: la línea de siempre se queda con lo suelto y una gemela
+      -- lleva lo atado. Entre las dos suman lo que sumaba la primera.
+      update public.fiado set monto = c.monto - v_toma where id = c.id;
+      insert into public.fiado (
+        empresa_id, cliente_id, tipo, monto, fecha, concepto, venta_id, cobro_id,
+        metodo, cuenta_id, fio_id, creado_por, created_at
+      ) values (
+        c.empresa_id, c.cliente_id, 'cobro', v_toma, c.fecha, c.concepto, c.venta_id, c.cobro_id,
+        c.metodo, c.cuenta_id, p_fio, c.creado_por, c.created_at
+      );
+    end if;
+
+    v_resta := v_resta - v_toma;
+    v_atado := v_atado + v_toma;
+  end loop;
+
+  perform set_config('orden.atando_fiado', '', true);
+
+  return v_atado;
+end $fn$;
+
+revoke all on function public.fiado_atar_a(uuid, uuid, numeric, numeric) from public, anon, authenticated;
+
+create or replace function public.fiado_atar_sueltos(
+  p_cliente uuid,
+  p_primero uuid default null,
+  p_monto   numeric default null,
+  p_saltar  numeric default 0
+)
+returns numeric language plpgsql security definer set search_path = public as $fn$
+declare
+  v_atado  numeric := 0;
+  v_falta  numeric;
+  v_fios   uuid[];
+  v_tomas  numeric[];
+  i        integer;
+begin
+  -- El mismo candado que al cobrar (056). Quien llama ya lo tiene casi
+  -- siempre; pedirlo otra vez no cuesta nada.
+  perform 1 from public.clientes where id = p_cliente for update;
+  if not found then return 0; end if;
+
+  -- 1. Lo que se pide para una deuda en particular: la línea a la que se le
+  --    acaba de poner fecha. Nunca más de lo que a esa deuda le falta.
+  if p_primero is not null and coalesce(p_monto, 0) > 0
+     and exists (select 1 from public.fiado_cuotas q
+                 where q.fio_id = p_primero and q.cliente_id = p_cliente) then
+    select f.monto - coalesce((select sum(c.monto) from public.fiado c
+                               where c.fio_id = f.id and c.tipo = 'cobro'), 0)
+    into v_falta
+    from public.fiado f
+    where f.id = p_primero and f.cliente_id = p_cliente and f.tipo = 'fio';
+
+    if coalesce(v_falta, 0) > 0 then
+      v_atado := v_atado + public.fiado_atar_a(p_cliente, p_primero, least(p_monto, v_falta), p_saltar);
+    end if;
+  end if;
+
+  -- 2. Lo que sobra. Si lo suelto no pasa de lo sin fecha, no hay nada que
+  --    atar (es lo de casi siempre, y sale acá sin mirar las cuotas).
+  if not exists (select 1 from public.partes_fiado(p_cliente) p where p.u > p.f0) then
+    return v_atado;
+  end if;
+
+  -- A cada deuda, lo que el derrame le está tapando hoy: lo pagado de sus
+  -- cuotas menos sus pagos propios. La cuenta se hace entera ANTES de tocar
+  -- el libro.
+  select array_agg(t.fio_id order by t.pos), array_agg(t.toma order by t.pos)
+  into v_fios, v_tomas
+  from (
+    select e.fio_id, min(e.pos) as pos,
+           sum(e.pagado) - least(sum(e.monto), coalesce((
+             select sum(c.monto) from public.fiado c
+             where c.fio_id = e.fio_id and c.tipo = 'cobro'), 0)) as toma
+    from public.estado_cuotas(p_cliente) with ordinality as e(
+      cuota_id, fio_id, numero, de, vence_el, monto, pagado, pendiente, dias,
+      avisado_el, concepto, fecha_fio, monto_fio, venta_id, pos)
+    group by e.fio_id
+  ) t
+  where t.toma > 0;
+
+  if v_fios is not null then
+    for i in 1 .. array_length(v_fios, 1) loop
+      v_atado := v_atado + public.fiado_atar_a(p_cliente, v_fios[i], v_tomas[i]);
+    end loop;
+  end if;
+
+  return v_atado;
+end $fn$;
+
+revoke all on function public.fiado_atar_sueltos(uuid, uuid, numeric, numeric) from public, anon, authenticated;
+
+
+-- ------------------------------------------------------------
 -- 5. PONERLE FECHAS A UNA DEUDA
 --
 --    `p_plan` es la lista de cuotas ya armada:
@@ -320,6 +549,19 @@ revoke all on function public.estado_cuotas(uuid) from public, anon, authenticat
 --    Si la línea ya tenía cuotas, se REEMPLAZAN. Los cobros que decían ser de
 --    esa deuda siguen apuntando a la línea y se reacomodan solos sobre las
 --    cuotas nuevas (bloque 4).
+--
+--    SI LA LÍNEA ESTABA SIN FECHA Y YA TENÍA ALGO PAGADO, ESO SE LE ATA.
+--    Lo que tenía cubierto por pagos sueltos (`fiado_cubierto`: los pagos
+--    sueltos cubren primero lo que se anotó primero) pasa a ser pago de ESTA
+--    deuda en la misma transacción (`fiado_atar_sueltos`). Sin eso quedaba
+--    como derrame calculado al leer: Libreta 400.000 con 150.000 pagados, se
+--    le ponen 2 cuotas de 200.000 y la primera figura con 50.000 pendientes;
+--    al día siguiente el cliente lleva 100.000 sin fecha y la cuota pasa a
+--    150.000 pendientes mientras lo nuevo figura pagado. Atado, no se mueve.
+--    Es el número que la hoja de «Ponerle fecha» muestra antes de guardar
+--    («Ya cobraste Gs. X»: `detalle_fiado.sin_fecha_lineas[].cubierto`).
+--    Una venta fiada recién hecha a la que se le ponen cuotas en el acto es
+--    la última de la fila: no se lleva pagos de nadie.
 --
 --    Cualquier miembro: el que fía es el que pone la fecha (054).
 -- ------------------------------------------------------------
@@ -341,6 +583,9 @@ declare
   v_montos numeric[] := '{}';
   v_n      integer;
   v_res    jsonb;
+  v_tenia  boolean;
+  v_ata    numeric := 0;
+  v_saltar numeric := 0;
 begin
   if p_fio is not null then
     select * into v from public.fiado where id = p_fio;
@@ -425,11 +670,23 @@ begin
       using errcode = '22023';
   end if;
 
+  -- Si la línea estaba sin fecha, cuánto tenía cubierto por pagos sueltos.
+  -- Se mira ANTES de ponerle las cuotas, mientras todavía está en la fila.
+  v_tenia := exists (select 1 from public.fiado_cuotas q where q.fio_id = v.id);
+  if not v_tenia then
+    select greatest(k.cubierto - k.atado, 0), k.antes into v_ata, v_saltar
+    from public.fiado_cubierto(v.cliente_id) k where k.fio_id = v.id;
+  end if;
+
   delete from public.fiado_cuotas where fio_id = v.id;
 
   insert into public.fiado_cuotas (empresa_id, cliente_id, fio_id, numero, vence_el, monto, creado_por)
   select v.empresa_id, v.cliente_id, v.id, g.i::smallint, v_fechas[g.i], v_montos[g.i], auth.uid()
   from generate_series(1, v_n) as g(i);
+
+  -- Eso que tenía cubierto queda atado a esta deuda; y si sobrara algo
+  -- suelto, a las cuotas que tapa. Al rearmar no hay nada que atar.
+  perform public.fiado_atar_sueltos(v.cliente_id, v.id, coalesce(v_ata, 0), coalesce(v_saltar, 0));
 
   select jsonb_build_object(
     'fio_id', v.id,
@@ -452,8 +709,15 @@ grant execute on function public.programar_cuotas(uuid, jsonb, uuid) to authenti
 --
 --    «No tenía que tener fechas». Se borra el calendario y NADA MÁS: lo que
 --    debe y lo que pagó quedan igual. Los cobros que decían ser de esa deuda
---    pasan a contar como sueltos; si se le vuelven a poner fechas, se
---    reenganchan solos.
+--    siguen apuntándole (`fio_id` no se toca) y pasan a contar como sueltos;
+--    si se le vuelven a poner fechas, se reenganchan solos.
+--
+--    No puede dejar pagos sueltos de más: lo sin fecha sube por el monto de
+--    la línea y lo suelto sube por sus pagos propios, que nunca son más que
+--    ese monto. Por eso acá no se ata nada. Y esos pagos siguen siendo de
+--    esa línea para `fiado_cubierto` (primero lo propio), para la hoja de
+--    «Ponerle fecha» y para borrar_linea_fiado, que no deja borrar la línea
+--    sin borrar antes sus pagos.
 --
 --    Es un DELETE: anda también en una cuenta vencida (111).
 -- ------------------------------------------------------------
@@ -492,6 +756,16 @@ grant execute on function public.quitar_cuotas(uuid) to authenticated;
 --    «Me dijo que me paga el viernes». Si se movió, hay que volver a
 --    avisarle: `avisado_el` vuelve a null. Qué cuota está pagada no cambia:
 --    adentro de una deuda el orden es el número, no la fecha.
+--
+--    LAS FECHAS SIGUEN EN ORDEN. Justamente porque los pagos tapan por
+--    número, una cuota no puede saltar por encima de sus vecinas: si la 1 se
+--    corre para después de la 2, el pago de hoy tapa la 1 (que vence en un
+--    mes) y la 2, la de hoy, queda «sin pagar»: la clienta que pagó a tiempo
+--    pasa a atrasada y recibe el reclamo. Se compara contra TODAS las cuotas
+--    de la deuda, también las ya pagadas: si después se borra un pago, esa
+--    cuota vuelve a quedar pendiente y el desorden reaparecería. La misma
+--    fecha que la vecina sí se puede, igual que en programar_cuotas. Para
+--    cambiar el orden está «Rearmar».
 -- ------------------------------------------------------------
 create or replace function public.mover_cuota(p_cuota uuid, p_vence_el date)
 returns jsonb language plpgsql security definer set search_path = public as $fn$
@@ -513,6 +787,13 @@ begin
     raise exception 'La fecha de la cuota no es válida.' using errcode = '22023';
   end if;
 
+  if exists (select 1 from public.fiado_cuotas o
+             where o.fio_id = v.fio_id and o.id <> v.id
+               and ((o.numero < v.numero and o.vence_el > p_vence_el)
+                 or (o.numero > v.numero and o.vence_el < p_vence_el))) then
+    raise exception 'Las fechas de las cuotas tienen que ir en orden.' using errcode = '22023';
+  end if;
+
   update public.fiado_cuotas
   set vence_el = p_vence_el, avisado_el = null
   where id = p_cuota;
@@ -528,10 +809,21 @@ grant execute on function public.mover_cuota(uuid, date) to authenticated;
 -- ------------------------------------------------------------
 -- 8. «YA LE ESCRIBÍ»
 --
---    La marca del botón de WhatsApp, por cuota. Como `marcar_avisado` de la
---    agenda (043): no mueve plata, es una marca, y por eso no lleva reglas.
+--    La marca del botón de WhatsApp. Como `marcar_avisado` de la agenda
+--    (043): no mueve plata, es una marca, y por eso no lleva reglas.
 --    Guarda el DÍA (en la zona del negocio) y no la hora: la pantalla dice
 --    «le escribiste hoy».
+--
+--    SE LE ESCRIBE A UNA PERSONA, NO A UNA CUOTA. El mensaje de WhatsApp
+--    habla de todo lo que esa persona tiene vencido, así que la marca cae
+--    sobre la cuota que se pide Y sobre todas las de ese cliente que vencen
+--    hoy o ya vencieron y todavía tienen algo pendiente. Si se marcara solo
+--    una, quien debe dos cuotas seguiría contando en «a N todavía no les
+--    escribiste» por más que se toque el botón. Desmarcar hace lo mismo al
+--    revés, sobre las mismas cuotas.
+--
+--    Devuelve `avisado_el` (lo de siempre) y `marcadas`: cuántas cuotas
+--    quedaron con esa marca.
 -- ------------------------------------------------------------
 create or replace function public.marcar_cuota_avisada(
   p_cuota   uuid,
@@ -541,6 +833,7 @@ returns jsonb language plpgsql security definer set search_path = public as $fn$
 declare
   v     public.fiado_cuotas;
   v_dia date;
+  v_n   integer;
 begin
   select * into v from public.fiado_cuotas where id = p_cuota;
   if v.id is null then
@@ -553,9 +846,16 @@ begin
 
   v_dia := case when coalesce(p_avisado, true) then public.hoy_empresa(v.empresa_id) else null end;
 
-  update public.fiado_cuotas set avisado_el = v_dia where id = p_cuota;
+  -- `dias <= 0`: vence hoy o ya venció, en el día del negocio.
+  update public.fiado_cuotas q
+  set avisado_el = v_dia
+  where q.cliente_id = v.cliente_id
+    and (q.id = p_cuota
+         or q.id in (select e.cuota_id from public.estado_cuotas(v.cliente_id) e
+                     where e.pendiente > 0 and e.dias <= 0));
+  get diagnostics v_n = row_count;
 
-  return jsonb_build_object('avisado_el', v_dia);
+  return jsonb_build_object('avisado_el', v_dia, 'marcadas', v_n);
 end $fn$;
 
 revoke all on function public.marcar_cuota_avisada(uuid, boolean) from public, anon;
@@ -644,9 +944,29 @@ grant execute on function public.anotar_fiado(uuid, uuid, numeric, text, date, u
 -- ------------------------------------------------------------
 -- 10. COBRAR: AHORA PUEDE DECIR DE QUÉ CUOTA ES
 --
---    Sin `p_cuota` es EXACTAMENTE lo de la 084: un pago suelto contra todo lo
---    que debe el cliente. Devuelve lo de siempre (`id`, `saldo`) y suma
---    claves.
+--    Sin `p_cuota`, para quien no tiene cuotas pendientes es EXACTAMENTE lo
+--    de la 084: un pago suelto contra todo lo que debe el cliente. Devuelve
+--    lo de siempre (`id`, `saldo`) y suma claves.
+--
+--    Sin `p_cuota` y con cuotas pendientes («Todo», «Lo sin fecha» con un
+--    monto mayor, o un cobro dictado por voz):
+--      · el pago baja primero lo sin fecha, como siempre;
+--      · LO QUE SOBRA QUEDA ATADO A LAS CUOTAS QUE TAPA. El cobro se parte
+--        en la misma transacción: una línea suelta por lo sin fecha (si hay)
+--        y una línea con `fio_id` por cada deuda, repartiendo por fecha de
+--        cuota (el orden de `estado_cuotas`) hasta lo pendiente de cada una.
+--        Si quedara una sola línea suelta, lo que sobra sería «derrame»
+--        calculado al leer, y el día que el cliente vuelve a llevar algo sin
+--        fecha ese derrame se lo come la compra nueva: la cuota ya cobrada
+--        reaparece atrasada y el pan de hoy figura pagado. Atado, no se
+--        mueve más;
+--      · la billetera recibe UN solo ajuste por el total: entró una plata;
+--      · `id` es el de la primera línea y `lineas` dice cuántas quedaron en
+--        el libro. `deuda` sigue en null: no se eligió ninguna.
+--    Tampoco deja derrame: suelto va solo lo que entra en lo sin fecha.
+--    Los otros caminos por donde podía nacer (ponerle fecha a algo ya
+--    pagado, borrar una línea sin fecha pagada) atan lo que sobra ahí mismo
+--    (bloque 4b).
 --
 --    Con `p_cuota`:
 --      · la cuota tiene que existir y ser de ese cliente;
@@ -681,6 +1001,12 @@ declare
   v_pend    numeric;
   v_falta   numeric;
   v_deuda   jsonb;
+  v_suelto  numeric;
+  v_atado   numeric;
+  v_sobra   numeric;
+  v_parte   record;
+  v_linea   uuid;
+  v_lineas  integer := 0;
 begin
   if not public.es_miembro(p_empresa) then
     raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
@@ -751,13 +1077,91 @@ begin
 
   v_fecha := coalesce(p_fecha, public.hoy_empresa(p_empresa));
 
-  insert into public.fiado (
-    empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, cuenta_id, fio_id, creado_por
-  ) values (
-    p_empresa, p_cliente, 'cobro', p_monto, v_fecha,
-    'Pago recibido', p_metodo, p_cuenta, v_fio, auth.uid()
-  )
-  returning id into v_id;
+  -- (127) Cuánto del pago va suelto y cuánto atado. Con `p_cuota` nada
+  -- cambia: una línea, de esa deuda. Sin ella, suelto va lo que alcanza a lo
+  -- sin fecha y lo demás se ata a las cuotas que tapa. Si no hay cuotas
+  -- pendientes, o el pago no llega a ellas, es el cobro de siempre: una
+  -- sola línea suelta.
+  v_suelto := p_monto;
+  v_atado  := 0;
+  if p_cuota is null
+     and exists (select 1 from public.estado_cuotas(p_cliente) e where e.pendiente > 0) then
+    v_suelto := least(p_monto, public.sin_fecha_fiado(p_cliente));
+    v_atado  := p_monto - v_suelto;
+  end if;
+
+  if v_atado = 0 then
+    insert into public.fiado (
+      empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, cuenta_id, fio_id, creado_por
+    ) values (
+      p_empresa, p_cliente, 'cobro', p_monto, v_fecha,
+      'Pago recibido', p_metodo, p_cuenta, v_fio, auth.uid()
+    )
+    returning id into v_id;
+    v_lineas := 1;
+  else
+    if v_suelto > 0 then
+      insert into public.fiado (
+        empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, cuenta_id, creado_por
+      ) values (
+        p_empresa, p_cliente, 'cobro', v_suelto, v_fecha,
+        'Pago recibido', p_metodo, p_cuenta, auth.uid()
+      )
+      returning id into v_id;
+      v_lineas := 1;
+    end if;
+
+    -- Cuánto le toca a cada deuda: se recorren las cuotas pendientes por
+    -- fecha (lo mismo que haría el derrame) y se junta por deuda. La cuenta
+    -- se hace entera ANTES de insertar: el reparto no se pisa a sí mismo.
+    v_sobra := v_atado;
+    for v_parte in
+      select t.fio_id, sum(t.toma) as monto
+      from (
+        select e.fio_id, e.pos,
+               greatest(0, least(e.pendiente,
+                 v_atado - coalesce(sum(e.pendiente) over (
+                   order by e.pos rows between unbounded preceding and 1 preceding), 0))) as toma
+        from public.estado_cuotas(p_cliente) with ordinality as e(
+          cuota_id, fio_id, numero, de, vence_el, monto, pagado, pendiente, dias,
+          avisado_el, concepto, fecha_fio, monto_fio, venta_id, pos)
+        where e.pendiente > 0
+      ) t
+      where t.toma > 0
+      group by t.fio_id
+      order by min(t.pos)
+    loop
+      -- Cada parte, un instante después de la anterior: el libro las
+      -- muestra siempre en el orden en que se repartieron (bloque 12).
+      insert into public.fiado (
+        empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, cuenta_id, fio_id, creado_por, created_at
+      ) values (
+        p_empresa, p_cliente, 'cobro', v_parte.monto, v_fecha,
+        'Pago recibido', p_metodo, p_cuenta, v_parte.fio_id, auth.uid(),
+        now() + v_lineas * interval '1 microsecond'
+      )
+      returning id into v_linea;
+      v_id     := coalesce(v_id, v_linea);
+      v_lineas := v_lineas + 1;
+      v_sobra  := v_sobra - v_parte.monto;
+    end loop;
+
+    -- No debería sobrar nada: el pago no supera el saldo, y el saldo es lo
+    -- sin fecha más lo pendiente de las cuotas. Si igual sobrara, entra como
+    -- pago suelto: la plata que se cobró está SIEMPRE entera en el libro.
+    if v_sobra > 0 then
+      insert into public.fiado (
+        empresa_id, cliente_id, tipo, monto, fecha, concepto, metodo, cuenta_id, creado_por, created_at
+      ) values (
+        p_empresa, p_cliente, 'cobro', v_sobra, v_fecha,
+        'Pago recibido', p_metodo, p_cuenta, auth.uid(),
+        now() + v_lineas * interval '1 microsecond'
+      )
+      returning id into v_linea;
+      v_id     := coalesce(v_id, v_linea);
+      v_lineas := v_lineas + 1;
+    end if;
+  end if;
 
   if p_cuenta is not null then
     insert into public.ajustes_cuenta (empresa_id, cuenta_id, tipo, monto, fecha, nota, creado_por)
@@ -787,7 +1191,8 @@ begin
     'id', v_id,
     'saldo', public.saldo_fiado(p_cliente),
     'sin_fecha', public.sin_fecha_fiado(p_cliente),
-    'deuda', v_deuda
+    'deuda', v_deuda,
+    'lineas', v_lineas
   );
 end $fn$;
 
@@ -807,8 +1212,12 @@ grant execute on function public.cobrar_fiado(uuid, uuid, numeric, text, date, u
 --    cercana (`proxima`) y en cuál de los cuatro grupos de la pantalla va
 --    (`grupo`): atrasada, hoy, proxima o sin_fecha.
 --
---    Las cuotas se miran DESPUÉS de quedarse con quienes deben algo: quien no
---    debe nada no hace trabajar a nadie.
+--    Las cuotas se miran DESPUÉS de quedarse con quienes deben algo, y solo
+--    para quien tiene alguna: quien no debe nada, o debe «y punto», no hace
+--    trabajar a nadie. `estado_cuotas` no se puede incrustar en la consulta
+--    (es security definer), así que sin ese filtro se la llamaba una vez por
+--    deudor: con 1.500 deudores y ninguna cuota, la pantalla de siempre
+--    tardaba el triple.
 -- ------------------------------------------------------------
 create or replace function public.resumen_fiado(p_empresa uuid)
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -849,7 +1258,8 @@ begin
     cross join lateral public.estado_cuotas(n.cliente_id) with ordinality as e(
       cuota_id, fio_id, numero, de, vence_el, monto, pagado, pendiente, dias,
       avisado_el, concepto, fecha_fio, monto_fio, venta_id, pos)
-    where e.pendiente > 0
+    where exists (select 1 from public.fiado_cuotas k where k.cliente_id = n.cliente_id)
+      and e.pendiente > 0
   ),
   porCliente as (
     select
@@ -914,6 +1324,19 @@ grant execute on function public.resumen_fiado(uuid) to authenticated;
 --
 --    Lo de la 054, con dos claves más por línea: `fio_id` (en un cobro, la
 --    deuda que pagó) y `metodo`. Mismo tope de 500.
+--
+--    EL ORDEN ES FIJO. Las partes de un cobro partido compartían fecha y
+--    hora, y salían en cualquier orden, distinto de una lectura a la otra.
+--    Dos cosas lo fijan:
+--      · cobrar_fiado (bloque 10) anota cada parte un microsegundo después
+--        de la anterior: primero la suelta, después cada deuda por fecha de
+--        cuota. El libro, que va de lo más nuevo a lo más viejo, las muestra
+--        al revés, siempre igual;
+--      · para las que sí comparten la hora (un pago que se partió al atarlo,
+--        bloque 4b: la gemela hereda la hora de la primera), un desempate:
+--        primero lo atado a una deuda, después lo suelto, y al final el id.
+--    Lo que ya existía no cambia de lugar: dos líneas con hora distinta
+--    siguen como estaban.
 -- ------------------------------------------------------------
 create or replace function public.libro_fiado(p_cliente uuid, p_limite integer default 100)
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -929,13 +1352,14 @@ begin
     raise exception 'No pertenecés a esta empresa.' using errcode = '42501';
   end if;
 
-  select coalesce(jsonb_agg(to_jsonb(x) order by x.fecha desc, x.created_at desc), '[]'::jsonb)
+  select coalesce(jsonb_agg(to_jsonb(x)
+           order by x.fecha desc, x.created_at desc, (x.fio_id is null), x.id desc), '[]'::jsonb)
   into v_res
   from (
     select f.id, f.tipo, f.monto, f.fecha, f.concepto, f.venta_id, f.fio_id, f.metodo, f.created_at
     from public.fiado f
     where f.cliente_id = p_cliente
-    order by f.fecha desc, f.created_at desc
+    order by f.fecha desc, f.created_at desc, (f.fio_id is null), f.id desc
     limit least(greatest(coalesce(p_limite, 100), 1), 500)
   ) x;
 
@@ -1000,13 +1424,16 @@ begin
   ) d;
 
   -- Las líneas fiadas que no tienen fecha: a cada una se le puede poner.
+  -- `cubierto` es lo que esa línea ya tiene pagado (bloque 4b): lo mismo que
+  -- programar_cuotas le va a atar si se le pone fecha. La hoja lo dice antes
+  -- de guardar («Ya cobraste Gs. X»).
   select coalesce(jsonb_agg(jsonb_build_object(
            'id', f.id, 'fecha', f.fecha, 'monto', f.monto,
-           'concepto', f.concepto, 'venta_id', f.venta_id
+           'concepto', f.concepto, 'venta_id', f.venta_id,
+           'cubierto', k.cubierto
          ) order by f.fecha, f.created_at, f.id), '[]'::jsonb) into v_sin
-  from public.fiado f
-  where f.cliente_id = p_cliente and f.tipo = 'fio'
-    and not exists (select 1 from public.fiado_cuotas q where q.fio_id = f.id);
+  from public.fiado_cubierto(p_cliente) k
+  join public.fiado f on f.id = k.fio_id;
 
   return jsonb_build_object(
     'cliente_id', c.id,
@@ -1062,11 +1489,20 @@ grant execute on function public.cuotas_por_cobrar(uuid, date) to authenticated;
 
 
 -- ------------------------------------------------------------
--- 15. BORRAR UNA LÍNEA: UNA DEUDA CON CUOTAS YA COBRADAS NO SE BORRA
+-- 15. BORRAR UNA LÍNEA: UNA DEUDA CON PAGOS PROPIOS NO SE BORRA
 --
 --    Lo de la 056, con un freno más. El control del saldo no alcanzaba: con
 --    otras deudas el saldo podía seguir sobre cero, la deuda se borraba y sus
 --    pagos quedaban tapando la libreta. Primero se borran esos pagos.
+--
+--    El freno mira los PAGOS ATADOS a la deuda (`fio_id`), tenga o no cuotas
+--    hoy: es lo mismo que hace anular_borra_el_fiado (bloque 16). Si exigiera
+--    que la deuda todavía tenga cuotas, se saltearía sacándole antes las
+--    fechas; y ese borrado dispararía el ON DELETE SET NULL de `fio_id`, que
+--    es un UPDATE sobre el libro: en una cuenta vencida (o en la personal en
+--    Gratis) chocaba con el candado y contestaba «Se te terminó la prueba» a
+--    quien solo quería BORRAR, que anda siempre (111). Así el SET NULL queda
+--    solo para «empezar de cero», que lleva su marca.
 --
 --    Sin pagos propios, la deuda se borra y sus cuotas se van con ella
 --    (CASCADE). Borrar un pago que era de una cuota: como siempre, y la
@@ -1102,9 +1538,8 @@ begin
 
   -- (127)
   if v.tipo = 'fio'
-     and exists (select 1 from public.fiado_cuotas q where q.fio_id = p_linea)
      and exists (select 1 from public.fiado c where c.fio_id = p_linea and c.tipo = 'cobro') then
-    raise exception 'Esa deuda tiene cuotas ya cobradas. Borrá primero esos pagos.'
+    raise exception 'Esa deuda tiene pagos anotados. Borrá primero esos pagos.'
       using errcode = '22023';
   end if;
 
@@ -1115,6 +1550,13 @@ begin
   end if;
 
   delete from public.fiado where id = p_linea;
+
+  -- (127) Si lo borrado era una línea sin fecha que estaba cubierta por
+  -- pagos sueltos, esos pagos quedaron de más: se atan a las cuotas que
+  -- tapan. En cualquier otro caso no hay nada que atar y no hace nada.
+  if v.tipo = 'fio' then
+    perform public.fiado_atar_sueltos(v.cliente_id);
+  end if;
 
   return jsonb_build_object('saldo', public.saldo_fiado(v.cliente_id));
 end $fn$;
@@ -1163,6 +1605,10 @@ begin
   end if;
 
   delete from public.fiado where venta_id = new.id and tipo = 'fio';
+
+  -- (127) Lo mismo que al borrar una línea desde Fiado: si la venta estaba
+  -- sin fecha y cubierta por pagos sueltos, lo que sobra se ata.
+  perform public.fiado_atar_sueltos(v_cliente);
   return new;
 end $fn$;
 
@@ -1272,8 +1718,36 @@ grant execute on function public.guardar_preferencias(text, boolean, boolean, sm
 --    tener la pantalla: el profe y el trainer (rubro_tiene_fiado), la
 --    personal en Gratis y la cuenta vencida.
 --
---    `cuantas` cuenta cuotas; `personas`, a cuánta gente hay que cobrarle.
---    `nombres` son nombres de pila, hasta tres, sin repetir a nadie.
+--    SE CUENTAN PERSONAS, NO CUOTAS. `cuantas` cuenta cuotas y es lo único
+--    que lo hace; todo lo demás habla de gente, porque la frase habla de
+--    gente («Hoy te pagan 2», «a 1 todavía no le escribiste»):
+--      · `personas` (en `hoy` y en `atrasadas`): a cuánta gente hay que
+--        cobrarle en esa parte;
+--      · `personas` (arriba): cuánta gente distinta hay ENTRE LAS DOS
+--        partes. Quien paga hoy y además arrastra una cuota atrasada es una
+--        sola persona: con un plan semanal pasa siempre que queda una cuota
+--        sin pagar, y sin este número el aviso decía «Hoy te paga Juan. Y 1
+--        atrasado» como si fueran dos. Los atrasados que NO están en lo de
+--        hoy son `personas` menos `hoy.personas`;
+--      · `sin_escribir`: personas con ALGUNA cuota de hoy o atrasada, con
+--        algo pendiente, por la que todavía no se les escribió. Contando
+--        cuotas, un solo cliente con dos daba «a 2 todavía no les
+--        escribiste». Y alcanza con UNA sin avisar: el botón marca todas
+--        las vencidas de la persona de una vez (bloque 8), así que si le
+--        queda una sin marca es porque venció después del último mensaje.
+--        A quien se le escribió hace una semana y hoy le vence otra hay que
+--        volver a escribirle, y por eso se lo vuelve a contar.
+--
+--    `nombres` son nombres de pila, hasta tres, sin repetir a nadie:
+--      · el tratamiento no es el nombre: «Don Pedro Ayala» es Pedro (don,
+--        doña, dona, sr, sra, ña, señor, señora, con o sin punto);
+--      · si dos personas del mismo aviso comparten el nombre de pila, cada
+--        una lleva también la palabra que sigue («Juan Pérez» y «Juan
+--        Gómez»): «Juan y Juan» no le dice a nadie a quién cobrarle.
+--    Sin expresiones regulares (este archivo no puede llevar barras
+--    invertidas): se parte el nombre por espacios. Las minúsculas se comparan
+--    escritas de las dos maneras porque `lower` no baja la Ñ en todas las
+--    configuraciones de la base.
 -- ------------------------------------------------------------
 create or replace function public.cobros_de_hoy()
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -1299,10 +1773,8 @@ begin
   -- que lleva vencida (0 = vence hoy).
   cu as (
     select cli.empresa_id, cli.cliente_id,
-           split_part(btrim(c.nombre), ' ', 1) as nombre,
            s.vence_el, s.pendiente, s.avisado_el, (0 - s.dias) as atraso
     from cli
-    join public.clientes c on c.id = cli.cliente_id
     cross join lateral public.estado_cuotas(cli.cliente_id) s
     where s.pendiente > 0 and s.dias <= 0
   ),
@@ -1310,15 +1782,45 @@ begin
     select distinct k.empresa_id from cu k
     where k.atraso = 0 or k.atraso = 3 or (k.atraso > 0 and mod(k.atraso, 7) = 0)
   ),
+  -- El nombre de cada persona del aviso, partido en palabras. `salta` vale 1
+  -- cuando la primera palabra es un tratamiento y atrás viene el nombre.
+  partes as (
+    select p.empresa_id, p.cliente_id, p.palabras,
+           case when coalesce(array_length(p.palabras, 1), 0) > 1
+                 and lower(rtrim(p.palabras[1], '.')) in (
+                   'don', 'doña', 'doÑa', 'dona', 'sr', 'sra', 'ña', 'Ña',
+                   'señor', 'seÑor', 'señora', 'seÑora')
+                then 1 else 0 end as salta
+    from (
+      select d.empresa_id, d.cliente_id,
+             array_remove(string_to_array(btrim(c.nombre), ' '), '') as palabras
+      from (select distinct k.empresa_id, k.cliente_id from cu k) d
+      join public.clientes c on c.id = d.cliente_id
+    ) p
+  ),
+  -- Cómo se nombra a cada uno: el nombre de pila y, si en el aviso de ese
+  -- negocio hay otro con el mismo, también la palabra que sigue.
+  nombrada as (
+    select x.empresa_id, x.cliente_id,
+           case when count(*) over (partition by x.empresa_id, lower(x.pila)) > 1 and x.sigue is not null
+                then x.pila || ' ' || x.sigue else x.pila end as nombre
+    from (
+      select p.empresa_id, p.cliente_id,
+             coalesce(p.palabras[1 + p.salta], '') as pila,
+             p.palabras[2 + p.salta] as sigue
+      from partes p
+    ) x
+  ),
   -- Una fila por persona y parte (hoy / atrasadas), para los nombres.
   gente as (
-    select k.empresa_id, (k.atraso = 0) as es_hoy, k.cliente_id, k.nombre,
+    select k.empresa_id, (k.atraso = 0) as es_hoy, k.cliente_id, m.nombre,
            min(k.vence_el) as vence, sum(k.pendiente) as monto,
            row_number() over (
              partition by k.empresa_id, (k.atraso = 0)
-             order by min(k.vence_el), sum(k.pendiente) desc, k.nombre, k.cliente_id) as puesto
+             order by min(k.vence_el), sum(k.pendiente) desc, m.nombre, k.cliente_id) as puesto
     from cu k
-    group by k.empresa_id, (k.atraso = 0), k.cliente_id, k.nombre
+    join nombrada m on m.empresa_id = k.empresa_id and m.cliente_id = k.cliente_id
+    group by k.empresa_id, (k.atraso = 0), k.cliente_id, m.nombre
   )
   select coalesce(jsonb_agg(x.j order by x.nombre, x.id), '[]'::jsonb) into v_res
   from (
@@ -1345,9 +1847,17 @@ begin
                                 where g.empresa_id = emp.id and not g.es_hoy and g.puesto <= 3), '[]'::jsonb),
           'dias_max', coalesce(max(k.atraso), 0))
         from cu k where k.empresa_id = emp.id and k.atraso > 0),
+      -- Gente distinta entre lo de hoy y lo atrasado.
+      'personas', (
+        select (count(distinct k.cliente_id))::int from cu k
+        where k.empresa_id = emp.id),
+      -- Personas con ALGUNA cuota sin avisar (count no cuenta los null).
       'sin_escribir', (
-        select count(*)::int from cu k
-        where k.empresa_id = emp.id and k.avisado_el is null),
+        select count(*)::int from (
+          select k.cliente_id from cu k
+          where k.empresa_id = emp.id
+          group by k.cliente_id
+          having count(k.avisado_el) < count(*)) z),
       'destinatarios', coalesce((
         select jsonb_agg(jsonb_build_object(
                  'user_id', m.user_id, 'idioma', coalesce(p.idioma, 'es'))
@@ -1365,3 +1875,256 @@ end $fn$;
 
 revoke all on function public.cobros_de_hoy() from public, anon, authenticated;
 grant execute on function public.cobros_de_hoy() to service_role;
+
+
+-- ------------------------------------------------------------
+-- 19. ATAR TAMBIÉN DESPUÉS DE UN BORRADO: LOS DOS GUARDIANES Y «EMPEZAR
+--     DE CERO»
+--
+--    Tres funciones de antes, copiadas enteras con un paso más cada una,
+--    marcado «127»:
+--
+--      · exigir_cuenta_activa (116:443-509) y exigir_plan_personal
+--        (110:251-267), los dos candados del libro: dejan pasar el atado de
+--        pagos sueltos (bloque 4b) por la marca `orden.atando_fiado`. La
+--        marca la pone solo fiado_atar_a, que no se le da a nadie, y la apaga
+--        al terminar; desde el navegador no se puede poner (111). Vale para
+--        el negocio marcado, para la tabla `fiado` y para líneas 'cobro':
+--        nada más pasa.
+--      · vaciar_empresa (115:550-637): al final, ata lo que haya quedado
+--        suelto de más en los clientes que conservan deudas en cuotas.
+-- ------------------------------------------------------------
+create or replace function public.exigir_cuenta_activa()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  -- 127 (07/10/2026) · ATAR UN PAGO SUELTO A SU DEUDA ANDA SIEMPRE.
+  -- fiado_atar_a marca la transacción con el negocio mientras re-etiqueta
+  -- (o parte en dos) líneas 'cobro' que ya estaban en el libro: no entra ni
+  -- sale plata. Pasa después de BORRAR una línea, que anda siempre (111), y
+  -- al empezar de cero; sin esto, a un negocio vencido borrar una línea le
+  -- contestaba «Se te terminó la prueba». Solo el libro y solo cobros.
+  if tg_table_name = 'fiado' then
+    if coalesce(current_setting('orden.atando_fiado', true), '') = new.empresa_id::text
+       and new.tipo = 'cobro' then
+      return new;
+    end if;
+  end if;
+
+  -- 111 (30/09/2026) · «EMPEZAR DE CERO» TAMBIÉN PARA UN NEGOCIO VENCIDO.
+  -- Al borrar los movimientos y los productos, el ON DELETE SET NULL de
+  -- pagos_deuda, turnos_pago, turnos_atribucion, fiado y paquetes es un
+  -- UPDATE que este candado rechazaba. vaciar_empresa (110,
+  -- bloque 12) marca la transacción. Hasta la 110 la marca se leía solo en
+  -- la rama de Gratis; ahora vale para toda cuenta.
+  if tg_op = 'UPDATE'
+     and coalesce(current_setting('orden.vaciando', true), '') = new.empresa_id::text then
+    return new;
+  end if;
+
+  -- 115 (30/09/2026) · CANCELAR CON EL ENLACE ANDA SIEMPRE. cancelar_reserva
+  -- marca la transacción con el token de la reserva que cancela. Sin sesión
+  -- ya pasaba por el primer `if`; con sesión (un cliente que además usa
+  -- Orden) este candado la rechazaba si el negocio estaba vencido.
+  if tg_op = 'UPDATE' and tg_table_name = 'turnos_reserva' then
+    if coalesce(current_setting('orden.cancelando_turno', true), '') = new.token::text
+       and new.estado = 'cancelada' then
+      return new;
+    end if;
+  end if;
+
+  -- 116 (30/09/2026) · ELIMINAR A UN ALUMNO ANDA SIEMPRE, TAMBIÉN CON LO
+  -- QUE NO SE LE COBRÓ. eliminar_cliente marca la transacción con el
+  -- alumno: pasa cerrar SU paquete y cancelar SUS clases, nada más.
+  if tg_op = 'UPDATE' and tg_table_name = 'paquetes' then
+    if coalesce(current_setting('orden.eliminando_cliente', true), '') = new.cliente_id::text
+       and new.cerrado then
+      return new;
+    end if;
+  end if;
+  if tg_op = 'UPDATE' and tg_table_name = 'turnos_reserva' then
+    if coalesce(current_setting('orden.eliminando_cliente', true), '') = new.cliente_id::text
+       and new.estado = 'cancelada' then
+      return new;
+    end if;
+  end if;
+
+  if not public.puede_cargar(new.empresa_id) then
+    raise exception 'Se te terminó la prueba. Para seguir usando Orden hace falta activar tu plan.'
+      using errcode = '42501';
+  end if;
+
+  -- 110 (28/09/2026) · LA CUENTA PERSONAL EN GRATIS. puede_cargar le da true
+  -- para que anote gastos e ingresos; todo lo demás que cuida este candado
+  -- es del Pro. Un negocio nunca entra acá: para él es_gratis_personal es false.
+  -- El paso de «vaciar» que estaba acá subió arriba (111).
+  if public.es_gratis_personal(new.empresa_id) then
+    if tg_table_name <> 'movimientos' then
+      raise exception 'Eso es del plan Pro. En el plan Gratis anotás tus gastos e ingresos a mano.'
+        using errcode = '42501';
+    end if;
+    if new.tipo::text not in ('gasto', 'ingreso') then
+      raise exception 'Eso es del plan Pro. En el plan Gratis anotás tus gastos e ingresos a mano.'
+        using errcode = '42501';
+    end if;
+  end if;
+
+  return new;
+end $fn$;
+
+revoke all on function public.exigir_cuenta_activa() from public, anon, authenticated;
+
+create or replace function public.exigir_plan_personal()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+  -- 127 (07/10/2026) · Atar un pago suelto a su deuda después de borrar una
+  -- línea (ver exigir_cuenta_activa). Solo el libro y solo cobros.
+  if tg_table_name = 'fiado' then
+    if coalesce(current_setting('orden.atando_fiado', true), '') = new.empresa_id::text
+       and new.tipo = 'cobro' then
+      return new;
+    end if;
+  end if;
+  if public.es_gratis_personal(new.empresa_id) then
+    -- El SET NULL en cascada de «Empezar de cero» (fiado.cobro_id). Ver (12).
+    if tg_op = 'UPDATE'
+       and coalesce(current_setting('orden.vaciando', true), '') = new.empresa_id::text then
+      return new;
+    end if;
+    raise exception 'Eso es del plan Pro. En el plan Gratis anotás tus gastos e ingresos a mano.'
+      using errcode = '42501';
+  end if;
+  return new;
+end $fn$;
+
+revoke all on function public.exigir_plan_personal() from public, anon, authenticated;
+
+create or replace function public.vaciar_empresa(p_empresa uuid, p_confirmacion text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  v_nombre     text;
+  v_rutas      jsonb;
+  v_movs       int := 0;
+  v_prods      int := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'Necesitás iniciar sesión.' using errcode = '42501';
+  end if;
+
+  -- Solo el propietario. Un administrador maneja el día a día, pero borrar
+  -- la historia entera del negocio es decisión del dueño.
+  if not exists (
+    select 1 from public.miembros
+    where empresa_id = p_empresa and user_id = auth.uid() and rol = 'propietario'
+  ) then
+    raise exception 'Solo el propietario puede vaciar el negocio.' using errcode = '42501';
+  end if;
+
+  select nombre into v_nombre from public.empresas where id = p_empresa;
+  if v_nombre is null then
+    raise exception 'Esa empresa no existe.' using errcode = 'P0002';
+  end if;
+
+  -- La confirmación es escribir el nombre exacto. Un "¿estás seguro?" se
+  -- toca sin leer; esto no.
+  if trim(coalesce(p_confirmacion, '')) is distinct from v_nombre then
+    raise exception 'Para vaciar el negocio hay que escribir su nombre exacto: %', v_nombre
+      using errcode = '22023';
+  end if;
+
+  -- Las rutas de los archivos ANTES de borrar: después no hay forma de
+  -- saber cuáles eran, y quedarían ocupando storage para siempre.
+  select coalesce(jsonb_agg(a.ruta), '[]'::jsonb) into v_rutas
+  from public.adjuntos a where a.empresa_id = p_empresa and a.ruta is not null;
+
+  -- 110 (28/09/2026): los candados de la gratis personal dejan pasar el
+  -- SET NULL en cascada de este borrado (ver exigir_cuenta_activa). Solo
+  -- dentro de esta transacción y solo para esta empresa.
+  perform set_config('orden.vaciando', p_empresa::text, true);
+
+  -- 115 (30/09/2026): los paquetes y las inscripciones, con sus clases
+  -- dadas y las clases de su agenda (CASCADE). Son ventas: si quedaran sin
+  -- su venta (SET NULL), figurarían como «por cobrar» y se podrían volver
+  -- a cobrar. Los alumnos quedan.
+  delete from public.paquetes where empresa_id = p_empresa;
+
+  -- 115 (30/09/2026): las reservas de la agenda, todas, ANTES que los
+  -- productos: turnos_reserva.producto_id es RESTRICT (037).
+  delete from public.turnos_reserva where empresa_id = p_empresa;
+
+  -- 115 (30/09/2026): el pago de una deuda que el silo se cobró en una
+  -- liquidación queda, como queda un pago de cuota sin su movimiento; solo
+  -- suelta la liquidación, que se borra abajo.
+  update public.pagos_deuda set liquidacion_id = null
+  where empresa_id = p_empresa and liquidacion_id is not null;
+
+  -- Los movimientos primero: arrastran líneas y comprobantes.
+  -- 115 (30/09/2026): y en la misma sentencia las liquidaciones, que
+  -- apuntan a su venta y la venta a ellas (NO ACTION las dos: se controlan
+  -- al final de la sentencia, cuando ya no queda ninguna de las dos puntas).
+  with papeles as (
+    delete from public.liquidaciones where empresa_id = p_empresa returning 1
+  ), borrados as (
+    delete from public.movimientos where empresa_id = p_empresa returning 1
+  )
+  select count(*) into v_movs from borrados;
+
+  with borrados as (
+    delete from public.productos where empresa_id = p_empresa returning 1
+  )
+  select count(*) into v_prods from borrados;
+
+  delete from public.retos   where empresa_id = p_empresa;
+  delete from public.cierres where empresa_id = p_empresa;
+
+  -- 127 (07/10/2026): al irse las ventas fiadas, los pagos que eran de
+  -- ellas quedan sueltos (SET NULL) y las que estaban sin fecha dejan de
+  -- contar. Si con eso sobra plata suelta y el cliente tiene otras deudas
+  -- en cuotas, se ata a las cuotas que tapa, como al borrar una línea.
+  perform public.fiado_atar_sueltos(x.cliente_id)
+  from (select distinct q.cliente_id from public.fiado_cuotas q
+        where q.empresa_id = p_empresa) x;
+
+  perform set_config('orden.vaciando', '', true);
+
+  return jsonb_build_object(
+    'movimientos', v_movs,
+    'productos', v_prods,
+    -- Que las borre quien llamó: la policy de storage ya le da permiso
+    -- sobre la carpeta de su empresa.
+    'archivos', v_rutas
+  );
+end $fn$;
+
+revoke all on function public.vaciar_empresa(uuid, text) from public, anon;
+grant execute on function public.vaciar_empresa(uuid, text) to authenticated;
+
+
+-- ------------------------------------------------------------
+-- 20. SI YA HABÍA PAGOS SUELTOS DE MÁS, SE ATAN AL APLICAR
+--
+--    La primera vez no hay nada que hacer: todavía no existe ninguna cuota.
+--    Sirve para cuando esta migración se vuelve a aplicar después de haber
+--    vuelto atrás: los cobros hechos mientras tanto con el código de antes
+--    entraron todos sueltos, y los que pasaron de lo sin fecha quedaron
+--    tapando cuotas «por derrame». Acá quedan atados a la deuda que tapan,
+--    igual que si se hubieran cobrado con esta versión. No cambia lo que
+--    debe nadie ni qué cuota figura pagada; aplicada dos veces, la segunda
+--    no encuentra nada.
+-- ------------------------------------------------------------
+do $$
+declare v_cliente uuid;
+begin
+  for v_cliente in
+    select distinct q.cliente_id from public.fiado_cuotas q
+    where exists (select 1 from public.partes_fiado(q.cliente_id) p where p.u > p.f0)
+  loop
+    perform public.fiado_atar_sueltos(v_cliente);
+  end loop;
+end $$;

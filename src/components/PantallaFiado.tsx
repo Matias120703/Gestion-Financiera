@@ -12,6 +12,7 @@ import { mensajeDeError } from '@/lib/errores';
 import { enlaceWhatsApp } from '@/lib/telefono';
 import {
   agruparDeudores, ajustarPlan, armarPlan, fechaCorta, leerDetalleFiado, lineasParaFechar, opcionesDeCobro, planValido,
+  variasAtrasadas, vecinasDe, yaCobradoAlFechar,
 } from '@/lib/cuotas';
 import { Indicador, Vacio } from '@/components/Piezas';
 import { Confirmar, Hoja, MensajeError, PieHoja } from '@/components/Hoja';
@@ -290,16 +291,23 @@ function FilaDeudor({
   const t = useTextos();
   const locale = useLocale();
   const p = d.proxima ?? null;
+  const varias = variasAtrasadas(d);
 
   let partes: string[];
   let tono: string;
-  if (p) {
+  const sinFecha = (d.sin_fecha ?? 0) > 0 ? t.fiado.masSinFecha(plata(d.sin_fecha ?? 0)) : '';
+  if (p && varias) {
+    // «2 cuotas atrasadas · 300.000»: con más de una vencida, el total
+    // atrasado. Nombrar solo la primera mostraba la mitad de lo que hay que
+    // ir a cobrar (la tarjeta «Para cobrar» de arriba ya sumaba las dos).
+    partes = [t.fiado.cuotasAtrasadas(varias.cuantas), plata(varias.monto), sinFecha].filter(Boolean);
+    tono = 'font-semibold text-rojo';
+  } else if (p) {
     // «Cuota 2 de 3 · venció hace 3 días · 150.000». Con una sola cuota, el
     // «cuota 1 de 1» sobra. A más de una semana se dice la fecha: «en 34
     // días» obliga a hacer la cuenta.
     const cuota = p.de > 1 ? t.fiado.cuotaN(p.numero, p.de) : '';
     const fecha = p.dias > 7 ? t.fiado.venceEl(fechaCorta(p.vence_el, hoy)) : cuando(t, p.dias);
-    const sinFecha = (d.sin_fecha ?? 0) > 0 ? t.fiado.masSinFecha(plata(d.sin_fecha ?? 0)) : '';
     partes = [
       cuota,
       cuota ? fecha.charAt(0).toLocaleLowerCase(locale) + fecha.slice(1) : fecha,
@@ -647,12 +655,19 @@ function FichaDeudor({
   // El mensaje ya escrito, según lo que sigue: vence hoy, está atrasado o
   // falta. Sin cuotas es el de siempre, con todo lo que debe.
   const p = d.proxima ?? null;
+  const varias = variasAtrasadas(d);
   const primero = d.nombre.trim().split(/\s+/)[0] || d.nombre;
   let mensaje: string;
   if (!p) {
     mensaje = e.esPersonal
       ? t.fiado.mensajePersonal(primero, plata(d.saldo))
       : t.fiado.mensajeNegocio(primero, e.negocio, plata(d.saldo));
+  } else if (varias) {
+    // Más de una cuota vencida: se le dice el total atrasado. Y SIN fecha:
+    // «los 300.000 que quedamos para el 4» sería falso, para el 4 eran 150.000.
+    mensaje = e.esPersonal
+      ? t.fiado.mensajeVariasAtrasadasPersonal(primero, varias.cuantas, plata(varias.monto))
+      : t.fiado.mensajeVariasAtrasadas(primero, e.negocio, varias.cuantas, plata(varias.monto));
   } else {
     const m = plata(p.pendiente);
     const cuota = t.fiado.cuotaEntreParentesis(p.numero, p.de);
@@ -670,7 +685,12 @@ function FichaDeudor({
   const whatsapp = d.telefono ? enlaceWhatsApp(d.telefono, e.zona, mensaje) : '';
   const yaLeEscribio = escribio || (p?.avisado_el != null && p.avisado_el === hoy);
 
-  /** Queda anotado que hoy se le escribió por esa cuota: el aviso de mañana ya no lo cuenta. */
+  /**
+   * Queda anotado que hoy se le escribió. Se manda su próxima cuota y la
+   * base marca con ella TODAS las que tiene vencidas o de hoy: se le escribió
+   * a la persona, no a una cuota, y el aviso de mañana ya no la cuenta entre
+   * los que faltan («A 2 todavía no les escribiste» con uno solo sin escribir).
+   */
   function anotarQueEscribio() {
     if (!p) return;
     clienteNavegador().rpc('marcar_cuota_avisada', { p_cuota: p.cuota_id }).then(({ error: err }) => {
@@ -682,8 +702,9 @@ function FichaDeudor({
   const deudaDe = (fioId: string | null | undefined) =>
     (fioId ? detalle?.deudas.find((x) => x.fio_id === fioId) ?? null : null);
   const haySinFecha = (detalle?.sin_fecha ?? 0) > 0;
-  // Solo las líneas que hoy explican lo que debe sin fecha: las ya pagadas
-  // de hace años no llevan botón.
+  // Solo las líneas que hoy explican lo que debe sin fecha (las que la base
+  // dice que todavía tienen algo sin cubrir): las ya pagadas de hace años no
+  // llevan botón.
   const sinFechaLineas = detalle ? lineasParaFechar(detalle.sin_fecha_lineas, detalle.sin_fecha) : [];
 
   function nombreDeLinea(l: LineaFiado): string {
@@ -700,7 +721,12 @@ function FichaDeudor({
 
   function ponerFecha(l: { id: string; concepto: string; monto: number; fecha: string }) {
     setErrorEncima('');
-    setEncima({ que: 'fecha', fioId: l.id, concepto: l.concepto, monto: l.monto, fecha: l.fecha, inicial: null, pagado: 0 });
+    // Lo que ya pagó de esa línea, para decirlo antes de guardar: las cuotas
+    // suman la línea entera y lo cobrado tapa las primeras. El número lo
+    // manda la base (`sin_fecha_lineas[].cubierto`): es lo que va a quedar
+    // atado a esta deuda al guardar (ver `yaCobradoAlFechar`).
+    const pagado = detalle ? yaCobradoAlFechar(detalle, l, e.dec) : 0;
+    setEncima({ que: 'fecha', fioId: l.id, concepto: l.concepto, monto: l.monto, fecha: l.fecha, inicial: null, pagado });
   }
 
   return (
@@ -734,6 +760,9 @@ function FichaDeudor({
                   ? [t.fiado.pagada]
                   : [parcial ? t.fiado.faltan(plata(c.pendiente)) : '', cuando(t, c.dias)].filter(Boolean);
                 const abierta = moviendo?.id === c.cuota_id;
+                // Entre las fechas de sus vecinas: no se la puede pasar por
+                // encima de otra (los pagos tapan por número; ver `vecinasDe`).
+                const vecinas = vecinasDe(deuda.cuotas, c.numero);
                 return (
                   <li key={c.cuota_id} className="py-1.5">
                     <div className="flex min-h-[44px] items-center justify-between gap-2">
@@ -770,6 +799,7 @@ function FichaDeudor({
                       <div className="mt-1 flex items-center gap-2 pb-1.5 aparecer">
                         <input
                           type="date" className="campo min-w-0 flex-1 py-2.5" aria-label={t.fiado.cambiarFecha}
+                          min={vecinas.min} max={vecinas.max}
                           value={moviendo.fecha} disabled={ocupado}
                           onChange={(ev) => setMoviendo({ id: c.cuota_id, fecha: ev.target.value })}
                         />
@@ -961,7 +991,7 @@ function FichaDeudor({
             plata(encima.monto),
             encima.fecha ? hace(t, diffDias(encima.fecha, hoy)) : '',
           ].filter(Boolean).join(' · ')}
-          aviso={encima.inicial && encima.pagado > 0 ? t.fiado.rearmarAviso(plata(encima.pagado)) : ''}
+          aviso={encima.pagado > 0 ? t.fiado.rearmarAviso(plata(encima.pagado)) : ''}
           onCerrar={() => setEncima(null)}
           onGuardado={cambio}
         />

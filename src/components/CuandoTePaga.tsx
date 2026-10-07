@@ -5,7 +5,8 @@ import { useLocale, useTextos } from '@/i18n/cliente';
 import { type Moneda, decimalesDe, dinero, vistaDe } from '@/lib/formato';
 import { sumarDias } from '@/lib/fechas';
 import {
-  MAX_CUOTAS, ajustarPlan, armarPlan, esFecha, fechaCorta, leerPlan, sumarPeriodo,
+  MAX_CUOTAS, ajustarPlan, armarPlan, esFecha, fechaConDia, fechaCorta, fechaQueSeManda, leerPlan, sumarPeriodo,
+  ultimaDistinta,
 } from '@/lib/cuotas';
 import type { CadaCuota, Plan } from '@/lib/tipos';
 
@@ -24,8 +25,20 @@ import type { CadaCuota, Plan } from '@/lib/tipos';
  * cortado y, al elegirlo, se cortaba el primero: la pregunta entera tiene
  * que leerse sin mover nada. Por eso acá no va `FilaDeslizable`.
  *
- * NO HAY TEXTO DE AYUDA. La línea de abajo —«3 × 150.000 · 15/11 · 15/12 ·
- * 15/01»— es la explicación: se ve lo que va a quedar antes de guardarlo.
+ * NO HAY TEXTO DE AYUDA. La línea de abajo —«3 × 150.000 · dom 15/11 ·
+ * 15/12 · 15/01»— es la explicación: se ve lo que va a quedar antes de
+ * guardarlo. La primera fecha lleva el DÍA DE LA SEMANA: quien dijo «me paga
+ * el viernes» ve «vie 23/10» y, si el modelo le erró por un día, lo nota. Y
+ * si la división no es exacta se dice la última cuota, que es la que cierra
+ * la cuenta: «12 × 104.166 (la última 104.174)».
+ *
+ * LAS FECHAS SE PUEDEN TECLEAR. Cada campo de fecha tiene su texto propio
+ * mientras se escribe, como «Cuántas». Atado directo al plan, al teclear el
+ * año en la computadora el navegador pasaba por «0002-01-15», se rechazaba,
+ * React devolvía el campo a lo anterior y el año no se podía escribir: la
+ * cuota de enero quedaba en el año en curso, nueve meses atrás, y la vista
+ * previa (sin año) parecía correcta. Al plan va solo una fecha que la base
+ * aceptaría; al salir del campo vuelve a mostrarse la del plan.
  *
  * NO GUARDA NADA PROPIO. Qué botón está elegido, cuántas cuotas y cada
  * cuánto se LEEN del plan (`valor`), que es lo que se va a mandar a la base.
@@ -42,7 +55,7 @@ import type { CadaCuota, Plan } from '@/lib/tipos';
 const CHIP_EN_GRILLA = 'w-full min-w-0 px-1.5 text-center text-[13.5px] leading-tight';
 
 export function CuandoTePaga({
-  total, hoy, moneda, valor, alCambiar, sinChipSinFecha = false, deshabilitado = false,
+  total, hoy, moneda, valor, alCambiar, sinChipSinFecha = false, deshabilitado = false, avisarSiYaPaso = false,
 }: {
   /** Lo que se reparte: el total de la venta o el monto de la línea fiada. */
   total: number;
@@ -54,6 +67,14 @@ export function CuandoTePaga({
   /** En «Ponerle fecha» no se ofrece «Sin fecha»: para eso está «Quitar las cuotas». */
   sinChipSinFecha?: boolean;
   deshabilitado?: boolean;
+  /**
+   * En la revisión por voz: si la primera fecha ya pasó, se dice en ámbar.
+   * El prompt le prohíbe al modelo una fecha anterior a hoy, así que ahí una
+   * fecha pasada es casi siempre un error suyo («me paga el 15» dicho un 20).
+   * No se corrige sola: «me tenía que pagar el 5» también existe. A mano no
+   * hace falta (y en «Rearmar» la primera cuota puede ser vieja y estar paga).
+   */
+  avisarSiYaPaso?: boolean;
 }) {
   const t = useTextos();
   const locale = useLocale();
@@ -86,6 +107,17 @@ export function CuandoTePaga({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modo, leido?.cuotas]);
 
+  // Lo que se está tecleando en cada campo de fecha (ver arriba). Lo que
+  // muestran los chips y la vista previa sale siempre del plan, no de acá.
+  const fechaUna = modo === 'una' && leido ? leido.primera : '';
+  const fechaPrimera = modo === 'cuotas' && leido ? leido.primera : '';
+  const [unaTexto, setUnaTexto] = useState(fechaUna);
+  useEffect(() => { setUnaTexto(fechaUna); }, [fechaUna]);
+  const [primeraTexto, setPrimeraTexto] = useState(fechaPrimera);
+  useEffect(() => { setPrimeraTexto(fechaPrimera); }, [fechaPrimera]);
+  // Hasta dónde deja la base: con el tope puesto, el año no pasa de 4 cifras.
+  const topeFecha = esFecha(hoy) ? sumarPeriodo(hoy, 'mes', 120) : undefined;
+
   function unaFecha(fecha: string) {
     if (!esFecha(fecha)) return;
     alCambiar(armarPlan({ total, cuotas: 1, cada: 'mes', primera: fecha, decimales: dec }));
@@ -114,7 +146,6 @@ export function CuandoTePaga({
   ];
 
   const RAPIDAS = [7, 15, 30];
-  const fechaUna = modo === 'una' && leido ? leido.primera : '';
   const esRapida = RAPIDAS.some((n) => sumarDias(hoy, n) === fechaUna);
 
   const CADAS: { clave: CadaCuota; nombre: string }[] = [
@@ -123,15 +154,32 @@ export function CuandoTePaga({
     { clave: 'mes', nombre: t.fiado.cadaMes },
   ];
 
-  // «3 × 150.000 · 15/11 · 15/12 · 15/01»; con más de cuatro, de punta a punta.
+  // «3 × 150.000 · dom 15/11 · 15/12 · 15/01»; con más de cuatro, de punta a
+  // punta. La primera fecha va con su día; una de otro año, con el año.
   let vista = '';
   if (modo === 'cuotas' && valor && total > 0) {
     const n = valor.length;
-    const monto = plata(valor[0].monto);
+    const ultima = ultimaDistinta(valor, dec);
+    const monto = plata(valor[0].monto) + (ultima === null ? '' : t.fiado.laUltima(plata(ultima)));
+    const primera = fechaConDia(valor[0].vence_el, hoy, locale);
     vista = n <= 4
-      ? t.fiado.vistaPrevia(n, monto, valor.map((c) => fechaCorta(c.vence_el, hoy)).join(' · '))
-      : t.fiado.vistaPreviaLarga(n, monto, fechaCorta(valor[0].vence_el, hoy), fechaCorta(valor[n - 1].vence_el, hoy));
+      ? t.fiado.vistaPrevia(n, monto, [primera, ...valor.slice(1).map((c) => fechaCorta(c.vence_el, hoy))].join(' · '))
+      : t.fiado.vistaPreviaLarga(n, monto, primera, fechaCorta(valor[n - 1].vence_el, hoy));
+  } else if (modo === 'una' && fechaUna) {
+    // Una sola fecha: «vie 23/10 · 100.000».
+    vista = [fechaConDia(fechaUna, hoy, locale), total > 0 ? plata(total) : ''].filter(Boolean).join(' · ');
   }
+  const yaPaso = avisarSiYaPaso && !!valor && valor.length > 0 && esFecha(valor[0].vence_el) && valor[0].vence_el < hoy;
+  const pastillaVista = vista && (
+    <p className="rounded-xl bg-arena px-3 py-2.5 text-[13.5px] font-semibold tabular-nums text-tinta/75" aria-live="polite">
+      {vista}
+    </p>
+  );
+  const avisoYaPaso = yaPaso && (
+    <p role="status" className="rounded-xl bg-ambar-claro px-3 py-2.5 text-[13px] font-medium text-ambar">
+      {t.fiado.fechaYaPaso}
+    </p>
+  );
 
   return (
     <div className="aparecer">
@@ -181,9 +229,16 @@ export function CuandoTePaga({
           </div>
           <input
             ref={campoFecha} type="date" className="campo py-2.5" disabled={deshabilitado}
-            aria-label={t.fiado.unaFecha}
-            value={fechaUna} onChange={(e) => unaFecha(e.target.value)}
+            aria-label={t.fiado.unaFecha} min="2000-01-01" max={topeFecha}
+            value={unaTexto}
+            onChange={(e) => {
+              setUnaTexto(e.target.value);
+              if (fechaQueSeManda(e.target.value, hoy)) unaFecha(e.target.value);
+            }}
+            onBlur={() => setUnaTexto(fechaUna)}
           />
+          {pastillaVista}
+          {avisoYaPaso}
         </div>
       )}
 
@@ -221,7 +276,13 @@ export function CuandoTePaga({
               <label htmlFor={idPrimera} className="etiqueta">{t.fiado.laPrimera}</label>
               <input
                 id={idPrimera} type="date" className="campo min-w-0 py-2.5" disabled={deshabilitado}
-                value={leido.primera} onChange={(e) => enCuotas({ primera: e.target.value })}
+                min="2000-01-01" max={topeFecha}
+                value={primeraTexto}
+                onChange={(e) => {
+                  setPrimeraTexto(e.target.value);
+                  if (fechaQueSeManda(e.target.value, hoy)) enCuotas({ primera: e.target.value });
+                }}
+                onBlur={() => setPrimeraTexto(fechaPrimera)}
               />
             </div>
           </div>
@@ -242,11 +303,8 @@ export function CuandoTePaga({
             </div>
           </div>
 
-          {vista && (
-            <p className="rounded-xl bg-arena px-3 py-2.5 text-[13.5px] font-semibold tabular-nums text-tinta/75" aria-live="polite">
-              {vista}
-            </p>
-          )}
+          {pastillaVista}
+          {avisoYaPaso}
         </div>
       )}
     </div>
