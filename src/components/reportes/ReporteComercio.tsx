@@ -88,6 +88,10 @@ export async function ReporteComercio({
   const parada = valorAlCosto(quietos);
   const deudores = fiado ? deudoresPorAntiguedad(fiado) : [];
   const hayFiado = deudores.length > 0 || (fiadoPeriodo?.clientes.length ?? 0) > 0;
+  // Cobros con fecha (127). «Esta semana» cuenta lo de hoy: para quien lee
+  // el reporte, lo que vence hoy también es de esta semana.
+  const atrasado = fiado?.monto_atrasado ?? 0;
+  const estaSemana = (fiado?.monto_hoy ?? 0) + (fiado?.monto_semana ?? 0);
   const cuentas = billetera?.cuentas ?? [];
 
   return (
@@ -288,6 +292,18 @@ export async function ReporteComercio({
                 <>
                   <p className="text-[22px] font-titulo font-extrabold tabular-nums text-rojo">{dinero(fiado.total, m)}</p>
                   <p className="mt-0.5 text-[12.5px] text-tinta/50">{rc.fiado.clientes(deudores.length)} · {rc.fiado.hoy}</p>
+                  {/* De lo que tiene fecha de cobro (127): lo atrasado y lo
+                      que vence de hoy a siete días. Sin fechas, no se dibuja. */}
+                  {(atrasado > 0 || estaSemana > 0) && (
+                    <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] font-semibold">
+                      {atrasado > 0 && (
+                        <span className="text-rojo">{rc.fiado.atrasado} <b className="tabular-nums">{dinero(atrasado, m, false)}</b></span>
+                      )}
+                      {estaSemana > 0 && (
+                        <span className="text-ambar">{rc.fiado.venceEstaSemana} <b className="tabular-nums">{dinero(estaSemana, m, false)}</b></span>
+                      )}
+                    </p>
+                  )}
                   <ul className="mt-3 divide-y divide-borde">
                     {deudores.slice(0, TOPE).map((d) => (
                       <li key={d.cliente_id} className="flex items-baseline justify-between gap-3 py-2">

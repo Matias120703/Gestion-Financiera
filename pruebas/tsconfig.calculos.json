@@ -10,10 +10,11 @@
     "esModuleInterop": true
   },
   "files": [
+    "../src/lib/cuotas.ts", "../src/lib/cuotas-dictadas.ts",
     "../src/lib/calculos.ts", "../src/lib/captura.ts", "../src/lib/fechas.ts", "../src/lib/formato.ts",
     "../src/lib/reporte.ts", "../src/lib/lectura.ts", "../src/lib/telefono.ts", "../src/lib/rubros.ts",
     "../src/lib/errores.ts", "../src/lib/turno-voz.ts", "../src/lib/acciones.ts", "../src/lib/mensajes-base.ts",
-    "../src/lib/reporte-textos.ts", "../src/lib/frases-del-dia.ts", "../src/lib/referido.ts",
+    "../src/lib/reporte-textos.ts", "../src/lib/frases-del-dia.ts", "../src/lib/frase-cobros.ts", "../src/lib/referido.ts",
     "../src/lib/tipos-rutinas.ts", "../src/lib/medidas.ts", "../src/lib/rutina-texto.ts",
     "../src/lib/ejercicios-base.ts", "../src/lib/agricultura.ts", "../src/lib/liquidacion.ts",
     "../src/lib/pagos.ts", "../src/lib/invitar-avisos.ts",

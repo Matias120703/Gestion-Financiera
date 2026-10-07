@@ -312,6 +312,8 @@ export interface CapturaInterpretada {
   contraparte?: string | null;
   /** Fiado y cobro de fiado: el cliente de la lista de quién debe, si se lo reconoció. */
   cliente_id?: string | null;
+  /** Fiado y venta a crédito: cuándo dijo que le pagan (127). Null = no lo dijo. */
+  cuotas?: CuotasDictadas | null;
   /** Turno: lo entendido, saneado, con el cliente si se lo reconoció. Se revisa en la agenda. */
   turno?: import('./turno-voz').TurnoRespuesta | null;
   /** Producto: uno nuevo, o el precio o el stock de uno que ya está. */
@@ -931,6 +933,12 @@ export interface Preferencias {
   aviso_semanal: boolean;
   /** Hora del día (0–23), en la zona del negocio. */
   hora_cierre: number;
+  /**
+   * «Cobros con fecha» (127): el aviso de la mañana el día que toca cobrar.
+   * Opcional: unas preferencias leídas antes de la 127, o las de reserva
+   * cuando la lectura falla, no lo traen, y vale encendido.
+   */
+  aviso_cobros?: boolean;
 }
 
 /** Lo que devuelve cierre_del_dia(). Todo calculado en PostgreSQL. */
@@ -1433,12 +1441,127 @@ export interface DeudorFiado {
   desde: string | null;
   /** Cuántos días hace. «Me debe 800.000» y «hace cuatro meses» no son lo mismo. */
   dias: number | null;
+  // Lo de abajo llegó con las fechas de cobro (127). Va opcional: quien arma
+  // un deudor a mano (pruebas, la captura) no tiene por qué saber de cuotas.
+  /** La parte del saldo que no tiene fecha: «me debe y punto». */
+  sin_fecha?: number;
+  /** La parte del saldo que tiene cuotas pendientes. sin_fecha + con_fecha = saldo. */
+  con_fecha?: number;
+  /** Cuántas cuotas tiene atrasadas, y cuánto suman. */
+  atrasadas?: number;
+  monto_atrasado?: number;
+  /** La cuota pendiente de fecha más próxima; null si no tiene ninguna. */
+  proxima?: ProximaCuota | null;
+  /** En cuál de los cuatro grupos de la pantalla va. Lo decide la base. */
+  grupo?: GrupoFiado;
 }
 
 export interface ResumenFiado {
   total: number;
   cuantos: number;
   clientes: DeudorFiado[];
+  // Lo que suma la 127, para la tarjeta «Para cobrar» y el panel.
+  atrasadas?: number;
+  monto_atrasado?: number;
+  vencen_hoy?: number;
+  monto_hoy?: number;
+  /** Las que vencen en los próximos 7 días, sin contar hoy. */
+  vencen_semana?: number;
+  monto_semana?: number;
+  proximo_vencimiento?: string | null;
+  /** Cuántos clientes tienen alguna cuota pendiente. Con 0, la pantalla es la de siempre. */
+  con_fecha_cuantos?: number;
+}
+
+/**
+ * FECHAS DE COBRO Y CUOTAS (127).
+ *
+ * Las cuotas son un calendario ENCIMA del libro: dicen cuándo se espera
+ * cobrar, no cuánto se debe. El saldo sigue saliendo de sumar el libro, y si
+ * una cuota está pagada se calcula al leer; nunca se guarda.
+ */
+export type CadaCuota = 'semana' | 'quincena' | 'mes';
+
+/** Lo que viaja a la base como `p_plan`: una fecha y un monto por cuota, en orden. */
+export type Plan = { vence_el: string; monto: number }[];
+
+export interface CuotaFiado {
+  cuota_id: string;
+  fio_id?: string;
+  numero: number;
+  /** De cuántas («cuota 2 de 3»). */
+  de: number;
+  vence_el: string;
+  /** vence_el − hoy del negocio. Negativo = atrasada. */
+  dias: number;
+  monto: number;
+  pagado: number;
+  pendiente: number;
+  /** El día que se le escribió al cliente por esta cuota. */
+  avisado_el: string | null;
+}
+
+export interface ProximaCuota {
+  cuota_id: string;
+  fio_id: string;
+  numero: number;
+  de: number;
+  vence_el: string;
+  dias: number;
+  pendiente: number;
+  avisado_el: string | null;
+}
+
+export type GrupoFiado = 'atrasada' | 'hoy' | 'proxima' | 'sin_fecha';
+
+/** Una línea fiada que tiene cuotas, con lo que ya se le pagó. */
+export interface DeudaConCuotas {
+  fio_id: string;
+  concepto: string;
+  fecha: string;
+  monto: number;
+  venta_id: string | null;
+  pagado: number;
+  falta: number;
+  cuotas: CuotaFiado[];
+}
+
+/** Lo que abre la ficha de quien te debe (`detalle_fiado`). */
+export interface DetalleFiado {
+  cliente_id: string;
+  nombre: string;
+  telefono: string;
+  activo: boolean;
+  saldo: number;
+  sin_fecha: number;
+  desde: string | null;
+  dias: number | null;
+  deudas: DeudaConCuotas[];
+  /** Las líneas fiadas que todavía no tienen fecha: a esas se les puede poner. */
+  sin_fecha_lineas: { id: string; fecha: string; monto: number; concepto: string; venta_id: string | null }[];
+  libro: LineaFiado[];
+}
+
+/** Lo que se entendió de «en 3 cuotas, la primera el 15» (voz y texto). */
+export interface CuotasDictadas {
+  cantidad: number;
+  cada: CadaCuota;
+  /** null si no dijo fecha: la pantalla propone una. */
+  primera: string | null;
+}
+
+/** Una cuenta con algo para cobrar hoy (`cobros_de_hoy`, solo service_role). */
+export interface CobrosDeHoy {
+  empresa_id: string;
+  nombre: string;
+  moneda: string;
+  tipo_cuenta: string;
+  fecha: string;
+  /** `cuantas` son cuotas; `personas`, gente distinta (la frase habla de personas). */
+  hoy: { cuantas: number; personas?: number; monto: number; nombres: string[] };
+  atrasadas: { cuantas: number; personas?: number; monto: number; nombres: string[]; dias_max: number };
+  sin_escribir: number;
+  destinatarios: { user_id: string; idioma: string }[];
 }
 
 /** Una línea del libro: se le fio, o te pagó. */
@@ -1450,6 +1573,10 @@ export interface LineaFiado {
   concepto: string;
   venta_id: string | null;
   created_at: string;
+  /** En un cobro: de qué deuda con cuotas es ese pago (127). Null = pago suelto. */
+  fio_id?: string | null;
+  /** En un cobro: cómo pagó. */
+  metodo?: string | null;
 }
 
 /** Un cliente en la lista, con lo que lo vuelve útil: cuándo vino y cuánto dejó (053). */

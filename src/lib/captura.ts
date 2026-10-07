@@ -1,4 +1,6 @@
-import type { CapturaInterpretada, DeudaInterpretada, Producto } from './tipos';
+import type { CapturaInterpretada, CuotasDictadas, DeudaInterpretada, Producto } from './tipos';
+import { esFecha } from './cuotas';
+import { sumarDias } from './fechas';
 
 /**
  * El prompt y el esquema con los que se interpreta una captura.
@@ -83,13 +85,19 @@ export type CapturaDeVoz = Omit<CapturaInterpretada, 'deuda'> & {
   lote_dudoso?: boolean;
   /** Las campañas abiertas, para los chips. Solo si la cuenta tiene campañas. */
   lotes?: CampanaConocida[];
+  /**
+   * La cuenta tiene la pantalla de Fiado (127): la revisión ofrece «¿Cuándo
+   * te paga?». Sin esa pantalla (clases, entrenamiento) no se ofrece: serían
+   * fechas guardadas que nadie ve y por las que no llega ningún aviso.
+   */
+  con_fechas?: boolean;
 };
 
 /** Esquema estricto: obliga al modelo a devolver exactamente esta forma. */
 export const ESQUEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'lote_id', 'lote_nombrado', 'items', 'deuda', 'turno', 'producto', 'ficha', 'confianza', 'aviso'],
+  required: ['tipo', 'fecha', 'descripcion', 'categoria', 'monto', 'metodo_pago', 'contraparte', 'cliente_id', 'cuotas', 'lote_id', 'lote_nombrado', 'items', 'deuda', 'turno', 'producto', 'ficha', 'confianza', 'aviso'],
   properties: {
     /**
      * `deuda` y `pago_deuda` se agregaron porque, sin ellos, decir «debo
@@ -117,6 +125,23 @@ export const ESQUEMA = {
     contraparte: { type: ['string', 'null'] },
     /** Para `cobro_fiado` (y `fiado`, si ya debía): el id EXACTO de la lista TE DEBEN. */
     cliente_id: { type: ['string', 'null'] },
+    /**
+     * CUÁNDO LE PAGAN (127): «en 3 cuotas, la primera el 15», «me paga el
+     * viernes». Solo en `fiado` y en la venta a crédito; en todo lo demás,
+     * null. No es `deuda.cuotas`: esas son las cuotas que paga el dueño,
+     * estas son las que le pagan a él. Sin esta clave la frase se guardaba
+     * como un fiado sin fecha y la fecha —lo único que dijo de más— se perdía.
+     */
+    cuotas: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: ['cantidad', 'cada', 'primera'],
+      properties: {
+        cantidad: { type: 'integer' },
+        cada: { type: 'string', enum: ['semana', 'quincena', 'mes'] },
+        primera: { type: ['string', 'null'], description: 'YYYY-MM-DD' },
+      },
+    },
     /**
      * En gasto, ingreso, venta y deuda: el id EXACTO de la lista CAMPAÑAS
      * ABIERTAS. Sin campañas, o en cualquier otro tipo, null. Se sanea
@@ -373,7 +398,24 @@ ${esPersonal ? '' : `   Si además vendió productos ("le vendí tres yerbas fia
      "aviso". En cualquier otro tipo, "cliente_id" va en null.
    - "monto": lo que debe (fiado) o lo que pagó (cobro_fiado).
    - "descripcion": por qué debe, si lo dice ("Plata que le presté"). Si no, "Fiado".
-   - "categoria": "Fiado". "items" va vacío y todo el objeto "deuda" va en null.`;
+   - "categoria": "Fiado". "items" va vacío y todo el objeto "deuda" va en null.
+
+   CUÁNDO LE PAGAN → "cuotas" (la clave suelta, NO "deuda.cuotas").
+   Si dice CUÁNDO le pagan, va en "cuotas"; si no, "cuotas" en null. Vale
+   para "fiado"${esPersonal ? '' : ' y para la venta "credito"'}. En cualquier otro tipo, "cuotas" va en null.
+   - "le fié a Juan 300 mil en 3 cuotas, la primera el 15"      → fiado, cuotas {"cantidad":3,"cada":"mes","primera":"<el 15 que viene>"}
+   - "Lucas me debe 200 mil, me paga el 30"                     → fiado, cuotas {"cantidad":1,"cada":"mes","primera":"<el 30 que viene>"}
+   - "Ana me debe 100 mil, me paga el viernes"                  → fiado, cuotas {"cantidad":1,"cada":"mes","primera":"<el viernes que viene>"}
+${esPersonal ? '' : `   - "le vendí la tele a Ana en 6 cuotas"                       → venta "credito", cuotas {"cantidad":6,"cada":"mes","primera":null}
+`}   - "cada quince días" / "por semana" / "cada 15"              → "cada": "quincena" / "semana" / "quincena"
+   - "Lucas me debe 300 mil" (no dijo cuándo)                   → cuotas null
+   "cantidad": cuántos pagos (una sola fecha = 1). "cada": "mes" si no lo dice.
+   "primera": la fecha del primer pago en YYYY-MM-DD; null si no dijo fecha
+   (la pantalla propone una). "el 15" es el 15 que viene; "el viernes", el
+   viernes que viene: nunca una fecha anterior a hoy (${hoy}).
+   "monto" sigue siendo el TOTAL que le deben, no el valor de una cuota.
+   Las cuotas de una TARJETA ("pagó con tarjeta en 3 cuotas") no van acá:
+   esa plata ya entró. Es metodo_pago "tarjeta" y "cuotas" en null.`;
 
   /**
    * EL PROFE O EL TRAINER QUE TAMBIÉN VENDE PRODUCTOS (121).
@@ -761,6 +803,53 @@ ${bloqueClasesYProductos}
      No pongas el monto adentro del nombre.
    - Nunca inventes datos que no estén en el mensaje.${bloqueIdioma}`;
 }
+
+// ---------------------------------------------------------------------
+// EL SANEO DE «CUÁNDO TE PAGA» (127)
+//
+// Igual que la campaña: vive acá para probarlo sin servidor, y no se
+// confía en lo que llegó. Un modelo que devuelve «400 cuotas» o «la primera
+// el 15 de 1926» no puede terminar en un plan que la base rechaza con un
+// error que la persona no entiende; se tira y la revisión arranca en «Sin
+// fecha», que es lo de siempre.
+// ---------------------------------------------------------------------
+
+/** Hasta cuántos días atrás y adelante se le cree una fecha al modelo. */
+const DIAS_ATRAS = 365;
+const DIAS_ADELANTE = 3650;
+const CADAS = ['semana', 'quincena', 'mes'] as const;
+
+/**
+ * Lo que se entendió de «en 3 cuotas, la primera el 15», limpio.
+ *
+ * - Solo en `fiado` y en la venta `credito` (que es fiar): en cualquier otro
+ *   tipo, null. Una venta en efectivo no tiene cuándo cobrarse.
+ * - `cantidad` entera entre 1 y 60 (el tope de la base); fuera de eso se
+ *   tira TODO: no se sabe qué quiso decir, y adivinar es peor que preguntar.
+ * - `cada` de la lista, o «mes».
+ * - `primera` una fecha que existe, entre un año atrás y diez adelante; si
+ *   no, null y la pantalla propone una. Una fecha ya pasada se respeta: «me
+ *   tenía que pagar el 5» nace atrasada, y eso es justo lo que quiso anotar.
+ */
+export function sanearCuotas(
+  valor: unknown, tipo: string, metodoPago: string, hoy: string,
+): CuotasDictadas | null {
+  const corresponde = tipo === 'fiado' || (tipo === 'venta' && metodoPago === 'credito');
+  if (!corresponde || !valor || typeof valor !== 'object') return null;
+  const v = valor as { cantidad?: unknown; cada?: unknown; primera?: unknown };
+  // Number(null) y Number('') dan 0, y true da 1: solo vale un número de verdad.
+  const cantidad = typeof v.cantidad === 'number' ? v.cantidad : NaN;
+  if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 60) return null;
+  const cada = CADAS.find((c) => c === v.cada) ?? 'mes';
+  const primera = typeof v.primera === 'string' && esFecha(v.primera) && esFecha(hoy)
+    && v.primera >= sumarDias(hoy, -DIAS_ATRAS) && v.primera <= sumarDias(hoy, DIAS_ADELANTE)
+    ? v.primera : null;
+  return { cantidad, cada, primera };
+}
+
+// El paso siguiente —de lo dictado al plan que se ve— está en
+// `cuotas-dictadas.ts`: lo usan las pantallas, y de acá no se importan
+// valores desde el navegador (vendría el prompt entero).
 
 // ---------------------------------------------------------------------
 // EL SANEO DE LA CAMPAÑA

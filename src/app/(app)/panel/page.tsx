@@ -28,6 +28,7 @@ import { clienteServidor } from '@/lib/supabase/servidor';
 import { fichaDe, fichaDeLaCuenta, palabra, type Seccion as Ruta } from '@/lib/rubros';
 import { traerResumenDeudas } from '@/lib/deudas';
 import { traerResumenFiado } from '@/lib/fiado';
+import { PastillaCuotas } from '@/components/PastillaCuotas';
 import { Bienvenida } from '@/components/Bienvenida';
 import { PanelProfe } from '@/components/PanelProfe';
 import { PanelCampo } from '@/components/PanelCampo';
@@ -191,7 +192,7 @@ async function ContenidoPanel({
     // Las deudas son contexto: si fallan, el panel igual se muestra. Para el
     // número del que depende una decisión está la pantalla de Deudas, que sí
     // lanza si no puede leer.
-    const [resumenPersonal, deudasPersonal, billeteraPersonal, descuentoPersonal, rachaPersonal] = await Promise.all([
+    const [resumenPersonal, deudasPersonal, billeteraPersonal, descuentoPersonal, rachaPersonal, fiadoPersonal] = await Promise.all([
       traerResumenPersonal(ctx.empresa.id),
       traerResumenDeudas(ctx.empresa.id).catch(() => null),
       // Contexto, como las deudas: si falla, el panel igual se muestra.
@@ -199,6 +200,9 @@ async function ContenidoPanel({
       // El descuento que se gana cargando durante la prueba (078).
       traerDescuentoRacha(ctx.empresa.id),
       traerRacha(ctx.empresa.id),
+      // Cuándo le devuelven lo prestado (127). Contexto: si falla, la fila
+      // «Te deben» queda como siempre, sin fecha.
+      traerResumenFiado(ctx.empresa.id).catch(() => null),
     ]);
 
     return (
@@ -227,6 +231,7 @@ async function ContenidoPanel({
         <PanelPersonal
           resumen={resumenPersonal}
           deudas={deudasPersonal}
+          fiado={fiadoPersonal}
           moneda={ctx.vista}
           locale={FICHA[(await idiomaActual())].locale}
           t={t}
@@ -623,7 +628,12 @@ async function ContenidoPanel({
                 {t.panel.clientesQueDeben(fiado.cuantos)} · {t.panel.plataQueNoEntro}
               </p>
             </div>
-            <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">{t.panel.verFiado}</span>
+            {/* Con cobros con fecha (127), lo más urgente arriba del enlace:
+                atrasadas, lo de hoy o lo de la semana. Sin fechas, nada. */}
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <PastillaCuotas fiado={fiado} plata={(v) => dinero(v, m)} textos={t.panel} />
+              <span className="text-[13px] font-semibold text-verde-fuerte">{t.panel.verFiado}</span>
+            </div>
           </div>
         </Link>
       )}

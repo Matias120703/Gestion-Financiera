@@ -29,6 +29,9 @@ export interface RutinaEnClientes {
   enlace: EnlaceRutina | null;
 }
 
+/** Lo que la ficha necesita de la próxima cuota: cuándo, y si ya pasó. */
+export interface ProximaDelCliente { vence_el: string; dias: number }
+
 function diasDesde(iso: string | null): number | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
@@ -62,7 +65,7 @@ function haceTanto(t: Textos, iso: string | null): string {
  * como «0981234567». La gente escribe los teléfonos de cualquier manera.
  */
 export function PantallaClientes({
-  empresaId, moneda, zona, negocio, clientes, saldos, tieneAgenda, tienePaquetes, puedeEliminar,
+  empresaId, moneda, zona, negocio, clientes, saldos, proximas = {}, tieneAgenda, tienePaquetes, puedeEliminar,
   deAlumnos = false, titulo, notasALaVista = false, conRutinas = false, rutinas = null, porCobrar = null,
 }: {
   empresaId: string;
@@ -71,6 +74,11 @@ export function PantallaClientes({
   negocio: string;
   clientes: ClienteLista[];
   saldos: Record<string, number>;
+  /**
+   * La cuota pendiente más próxima de cada cliente, por id (127). Solo los
+   * que tienen fecha de cobro: al resto no se le agrega nada.
+   */
+  proximas?: Record<string, ProximaDelCliente>;
   tieneAgenda: boolean;
   /** Si el rubro vende en paquetes: «ocho clases por 400.000» (088). */
   tienePaquetes: boolean;
@@ -205,6 +213,7 @@ export function PantallaClientes({
                 key={c.id}
                 c={c}
                 debe={saldos[c.id] ?? 0}
+                proxima={proximas[c.id] ?? null}
                 sinCobrar={sinCobrar[c.id] ?? 0}
                 porCobrar={porCobrar}
                 empresaId={empresaId}
@@ -478,11 +487,13 @@ function FichaRutina({
 }
 
 function FilaCliente({
-  c, debe, sinCobrar, porCobrar, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista,
+  c, debe, proxima = null, sinCobrar, porCobrar, empresaId, zona, negocio, plata, locale, tieneAgenda, tienePaquetes, deAlumnos, notasALaVista,
   conRutinas, rutina, moneda, puedeEliminar, abierto, onAbrir, onListo,
 }: {
   c: ClienteLista;
   debe: number;
+  /** Su próxima cuota pendiente (127); null si lo que debe no tiene fecha. */
+  proxima?: ProximaDelCliente | null;
   /** Lo que tiene sin cobrar de sus períodos (116). */
   sinCobrar: number;
   /**
@@ -560,8 +571,17 @@ function FilaCliente({
           {detalle && <p className="truncate text-[12.5px] text-tinta/45">{detalle}</p>}
         </div>
         {debe > 0 && (
-          <span className="shrink-0 rounded-full bg-rojo-claro px-2.5 py-1 text-[12px] font-bold tabular-nums text-rojo">
-            {t.clientes.debe(plata(debe))}
+          <span className="flex shrink-0 flex-col items-end gap-0.5">
+            <span className="rounded-full bg-rojo-claro px-2.5 py-1 text-[12px] font-bold tabular-nums text-rojo">
+              {t.clientes.debe(plata(debe))}
+            </span>
+            {/* Si tiene fecha de cobro (127), una palabra: cuándo vence, o
+                que ya se atrasó. Sin fecha, la pastilla sola de siempre. */}
+            {proxima && (
+              <span className={`text-[11.5px] font-semibold ${proxima.dias < 0 ? 'text-rojo' : 'text-tinta/50'}`}>
+                {proxima.dias < 0 ? t.clientes.atrasado : t.clientes.venceEl(fechaCorta(proxima.vence_el, locale, hoyISO(zona)))}
+              </span>
+            )}
           </span>
         )}
       </button>

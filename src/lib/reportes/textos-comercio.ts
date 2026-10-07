@@ -62,7 +62,7 @@ const es = {
 
   // ---- Fiado ----
   fiadoHoyTitulo: (hoy: string) => `LO QUE TE DEBEN HOY (${hoy}) · DE LA MÁS VIEJA A LA MÁS NUEVA`,
-  columnasFiadoHoy: ['#', 'Cliente', 'Te debe', 'Fiado desde', 'Días'],
+  columnasFiadoHoy: ['#', 'Cliente', 'Te debe', 'Fiado desde', 'Días', 'Próxima cuota', 'Vence'],
   nadieDebe: 'Hoy nadie te debe nada.',
   fiadoPeriodoTitulo: 'FIADO EN ESTE PERÍODO · POR CLIENTE',
   columnasFiadoPeriodo: ['#', 'Cliente', 'Fiaste', 'Te pagó', 'Debe hoy'],
@@ -153,7 +153,7 @@ const pt: TextosComercio = {
   sinInventario: 'Nenhum produto com estoque hoje.',
 
   fiadoHoyTitulo: (hoy: string) => `O QUE DEVEM PRA VOCÊ HOJE (${hoy}) · DO MAIS ANTIGO AO MAIS NOVO`,
-  columnasFiadoHoy: ['#', 'Cliente', 'Deve', 'Fiado desde', 'Dias'],
+  columnasFiadoHoy: ['#', 'Cliente', 'Deve', 'Fiado desde', 'Dias', 'Próxima parcela', 'Vence'],
   nadieDebe: 'Hoje ninguém deve nada pra você.',
   fiadoPeriodoTitulo: 'FIADO NESTE PERÍODO · POR CLIENTE',
   columnasFiadoPeriodo: ['#', 'Cliente', 'Fiado', 'Pagou', 'Deve hoje'],

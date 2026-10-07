@@ -288,6 +288,9 @@ export default async function PaginaAjustes({
               esPersonal={esPersonal}
               // El aviso de los turnos de mañana solo existe donde hay agenda.
               tieneAgenda={tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/agenda')}
+              // El de los cobros con fecha (127), solo a quien puede abrir
+              // Fiado: la misma pregunta que hace la página de Fiado.
+              tieneFiado={!ctx.gratisPersonal && tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/fiado')}
             />
           </div>
         );

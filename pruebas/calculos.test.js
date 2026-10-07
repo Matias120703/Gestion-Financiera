@@ -3189,6 +3189,475 @@ ok('un rubro desconocido no rompe: cae en comercio',
     [true, true]);
 }
 
+// --- TANDA B · Fechas de cobro y cuotas del fiado (127): la cuenta ---
+// Matías: «una venta a crédito puede llevar fecha de cobro, una sola o en
+// cuotas: cuántas, cada cuánto, la primera fecha». Lo que se prueba acá es
+// lo que la base rechazaría si saliera mal: cuotas que no suman la deuda y
+// fechas que no existen.
+{
+  const Q = require('../.compilado/cuotas.js');
+  const suma = (plan) => plan.reduce((s, c) => s + Math.round(c.monto * 100), 0) / 100;
+
+  ok('B · 500.000 en 3: la última lleva el resto', Q.repartir(500000, 3, 0), [166666, 166666, 166668]);
+  ok('B · y suma exacto', Q.repartir(500000, 3, 0).reduce((a, b) => a + b, 0), 500000);
+  ok('B · con decimales: 99,99 en 4', Q.repartir(99.99, 4, 2), [24.99, 24.99, 24.99, 25.02]);
+  ok('B · 100 en 3 con centavos', Q.repartir(100, 3, 2), [33.33, 33.33, 33.34]);
+  ok('B · una sola cuota es el total', Q.repartir(450000, 1, 0), [450000]);
+
+  ok('B · el mes no se encadena: 31/01 → 28/02 → 31/03',
+    [0, 1, 2].map((k) => Q.sumarPeriodo('2026-01-31', 'mes', k)), ['2026-01-31', '2026-02-28', '2026-03-31']);
+  ok('B · en bisiesto, 29/02', Q.sumarPeriodo('2028-01-31', 'mes', 1), '2028-02-29');
+  ok('B · diciembre pasa de año', Q.sumarPeriodo('2026-11-15', 'mes', 2), '2027-01-15');
+  ok('B · la quincena son 15 días y la semana 7',
+    [Q.sumarPeriodo('2026-10-20', 'quincena', 1), Q.sumarPeriodo('2026-10-20', 'semana', 2)], ['2026-11-04', '2026-11-03']);
+
+  const plan = Q.armarPlan({ total: 450000, cuotas: 3, cada: 'mes', primera: '2026-11-15', decimales: 0 });
+  ok('B · 3 × 150.000 · 15/11 · 15/12 · 15/01', plan,
+    [{ vence_el: '2026-11-15', monto: 150000 }, { vence_el: '2026-12-15', monto: 150000 }, { vence_el: '2027-01-15', monto: 150000 }]);
+  ok('B · el plan vale', Q.planValido(plan, 450000, 0), true);
+  ok('B · y no vale para otro total', Q.planValido(plan, 450001, 0), false);
+  ok('B · nunca más de 60 cuotas',
+    Q.armarPlan({ total: 6000000, cuotas: 200, cada: 'semana', primera: '2026-11-01' }).length, 60);
+  ok('B · 2 guaraníes no se parten en 3 cuotas de cero',
+    Q.armarPlan({ total: 2, cuotas: 3, cada: 'mes', primera: '2026-11-01' }).map((c) => c.monto), [1, 1]);
+  ok('B · con cualquier total y cantidad, las cuotas suman el total',
+    [[500000, 3, 0], [1234567, 7, 0], [99.99, 4, 2], [0.07, 6, 2], [1000000, 60, 0]]
+      .filter(([total, n, dec]) => suma(Q.armarPlan({ total, cuotas: n, cada: 'mes', primera: '2026-11-15', decimales: dec })) !== total), []);
+  ok('B · fuera de orden, sin fecha o con una cuota en cero no vale',
+    [Q.planValido([{ vence_el: '2026-12-15', monto: 100 }, { vence_el: '2026-11-15', monto: 100 }], 200, 0),
+      Q.planValido([{ vence_el: '2026-02-31', monto: 200 }], 200, 0),
+      Q.planValido([{ vence_el: '2026-11-15', monto: 200 }, { vence_el: '2026-12-15', monto: 0 }], 200, 0),
+      Q.planValido([], 0, 0)],
+    [false, false, false, false]);
+
+  // El total cambia con el plan ya elegido (se suma un producto al carrito).
+  const otro = Q.ajustarPlan(plan, 500000, 0);
+  ok('B · otro total: mismas fechas, montos repartidos de nuevo',
+    [otro.map((c) => c.vence_el), otro.map((c) => c.monto)],
+    [['2026-11-15', '2026-12-15', '2027-01-15'], [166666, 166666, 166668]]);
+  ok('B · si ya suma, devuelve el mismo plan (no redibuja)', Q.ajustarPlan(plan, 450000, 0) === plan, true);
+
+  // La pantalla no guarda «cuántas / cada / primera»: las lee del plan.
+  ok('B · del plan se lee lo elegido', Q.leerPlan(plan), { cuotas: 3, cada: 'mes', primera: '2026-11-15' });
+  ok('B · también la semana y la quincena',
+    ['semana', 'quincena', 'mes'].map((cada) => Q.leerPlan(Q.armarPlan({ total: 300, cuotas: 3, cada, primera: '2026-01-31' })).cada),
+    ['semana', 'quincena', 'mes']);
+  ok('B · la fecha corta lleva el año solo cuando cambia',
+    [Q.fechaCorta('2026-11-15', '2026-10-07'), Q.fechaCorta('2027-01-15', '2026-10-07'), Q.fechaCorta('2026-11-15')],
+    ['15/11', '15/01/27', '15/11']);
+
+  // El aviso: el día que vence, a los 3 días y después una vez por semana.
+  ok('B · toca avisar los días 0, 3, 7, 14, 21…',
+    Array.from({ length: 30 }, (_, d) => d).filter((d) => Q.tocaAvisar(d)), [0, 3, 7, 14, 21, 28]);
+  ok('B · lo que todavía no venció no avisa', [Q.tocaAvisar(-1), Q.tocaAvisar(-7)], [false, false]);
+
+  // Los cuatro grupos de la pantalla.
+  const deudor = (nombre, saldo, grupo, proxima) => ({
+    cliente_id: nombre, nombre, telefono: '', saldo, desde: null, dias: null, grupo,
+    proxima: proxima ? { cuota_id: 'c', fio_id: 'f', numero: 1, de: 3, pendiente: 100, avisado_el: null, ...proxima } : null,
+  });
+  const g = Q.agruparDeudores([
+    deudor('Carlos', 320000, 'sin_fecha'),
+    deudor('Ana', 300000, 'proxima', { vence_el: '2026-10-20', dias: 13 }),
+    deudor('Juan', 850000, 'atrasada', { vence_el: '2026-10-04', dias: -3 }),
+    deudor('Pedro', 500000, 'hoy', { vence_el: '2026-10-07', dias: 0 }),
+    deudor('Lili', 900000, 'sin_fecha'),
+    deudor('Rosa', 100000, 'atrasada', { vence_el: '2026-09-20', dias: -17 }),
+    deudor('Tito', 700000, 'hoy', { vence_el: '2026-10-07', dias: 0 }),
+    deudor('Beto', 50000, 'proxima', { vence_el: '2026-10-11', dias: 4 }),
+  ]);
+  ok('B · atrasadas: la más vieja primero', g.atrasadas.map((d) => d.nombre), ['Rosa', 'Juan']);
+  ok('B · hoy: quien más debe primero', g.hoy.map((d) => d.nombre), ['Tito', 'Pedro']);
+  ok('B · próximas: la que vence antes primero', g.proximas.map((d) => d.nombre), ['Beto', 'Ana']);
+  ok('B · sin fecha: por monto, como siempre', g.sinFecha.map((d) => d.nombre), ['Lili', 'Carlos']);
+  ok('B · cada cliente va en un solo grupo',
+    g.atrasadas.length + g.hoy.length + g.proximas.length + g.sinFecha.length, 8);
+  // Con la base de antes (sin `grupo` ni `proxima`) todos van a «sin fecha»:
+  // la pantalla de siempre.
+  const viejos = Q.agruparDeudores([
+    { cliente_id: 'a', nombre: 'A', telefono: '', saldo: 10, desde: null, dias: 3 },
+    { cliente_id: 'b', nombre: 'B', telefono: '', saldo: 90, desde: null, dias: 40 },
+  ]);
+  ok('B · sin datos de cuotas, todo es «sin fecha» y por monto',
+    [viejos.sinFecha.map((d) => d.nombre), viejos.atrasadas.length + viejos.hoy.length + viejos.proximas.length], [['B', 'A'], 0]);
+
+  // «¿De qué?» al cobrar.
+  const cuota = (numero, dias, pendiente, monto = 150000) => ({
+    cuota_id: `q${numero}`, numero, de: 3, vence_el: '2026-10-07', dias, monto, pagado: monto - pendiente, pendiente, avisado_el: null,
+  });
+  const tv = { fio_id: 'tv', concepto: 'TV 32"', fecha: '2026-09-15', monto: 450000, venta_id: 'v', pagado: 150000, falta: 300000,
+    cuotas: [cuota(3, 34, 150000), cuota(1, -30, 0), cuota(2, -3, 150000)] };
+  const moto = { fio_id: 'moto', concepto: 'Moto', fecha: '2026-10-01', monto: 200000, venta_id: null, pagado: 0, falta: 200000,
+    cuotas: [{ ...cuota(1, 20, 200000, 200000), de: 1 }] };
+  const conTodo = Q.opcionesDeCobro({ saldo: 900000, sin_fecha: 400000, deudas: [moto, tv] });
+  ok('B · una opción por deuda, lo sin fecha y todo',
+    conTodo.opciones.map((o) => [o.clave, o.propuesto, o.tope]),
+    [['moto', 200000, 200000], ['tv', 150000, 300000], ['sin_fecha', 400000, 900000], ['todo', 900000, 900000]]);
+  ok('B · de cada deuda, la primera cuota pendiente por número', conTodo.opciones[1].cuota.cuota_id, 'q2');
+  ok('B · elegida de entrada: la deuda con la cuota atrasada', conTodo.elegida, 'tv');
+  ok('B · sin nada atrasado, lo sin fecha', Q.opcionesDeCobro({ saldo: 600000, sin_fecha: 400000, deudas: [moto] }).elegida, 'sin_fecha');
+  ok('B · sin nada atrasado ni sin fecha, la primera deuda', Q.opcionesDeCobro({ saldo: 200000, sin_fecha: 0, deudas: [moto] }).elegida, 'moto');
+  ok('B · «lo sin fecha» no se ofrece si no hay',
+    Q.opcionesDeCobro({ saldo: 200000, sin_fecha: 0, deudas: [moto] }).opciones.map((o) => o.clave), ['moto', 'todo']);
+  ok('B · quien no tiene cuotas no elige nada: el cobro de siempre',
+    Q.opcionesDeCobro({ saldo: 400000, sin_fecha: 400000, deudas: [] }), { opciones: [], elegida: 'todo' });
+  ok('B · nunca se propone cobrar más que el saldo',
+    Q.opcionesDeCobro({ saldo: 100000, sin_fecha: 0, deudas: [moto] }).opciones[0].propuesto, 100000);
+
+  // «Ponerle fecha» solo en las líneas que explican lo que hoy debe sin fecha.
+  const lineas = [
+    { id: 'vieja', fecha: '2025-03-01', monto: 500000 }, { id: 'media', fecha: '2026-08-01', monto: 100000 },
+    { id: 'nueva', fecha: '2026-10-01', monto: 300000 },
+  ];
+  ok('B · lo sin fecha de hoy son las líneas más nuevas',
+    [Q.lineasParaFechar(lineas, 300000).map((l) => l.id), Q.lineasParaFechar(lineas, 350000).map((l) => l.id),
+      Q.lineasParaFechar(lineas, 0).length],
+    [['nueva'], ['nueva', 'media'], 0]);
+
+  // Lo que manda la base llega con los números hechos número.
+  const det = Q.leerDetalleFiado({ cliente_id: 'c', nombre: 'Juan', saldo: '850000', sin_fecha: '400000', deudas: [{ ...tv, monto: '450000', falta: '300000' }], libro: [{ id: 'l', tipo: 'cobro', monto: '150000', fecha: '2026-10-01', fio_id: 'tv' }] });
+  ok('B · el detalle se lee con números y las cuotas en orden',
+    [det.saldo, det.sin_fecha, det.deudas[0].falta, det.deudas[0].cuotas.map((c) => c.numero), det.libro[0].monto, det.libro[0].fio_id, det.sin_fecha_lineas],
+    [850000, 400000, 300000, [1, 2, 3], 150000, 'tv', []]);
+}
+
+// --- TANDA B · Fiado y Vender con fechas: las pantallas y sus textos ---
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const fia = sinComentarios(leer('src/components/PantallaFiado.tsx'));
+  const ven = sinComentarios(leer('src/components/PantallaVenta.tsx'));
+  const cua = sinComentarios(leer('src/components/CuandoTePaga.tsx'));
+  const lib = leer('src/lib/cuotas.ts');
+
+  ok('B · la cuenta de las cuotas es pura: solo importa tipos',
+    (lib.match(/^import .*$/gm) || []).filter((l) => !/^import type .* from '\.\/tipos';$/.test(l)), []);
+
+  // Los cuatro grupos, y la pantalla de siempre para quien no usa fechas.
+  ok('B · Fiado agrupa con la lib y nombra los cuatro grupos',
+    [fia.includes('agruparDeudores(resumen.clientes)'), fia.includes('t.fiado.grupoAtrasadas'), fia.includes('t.fiado.grupoHoy'),
+      fia.includes('t.fiado.grupoProximas'), fia.includes('t.fiado.grupoSinFecha')], [true, true, true, true, true]);
+  ok('B · sin ninguna cuota no hay grupos ni «Para cobrar»: la lista de siempre',
+    [fia.includes(') : !conFechas ? (\n        <div className="tarjeta overflow-hidden">{filas(resumen.clientes)}</div>'),
+      fia.includes('{conFechas ? (\n          <ParaCobrar'), fia.includes('titulo={t.fiado.loMasViejo}')], [true, true, true]);
+  ok('B · un grupo vacío no se dibuja', fia.includes('GRUPOS.filter((g) => g.lista.length > 0)'), true);
+
+  // La ficha: todo por las funciones de la 127, con sus argumentos.
+  ok('B · la ficha lee detalle_fiado', fia.includes("rpc('detalle_fiado', { p_cliente: d.cliente_id })"), true);
+  ok('B · ponerle fecha y rearmar', fia.includes("rpc('programar_cuotas', { p_fio: fioId, p_plan: plan })"), true);
+  ok('B · mover una fecha', fia.includes("rpc('mover_cuota', { p_cuota: cuota.cuota_id, p_vence_el: fecha })"), true);
+  ok('B · sacar las cuotas', fia.includes("rpc('quitar_cuotas', { p_fio: deuda.fio_id })"), true);
+  ok('B · el WhatsApp anota que se le escribió', fia.includes("rpc('marcar_cuota_avisada', { p_cuota: p.cuota_id })"), true);
+  ok('B · cobrar una cuota manda p_cuota, y sin cuota la llamada es la de siempre',
+    fia.includes("...(opcion?.cuota ? { p_cuota: opcion.cuota.cuota_id } : {})"), true);
+  ok('B · anotar con plan va en una sola llamada, y sin plan es la de siempre',
+    [fia.includes('...(elPlan ? { p_plan: elPlan } : {})'),
+      fia.includes('if (elPlan && !planValido(elPlan, monto, e.dec)) throw new Error(t.fiado.noSePudoGuardar);')], [true, true]);
+  ok('B · quien tiene cuotas no cobra hasta saber de cuál', fia.includes('const sePuedeCobrar = detalle !== null || !d.proxima;'), true);
+  ok('B · el mensaje cambia según lo que sigue: hoy, atrasado o falta',
+    ['mensajeVenceHoy(', 'mensajeAtrasado(', 'mensajeProximo(', 'mensajeVenceHoyPersonal(', 'mensajeAtrasadoPersonal(', 'mensajeProximoPersonal(',
+      'mensajeNegocio(', 'mensajePersonal('].filter((m) => !fia.includes(`t.fiado.${m}`)), []);
+
+  // Mostrar, no explicar; y las piezas de siempre.
+  ok('B · el pie de dos párrafos se fue', [fia.includes('notaNegocio'), fia.includes('notaPersonal')], [false, false]);
+  ok('B · borrar pregunta con Confirmar, no con el cartel del navegador',
+    [fia.includes('window.confirm'), fia.includes('<Confirmar')], [false, true]);
+  ok('B · Fiado abre todo en la Hoja', [fia.includes('<Hoja'), fia.includes('fixed inset-0')], [true, false]);
+  ok('B · sin bg-white opaco ni dark: en lo nuevo',
+    ['src/components/PantallaFiado.tsx', 'src/components/CuandoTePaga.tsx'].filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+  ok('B · en Fiado y en el selector, nada que se toque mide menos de 44 px',
+    [fia, cua].map((s) => (s.match(/min-h-\[(\d+)px\]/g) || []).map((m) => Number(m.match(/\d+/)[0])).filter((n) => n < 44)), [[], []]);
+  ok('B · nada depende de pasar el puntero', [/onMouseEnter|onMouseOver|title=/.test(fia), /onMouseEnter|onMouseOver|title=/.test(cua)], [false, false]);
+
+  // «¿Cuándo te paga?»: tres botones, plegado en «Sin fecha».
+  // Integración: en una fila que se desliza, a 375 px «En cuotas» quedaba
+  // cortado. Van en una grilla, los tres a la vista, sin deslizar nada.
+  ok('B · los tres botones van en una grilla, todos a la vista (no en una fila que se desliza)',
+    [cua.includes('<FilaDeslizable'), cua.includes("<div role=\"group\" aria-labelledby={idTitulo} className={`grid gap-2 ${MODOS.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>"),
+      cua.includes('t.fiado.sinFecha'), cua.includes('t.fiado.unaFecha'), cua.includes('t.fiado.enCuotas')],
+    [false, true, true, true, true]);
+  ok('B · cada botón dice si está elegido', (cua.match(/aria-pressed=/g) || []).length, 4);
+  ok('B · las fechas rápidas y el «cada» también van en grilla',
+    [cua.includes('<div role="group" aria-label={t.fiado.unaFecha} className="grid grid-cols-2 gap-2">'),
+      cua.includes('<div role="group" aria-label={t.fiado.cada} className="grid grid-cols-3 gap-2">')], [true, true]);
+  // La fila de quien te debe: arriba quién y cuánto, abajo lo que sigue a
+  // todo el ancho, y las partes no se cortan por la mitad.
+  ok('B · la línea de la cuota se corta entre las partes, nunca en medio de un monto',
+    [fia.includes('<span className="whitespace-nowrap">{parte}'), fia.includes('<Partes partes={partes} />'), fia.includes('<Partes partes={estado} />')],
+    [true, true, true]);
+  ok('B · la fecha de una cuota pendiente es su botón (y dice para qué es a quien no ve)',
+    fia.includes('aria-label={`${t.fiado.cambiarFecha}: ${fechaCorta(c.vence_el, hoy)}`}'), true);
+  ok('B · el «¿De qué?» es el mismo en Fiado y en la voz',
+    [fia.includes('<OpcionesDeQue opciones={opciones} plata={plata} hoy={hoy} />'),
+      sinComentarios(leer('src/components/RevisionFiado.tsx')).includes('<OpcionesDeQue opciones={opciones} plata={plata} hoy={hoy} />')], [true, true]);
+  ok('B · lo elegido se lee del plan: no hay un estado que se pueda contradecir',
+    [cua.includes("const modo: 'sin' | 'una' | 'cuotas' = !valor || valor.length === 0 ? 'sin'"), cua.includes('leerPlan(valor)')], [true, true]);
+  ok('B · la vista previa es la explicación', [cua.includes('t.fiado.vistaPrevia('), cua.includes('t.fiado.vistaPreviaLarga(')], [true, true]);
+  ok('B · si cambia el total, el plan se reparte de nuevo', cua.includes('const ajustado = ajustarPlan(valor, total, dec);'), true);
+
+  // Vender: fiado con fecha, y la venta nunca se deshace por el plan.
+  ok('B · Vender arranca sin fecha y lo ofrece solo al fiar',
+    [ven.includes('useState<Plan | null>(null)'), ven.includes('{esFiado && (\n              <CuandoTePaga')], [true, true]);
+  ok('B · al elegir Fiado se abren el cliente y la fecha', ven.includes("const opcionesAbiertas = masOpciones || esFiado;"), true);
+  ok('B · las cuotas son un segundo paso, después de registrar la venta',
+    ven.indexOf("rpc('programar_cuotas', { p_venta: ventaId, p_plan: planDeEstaVenta })") > ven.indexOf("rpc('registrar_venta'"), true);
+  ok('B · registrar_venta no cambia: no viaja ningún p_plan en ella',
+    ven.slice(ven.indexOf("rpc('registrar_venta'"), ven.indexOf('if (error) throw error;')).includes('p_plan'), false);
+  ok('B · si las cuotas no quedan, se avisa y la venta sigue', ven.includes('cuotasNoQuedaron ? t.venta.cuotasNoQuedaron :'), true);
+  ok('B · la venta siguiente arranca sin fecha', /function limpiar\(\) \{[\s\S]*?setPlan\(null\);\s*\}/.test(ven), true);
+  ok('B · los dos carritos (costado y celular) muestran el mismo plan',
+    (ven.match(/plan=\{plan\} setPlan=\{setPlan\} hoy=\{hoyISO\(zona\)\}/g) || []).length, 2);
+
+  // El resumen que lee la página trae lo nuevo sin perder lo de siempre.
+  const lec = leer('src/lib/fiado.ts');
+  ok('B · el resumen mapea lo nuevo y, si la base no lo manda, todo es «sin fecha»',
+    [lec.includes('proxima: leerProxima(c.proxima)'), lec.includes("GRUPOS.includes(c.grupo) ? (c.grupo as GrupoFiado) : 'sin_fecha'"),
+      lec.includes('con_fecha_cuantos: Number(d?.con_fecha_cuantos ?? 0)')], [true, true, true]);
+
+  // Paridad de los textos de la tanda B: bloques `fiado` y `venta`.
+  const bloque = (archivo, nombre) => {
+    const s = leer(`src/i18n/textos/${archivo}.ts`);
+    const i = s.indexOf(`\n  ${nombre}: {\n`);
+    return i < 0 ? '' : s.slice(i, s.indexOf('\n  },\n', i));
+  };
+  const CLAVES_FIADO = ['cuandoTePaga', 'sinFecha', 'unaFecha', 'enCuotas', 'enDias', 'elegir', 'cuantas', 'cada', 'cadaSemana',
+    'cadaQuincena', 'cadaMes', 'laPrimera', 'unaMenos', 'unaMas', 'vistaPrevia', 'vistaPreviaLarga', 'conCuotas', 'tePagaEl',
+    'paraCobrar', 'atrasadasYHoy', 'estaSemana', 'nadaHoyProxima', 'grupoAtrasadas', 'grupoHoy', 'grupoProximas', 'grupoSinFecha',
+    'cuotaN', 'venceEl', 'masSinFecha', 'pagada', 'faltan', 'enCuotasN', 'ponerleFecha', 'cambiarFecha', 'rearmar', 'rearmarAviso',
+    'quitarCuotas', 'quitarCuotasPregunta', 'quitarCuotasDetalle', 'quitadas', 'fechaGuardada', 'cuotasGuardadas', 'noSePudoGuardar',
+    'deQue', 'loSinFecha', 'todo', 'deEsaFaltan', 'proximaVence', 'leEscribisteHoy', 'pagoDe', 'teDebe', 'notaCobrar',
+    'mensajeVenceHoy', 'mensajeAtrasado', 'mensajeProximo', 'mensajeVenceHoyPersonal', 'mensajeAtrasadoPersonal',
+    'mensajeProximoPersonal', 'cuotaEntreParentesis'];
+  const CLAVES_VENTA = ['ventaFiada', 'cuotasNoQuedaron'];
+  for (const idioma of ['es', 'pt', 'en']) {
+    const f = bloque(idioma, 'fiado');
+    const v = bloque(idioma, 'venta');
+    ok(`B · ${idioma}: están todos los textos de fechas y cuotas`,
+      [CLAVES_FIADO.filter((k) => !f.includes(`\n    ${k}: `)), CLAVES_VENTA.filter((k) => !v.includes(`\n    ${k}: `))], [[], []]);
+  }
+  ok('B · toda clave t.fiado.* que usan las pantallas existe en español',
+    Array.from(new Set((fia + cua + ven).match(/t\.fiado\.[A-Za-z]+/g) || []))
+      .map((k) => k.slice('t.fiado.'.length)).filter((k) => !bloque('es', 'fiado').includes(`\n    ${k}: `)), []);
+  ok('B · voseo en español', bloque('es', 'venta').includes("cuotasNoQuedaron: 'La venta quedó, pero las cuotas no se guardaron. Ponéselas desde Fiado.'"), true);
+  ok('B · «parcelas» en portugués, no «cuotas»',
+    [/cuota/i.test(bloque('pt', 'fiado').replace(/[A-Za-z]+: /g, '').replace(/\$\{cuota\}|cuota: string/g, '')), bloque('pt', 'fiado').includes("enCuotas: 'Em parcelas'")], [false, true]);
+}
+
+// --- TANDA D · «Hoy te paga Juan»: el aviso de la mañana, Ajustes, panel, clientes y reportes ---
+{
+  const fs = require('fs');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const { fraseDeCobros, listaDeNombres, claveDeCobros, pastillaDeCuotas } = require('../.compilado/frase-cobros.js');
+
+  // Los textos de verdad, sacados del diccionario: la prueba lee las frases
+  // que le van a llegar a la gente, no una copia. El bloque es JavaScript
+  // con los tipos de los parámetros; se le sacan y se evalúa.
+  const bloque = (archivo, nombre, sangria = '  ') => {
+    const s = leer(`src/i18n/textos/${archivo}.ts`);
+    const i = s.indexOf(`\n${sangria}${nombre}: {\n`);
+    return i < 0 ? '' : s.slice(i, s.indexOf(`\n${sangria}},\n`, i));
+  };
+  const textosDeCobros = (idioma) => {
+    const cuerpo = bloque(idioma, 'cobros', '    ');
+    const js = cuerpo.slice(cuerpo.indexOf('{') + 1).replace(/: (string|number)\b/g, '');
+    return new Function(`return {${js}};`)();
+  };
+  const es = textosDeCobros('es');
+  const pt = textosDeCobros('pt');
+  const gs = (v) => dinero(v, 'PYG', true, 'es-PY');
+  const rs = (v) => dinero(v, 'BRL', true, 'pt-BR');
+
+  const nada = { cuantas: 0, personas: 0, monto: 0, nombres: [] };
+  const cuenta = (hoy, atrasadas, extra = {}) => ({
+    empresa_id: 'e1', nombre: 'Almacén Lili', moneda: 'PYG', tipo_cuenta: 'emprendedor', fecha: '2026-10-07',
+    hoy: { ...nada, ...hoy }, atrasadas: { ...nada, dias_max: 0, ...atrasadas }, sin_escribir: 0,
+    destinatarios: [], ...extra,
+  });
+  const frase = (c, tx = es, locale = 'es-PY') => fraseDeCobros(c, tx, locale);
+
+  // --- Español: solo hoy, con uno, dos y muchos nombres ---
+  ok('D · es · hoy, una persona: se la nombra',
+    frase(cuenta({ cuantas: 1, personas: 1, monto: 150000, nombres: ['Juan'] }, {})),
+    { titulo: 'Almacén Lili', cuerpo: `Hoy te paga Juan: ${gs(150000)}.`, url: '/fiado' });
+  ok('D · es · hoy, dos personas',
+    frase(cuenta({ cuantas: 2, personas: 2, monto: 430000, nombres: ['Pedro', 'Ana'] }, {})).cuerpo,
+    `Hoy te pagan 2: ${gs(430000)} (Pedro y Ana).`);
+  ok('D · es · hoy, tres personas: coma y «y» al final',
+    frase(cuenta({ cuantas: 3, personas: 3, monto: 600000, nombres: ['Pedro', 'Ana', 'Luis'] }, {})).cuerpo,
+    `Hoy te pagan 3: ${gs(600000)} (Pedro, Ana y Luis).`);
+  ok('D · es · hoy, muchas: tres nombres «y 2 más»',
+    frase(cuenta({ cuantas: 6, personas: 5, monto: 900000, nombres: ['Pedro', 'Ana', 'Luis'] }, {})).cuerpo,
+    `Hoy te pagan 5: ${gs(900000)} (Pedro, Ana, Luis y 2 más).`);
+  ok('D · es · «e Inés», no «y Inés»; «y Hielo» queda',
+    [listaDeNombres(['Pedro', 'Inés'], 2, es), listaDeNombres(['Ana', 'Hilda'], 2, es), listaDeNombres(['Ana', 'Hielo'], 2, es)],
+    ['Pedro e Inés', 'Ana e Hilda', 'Ana y Hielo']);
+  ok('D · es · una persona con dos cuotas hoy es UNA a quien cobrarle',
+    frase(cuenta({ cuantas: 2, personas: 1, monto: 300000, nombres: ['Juan'] }, {})).cuerpo, `Hoy te paga Juan: ${gs(300000)}.`);
+  ok('D · es · si la base no manda `personas` (la forma del diseño), se cuentan las cuotas',
+    frase(cuenta({ cuantas: 2, personas: undefined, monto: 430000, nombres: ['Pedro', 'Ana'] }, {})).cuerpo,
+    `Hoy te pagan 2: ${gs(430000)} (Pedro y Ana).`);
+
+  // --- Español: solo atrasadas ---
+  ok('D · es · solo atrasadas, una persona: cuántos días lleva',
+    frase(cuenta({}, { cuantas: 1, personas: 1, monto: 150000, nombres: ['Juan'], dias_max: 3 })).cuerpo,
+    `Juan se atrasó 3 días: ${gs(150000)}.`);
+  ok('D · es · solo atrasadas, dos personas',
+    frase(cuenta({}, { cuantas: 3, personas: 2, monto: 290000, nombres: ['Juan', 'Carla'], dias_max: 14 })).cuerpo,
+    `2 cobros atrasados: ${gs(290000)} (Juan y Carla).`);
+  ok('D · es · solo atrasadas, muchas',
+    frase(cuenta({}, { cuantas: 7, personas: 7, monto: 990000, nombres: ['Juan', 'Carla', 'Beto'], dias_max: 21 })).cuerpo,
+    `7 cobros atrasados: ${gs(990000)} (Juan, Carla, Beto y 4 más).`);
+
+  // --- Español: las dos cosas, y a quién falta escribirle ---
+  ok('D · es · hoy y atrasadas en la misma frase (el ejemplo del diseño)',
+    frase(cuenta({ cuantas: 2, personas: 2, monto: 430000, nombres: ['Pedro', 'Ana'] },
+      { cuantas: 1, personas: 1, monto: 150000, nombres: ['Juan'], dias_max: 5 }, { sin_escribir: 1 })).cuerpo,
+    `Hoy te pagan 2: ${gs(430000)} (Pedro y Ana). Y 1 atrasado: ${gs(150000)}. A 1 todavía no le escribiste.`);
+  ok('D · es · varios atrasados y varios sin escribir: plurales',
+    frase(cuenta({ cuantas: 1, personas: 1, monto: 100000, nombres: ['Ana'] },
+      { cuantas: 4, personas: 3, monto: 500000, nombres: ['Juan', 'Carla', 'Beto'], dias_max: 9 }, { sin_escribir: 5 })).cuerpo,
+    `Hoy te paga Ana: ${gs(100000)}. Y 3 atrasados: ${gs(500000)}. A 5 todavía no les escribiste.`);
+  ok('D · es · una cuota a medias cuenta por lo que falta (el monto viene de la base)',
+    frase(cuenta({ cuantas: 1, personas: 1, monto: 50000, nombres: ['Juan'] }, {})).cuerpo, `Hoy te paga Juan: ${gs(50000)}.`);
+
+  // --- La cuenta personal: «te devuelve», y el título no es un negocio ---
+  ok('D · es · personal: te devuelve, con su título',
+    frase(cuenta({ cuantas: 1, personas: 1, monto: 200000, nombres: ['Lucas'] }, {}, { tipo_cuenta: 'personal', nombre: 'Personal' })),
+    { titulo: 'Te deben', cuerpo: `Hoy te devuelve Lucas: ${gs(200000)}.`, url: '/fiado' });
+  ok('D · es · personal, dos',
+    frase(cuenta({ cuantas: 2, personas: 2, monto: 300000, nombres: ['Lucas', 'Mica'] }, {}, { tipo_cuenta: 'personal' })).cuerpo,
+    `Hoy te devuelven 2: ${gs(300000)} (Lucas y Mica).`);
+
+  // --- Sin nada que decir no hay aviso (y no se gasta la reserva) ---
+  ok('D · sin nada de hoy ni atrasado, no hay frase', [frase(cuenta({}, {})), frase(cuenta({}, {}, { sin_escribir: 3 }))], [null, null]);
+  ok('D · una forma rota no rompe la corrida', fraseDeCobros({ nombre: 'X', moneda: 'PYG', tipo_cuenta: 'emprendedor' }, es, 'es-PY'), null);
+  ok('D · sin nombres (no debería pasar) no deja un hueco ni paréntesis vacíos',
+    frase(cuenta({ cuantas: 1, personas: 1, monto: 100000, nombres: [] }, {})).cuerpo, `Hoy te pagan 1: ${gs(100000)}.`);
+
+  // --- Portugués ---
+  const br = (hoy, atrasadas, extra = {}) => cuenta(hoy, atrasadas, { nombre: 'Mercado da Lili', moneda: 'BRL', ...extra });
+  const frasePt = (c) => fraseDeCobros(c, pt, 'pt-BR');
+  ok('D · pt · hoje, uma pessoa (sem artigo: «o Ana» ficava errado)',
+    frasePt(br({ cuantas: 1, personas: 1, monto: 150, nombres: ['Ana'] }, {})),
+    { titulo: 'Mercado da Lili', cuerpo: `Hoje Ana te paga: ${rs(150)}.`, url: '/fiado' });
+  ok('D · pt · hoje, duas pessoas',
+    frasePt(br({ cuantas: 2, personas: 2, monto: 430, nombres: ['Pedro', 'Ana'] }, {})).cuerpo, `Hoje 2 te pagam: ${rs(430)} (Pedro e Ana).`);
+  ok('D · pt · hoje, muitas: «e mais 2»',
+    frasePt(br({ cuantas: 5, personas: 5, monto: 900, nombres: ['Pedro', 'Ana', 'Luís'] }, {})).cuerpo,
+    `Hoje 5 te pagam: ${rs(900)} (Pedro, Ana, Luís e mais 2).`);
+  ok('D · pt · só atrasadas, uma pessoa',
+    frasePt(br({}, { cuantas: 1, personas: 1, monto: 150, nombres: ['João'], dias_max: 7 })).cuerpo, `João está com 7 dias de atraso: ${rs(150)}.`);
+  ok('D · pt · só atrasadas, várias',
+    frasePt(br({}, { cuantas: 2, personas: 2, monto: 290, nombres: ['João', 'Carla'], dias_max: 14 })).cuerpo,
+    `2 cobranças atrasadas: ${rs(290)} (João e Carla).`);
+  ok('D · pt · as duas coisas, e pra quem falta escrever',
+    frasePt(br({ cuantas: 2, personas: 2, monto: 430, nombres: ['Pedro', 'Ana'] },
+      { cuantas: 1, personas: 1, monto: 150, nombres: ['João'], dias_max: 3 }, { sin_escribir: 1 })).cuerpo,
+    `Hoje 2 te pagam: ${rs(430)} (Pedro e Ana). E 1 atrasado: ${rs(150)}. Pra 1 você ainda não escreveu.`);
+  ok('D · pt · pessoal: te devolve',
+    frasePt(br({ cuantas: 1, personas: 1, monto: 200, nombres: ['Lucas'] }, {}, { tipo_cuenta: 'personal' })),
+    { titulo: 'Te devem', cuerpo: `Hoje Lucas te devolve: ${rs(200)}.`, url: '/fiado' });
+  ok('D · pt · nada de «cuota» nem «cobro» em português',
+    /cuota|cobro\b|atrasó|todavía/i.test(Object.values(pt).map((f) => (typeof f === 'function' ? f(2, 'X', 'Y') : f)).join(' ')), false);
+
+  // --- La reserva: una por persona, cuenta y día de la cuenta ---
+  ok('D · la clave de la reserva', claveDeCobros('e1', 'u1', '2026-10-07'), 'cobros:e1:u1:2026-10-07');
+
+  // --- La pastilla de «Te deben»: una sola, la más urgente ---
+  ok('D · pastilla: lo atrasado manda',
+    pastillaDeCuotas({ atrasadas: 2, vencen_hoy: 1, monto_hoy: 125000, vencen_semana: 3 }), { tipo: 'atrasadas', tono: 'rojo', cuantas: 2 });
+  ok('D · pastilla: sin atrasadas, lo de hoy con su monto',
+    pastillaDeCuotas({ atrasadas: 0, vencen_hoy: 1, monto_hoy: 125000, vencen_semana: 3 }), { tipo: 'hoy', tono: 'ambar', monto: 125000 });
+  ok('D · pastilla: si no, las de la semana',
+    pastillaDeCuotas({ atrasadas: 0, vencen_hoy: 0, monto_hoy: 0, vencen_semana: 3 }), { tipo: 'semana', tono: 'ambar', cuantas: 3 });
+  ok('D · pastilla: quien no usa fechas no ve ninguna',
+    [pastillaDeCuotas({ total: 700000, cuantos: 2, clientes: [] }), pastillaDeCuotas(null), pastillaDeCuotas({ atrasadas: 0, vencen_semana: 0 })],
+    [null, null, null]);
+
+  // --- frase-cobros es pura: se compila suelta ---
+  const lib = leer('src/lib/frase-cobros.ts');
+  ok('D · frase-cobros solo importa el formato y un tipo',
+    (lib.match(/^import .*$/gm) || []), ["import { dinero } from './formato';", "import type { Frase } from './frases-del-dia';"]);
+
+  // --- La corrida: colgada de la mañana, solo push, con su clave ---
+  const avi = sinComentarios(leer('src/lib/avisos-diarios.ts'));
+  ok('D · el aviso de cobros sale solo en la corrida de la mañana',
+    [(avi.match(/avisarCobrosDeHoy\(\)/g) || []).length, avi.includes("const cobros = momento === 'manana' ? await avisarCobrosDeHoy() : null;")], [2, true]);
+  const fn = avi.slice(avi.indexOf('async function avisarCobrosDeHoy()'));
+  const cuerpoFn = fn.slice(0, fn.indexOf('\n}\n') + 3);
+  ok('D · lee cobros_de_hoy, reserva con la clave «cobros:» y manda push a /fiado',
+    [cuerpoFn.includes("rpc('cobros_de_hoy')"), cuerpoFn.includes("p_tipo: 'cobros'"),
+      cuerpoFn.includes('p_clave: claveDeCobros(c.empresa_id, d.user_id, c.fecha)'), cuerpoFn.includes("p_canal: 'push'"),
+      cuerpoFn.includes('tag: `cobros-${c.empresa_id}`')], [true, true, true, true, true]);
+  ok('D · se reserva solo si hay frase', cuerpoFn.indexOf('if (!frase)') < cuerpoFn.indexOf("rpc('reservar_envio'"), true);
+  ok('D · solo push: ni un correo en el aviso de cobros', /enviarEmail|correoConfigurado|p_canal: 'email'/.test(cuerpoFn), false);
+  ok('D · sin tarea nueva: vercel.json no nombra los cobros', /cobros/.test(leer('vercel.json')), false);
+
+  // --- Ajustes: el interruptor, solo donde hay Fiado ---
+  const pre = sinComentarios(leer('src/components/Preferencias.tsx'));
+  ok('D · Ajustes guarda p_aviso_cobros junto con los de siempre',
+    [pre.includes('p_aviso_cobros: siguiente.aviso_cobros ?? true,'), pre.includes('p_aviso_diario: siguiente.aviso_diario,')], [true, true]);
+  ok('D · el interruptor va solo si la cuenta tiene Fiado, y nace encendido',
+    [/\{tieneFiado && \(\s*<Interruptor\s+titulo=\{t\.ajustes\.avisoCobros\}/.test(pre), pre.includes('encendido={prefs.aviso_cobros ?? true}'),
+      pre.includes('tieneFiado = false')], [true, true, true]);
+  ok('D · Ajustes pregunta lo mismo que la página de Fiado (la ficha y el plan Gratis)',
+    sinComentarios(leer('src/app/(app)/ajustes/page.tsx'))
+      .includes("tieneFiado={!ctx.gratisPersonal && tieneSeccion(ctx.empresa.rubro, ctx.empresa.tipo_cuenta, '/fiado')}"), true);
+  ok('D · el idioma se sigue guardando solo, con la llamada de siempre', pre.includes("rpc('guardar_preferencias', { p_idioma: idioma })"), true);
+
+  // --- Panel, clientes y reporte: sin lecturas nuevas en el negocio ---
+  const pan = sinComentarios(leer('src/app/(app)/panel/page.tsx'));
+  const cam = sinComentarios(leer('src/components/PanelCampo.tsx'));
+  const per = sinComentarios(leer('src/components/PanelPersonal.tsx'));
+  const cli = sinComentarios(leer('src/components/PantallaClientes.tsx'));
+  const rep = sinComentarios(leer('src/components/reportes/ReporteComercio.tsx'));
+  const pas = sinComentarios(leer('src/components/PastillaCuotas.tsx'));
+  ok('D · la pastilla en «Te deben» del panel y del panel de campo',
+    [pan.includes('<PastillaCuotas fiado={fiado}'), cam.includes('<PastillaCuotas fiado={fiado}'), pas.includes('pastillaDeCuotas(fiado)')],
+    [true, true, true]);
+  ok('D · la pastilla usa los colores del proyecto', [pas.includes('bg-rojo-claro text-rojo'), pas.includes('bg-ambar-claro text-ambar')], [true, true]);
+  ok('D · el panel lee el resumen de fiado una vez por tipo de panel (campo, negocio, personal)', (pan.match(/traerResumenFiado\(/g) || []).length, 3);
+  ok('D · el panel personal lee el resumen como contexto: si falla, la fila de siempre',
+    [pan.includes('rachaPersonal, fiadoPersonal] = await Promise.all('), pan.includes('fiado={fiadoPersonal}'),
+      per.includes('t.panelPersonal.cobroAtrasado('), per.includes('t.panelPersonal.tePagaEl(')], [true, true, true, true]);
+  ok('D · clientes: una palabra al lado de lo que debe',
+    [cli.includes('t.clientes.atrasado'), cli.includes('t.clientes.venceEl('), cli.includes('proxima={proximas[c.id] ?? null}')], [true, true, true]);
+  ok('D · reporte: la línea de atrasado y de la semana, solo si hay',
+    [rep.includes('{(atrasado > 0 || estaSemana > 0) && ('), rep.includes('rc.fiado.atrasado'), rep.includes('rc.fiado.venceEstaSemana')],
+    [true, true, true]);
+  ok('D · sin bg-white opaco ni dark: en lo que tocó la tanda',
+    ['src/components/PastillaCuotas.tsx', 'src/components/PanelPersonal.tsx', 'src/components/PanelCampo.tsx',
+      'src/components/Preferencias.tsx'].filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+
+  // --- Paridad de los textos de la tanda D ---
+  const CLAVES = {
+    ajustes: ['avisoCobros', 'avisoCobrosDetalle'],
+    panel: ['cuotasAtrasadas', 'cobrarHoy', 'cuotasSemana'],
+    panelPersonal: ['tePagaEl', 'cobroAtrasado'],
+    clientes: ['venceEl', 'atrasado'],
+  };
+  const CLAVES_COBROS = ['tituloPersonal', 'hoyUno', 'hoyVarios', 'hoyUnoPersonal', 'hoyVariosPersonal', 'masAtrasados',
+    'soloAtrasadoUno', 'soloAtrasados', 'sinEscribir', 'yMas', 'yNombre'];
+  for (const idioma of ['es', 'pt', 'en']) {
+    ok(`D · ${idioma}: están los textos de ajustes, panel, panel personal y clientes`,
+      Object.entries(CLAVES).flatMap(([b, claves]) => claves.filter((k) => !bloque(idioma, b).includes(`\n    ${k}: `)).map((k) => `${b}.${k}`)), []);
+    ok(`D · ${idioma}: están las frases del aviso de cobros`,
+      CLAVES_COBROS.filter((k) => !bloque(idioma, 'cobros', '    ').includes(`\n      ${k}: `)), []);
+  }
+  ok('D · es y pt tienen las mismas frases de cobros, ni una de más', Object.keys(es).sort(), Object.keys(pt).sort());
+  ok('D · las frases que se pegan al final empiezan con un espacio',
+    [es.masAtrasados(1, 'X')[0], es.sinEscribir(1)[0], pt.masAtrasados(1, 'X')[0], pt.sinEscribir(1)[0]], [' ', ' ', ' ', ' ']);
+  const rcTx = leer('src/i18n/textos/reportes-comercio.ts');
+  ok('D · el reporte tiene sus dos palabras en es y pt',
+    [(rcTx.match(/\n    atrasado: /g) || []).length, (rcTx.match(/\n    venceEstaSemana: /g) || []).length], [2, 2]);
+  const tcTx = leer('src/lib/reportes/textos-comercio.ts');
+  ok('D · Excel: las dos columnas nuevas van al final, en es y pt',
+    [tcTx.includes("columnasFiadoHoy: ['#', 'Cliente', 'Te debe', 'Fiado desde', 'Días', 'Próxima cuota', 'Vence'],"),
+      tcTx.includes("columnasFiadoHoy: ['#', 'Cliente', 'Deve', 'Fiado desde', 'Dias', 'Próxima parcela', 'Vence'],")], [true, true]);
+}
+
 // Las comprobaciones que esperan algo (una función async) se anotan en
 // `pendientes` y el resumen las espera. Sin esto se imprimirían después del
 // `process.exit` y una falla ahí no bajaría la bandera: pasaría inadvertida.

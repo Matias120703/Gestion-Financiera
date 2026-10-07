@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/components/SelectorCliente';
 import { OpcionesTipo } from '@/components/OpcionesTipo';
@@ -10,9 +10,18 @@ import { mensajeDeError } from '@/lib/errores';
 import { mismoNombre } from '@/lib/turno-voz';
 import { useTextos } from '@/i18n/cliente';
 import { ElegirCuentaOpcional } from '@/components/FormaDeCobro';
-import type { CapturaInterpretada, CuentaParaElegir, TipoCaptura, TipoCuenta } from '@/lib/tipos';
+import { CuandoTePaga } from '@/components/CuandoTePaga';
+import { hoyISO } from '@/lib/fechas';
+import { useZona } from '@/lib/zona';
+import { OpcionesDeQue } from '@/components/OpcionesDeQue';
+import { ajustarPlan, leerDetalleFiado, opcionesDeCobro, planValido } from '@/lib/cuotas';
+import { planDeLoDictado } from '@/lib/cuotas-dictadas';
+// Solo el tipo: importar un valor de `captura` traería el prompt entero al navegador.
+import type { CapturaDeVoz } from '@/lib/captura';
+import type { CuentaParaElegir, DetalleFiado, Plan, TipoCaptura, TipoCuenta } from '@/lib/tipos';
 
-type Deudor = { cliente_id: string; nombre: string; saldo: number };
+/** `conCuotas`: tiene alguna cuota pendiente, así que el cobro tiene que decir de cuál. */
+type Deudor = { cliente_id: string; nombre: string; saldo: number; conCuotas: boolean };
 
 /** Las formas de cobro que acepta `cobrar_fiado` (056). «A crédito» no es una. */
 const FORMAS_DE_COBRO = ['efectivo', 'transferencia', 'tarjeta', 'otro'];
@@ -34,7 +43,7 @@ const FORMAS_DE_COBRO = ['efectivo', 'transferencia', 'tarjeta', 'otro'];
 export function RevisionFiado({
   borrador, moneda, empresaId, tipoCuenta, cuentas = [], onCambio, onCancelar, onListo, onOcupado,
 }: {
-  borrador: CapturaInterpretada;
+  borrador: CapturaDeVoz;
   moneda: string;
   empresaId: string;
   tipoCuenta: TipoCuenta;
@@ -44,7 +53,7 @@ export function RevisionFiado({
    * Vacía para quien no administra y en el Gratis personal: no se pregunta.
    */
   cuentas?: CuentaParaElegir[];
-  onCambio: (c: CapturaInterpretada) => void;
+  onCambio: (c: CapturaDeVoz) => void;
   onCancelar: () => void;
   /** Guardado. Quien la abrió cierra y refresca. */
   onListo: () => void;
@@ -56,6 +65,29 @@ export function RevisionFiado({
   const esCobro = borrador.tipo === 'cobro_fiado';
   const esPersonal = tipoCuenta === 'personal';
   const plata = (n: number) => dinero(n, moneda);
+  const hoy = hoyISO(useZona());
+
+  /**
+   * CUÁNDO TE PAGA (127). Lo dictado («en 3 cuotas, la primera el 15») llega
+   * ya armado como plan y se ve SIEMPRE antes de guardar: una fecha relativa
+   * («el viernes») la calculó el modelo, y un modelo se equivoca de viernes.
+   * Sin nada dictado arranca en «Sin fecha», que es el fiado de siempre.
+   *
+   * Solo donde la cuenta tiene la pantalla de Fiado (`con_fechas`).
+   */
+  const conFechas = borrador.con_fechas === true;
+  const [plan, setPlan] = useState<Plan | null>(
+    () => (conFechas ? planDeLoDictado(borrador.cuotas, borrador.monto, hoy, dec) : null),
+  );
+  // La voz dijo cuántas pero el monto llegó en cero («no pude sacar el
+  // monto»): el plan se arma recién cuando la persona escribe el número.
+  const [faltaArmar, setFaltaArmar] = useState(conFechas && !!borrador.cuotas && !(borrador.monto > 0));
+  useEffect(() => {
+    if (!faltaArmar || !(borrador.monto > 0)) return;
+    setFaltaArmar(false);
+    setPlan(planDeLoDictado(borrador.cuotas, borrador.monto, hoy, dec));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faltaArmar, borrador.monto]);
 
   // Un fiado nuevo: quién debe. Se elige de la lista o se crea ahí mismo.
   const [elegido, setElegido] = useState<ClienteElegido>({
@@ -85,6 +117,7 @@ export function RevisionFiado({
         const lista: Deudor[] = Array.isArray(data?.clientes)
           ? data.clientes.map((c: any) => ({
               cliente_id: String(c.cliente_id), nombre: String(c.nombre ?? ''), saldo: Number(c.saldo ?? 0),
+              conCuotas: c.proxima != null,
             }))
           : [];
         if (!vivo) return;
@@ -105,12 +138,73 @@ export function RevisionFiado({
   const deudor = deudores?.find((d) => d.cliente_id === quien) ?? null;
   const forma = FORMAS_DE_COBRO.includes(borrador.metodo_pago) ? borrador.metodo_pago : 'otro';
 
-  function set<K extends keyof CapturaInterpretada>(k: K, v: CapturaInterpretada[K]) {
+  /**
+   * ¿DE QUÉ ES EL PAGO? (127). «Juan me pagó 150 mil»: si Juan tiene una
+   * heladera en cuotas y además la libreta sin fecha, el pago tiene que
+   * marcar LA CUOTA. Entrando suelto bajaría la libreta, y mañana el aviso
+   * diría «Juan atrasado» cuando pagó.
+   *
+   * Se lee recién al elegir a alguien que tiene cuotas; a quien no las tiene
+   * no se le pregunta nada y el cobro es el de siempre.
+   *
+   * `detalle` es de UN cliente: se guarda con su id para no mostrarle a Ana
+   * las cuotas de Juan mientras llega la respuesta de Ana.
+   */
+  const [detalle, setDetalle] = useState<{ de: string; datos: DetalleFiado | null } | null>(null);
+  const [deQue, setDeQue] = useState('todo');
+  const pideCuota = esCobro && !!deudor?.conCuotas;
+  useEffect(() => {
+    if (!pideCuota || !quien) return;
+    let vivo = true;
+    (async () => {
+      let datos: DetalleFiado | null = null;
+      try {
+        const { data, error: err } = await clienteNavegador().rpc('detalle_fiado', { p_cliente: quien });
+        if (!err && data) datos = leerDetalleFiado(data);
+      } catch {
+        // Sin el detalle el cobro entra suelto, como hasta hoy: la base lo
+        // reparte sola (primero lo sin fecha, después las cuotas por fecha).
+        // Es mejor que no dejar cobrar porque falló una lectura.
+      }
+      if (vivo) setDetalle({ de: quien, datos });
+    })();
+    return () => { vivo = false; };
+  }, [pideCuota, quien]);
+
+  const detalleListo = detalle !== null && detalle.de === quien;
+  const { opciones, elegida } = useMemo(
+    () => (pideCuota && detalleListo && detalle?.datos
+      ? opcionesDeCobro(detalle.datos)
+      : { opciones: [], elegida: 'todo' }),
+    [pideCuota, detalleListo, detalle],
+  );
+  // Lo elegido de entrada es lo de la pantalla de Fiado: la cuota atrasada o
+  // de hoy. Con una diferencia, porque acá el monto ya lo DIJO: si lo dicho
+  // no entra en esa deuda pero sí en lo que debe en total, es «Todo».
+  useEffect(() => {
+    const tope = opciones.find((o) => o.clave === elegida)?.tope ?? 0;
+    setDeQue(opciones.length > 0 && borrador.monto > tope && borrador.monto <= (detalle?.datos?.saldo ?? 0) ? 'todo' : elegida);
+    // Sin monto dictado se propone la cuota, como en Fiado.
+    const propuesto = opciones.find((o) => o.clave === elegida)?.propuesto;
+    if (!(borrador.monto > 0) && propuesto) onCambio({ ...borrador, monto: propuesto });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opciones, elegida]);
+  const opcion = opciones.find((o) => o.clave === deQue) ?? null;
+  const saldoDelDeudor = detalleListo && detalle?.datos ? detalle.datos.saldo : deudor?.saldo ?? 0;
+  const tope = opcion ? opcion.tope : saldoDelDeudor;
+
+  function set<K extends keyof CapturaDeVoz>(k: K, v: CapturaDeVoz[K]) {
     onCambio({ ...borrador, [k]: v });
   }
 
+  // El plan que se manda: el de la pantalla, con los montos al total de AHORA.
+  const elPlan = !esCobro && conFechas && plan ? ajustarPlan(plan, borrador.monto, dec) : null;
+
   const puede = borrador.monto > 0 && !guardando
-    && (esCobro ? quien !== '' : elegido.nombre.trim() !== '');
+    && (esCobro
+      // Quien tiene cuotas no cobra hasta saber de cuál (mientras se lee).
+      ? quien !== '' && (!pideCuota || detalleListo)
+      : elegido.nombre.trim() !== '' && (!elPlan || planValido(elPlan, borrador.monto, dec)));
 
   async function guardar() {
     if (!puede) return;
@@ -123,6 +217,8 @@ export function RevisionFiado({
           p_empresa: empresaId, p_cliente: quien, p_monto: borrador.monto,
           p_metodo: forma, p_fecha: borrador.fecha || null,
           p_cuenta: cuentaId || null,
+          // Con la cuota, el pago marca ESA deuda. Sin ella es el cobro de siempre.
+          ...(opcion?.cuota ? { p_cuota: opcion.cuota.cuota_id } : {}),
         });
         if (err) throw err;
       } else {
@@ -132,6 +228,9 @@ export function RevisionFiado({
           p_empresa: empresaId, p_cliente: cliente, p_monto: borrador.monto,
           p_concepto: borrador.descripcion ?? '', p_fecha: borrador.fecha || null,
           p_cuenta: cuentaId || null,
+          // La línea y sus fechas van juntas: si el plan no cierra, la base
+          // no anota nada. Sin plan no viaja la clave y es el fiado de hoy.
+          ...(elPlan ? { p_plan: elPlan } : {}),
         });
         if (err) throw err;
       }
@@ -194,9 +293,25 @@ export function RevisionFiado({
                 ))}
               </select>
             )}
-            {deudor && borrador.monto > deudor.saldo && (
+            {/* ¿De qué? Solo si tiene deudas con cuotas: una opción por deuda
+                con la cuota que le toca, lo sin fecha y todo. */}
+            {pideCuota && !detalleListo && (
+              <p className="mt-2 py-1 text-[13px] text-tinta/45">{t.comun.cargando}</p>
+            )}
+            {opciones.length > 0 && (
+              <label className="mt-3 block">
+                <span className="etiqueta">{t.fiado.deQue}</span>
+                <select className="campo" value={deQue} disabled={guardando} onChange={(e) => setDeQue(e.target.value)}>
+                  <OpcionesDeQue opciones={opciones} plata={plata} hoy={hoy} />
+                </select>
+              </label>
+            )}
+            {/* El tope, dicho antes de que la base lo rechace. */}
+            {deudor && borrador.monto > tope && (
               <p className="mt-2 rounded-xl bg-ambar-claro px-3.5 py-2.5 text-[13px] font-medium text-ambar">
-                {t.captura.noSeLePuedeCobrarMas(deudor.nombre, plata(deudor.saldo))}
+                {opcion?.tipo === 'deuda'
+                  ? t.fiado.deEsaFaltan(plata(tope))
+                  : t.captura.noSeLePuedeCobrarMas(deudor.nombre, plata(saldoDelDeudor))}
               </p>
             )}
           </div>
@@ -230,6 +345,22 @@ export function RevisionFiado({
           <label className="etiqueta">{t.captura.campoFecha}</label>
           <input type="date" className="campo" value={borrador.fecha ?? ''} onChange={(e) => set('fecha', e.target.value)} />
         </div>
+
+        {/* La fecha de arriba es CUÁNDO se fió; esto, cuándo te paga. Va
+            siempre a la vista, entendido o no: se corrige con un toque. */}
+        {!esCobro && conFechas && (
+          <div className="col-span-2 min-w-0">
+            {borrador.cuotas && borrador.cuotas.cantidad > 1 && plan?.length === borrador.cuotas.cantidad && (
+              <p className="mb-2 text-[12.5px] font-medium text-tinta/55">
+                {t.captura.cuotasEntendidas(borrador.cuotas.cantidad)}
+              </p>
+            )}
+            <CuandoTePaga
+              total={borrador.monto} hoy={hoy} moneda={moneda}
+              valor={plan} alCambiar={setPlan} deshabilitado={guardando}
+            />
+          </div>
+        )}
 
         {esCobro && (
           <div>

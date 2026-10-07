@@ -293,6 +293,8 @@ export const es = {
     cuantoTeDebe: '¿Cuánto te debe?',
     cobroNoEsIngreso: 'Baja lo que te debe. No suma como ingreso: esa plata ya se contó cuando se vendió o se prestó.',
     fiadoNoEsIngreso: (donde: string) => `Queda en «${donde}». No suma a tus ventas ni a tus ingresos: todavía no entró nada.`,
+    // Tanda C (127): la voz entendió «en 3 cuotas». Va arriba de «¿Cuándo te paga?».
+    cuotasEntendidas: (n: number) => `Entendí ${n} cuotas. Revisá las fechas.`,
 
     clienteNuevo: 'Cliente nuevo',
     notas: 'Notas',
@@ -599,6 +601,9 @@ export const es = {
     enEstePeriodo: 'en este período',
     venceEl: (fecha: string) => `próximo vencimiento: ${fecha}`,
     teDeben: 'Te deben',
+    // Al lado de «Te deben», cuando lo prestado tiene fecha (127).
+    tePagaEl: (fecha: string) => `te paga el ${fecha}`,
+    cobroAtrasado: (n: number) => (n === 1 ? '1 cobro atrasado' : `${n} cobros atrasados`),
     // Cobrar un fiado no es un ingreso —ya se explicó por qué en la 056— pero
     // sí es plata real que ahora tenés en el bolsillo. Esta nota es lo único
     // que le avisa a la persona que ese número ya está adentro de «Disponible».
@@ -675,6 +680,10 @@ export const es = {
     metodoFiadoLargo: 'Fiado / crédito',
     fiarSinNombre: 'Para fiar hay que decir a quién. Escribí el nombre del cliente.',
     ventaRegistrada: (monto: string) => `Venta registrada · ${monto}`,
+    // Fiado con fecha de cobro (127). Las cuotas son un segundo paso: si
+    // falla, la venta queda igual y se avisa.
+    ventaFiada: (monto: string) => `Venta fiada · ${monto}`,
+    cuotasNoQuedaron: 'La venta quedó, pero las cuotas no se guardaron. Ponéselas desde Fiado.',
     stockNegativo: (productos: string) => `${productos} quedó con stock negativo.`,
     noSeRegistro: 'No se pudo registrar la venta.',
     ojo: 'Ojo:',
@@ -1078,8 +1087,6 @@ export const es = {
     nadieTeDebeTitulo: 'Nadie te debe nada',
     vacioPersonal: 'Cuando le prestes plata a alguien, anotalo acá y no te olvidás.',
     vacioNegocio: 'Cuando vendas algo «Fiado», aparece acá solo. También lo podés anotar a mano.',
-    notaPersonal: 'Lo que te devuelven no cuenta como ingreso: es tu propia plata que vuelve.',
-    notaNegocio: 'Una venta fiada cuenta como venta el día que se lleva la mercadería. Cobrarla acá baja lo que te deben, pero no la suma otra vez: si lo hiciera, tu ganancia contaría la misma venta dos veces.',
 
     escribiAQuien: 'Escribí a quién.',
     anotado: (nombre: string, monto: string) => `Anotado: ${nombre} te debe ${monto} más.`,
@@ -1122,6 +1129,69 @@ export const es = {
     lineaFiado: 'Fiado',
     lineaPago: 'Pago',
     borrarLinea: 'Borrar esta línea',
+
+    // FECHAS DE COBRO Y CUOTAS (127). Matías no lee párrafos: la vista previa
+    // («3 × 150.000 · 15/11 · 15/12 · 15/01») es la explicación.
+    cuandoTePaga: '¿Cuándo te paga?',
+    sinFecha: 'Sin fecha',
+    unaFecha: 'Una fecha',
+    enCuotas: 'En cuotas',
+    enDias: (n: number) => `En ${n} días`,
+    elegir: 'Elegir',
+    cuantas: 'Cuántas',
+    cada: 'Cada',
+    cadaSemana: 'Semana',
+    cadaQuincena: 'Quincena',
+    cadaMes: 'Mes',
+    laPrimera: 'La primera',
+    unaMenos: 'Una cuota menos',
+    unaMas: 'Una cuota más',
+    vistaPrevia: (n: number, monto: string, fechas: string) => `${n} × ${monto} · ${fechas}`,
+    vistaPreviaLarga: (n: number, monto: string, desde: string, hasta: string) => `${n} × ${monto} · del ${desde} al ${hasta}`,
+    conCuotas: (n: number, fecha: string) => `${n} cuotas, la primera el ${fecha}.`,
+    tePagaEl: (fecha: string) => `Te paga el ${fecha}.`,
+    paraCobrar: 'Para cobrar',
+    atrasadasYHoy: (a: number, h: number) => `${a} ${a === 1 ? 'atrasada' : 'atrasadas'} · ${h} hoy`,
+    estaSemana: (n: number) => `${n} esta semana`,
+    nadaHoyProxima: (fecha: string) => `nada hoy · próxima ${fecha}`,
+    grupoAtrasadas: 'Atrasadas',
+    grupoHoy: 'Hoy',
+    grupoProximas: 'Próximas',
+    grupoSinFecha: 'Sin fecha',
+    cuotaN: (n: number, de: number) => `Cuota ${n} de ${de}`,
+    venceEl: (fecha: string) => `Vence el ${fecha}`,
+    masSinFecha: (monto: string) => `+ ${monto} sin fecha`,
+    pagada: 'Pagada',
+    faltan: (monto: string) => `Faltan ${monto}`,
+    enCuotasN: (n: number) => `en ${n} cuotas`,
+    ponerleFecha: 'Ponerle fecha',
+    cambiarFecha: 'Cambiar la fecha',
+    rearmar: 'Rearmar',
+    rearmarAviso: (monto: string) => `Ya cobraste ${monto}: se descuentan de las primeras cuotas.`,
+    quitarCuotas: 'Quitar las cuotas',
+    quitarCuotasPregunta: (concepto: string) => `¿Quitar las cuotas de ${concepto}?`,
+    quitarCuotasDetalle: 'Las fechas se borran. Lo que debe y lo que pagó quedan igual.',
+    quitadas: 'Listo, sin cuotas.',
+    fechaGuardada: 'Fecha guardada.',
+    cuotasGuardadas: (n: number) => `${n} cuotas guardadas.`,
+    noSePudoGuardar: 'No se pudo guardar.',
+    deQue: '¿De qué?',
+    loSinFecha: 'Lo sin fecha',
+    todo: 'Todo',
+    deEsaFaltan: (monto: string) => `De esa deuda faltan ${monto}.`,
+    proximaVence: (fecha: string) => `La próxima vence el ${fecha}.`,
+    leEscribisteHoy: '✓ Le escribiste hoy',
+    pagoDe: (concepto: string) => `Pago · ${concepto}`,
+    teDebe: (monto: string) => `Te debe ${monto}`,
+    notaCobrar: 'Cobrar baja lo que te deben; la venta ya se contó.',
+    // El WhatsApp al cliente, ya escrito. `cuota` es « (cuota 2 de 3)» o nada.
+    mensajeVenceHoy: (nombre: string, negocio: string, monto: string, cuota: string) => `Hola ${nombre}! Te escribo de ${negocio}. Hoy vence el pago de ${monto}${cuota}. Cuando puedas, avisame. ¡Gracias!`,
+    mensajeAtrasado: (nombre: string, negocio: string, monto: string, cuota: string, fecha: string) => `Hola ${nombre}! Te escribo de ${negocio}. El pago de ${monto}${cuota} que quedamos para el ${fecha} todavía está pendiente. Cuando puedas, avisame. ¡Gracias!`,
+    mensajeProximo: (nombre: string, negocio: string, monto: string, cuota: string, fecha: string) => `Hola ${nombre}! Te escribo de ${negocio}. Te recuerdo el pago de ${monto}${cuota} que quedamos para el ${fecha}. Cuando puedas, avisame. ¡Gracias!`,
+    mensajeVenceHoyPersonal: (nombre: string, monto: string, cuota: string) => `Hola ${nombre}! Te recuerdo que hoy quedamos para los ${monto}${cuota}. Cuando puedas, avisame. ¡Gracias!`,
+    mensajeAtrasadoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Hola ${nombre}! Los ${monto}${cuota} que quedamos para el ${fecha} todavía están pendientes. Cuando puedas, avisame. ¡Gracias!`,
+    mensajeProximoPersonal: (nombre: string, monto: string, cuota: string, fecha: string) => `Hola ${nombre}! Te recuerdo los ${monto}${cuota} que quedamos para el ${fecha}. Cuando puedas, avisame. ¡Gracias!`,
+    cuotaEntreParentesis: (n: number, de: number) => (de <= 1 ? '' : ` (cuota ${n} de ${de})`),
   },
 
   /** CLIENTES · A QUIÉN LE VENDÉS. */
@@ -1258,6 +1328,9 @@ export const es = {
     teDeben: 'Te deben',
     nadieTeDebe: 'nadie te debe',
     debenVerFiado: (n: number) => `${n} ${n === 1 ? 'cliente' : 'clientes'} · ver fiado`,
+    // Lo que tiene fecha de cobro (127): una palabra al lado de lo que debe.
+    venceEl: (fecha: string) => `vence el ${fecha}`,
+    atrasado: 'atrasado',
     buscar: 'Buscar por nombre o teléfono',
     agregar: 'Agregar',
     nuevo: 'Cliente nuevo',
@@ -1868,6 +1941,11 @@ export const es = {
     clientesQueDeben: (n: number) => (n === 1 ? '1 cliente' : `${n} clientes`),
     plataQueNoEntro: 'plata que todavía no entró',
     verFiado: 'Ver fiado →',
+    // La pastilla de «Te deben» cuando hay cobros con fecha (127). Una sola,
+    // la más urgente: atrasadas, si no lo de hoy, si no lo de la semana.
+    cuotasAtrasadas: (n: number) => (n === 1 ? '1 cuota atrasada' : `${n} cuotas atrasadas`),
+    cobrarHoy: (monto: string) => `Hoy: ${monto}`,
+    cuotasSemana: (n: number) => (n === 1 ? '1 vence esta semana' : `${n} vencen esta semana`),
     logradoDe: (logrado: string, meta: string) => `${logrado} de ${meta}`,
     faltanDias: (n: number, ritmo: string) => `Faltan ${n} ${n === 1 ? 'día' : 'días'} · ${ritmo} por día`,
     deLoVendido: (p: string) => `${p} de lo vendido`,
@@ -2049,6 +2127,8 @@ export const es = {
     avisoSemanalDetalle: 'Los lunes, con lo que pasó los últimos siete días.',
     avisoTurnos: 'Avisos de la agenda',
     avisoTurnosDetalle: 'Cuando alguien reserva por tu link, en el momento. Y a la tarde, cuántos turnos tenés al día siguiente y a cuántos todavía no les avisaste.',
+    avisoCobros: 'Cobros con fecha',
+    avisoCobrosDetalle: 'A la mañana, el día que te toca cobrarle a alguien, y si alguna cuota sigue atrasada.',
     avisoDiario: 'Tu día con Orden',
     avisoDiarioDetalle: 'A la mañana, cómo te fue ayer. A la tarde, si todavía no cargaste nada. A la noche, cuánto vendiste, gastaste y ganaste, contra ayer.',
     horaCierre: 'A qué hora recordarte',
@@ -2737,6 +2817,25 @@ export const es = {
       cuerpo: (fecha: string) => `Ya podés usar Orden sin cortes hasta el ${fecha}. ¡Gracias por confiar en nosotros!`,
       // Apenas paga es cuando conviene contarle cómo pagar menos el mes que viene (079).
       conRacha: (pct: number, dias: number) => ` Cargá todos los días: con ${dias} días seguidos, tu próximo mes tiene ${pct}% de descuento.`,
+    },
+    // «Hoy te paga Juan» (127): a la mañana, el día que toca cobrar; si sigue
+    // sin pagar, a los 3 días y después una vez por semana. Los arma
+    // lib/frase-cobros.ts; `masAtrasados` y `sinEscribir` se pegan al final
+    // de la frase y por eso empiezan con un espacio.
+    cobros: {
+      tituloPersonal: 'Te deben',
+      hoyUno: (nombre: string, monto: string) => `Hoy te paga ${nombre}: ${monto}.`,
+      hoyVarios: (n: number, monto: string, nombres: string) => `Hoy te pagan ${n}: ${monto}${nombres ? ` (${nombres})` : ''}.`,
+      hoyUnoPersonal: (nombre: string, monto: string) => `Hoy te devuelve ${nombre}: ${monto}.`,
+      hoyVariosPersonal: (n: number, monto: string, nombres: string) => `Hoy te devuelven ${n}: ${monto}${nombres ? ` (${nombres})` : ''}.`,
+      masAtrasados: (n: number, monto: string) => ` Y ${n} atrasado${n === 1 ? '' : 's'}: ${monto}.`,
+      soloAtrasadoUno: (nombre: string, dias: number, monto: string) => `${nombre} se atrasó ${dias} días: ${monto}.`,
+      soloAtrasados: (n: number, monto: string, nombres: string) =>
+        `${n === 1 ? '1 cobro atrasado' : `${n} cobros atrasados`}: ${monto}${nombres ? ` (${nombres})` : ''}.`,
+      sinEscribir: (n: number) => ` A ${n} todavía no le${n === 1 ? '' : 's'} escribiste.`,
+      yMas: (n: number) => `y ${n} más`,
+      // «Pedro e Inés», no «Pedro y Inés».
+      yNombre: (nombre: string) => `${/^(i|hi(?!e))/i.test(nombre) ? 'e' : 'y'} ${nombre}`,
     },
     socio: {
       entroTitulo: (persona: string) => `${persona} entró con tu enlace`,

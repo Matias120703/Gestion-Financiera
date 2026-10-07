@@ -7,6 +7,8 @@ import {
 import { diccionario } from '@/i18n/diccionarios';
 import { FICHA, esIdioma, IDIOMA_POR_DEFECTO } from '@/i18n/idiomas';
 import { fraseDelDia, type CuentaDelDia, type Momento } from '@/lib/frases-del-dia';
+import { claveDeCobros, fraseDeCobros } from '@/lib/frase-cobros';
+import type { CobrosDeHoy } from '@/lib/tipos';
 
 /**
  * ORDEN HABLA TODOS LOS DÍAS (071).
@@ -14,8 +16,9 @@ import { fraseDelDia, type CuentaDelDia, type Momento } from '@/lib/frases-del-d
  * Tres corridas diarias, una por momento, cada una con su ruta en
  * app/api/tareas/avisos-{manana,tarde,noche} (ver vercel.json):
  *
- *   · mañana → cómo fue ayer, las pruebas que se terminan y los planes
- *     pagos que se vencen (107, push y correo);
+ *   · mañana → cómo fue ayer, las pruebas que se terminan, los planes
+ *     pagos que se vencen (107, push y correo) y a quién toca cobrarle
+ *     hoy (127, solo push);
  *   · tarde  → «todavía no cargaste nada hoy», solo a quien no cargó;
  *   · noche  → cómo fue hoy, contra ayer, solo a quien cargó.
  *
@@ -80,8 +83,69 @@ export async function correrAvisosDiarios(momento: Momento): Promise<{ estado: n
   // El vencimiento del plan (y el correo del fin de la prueba) va con la
   // corrida de la mañana, igual que el push de la prueba: 107.
   const vencimientos = momento === 'manana' ? await avisarVencimientos() : null;
+  // «Hoy te paga Juan» (127) también va a la mañana: es cuando se arma el
+  // día. Colgado de esta corrida a propósito: sin una tarea nueva.
+  const cobros = momento === 'manana' ? await avisarCobrosDeHoy() : null;
 
-  return { estado: 200, cuerpo: { momento, cuentas: cuentas.length, enviados, salteados, pruebas, vencimientos } };
+  return { estado: 200, cuerpo: { momento, cuentas: cuentas.length, enviados, salteados, pruebas, vencimientos, cobros } };
+}
+
+/**
+ * HOY TOCA COBRAR (127): el día que vence, a los 3 días y después una vez
+ * por semana.
+ *
+ * Todo lo decide la base (`cobros_de_hoy`): qué cuota sigue pendiente, si
+ * hoy le toca aviso (todos los días sería el aviso que se aprende a
+ * ignorar) y a quién le llega: los miembros de un negocio que tiene Fiado,
+ * con «Cobros con fecha» encendido en Ajustes. Fiado lo abre cualquier
+ * miembro —el que fía es el que cobra—, así que no se filtra por rol. No
+ * entran la cuenta vencida ni la personal en Gratis.
+ *
+ * Solo push: es un recordatorio de rutina, no algo que corta la cuenta. Si
+ * el push no llega, la pantalla de Fiado y el panel lo muestran igual.
+ *
+ * Uno por persona, cuenta y día (el día de la cuenta, no el del servidor).
+ */
+async function avisarCobrosDeHoy() {
+  const supabase = clienteDeServicio();
+  const { data, error } = await supabase.rpc('cobros_de_hoy');
+  if (error) {
+    // Con el código nuevo y la base vieja la función no existe: se anota y
+    // el resto de la corrida ya salió.
+    console.error('[avisos-diarios] cobros', error.message);
+    return { error: true };
+  }
+
+  const lista = (Array.isArray(data) ? data : []) as CobrosDeHoy[];
+
+  let enviados = 0;
+  let salteados = 0;
+
+  for (const c of lista) {
+    for (const d of c.destinatarios ?? []) {
+      const idioma = esIdioma(d.idioma) ? d.idioma : IDIOMA_POR_DEFECTO;
+      const frase = fraseDeCobros(c, diccionario(idioma).notificaciones.cobros, FICHA[idioma].locale);
+      // Sin frase no se reserva: la reserva quedaría gastada por nada.
+      if (!frase) { salteados += 1; continue; }
+
+      const { data: reservado } = await supabase.rpc('reservar_envio', {
+        p_tipo: 'cobros',
+        p_clave: claveDeCobros(c.empresa_id, d.user_id, c.fecha),
+        p_user: d.user_id,
+        p_empresa: c.empresa_id,
+        p_canal: 'push',
+      });
+      if (!reservado) { salteados += 1; continue; }
+
+      enviados += await avisar(d.user_id, {
+        ...frase,
+        tag: `cobros-${c.empresa_id}`,
+        idioma,
+      });
+    }
+  }
+
+  return { cuentas: lista.length, enviados, salteados };
 }
 
 /**

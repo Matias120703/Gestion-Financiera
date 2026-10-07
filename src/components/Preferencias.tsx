@@ -86,8 +86,12 @@ export function SelectorIdioma() {
  * existe en su cuenta y ese recorte del tiempo no es el suyo.
  */
 export function AjustesDeAvisos({
-  inicial, esPersonal = false, tieneAgenda = false,
-}: { inicial: Prefs; esPersonal?: boolean; tieneAgenda?: boolean }) {
+  inicial, esPersonal = false, tieneAgenda = false, tieneFiado = false,
+}: {
+  inicial: Prefs; esPersonal?: boolean; tieneAgenda?: boolean;
+  /** La cuenta tiene la pantalla de Fiado (y no es la personal en Gratis). */
+  tieneFiado?: boolean;
+}) {
   const t = useTextos();
   const router = useRouter();
   const [prefs, setPrefs] = useState<Prefs>(inicial);
@@ -106,6 +110,7 @@ export function AjustesDeAvisos({
         p_hora_cierre: siguiente.hora_cierre,
         p_aviso_turnos: siguiente.aviso_turnos,
         p_aviso_diario: siguiente.aviso_diario,
+        p_aviso_cobros: siguiente.aviso_cobros ?? true,
       });
       if (e) throw e;
       setMensaje(t.ajustes.guardado);
@@ -163,6 +168,17 @@ export function AjustesDeAvisos({
           detalle={t.ajustes.avisoTurnosDetalle}
           encendido={prefs.aviso_turnos}
           alCambiar={(v) => guardar({ aviso_turnos: v })}
+        />
+      )}
+
+      {/* «Hoy te paga Juan» (127): solo donde hay Fiado. Mismo criterio que
+          el de la agenda: no se ofrece apagar un aviso que nunca llega. */}
+      {tieneFiado && (
+        <Interruptor
+          titulo={t.ajustes.avisoCobros}
+          detalle={t.ajustes.avisoCobrosDetalle}
+          encendido={prefs.aviso_cobros ?? true}
+          alCambiar={(v) => guardar({ aviso_cobros: v })}
         />
       )}
 

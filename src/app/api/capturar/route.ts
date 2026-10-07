@@ -6,7 +6,7 @@ import { catalogoVisible, fichaDe, tieneSeccion } from '@/lib/rubros';
 import { transcribir } from '@/lib/transcribir';
 import type { Producto } from '@/lib/tipos';
 import {
-  ESQUEMA, instrucciones, sanearCampana, sanearCategoriaDeuda,
+  ESQUEMA, instrucciones, sanearCampana, sanearCategoriaDeuda, sanearCuotas,
   type CampanaConocida, type CapturaDeVoz,
 } from '@/lib/captura';
 import { sanearFicha, sanearProducto } from '@/lib/acciones';
@@ -442,13 +442,20 @@ export async function POST(request: Request) {
     // La campaña, contra los ids reales: mismo trato que `deuda_id`.
     const campana = sanearCampana(datos, tipo, campanas);
 
+    // «¿Cuándo te paga?» (127) solo existe donde existe la pantalla de Fiado:
+    // en clases y entrenamiento las fechas quedarían guardadas sin que nadie
+    // las vea ni reciba el aviso. La personal en Gratis la tiene tapada y la
+    // base le rechaza el fiado entero, con o sin fecha.
+    const conFechas = tieneSeccion(empresa.rubro, empresa.tipo_cuenta, '/fiado');
+    const metodoPago = String(datos.metodo_pago ?? 'efectivo');
+
     const limpio: CapturaDeVoz = {
       tipo,
       fecha: fechaValida,
       descripcion: String(datos.descripcion ?? '').slice(0, 200) || 'Movimiento',
       categoria: String(datos.categoria ?? 'General').slice(0, 60) || 'General',
       monto,
-      metodo_pago: String(datos.metodo_pago ?? 'efectivo'),
+      metodo_pago: metodoPago,
       contraparte: datos.contraparte ? String(datos.contraparte).slice(0, 80) : null,
       // Como el `deuda_id`: tiene que ser uno REAL de la lista de quién debe.
       // Un id inventado intentaría cobrarle a alguien que no existe.
@@ -457,6 +464,10 @@ export async function POST(request: Request) {
         && deudores.some((x: { id: string }) => x.id === (datos as any).cliente_id)
         ? (datos as any).cliente_id
         : null,
+      // Cuántas, cada cuánto y la primera fecha, recortadas a lo razonable:
+      // la revisión las muestra siempre para corregir antes de guardar.
+      cuotas: conFechas ? sanearCuotas((datos as any).cuotas, tipo, metodoPago, hoy) : null,
+      con_fechas: conFechas,
       items: tipo === 'venta' ? items : [],
       deuda: infoDeuda,
       lote_id: campana.lote_id,
@@ -513,6 +524,7 @@ export async function POST(request: Request) {
       limpio.items = [];
       limpio.deuda = null;
       limpio.cliente_id = null;
+      limpio.cuotas = null;
       limpio.monto = 0;
       if (tipo === 'turno') {
         const turno = await turnoDictado({

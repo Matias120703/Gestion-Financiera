@@ -12,7 +12,9 @@ import { SelectorCliente, asegurarCliente, type ClienteElegido } from '@/compone
 import { dinero, decimalesDe, numero } from '@/lib/formato';
 import { hoyISO } from '@/lib/fechas';
 import { useZona } from '@/lib/zona';
-import type { Producto } from '@/lib/tipos';
+import type { Plan, Producto } from '@/lib/tipos';
+import { ajustarPlan, fechaCorta, planValido } from '@/lib/cuotas';
+import { CuandoTePaga } from '@/components/CuandoTePaga';
 import { Vacio } from '@/components/Piezas';
 import { CampoMonto } from '@/components/CampoMonto';
 import { Hoja, PieHoja } from '@/components/Hoja';
@@ -152,6 +154,13 @@ export function PantallaVenta({
    */
   const [elegido, setElegido] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
   const [fecha, setFecha] = useState(hoyISO(zona));
+  /**
+   * Cuándo paga lo fiado (127). Null = sin fecha, que es lo de siempre y lo
+   * que queda si nadie toca nada. Vive acá y no en el carrito porque el
+   * carrito está dos veces en la página (el del costado y el del celular) y
+   * los dos tienen que mostrar el mismo plan.
+   */
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [cliente, setCliente] = useState('');
   const [descuento, setDescuento] = useState(0);
   const [guardando, setGuardando] = useState(false);
@@ -312,6 +321,9 @@ export function PantallaVenta({
     setDescuento(0);
     setCliente('');
     setError('');
+    // La venta que sigue arranca sin fecha: un plan olvidado de la anterior
+    // le pondría cuotas a alguien que no las pidió.
+    setPlan(null);
   }
 
   /** Un toque y la venta queda registrada. Sin confirmación intermedia. */
@@ -321,6 +333,8 @@ export function PantallaVenta({
     setError('');
     const montoCobrado = total;
     const negativos = carrito.filter((l) => l.stock !== null && l.cantidad > l.stock);
+    // Las cuotas solo valen para lo fiado, y por el total que se cobra ahora.
+    const planDeEstaVenta = metodo === 'credito' && plan ? ajustarPlan(plan, montoCobrado, dec) : null;
 
     try {
       const supabase = clienteNavegador();
@@ -370,19 +384,45 @@ export function PantallaVenta({
         noSeSumo = Boolean(r.error);
       }
 
-      setExito(loteElegido && !noSeSumo
+      // Las fechas de cobro (127), igual: un segundo paso. `registrar_venta`
+      // no cambia de firma y la venta nunca se deshace por el plan; si las
+      // cuotas no quedan, se avisa y se ponen desde Fiado.
+      let conCuotas = '';
+      let cuotasNoQuedaron = false;
+      if (planDeEstaVenta && ventaId) {
+        if (planValido(planDeEstaVenta, montoCobrado, dec)) {
+          const r = await supabase.rpc('programar_cuotas', { p_venta: ventaId, p_plan: planDeEstaVenta });
+          cuotasNoQuedaron = Boolean(r.error);
+        } else {
+          cuotasNoQuedaron = true;
+        }
+        if (!cuotasNoQuedaron) {
+          const primera = fechaCorta(planDeEstaVenta[0].vence_el, hoyISO(zona));
+          conCuotas = planDeEstaVenta.length > 1
+            ? t.fiado.conCuotas(planDeEstaVenta.length, primera)
+            : t.fiado.tePagaEl(primera);
+        }
+      }
+
+      const queQuedo = loteElegido && !noSeSumo
         ? t.gastosCampana.chip.ventaEn(dinero(montoCobrado, moneda), loteElegido.nombre)
-        : t.venta.ventaRegistrada(dinero(montoCobrado, moneda)));
+        : conCuotas
+          ? t.venta.ventaFiada(dinero(montoCobrado, moneda))
+          : t.venta.ventaRegistrada(dinero(montoCobrado, moneda));
+      setExito(conCuotas ? `${queQuedo} · ${conCuotas}` : queQuedo);
       setAvisoStock(
         [
           negativos.length > 0 ? t.venta.stockNegativo(negativos.map((l) => l.nombre).join(', ')) : '',
           noSeSumo ? t.gastosCampana.vender.noSeSumo : '',
+          cuotasNoQuedaron ? t.venta.cuotasNoQuedaron : '',
         ].filter(Boolean).join(' '),
       );
       limpiar();
       setDetalleAbierto(false);
       router.refresh();
-      setTimeout(() => { setExito(''); setAvisoStock(''); }, 3400);
+      // Si las cuotas no quedaron hay algo para hacer después: el aviso se
+      // queda más tiempo a la vista.
+      setTimeout(() => { setExito(''); setAvisoStock(''); }, cuotasNoQuedaron ? 9000 : conCuotas ? 4600 : 3400);
     } catch (e: any) {
       setError(mensajeDeError(e, t.venta.noSeRegistro));
     } finally {
@@ -554,6 +594,7 @@ export function PantallaVenta({
             setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
             cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
             campanas={campanas} loteId={loteId} setLoteId={elegirLote} conFiado={conFiado}
+            plan={plan} setPlan={setPlan} hoy={hoyISO(zona)}
           />
         </div>
       </aside>
@@ -687,6 +728,7 @@ export function PantallaVenta({
             setDescuento={setDescuento} setMetodo={elegirMetodo} setFecha={setFecha}
             cuentas={cuentas} cuentaElegida={cuentaElegida} setCuentaElegida={setCuentaElegida}
             campanas={campanas} loteId={loteId} setLoteId={elegirLote} conFiado={conFiado}
+            plan={plan} setPlan={setPlan} hoy={hoyISO(zona)}
           />
         </Hoja>
       )}
@@ -722,6 +764,11 @@ function Carrito(props: {
   setLoteId: (id: string) => void;
   /** Sin fiado, «Fiado / crédito» no se ofrece (121). */
   conFiado: boolean;
+  /** Cuándo paga lo fiado (127): null = sin fecha. */
+  plan: Plan | null;
+  setPlan: (p: Plan | null) => void;
+  /** Hoy en la zona del negocio, para proponer las fechas. */
+  hoy: string;
 }) {
   const t = useTextos();
   const idioma = useIdioma();
@@ -731,10 +778,15 @@ function Carrito(props: {
     empresaId, elegido, setElegido,
     guardando, error, sinMarco, onCambiar, onQuitar, onLimpiar, onCobrar,
     setDescuento, setMetodo, setFecha, cuentas, cuentaElegida, setCuentaElegida,
-    campanas, loteId, setLoteId,
+    campanas, loteId, setLoteId, plan, setPlan, hoy,
   } = props;
 
   const [masOpciones, setMasOpciones] = useState(false);
+  // Al elegir «Fiado» se abre solo (127): ahí están el cliente, que para
+  // fiar es obligatorio, y «¿Cuándo te paga?». Con otra forma de pago queda
+  // como lo dejó la persona.
+  const esFiado = metodo === 'credito';
+  const opcionesAbiertas = masOpciones || esFiado;
 
   return (
     <div className={sinMarco ? '' : 'tarjeta overflow-hidden'}>
@@ -861,17 +913,21 @@ function Carrito(props: {
               />
             </label>
 
-            <button
-              type="button" onClick={() => setMasOpciones((v) => !v)}
-              className="flex min-h-[44px] w-full items-center justify-between rounded-xl px-1 text-[13.5px] font-semibold text-tinta/50"
-            >
-              {masOpciones ? t.venta.menosOpciones : t.venta.clienteYFecha}
-              <svg viewBox="0 0 24 24" className={`h-4 w-4 transition ${masOpciones ? 'rotate-180' : ''}`} {...trazo}>
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
+            {/* Al fiar no se puede plegar (el cliente es obligatorio): el
+                botón no se dibuja en vez de quedar ahí sin hacer nada. */}
+            {!esFiado && (
+              <button
+                type="button" onClick={() => setMasOpciones((v) => !v)}
+                className="flex min-h-[44px] w-full items-center justify-between rounded-xl px-1 text-[13.5px] font-semibold text-tinta/50"
+              >
+                {opcionesAbiertas ? t.venta.menosOpciones : t.venta.clienteYFecha}
+                <svg viewBox="0 0 24 24" className={`h-4 w-4 transition ${opcionesAbiertas ? 'rotate-180' : ''}`} {...trazo}>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            )}
 
-            {masOpciones && (
+            {opcionesAbiertas && (
               <div className="grid grid-cols-2 gap-2.5 aparecer">
                 <SelectorCliente
                   empresaId={empresaId}
@@ -886,6 +942,15 @@ function Carrito(props: {
                   <input type="date" className="campo py-2.5" value={fecha} onChange={(e) => setFecha(e.target.value)} />
                 </label>
               </div>
+            )}
+
+            {/* Solo al fiar, y plegado en «Sin fecha»: quien no usa fechas
+                ve tres botones y nada más. */}
+            {esFiado && (
+              <CuandoTePaga
+                total={total} hoy={hoy} moneda={moneda}
+                valor={plan} alCambiar={setPlan} deshabilitado={guardando}
+              />
             )}
 
             <div className="space-y-1.5 rounded-xl bg-arena p-3">

@@ -25,6 +25,7 @@ const {
 const { coincidenLasHojas, conversorDe } = require('../.compilado/reportes/comun.js');
 const { resumir, rankingProductos, gastosPorCategoria, serieDiaria, RESUMEN_VACIO } = require('../.compilado/calculos.js');
 const { diasDelRango } = require('../.compilado/fechas.js');
+const { fechaLegible } = require('../.compilado/formato.js');
 
 let fallos = 0;
 let corridas = 0;
@@ -71,7 +72,10 @@ const fiado = {
   total: 700000, cuantos: 2,
   clientes: [
     { cliente_id: 'c1', nombre: 'Beto', telefono: '', saldo: 200000, desde: '2026-09-02', dias: 5 },
-    { cliente_id: 'c2', nombre: 'Carla', telefono: '', saldo: 500000, desde: '2026-06-10', dias: 89 },
+    // Carla tiene una cuota con fecha, ya vencida (127); Beto debe «y punto».
+    { cliente_id: 'c2', nombre: 'Carla', telefono: '', saldo: 500000, desde: '2026-06-10', dias: 89,
+      sin_fecha: 350000, con_fecha: 150000, atrasadas: 1, monto_atrasado: 150000, grupo: 'atrasada',
+      proxima: { cuota_id: 'q1', fio_id: 'f1', numero: 2, de: 3, vence_el: '2026-09-20', dias: -4, pendiente: 150000, avisado_el: null } },
   ],
 };
 const fiadoPeriodo = {
@@ -221,6 +225,14 @@ function textos(hoja) {
   const fia = libro.getWorksheet('Fiado');
   ok('Fiado: primero la deuda más vieja', fia.getCell('B8').value, 'Carla');
   ok('Fiado: la columna de días', fia.getCell('E8').value, 89);
+  // Las fechas de cobro (127): dos columnas al final, las de siempre en su lugar.
+  ok('Fiado: los encabezados, con las dos columnas nuevas al final',
+    [1, 2, 3, 4, 5, 6, 7].map((n) => fia.getRow(7).getCell(n).value),
+    ['#', 'Cliente', 'Te debe', 'Fiado desde', 'Días', 'Próxima cuota', 'Vence']);
+  ok('Fiado: la próxima cuota y cuándo vence', [fia.getCell('F8').value, fia.getCell('G8').value], [150000, fechaLegible('2026-09-20', true, 'es-PY')]);
+  ok('Fiado: una fecha que ya pasó va en rojo', fia.getCell('G8').font.color.argb, fia.getCell('C8').font.color.argb);
+  ok('Fiado: quien no tiene fecha deja las dos celdas vacías', [fia.getCell('B9').value, fia.getCell('F9').value, fia.getCell('G9').value], ['Beto', null, null]);
+  ok('Fiado: el total sigue en su columna', fia.getCell(`C${fila(fia, 'TOTAL')}`).value, 700000);
 
   // Movimientos
   const mov = libro.getWorksheet('Movimientos');
@@ -277,6 +289,8 @@ function textos(hoja) {
   ok('hojas en pt', nombresPt,
     ['Resumo', 'Produtos', 'Estoque valorizado', 'Fiado', 'Lançamentos', 'Despesas', 'Dia a dia', 'Vendedores', 'Para o contador']);
   ok('la tarjeta anuncia lo que trae (pt)', coincidenLasHojas(hojasComercio(null, 'pt'), nombresPt), true);
+  ok('Fiado em pt: «Próxima parcela» e «Vence»',
+    [6, 7].map((n) => libroPt.getWorksheet('Fiado').getRow(7).getCell(n).value), ['Próxima parcela', 'Vence']);
 
   // ---- lo mínimo: sin stock, sin fiado, un solo vendedor, sin costo cargado ----
   const sinCostoMovs = movimientos
@@ -319,6 +333,9 @@ function textos(hoja) {
   ok('en la vista: el fiado de hoy', v.fiado.total, 87.5);
   ok('en la vista: el saldo de cada cuenta', v.cuentas.map((k) => k.saldo), [112.5, -12.5]);
   ok('en la vista: los días no se convierten', v.fiado.clientes[1].dias, 89);
+  ok('en la vista: la próxima cuota va en la misma moneda que lo que debe, y su fecha no cambia',
+    [v.fiado.clientes[1].proxima.pendiente, v.fiado.clientes[1].proxima.vence_el, v.fiado.clientes[1].monto_atrasado, v.fiado.clientes[0].proxima],
+    [18.75, '2026-09-20', 18.75, undefined]);
   const vNull = enLaVistaComercio({ fiado: null, fiadoPeriodo: null, cuentas: null,
     vendedores: [{ ...vendedores[0], ticket_promedio: null }] }, c);
   ok('en la vista: lo que falta sigue faltando', [vNull.fiado, vNull.cuentas, vNull.vendedores[0].ticket_promedio], [null, null, null]);

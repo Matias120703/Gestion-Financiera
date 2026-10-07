@@ -106,6 +106,18 @@ const LO_QUE_SE_CIERRA = [
   ['vender un paquete de regalo', false, (c, n) => ["select public.vender_paquete($1,$2,$3,4,0,'efectivo',null,null)", [c.empresaId, c.alumno, `Regalo ${n}`]]],
   ['dar una clase', false, (c) => ["select public.dar_clase($1,1,null,'dada',null)", [c.paquete]]],
   ['cerrar un paquete', false, (c) => ['select public.cerrar_paquete($1,true)', [c.paqueteRegalo]]],
+  // (127) El fiado con fecha de cobro y en cuotas: todo lo que escribe en
+  // fiado_cuotas o en el libro. `billetera` en true: también es del Pro
+  // para la personal en Gratis (grupo 6). Sacar las fechas es un DELETE y
+  // anda siempre: va en el grupo 3.
+  ['ponerle fechas a un fiado', true, (c) => ['select public.programar_cuotas(p_fio => $1, p_plan => $2::jsonb)',
+    [c.lineaFiado, JSON.stringify([{ vence_el: c.fechaCuota, monto: 1000 }, { vence_el: c.fechaCuota, monto: 2000 }])]]],
+  ['correr la fecha de una cuota', true, (c) => ['select public.mover_cuota($1,$2)', [c.cuota, c.fechaCuota]]],
+  ['marcar que le escribió por una cuota', true, (c) => ['select public.marcar_cuota_avisada($1)', [c.cuota]]],
+  ['anotar un fiado en cuotas', true, (c) => ["select public.anotar_fiado($1,$2,1000,'en cuotas',null,null,$3::jsonb)",
+    [c.empresaId, c.persona, JSON.stringify([{ vence_el: c.fechaCuota, monto: 400 }, { vence_el: c.fechaCuota, monto: 600 }])]]],
+  ['cobrar una cuota', true, (c) => ['select public.cobrar_fiado(p_empresa => $1, p_cliente => $2, p_monto => 100, p_cuota => $3)',
+    [c.empresaId, c.persona, c.cuota]]],
   // Al final a propósito: en prueba y pagando la archiva de verdad, y
   // después ya no se le podría transferir.
   ['archivar una cuenta con movimientos', true, (c) => ['select public.quitar_cuenta_dinero($1,$2)', [c.empresaId, c.cuenta2]]],
@@ -170,6 +182,11 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
     await val(U, 'select public.transferir_entre_cuentas($1,$2,$3,$4)', [E, c.cuenta, c.cuenta2, 1000]);
     await val(U, "select public.anotar_fiado($1,$2,5000,'previo')", [E, c.persona]);
     c.lineaFiado = (await val(U, "select public.anotar_fiado($1,$2,3000,'otra') id", [E, c.persona])).id;
+    // (127) Una deuda en dos cuotas, armada con la cuenta viva.
+    c.fechaCuota = (await db.query('select (public.hoy_empresa($1) + 30)::text d', [E])).rows[0].d;
+    c.lineaCuotas = (await val(U, "select public.anotar_fiado($1,$2,2000,'en dos veces',null,null,$3::jsonb) id",
+      [E, c.persona, JSON.stringify([{ vence_el: c.fechaCuota, monto: 1000 }, { vence_el: c.fechaCuota, monto: 1000 }])])).id;
+    c.cuota = (await db.query('select id from public.fiado_cuotas where fio_id = $1 and numero = 1', [c.lineaCuotas])).rows[0].id;
     await val(U, "select public.anotar_fiado($1,$2,2000,'una vez')", [E, c.personaSaldada]);
     await val(U, 'select public.cobrar_fiado($1,$2,2000)', [E, c.personaSaldada]);
     // Un pago de cuota: pagos_deuda.movimiento_id (015), SET NULL al vaciar.
@@ -257,6 +274,9 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
   }
   ok('y no quedó ninguna línea de fiado nueva',
     await contar('select count(*)::int n from public.fiado where empresa_id=$1', [NV.empresaId]), fiadoAntes);
+  ok('ni una cuota nueva, movida o marcada (127)',
+    (await db.query('select numero, vence_el::text, monto::int, avisado_el from public.fiado_cuotas where empresa_id=$1 order by fio_id, numero', [NV.empresaId])).rows,
+    [{ numero: 1, vence_el: NV.fechaCuota, monto: 1000, avisado_el: null }, { numero: 2, vence_el: NV.fechaCuota, monto: 1000, avisado_el: null }]);
   const cuentasDespues = await cuentasDe(NV.empresaId);
   ok('ni una cuenta nueva', cuentasDespues.length, cuentasAntes.length);
   ok('ni una archivada',
@@ -273,6 +293,8 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
   const DIRECTO = [
     ['un INSERT de fiado', "insert into public.fiado (empresa_id, cliente_id, tipo, monto, fecha, concepto) values ($1,$2,'fio',1,current_date,'x') returning id", (c) => [c.empresaId, c.persona]],
     ['un UPDATE de fiado', "update public.fiado set concepto = 'cambiado' where empresa_id = $1 returning id", (c) => [c.empresaId]],
+    ['un INSERT de fiado_cuotas', "insert into public.fiado_cuotas (empresa_id, cliente_id, fio_id, numero, vence_el, monto) values ($1,$2,$3,9,current_date,1) returning id", (c) => [c.empresaId, c.persona, c.lineaCuotas]],
+    ['un UPDATE de fiado_cuotas', 'update public.fiado_cuotas set avisado_el = current_date where empresa_id = $1 returning id', (c) => [c.empresaId]],
     ['un INSERT de cuentas_dinero', "insert into public.cuentas_dinero (empresa_id, nombre, tipo) values ($1,'Por atrás','banco') returning id", (c) => [c.empresaId]],
     ['un UPDATE de cuentas_dinero', "update public.cuentas_dinero set saldo_inicial = 999999 where id = $1 returning id", (c) => [c.cuenta]],
     ['un INSERT de ajustes_cuenta', "insert into public.ajustes_cuenta (empresa_id, cuenta_id, tipo, monto, fecha) values ($1,$2,'ajuste',1,current_date) returning id", (c) => [c.empresaId, c.cuenta]],
@@ -316,6 +338,12 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
     await contar('select count(*)::int n from public.turnos_bloqueo where empresa_id=$1', [NV.empresaId]), 1);
   // Los DELETE quedan libres (018): borrar no es cargar.
   aceptado('borrar una línea de fiado', await como(NV.uid, 'select public.borrar_linea_fiado($1)', [NV.lineaFiado]));
+  // (127) Sacarle las fechas a una deuda es borrar el calendario: el libro
+  // no cambia, así que anda como cualquier DELETE.
+  aceptado('sacarle las fechas a un fiado', await como(NV.uid, 'select public.quitar_cuotas($1)', [NV.lineaCuotas]));
+  ok('y se fueron las cuotas, no la deuda',
+    [await contar('select count(*)::int n from public.fiado_cuotas where empresa_id=$1', [NV.empresaId]),
+      await contar('select count(*)::int n from public.fiado where id=$1', [NV.lineaCuotas])], [0, 1]);
   ok('sacar una cuenta sin uso la borra (no la archiva)',
     (await fila(NV.uid, 'select public.quitar_cuenta_dinero($1,$2) j', [NV.empresaId, NV.cuentaVacia]))?.j, { ok: true, archivada: false });
   aceptado('deshacer una clase mal anotada', await como(NV.uid, 'select public.deshacer_clase($1)', [NV.clase]));

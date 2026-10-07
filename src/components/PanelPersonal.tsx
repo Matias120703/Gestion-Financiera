@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { type Moneda, dinero, dineroCorto, fechaLegible } from '@/lib/formato';
 import { Seccion, Vacio } from '@/components/Piezas';
-import type { ResumenPersonal, ResumenDeudas } from '@/lib/tipos';
+import type { ResumenPersonal, ResumenDeudas, ResumenFiado } from '@/lib/tipos';
 import type { Textos as Diccionario } from '@/i18n';
 import { categoriaVisible } from '@/i18n/nombres';
 
@@ -37,10 +37,12 @@ import { categoriaVisible } from '@/i18n/nombres';
  *   4. ¿De dónde vino lo que entró?
  */
 export function PanelPersonal({
-  resumen, deudas, moneda, locale, t,
+  resumen, deudas, fiado = null, moneda, locale, t,
 }: {
   resumen: ResumenPersonal;
   deudas: ResumenDeudas | null;
+  /** Para decir cuándo le devuelven lo prestado (127). Null: sin fecha, como siempre. */
+  fiado?: ResumenFiado | null;
   moneda: Moneda;
   locale: string;
   t: Diccionario;
@@ -88,6 +90,14 @@ export function PanelPersonal({
             titulo={t.panelPersonal.teDeben}
             valor={plata(resumen.fiado_pendiente)}
             tono="bueno"
+            // Si lo prestado tiene fecha (127): lo atrasado manda, en rojo;
+            // si no, cuándo le toca cobrar. Sin fechas, la fila de siempre.
+            detalle={(fiado?.atrasadas ?? 0) > 0
+              ? t.panelPersonal.cobroAtrasado(fiado?.atrasadas ?? 0)
+              : fiado?.proximo_vencimiento
+                ? t.panelPersonal.tePagaEl(fechaLegible(fiado.proximo_vencimiento, false, locale))
+                : undefined}
+            detalleMalo={(fiado?.atrasadas ?? 0) > 0}
           />
         )}
       </section>
@@ -187,19 +197,21 @@ export function PanelPersonal({
 }
 
 function Fila({
-  titulo, valor, detalle, tono,
+  titulo, valor, detalle, tono, detalleMalo = false,
 }: {
   titulo: string;
   valor: string;
   detalle?: string;
   tono?: 'bueno' | 'malo';
+  /** El detalle avisa de algo atrasado: va en rojo aunque el monto no. */
+  detalleMalo?: boolean;
 }) {
   const color = tono === 'bueno' ? 'text-verde-fuerte' : tono === 'malo' ? 'text-rojo' : '';
   return (
     <div className="flex items-center justify-between gap-3 px-5 py-3.5">
       <span className="min-w-0">
         <span className="block text-[14.5px] font-semibold">{titulo}</span>
-        {detalle && <span className="mt-0.5 block truncate text-[12.5px] text-tinta/50">{detalle}</span>}
+        {detalle && <span className={`mt-0.5 block truncate text-[12.5px] ${detalleMalo ? 'font-semibold text-rojo' : 'text-tinta/50'}`}>{detalle}</span>}
       </span>
       <span className={`shrink-0 text-[16px] font-bold tabular-nums tracking-tight ${color}`}>{valor}</span>
     </div>

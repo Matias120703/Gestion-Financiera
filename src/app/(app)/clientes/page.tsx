@@ -87,6 +87,12 @@ export default async function PaginaClientes() {
 
   const saldos: Record<string, number> = {};
   for (const d of fiado.clientes) saldos[d.cliente_id] = d.saldo;
+  // Quién tiene fecha de cobro (127): su próxima cuota, para decir en la
+  // ficha «vence el 15/11» o «atrasado». Sale de la misma lectura.
+  const proximas: Record<string, { vence_el: string; dias: number }> = {};
+  for (const d of fiado.clientes) {
+    if (d.proxima) proximas[d.cliente_id] = { vence_el: d.proxima.vence_el, dias: d.proxima.dias };
+  }
 
   return (
     <PantallaClientes
@@ -96,6 +102,7 @@ export default async function PaginaClientes() {
       negocio={ctx.empresa.nombre}
       clientes={clientes}
       saldos={saldos}
+      proximas={proximas}
       // Eliminar esconde historia, y eso lo decide quien administra. La base
       // lo vuelve a verificar (058).
       puedeEliminar={ctx.esAdmin}

@@ -38,6 +38,9 @@ export const reportesComercioEs = {
   fiado: {
     titulo: 'Lo que te deben',
     hoy: 'A hoy, no al cierre del período.',
+    // De lo que tiene fecha de cobro (127): una línea, solo si hay.
+    atrasado: 'Atrasado',
+    venceEstaSemana: 'Vence esta semana',
     clientes: (n: number) => (n === 1 ? '1 cliente' : `${n} clientes`),
     hace: (dias: number) => (dias === 0 ? 'desde hoy' : dias === 1 ? 'hace 1 día' : `hace ${dias} días`),
     enElPeriodo: 'En este período',
@@ -105,6 +108,8 @@ export const reportesComercioPt: typeof reportesComercioEs = {
   fiado: {
     titulo: 'O que devem pra você',
     hoy: 'Hoje, não no fechamento do período.',
+    atrasado: 'Atrasado',
+    venceEstaSemana: 'Vence esta semana',
     clientes: (n: number) => (n === 1 ? '1 cliente' : `${n} clientes`),
     hace: (dias: number) => (dias === 0 ? 'desde hoje' : dias === 1 ? 'há 1 dia' : `há ${dias} dias`),
     enElPeriodo: 'Neste período',

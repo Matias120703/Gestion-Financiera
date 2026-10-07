@@ -72,7 +72,19 @@ export function enLaVistaComercio(l: LecturasComercio, c: Conversor): LecturasCo
     fiado: l.fiado && {
       ...l.fiado,
       total: c.x(l.fiado.total),
-      clientes: l.fiado.clientes.map((f) => ({ ...f, saldo: c.x(f.saldo) })),
+      // Los montos de las fechas de cobro (127) también: si no, la columna
+      // «Próxima cuota» saldría en otra moneda que «Te debe».
+      monto_atrasado: c.x(l.fiado.monto_atrasado ?? 0),
+      monto_hoy: c.x(l.fiado.monto_hoy ?? 0),
+      monto_semana: c.x(l.fiado.monto_semana ?? 0),
+      clientes: l.fiado.clientes.map((f) => ({
+        ...f,
+        saldo: c.x(f.saldo),
+        ...(f.sin_fecha == null ? {} : { sin_fecha: c.x(f.sin_fecha) }),
+        ...(f.con_fecha == null ? {} : { con_fecha: c.x(f.con_fecha) }),
+        ...(f.monto_atrasado == null ? {} : { monto_atrasado: c.x(f.monto_atrasado) }),
+        ...(f.proxima ? { proxima: { ...f.proxima, pendiente: c.x(f.proxima.pendiente) } } : {}),
+      })),
     },
     fiadoPeriodo: l.fiadoPeriodo && {
       otorgado: c.x(l.fiadoPeriodo.otorgado),
@@ -526,11 +538,13 @@ export function libroComercio(datos: DatosBaseLibro & ExtrasComercio): ExcelJS.W
       views: [{ showGridLines: false }],
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true },
     });
-    h.columns = [{ width: 5 }, { width: 32 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 5 }];
-    encabezado(h, empresa.nombre, tc.hojaFiado.toUpperCase(), periodo, 6);
+    // Dos columnas más desde la 127: la próxima cuota y cuándo vence. Van al
+    // final, así las de siempre quedan en su lugar; vacías si no hay fecha.
+    h.columns = [{ width: 5 }, { width: 32 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 18 }, { width: 16 }, { width: 5 }];
+    encabezado(h, empresa.nombre, tc.hojaFiado.toUpperCase(), periodo, 8);
 
     let f = 6;
-    titulito(h, f, tc.fiadoHoyTitulo(hoyTexto.toUpperCase()));
+    titulito(h, f, tc.fiadoHoyTitulo(hoyTexto.toUpperCase()), 'H');
     f += 1;
     const deudores = fiado ? deudoresPorAntiguedad(fiado) : [];
     if (deudores.length === 0) {
@@ -541,17 +555,22 @@ export function libroComercio(datos: DatosBaseLibro & ExtrasComercio): ExcelJS.W
       f += 1;
       deudores.forEach((d, i) => {
         const fila = h.getRow(f);
-        fila.values = [i + 1, d.nombre, d.saldo, d.desde ? fecha(d.desde) : null, d.dias];
-        for (let n = 1; n <= 5; n++) {
+        // La cuota pendiente más próxima: lo que falta de ella y su fecha.
+        const p = d.proxima && d.proxima.pendiente > 0 ? d.proxima : null;
+        fila.values = [i + 1, d.nombre, d.saldo, d.desde ? fecha(d.desde) : null, d.dias,
+          p ? p.pendiente : null, p ? fecha(p.vence_el) : null];
+        for (let n = 1; n <= 7; n++) {
           const c = fila.getCell(n);
           c.font = { name: 'Calibri', size: 10 };
           c.border = bordeFino;
           c.alignment = { vertical: 'middle', horizontal: n === 2 ? 'left' : n === 1 ? 'center' : 'right' };
-          if (n === 3) c.numFmt = fmt;
+          if (n === 3 || n === 6) c.numFmt = fmt;
           if (n === 5) c.numFmt = '#,##0';
           cebra(c, i);
         }
         fila.getCell(3).font = { name: 'Calibri', size: 10, bold: true, color: { argb: ROJO } };
+        // Una fecha que ya pasó va en rojo: es la que hay que salir a cobrar.
+        if (p && p.dias < 0) fila.getCell(7).font = { name: 'Calibri', size: 10, bold: true, color: { argb: ROJO } };
         f += 1;
       });
       h.getRow(f).values = ['', 'TOTAL', deudores.reduce((s, d) => s + d.saldo, 0)];

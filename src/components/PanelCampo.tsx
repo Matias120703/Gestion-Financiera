@@ -4,6 +4,7 @@ import {
 } from '@/lib/formato';
 import { Vacio } from '@/components/Piezas';
 import { BilleteraPanel } from '@/components/BilleteraPanel';
+import { PastillaCuotas } from '@/components/PastillaCuotas';
 import { cultivoPorNombre, sacasPorHa, unidadDePrecio, precioEnUnidad } from '@/lib/agricultura';
 import { cultivoVisible } from '@/components/campanas/utiles';
 import type { Textos } from '@/i18n/textos/es';
@@ -153,7 +154,11 @@ export function PanelCampo({
                 {t.panel.clientesQueDeben(fiado.cuantos)} · {t.panel.plataQueNoEntro}
               </p>
             </div>
-            <span className="shrink-0 text-[13px] font-semibold text-verde-fuerte">{t.panel.verFiado}</span>
+            {/* Con cobros con fecha (127): lo más urgente, como en el panel de siempre. */}
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <PastillaCuotas fiado={fiado} plata={plata} textos={t.panel} />
+              <span className="text-[13px] font-semibold text-verde-fuerte">{t.panel.verFiado}</span>
+            </div>
           </div>
         </Link>
       )}

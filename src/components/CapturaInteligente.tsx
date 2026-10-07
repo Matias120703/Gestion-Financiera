@@ -27,7 +27,10 @@ import { useBloquearFondo } from '@/lib/fondo';
 import { useAlertaALaVista, useFocoDeDialogo, useVistaSinTeclado } from '@/components/Hoja';
 import { CampoMonto } from '@/components/CampoMonto';
 import { ElegirCuenta, cuentaDelCobro, useCuentasParaElegir, type SentidoPlata } from '@/components/FormaDeCobro';
-import type { CuentaParaElegir } from '@/lib/tipos';
+import type { CuentaParaElegir, Plan } from '@/lib/tipos';
+import { CuandoTePaga } from '@/components/CuandoTePaga';
+import { ajustarPlan, planValido } from '@/lib/cuotas';
+import { planDeLoDictado } from '@/lib/cuotas-dictadas';
 
 type Modo = 'cerrado' | 'menu' | 'audio' | 'texto' | 'procesando' | 'revisar';
 
@@ -137,6 +140,19 @@ export function BotonCaptura({
    * sobre lo que ya se entendió, que es cuando la persona lo tiene fresco.
    */
   const [elegido, setElegido] = useState<ClienteElegido>({ id: null, nombre: '', telefono: '' });
+  /**
+   * Cuándo le pagan una venta fiada (127): «le vendí la tele a Ana en 6
+   * cuotas». Es el plan que se ve en la revisión y el que se manda; null =
+   * sin fecha, la venta fiada de siempre.
+   */
+  const [planVenta, setPlanVenta] = useState<Plan | null>(null);
+  /**
+   * La venta se guardó pero las cuotas no. No se cierra sola: es lo único
+   * que la persona tiene que saber, y un cartel que se va con la captura no
+   * lo lee nadie. Tampoco se vuelve a la revisión: guardar otra vez
+   * duplicaría la venta.
+   */
+  const [quedoSinCuotas, setQuedoSinCuotas] = useState(false);
   const [guardando, setGuardando] = useState(false);
   /**
    * La revisión de fiado, de producto o de cliente está guardando (01/10).
@@ -232,6 +248,8 @@ export function BotonCaptura({
     // El cliente elegido es de ESTA captura. Si se quedara, la próxima venta
     // saldría a nombre de quien fue el último, sin que nadie lo eligiera.
     setElegido({ id: null, nombre: '', telefono: '' });
+    setPlanVenta(null);
+    setQuedoSinCuotas(false);
     setPaso('');
   }
 
@@ -291,6 +309,13 @@ export function BotonCaptura({
       // el campo vacío la obligaba a escribir de nuevo algo que acababa de
       // decir, y si tocaba Guardar sin darse cuenta, la venta no salía.
       setElegido({ id: null, nombre: interpretado.contraparte ?? '', telefono: '' });
+      // Lo dictado llega ya armado como plan, a la vista para corregirlo. El
+      // de un fiado suelto lo arma RevisionFiado; acá, el de la venta fiada.
+      setPlanVenta(
+        interpretado.con_fechas && interpretado.tipo === 'venta' && interpretado.metodo_pago === 'credito'
+          ? planDeLoDictado(interpretado.cuotas, interpretado.monto, hoyISO(zona), decimalesDe(moneda))
+          : null,
+      );
       setModo('revisar');
     } catch (e: any) {
       setError(mensajeDeError(e, t.captura.fallóInterpretar));
@@ -466,6 +491,7 @@ export function BotonCaptura({
     setError('');
     setPaso(t.comun.guardando);
     let idGuardado: string | null = null;
+    let sinCuotas = false;
     try {
       const supabase = clienteNavegador();
 
@@ -587,6 +613,26 @@ export function BotonCaptura({
           });
           if (errLote) console.error('[captura] asignar_a_lote', errLote.message);
         }
+
+        // Las fechas de cobro, igual que en Vender: segundo paso, con la
+        // venta ya guardada. Si falla NO se deshace la venta (reintentar la
+        // duplicaría): se avisa y se ponen desde Fiado. El plan se reparte
+        // sobre lo que la base anotó como fiado, que es el bruto menos el
+        // descuento, no siempre el monto escrito.
+        if (idGuardado && borrador.con_fechas === true && planVenta && borrador.metodo_pago === 'credito') {
+          const dec = decimalesDe(moneda);
+          const fiado = bruto - descuento;
+          const plan = ajustarPlan(planVenta, fiado, dec);
+          if (planValido(plan, fiado, dec)) {
+            const { error: errPlan } = await supabase.rpc('programar_cuotas', { p_venta: idGuardado, p_plan: plan });
+            if (errPlan) {
+              console.error('[captura] programar_cuotas', errPlan.message);
+              sinCuotas = true;
+            }
+          } else {
+            sinCuotas = true;
+          }
+        }
       } else {
         // Gastos y otros ingresos no llevan items, stock ni descuento.
         const { data, error } = await supabase.from('movimientos').insert({
@@ -637,7 +683,12 @@ export function BotonCaptura({
         }
       }
 
-      cerrar();
+      if (sinCuotas) {
+        // Guardada, pero sin fechas: se queda abierta diciéndolo.
+        setQuedoSinCuotas(true);
+      } else {
+        cerrar();
+      }
       router.refresh();
     } catch (e: any) {
       setError(mensajeDeError(e, t.captura.noSePudoGuardar));
@@ -852,7 +903,17 @@ export function BotonCaptura({
             {/* Lo que te deben tiene su propia revisión: pregunta quién, que es
                 lo único que importa, y guarda en el libro de fiado. */}
             {modo === 'revisar' && borrador && (
-              borrador.tipo === 'fiado' || borrador.tipo === 'cobro_fiado' ? (
+              quedoSinCuotas ? (
+                <div>
+                  <p role="alert" className="rounded-xl bg-ambar-claro px-3.5 py-3 text-[14px] font-medium leading-snug text-ambar">
+                    {t.venta.cuotasNoQuedaron}
+                  </p>
+                  <div className="pie-captura">
+                    <Link href="/fiado" className="boton-suave py-3 text-center" onClick={cerrar}>{tipoCuenta === 'personal' ? t.nav.meDeben : t.nav.fiado}</Link>
+                    <button className="boton-principal py-3" onClick={cerrar}>{t.captura.entendido}</button>
+                  </div>
+                </div>
+              ) : borrador.tipo === 'fiado' || borrador.tipo === 'cobro_fiado' ? (
                 <RevisionFiado
                   borrador={borrador} moneda={moneda} empresaId={empresaId} tipoCuenta={tipoCuenta}
                   cuentas={cuentas}
@@ -882,6 +943,7 @@ export function BotonCaptura({
                   onCambio={setBorrador} onCancelar={() => setModo('menu')} onGuardar={guardar}
                   empresaId={empresaId} elegido={elegido} setElegido={setElegido}
                   cuentas={cuentas} cuentaElegida={cuentaElegida} onElegirCuenta={setCuentaElegida}
+                  plan={planVenta} onPlan={setPlanVenta} hoy={hoyISO(zona)}
                 />
               )
             )}
@@ -935,7 +997,7 @@ function Opcion({
 function Revision({
   borrador, moneda, error, guardando, paso, tipoCuenta, deudas, crearGasto, onCrearGasto,
   onCambio, onCancelar, onGuardar, empresaId, elegido, setElegido,
-  cuentas, cuentaElegida, onElegirCuenta,
+  cuentas, cuentaElegida, onElegirCuenta, plan, onPlan, hoy,
 }: {
   borrador: CapturaDeVoz;
   moneda: string;
@@ -957,6 +1019,11 @@ function Revision({
   cuentas: CuentaParaElegir[];
   cuentaElegida: string | null;
   onElegirCuenta: (cuenta: string | null) => void;
+  /** Cuándo le pagan la venta fiada (127). Null = sin fecha. */
+  plan: Plan | null;
+  onPlan: (p: Plan | null) => void;
+  /** Hoy en la zona del negocio. */
+  hoy: string;
 }) {
   const t = useTextos();
   const idioma = useIdioma();
@@ -1126,6 +1193,24 @@ function Revision({
               etiqueta={t.captura.aQuienSeLoFias}
               pedirTelefono
               obligatorio
+            />
+          </div>
+        )}
+
+        {/* Fiar es también decir cuándo te paga (127). Se ve SIEMPRE que la
+            venta es fiada, se haya dictado o no: lo que entendió la IA («en
+            6 cuotas») se corrige acá antes de guardar. Arranca en «Sin
+            fecha» si no dijo nada: la venta fiada de siempre. */}
+        {borrador.tipo === 'venta' && borrador.metodo_pago === 'credito' && borrador.con_fechas === true && (
+          <div className="col-span-2 min-w-0">
+            {borrador.cuotas && borrador.cuotas.cantidad > 1 && plan?.length === borrador.cuotas.cantidad && (
+              <p className="mb-2 text-[12.5px] font-medium text-tinta/55">
+                {t.captura.cuotasEntendidas(borrador.cuotas.cantidad)}
+              </p>
+            )}
+            <CuandoTePaga
+              total={borrador.monto} hoy={hoy} moneda={moneda}
+              valor={plan} alCambiar={onPlan} deshabilitado={guardando}
             />
           </div>
         )}
