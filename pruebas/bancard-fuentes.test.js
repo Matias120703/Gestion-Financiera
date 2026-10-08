@@ -350,6 +350,29 @@ console.log('\n── La revisión final del 07/10, en las pantallas ───�
       sinComentarios(avisosB).includes("avisarAdministracion(servicio, r, MOTIVO_REVERSA_SOBRE_PAGADA, 'reversa')")],
     [true, true, true]);
 
+  // 08/10/2026 · «Entró un pago»: a la administración le llega un push por cada pago aprobado.
+  {
+    const A = require('../.compilado/aviso-cobro-admin.js');
+    const codigo = sinComentarios(avisosB);
+    const bloque = codigo.slice(codigo.indexOf('async function avisarCobroALaAdministracion('), codigo.indexOf('const MOTIVO_REVERSA_SOBRE_PAGADA'));
+    ok('un pago aprobado le avisa a la administración, después del comprobante y aparte del «para revisar»',
+      /await mandarComprobante\(servicio, r\)\.catch\(\(\) => undefined\);\s+await avisarCobroALaAdministracion\(servicio, r\)\.catch\(\(\) => undefined\);\s+if \(typeof r\.revisar === 'string' && r\.revisar\) await avisarAdministracion\(/.test(codigo), true);
+    ok('una sola vez por pedido (reserva el envío con el número de operación) y solo a la administración',
+      [bloque.includes("p_clave: `bancard_cobro_admin:${operacion}`"), bloque.includes("rpc('usuarios_de_la_administracion')"), bloque.includes('destinatariosDe(')],
+      [true, true, false]);
+    ok('y no lleva nada de la tarjeta', /tarjeta|ultimos4|marca|alias/.test(bloque.replace(/tarjeta guardada/g, '')), false);
+    ok('el texto: cuánto, quién, qué y cómo',
+      A.textoDelCobroParaLaAdministracion({ importe: 190000, nombre: ' Kiosco Rosa ', concepto: 'Plan Pro, por mes', entorno: 'produccion', origen: 'usuario', medio: 'formulario' }),
+      { titulo: 'Cobraste Gs. 190.000', cuerpo: 'Kiosco Rosa · Plan Pro, por mes · con tarjeta o QR' });
+    ok('en el ambiente de prueba va marcado «Prueba», para no leerlo como plata de verdad',
+      A.textoDelCobroParaLaAdministracion({ importe: '80000.00', nombre: 'Prueba', concepto: 'Cambio de plan: de Básico a Pro', entorno: 'staging', origen: 'usuario', medio: 'token' }),
+      { titulo: 'Prueba · Cobraste Gs. 80.000', cuerpo: 'Prueba · Cambio de plan: de Básico a Pro · con su tarjeta guardada' });
+    ok('el cobro automático lo dice, y un dato raro no rompe el aviso',
+      [A.textoDelCobroParaLaAdministracion({ importe: 250000, nombre: 'Taller', concepto: 'Plan Premium, por mes', entorno: 'produccion', origen: 'automatico', medio: 'token' }).cuerpo,
+        A.textoDelCobroParaLaAdministracion({ importe: null, nombre: null, concepto: '', entorno: undefined, origen: null, medio: null })],
+      ['Taller · Plan Premium, por mes · cobro automático', { titulo: 'Prueba · Cobraste Gs. 0', cuerpo: 'con tarjeta o QR' }]);
+  }
+
   // D5 · un 5xx al cobrar con la tarjeta guardada queda incierta.
   ok('cobrarOperacionTomada solo cierra como «no se cobró» un error de Bancard por debajo de 500',
     [sinComentarios(leer('src/lib/bancard-flujo.ts')).includes("if (r.clase === 'bancard' && r.http < 500) {"),
