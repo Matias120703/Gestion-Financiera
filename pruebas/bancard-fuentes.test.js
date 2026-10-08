@@ -252,6 +252,12 @@ console.log('\n── La confirmación: pública, sin cookies, con tope ──�
     [/cookies\(|clienteServidor|redirect\(/.test(conf)], [false]);
   ok('lee el cuerpo con tope de 64 KB', conf.includes('64 * 1024'), true);
   ok('corre en Node, sin caché, con 30 s', [conf.includes("runtime = 'nodejs'"), conf.includes("dynamic = 'force-dynamic'"), conf.includes('maxDuration = 30')], [true, true, true]);
+  // 08/10/2026: el portal de Bancard no guardaba la dirección; una visita contestaba 405.
+  const visita = conf.slice(conf.indexOf('export async function GET('), conf.indexOf('async function leerConTope('));
+  ok('una visita (GET) contesta 200 con el mismo «success», sin recibir el pedido',
+    [/export async function GET\(\)/.test(conf), visita.includes("status: 'success'"), visita.includes('status: 200')], [true, true, true]);
+  ok('y no hace nada: ni la base, ni Bancard, ni lee el pedido',
+    /dependencias\(|recibirConfirmacion|recibirSinConfigurar|request|leerConTope\(/.test(visita), false);
 }
 
 console.log('\n── Del navegador no viaja un importe ──────────────────────');
