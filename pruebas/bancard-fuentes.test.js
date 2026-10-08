@@ -373,6 +373,35 @@ console.log('\n── La revisión final del 07/10, en las pantallas ───�
       ['Taller · Plan Premium, por mes · cobro automático', { titulo: 'Prueba · Cobraste Gs. 0', cuerpo: 'con tarjeta o QR' }]);
   }
 
+  // 08/10/2026 · el panel muestra solo lo pagado; abrir el formulario y salir no es un pago.
+  {
+    const P = require('../.compilado/pagos-admin.js');
+    const ops = [
+      { id: 13, estado: 'creada', revisar: null },
+      { id: 12, estado: 'revertida', revisar: null },
+      { id: 11, estado: 'vencida', revisar: null },
+      { id: 10, estado: 'pagada', revisar: null },
+      { id: 9, estado: 'rechazada', revisar: null },
+      { id: 8, estado: 'incierta', revisar: null },
+      { id: 7, estado: 'en_3ds', revisar: null },
+      { id: 6, estado: 'vencida', revisar: 'Pago que entró tarde, sobre una operación ya vencida' },
+      { id: 5, estado: 'rechazada', revisar: '   ' },
+    ];
+    const s = P.separarPagos(ops);
+    ok('pagos: lo pagado, lo revertido, lo que está sin resolver y lo que hay que revisar, en el mismo orden',
+      s.pagos.map((o) => o.id), [12, 10, 8, 7, 6]);
+    ok('intentos: abrir y salir, dejar vencer y un rechazo', s.intentos.map((o) => o.id), [13, 11, 9, 5]);
+    ok('nada se pierde ni se repite', [s.pagos.length + s.intentos.length, new Set([...s.pagos, ...s.intentos].map((o) => o.id)).size], [9, 9]);
+    ok('el enlace dice cuántos hay, en singular y en plural, y cómo esconderlos',
+      [P.textoDeIntentos(1, false), P.textoDeIntentos(4, false), P.textoDeIntentos(4, true)],
+      ['Ver también 1 intento sin pagar', 'Ver también 4 intentos sin pagar', 'Ocultar los intentos sin pagar']);
+    const panel = sinComentarios(leer('src/components/bancard/PanelBancardAdmin.tsx'));
+    ok('«Últimos pagos» y los pagos de una cuenta pasan por esa regla; la lista entera solo se arma adentro',
+      [(panel.match(/<PagosYIntentos /g) || []).length, (panel.match(/<ListaOperaciones /g) || []).length,
+        panel.includes('const lista = verIntentos ? ops : pagos;'), panel.includes('<ListaOperaciones ops={paraRevisar} conCuenta onCambio={cargar} />')],
+      [2, 2, true, true]);
+  }
+
   // D5 · un 5xx al cobrar con la tarjeta guardada queda incierta.
   ok('cobrarOperacionTomada solo cierra como «no se cobró» un error de Bancard por debajo de 500',
     [sinComentarios(leer('src/lib/bancard-flujo.ts')).includes("if (r.clase === 'bancard' && r.http < 500) {"),
