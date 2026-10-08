@@ -612,10 +612,17 @@ console.log('\n── Tarjetas olvidadas en Bancard (07/10) ──────�
   // Sin migración: todo lo que el flujo le pide a la base ya está en las
   // migraciones de Bancard (124 a 126). Una función nueva acá fallaría en
   // producción hasta aplicar su migración.
-  const sqlBancard = ['124_bancard_precio_y_tablas.sql', '125_bancard_pagos.sql', '126_bancard_reloj_y_avisos.sql']
+  //
+  // 07/10 (cambiar de plan): la lista suma la 130. El flujo llama ahora una
+  // función que nace ahí (`bancard_programar_plan`, programar la baja de
+  // plan), y por eso la 130 se aplica ANTES de publicar este código. Que sea
+  // la ÚNICA función de fuera de la 124-126 lo afirma el grupo «Cambiar de
+  // plan», más abajo; y que la herramienta de tarjetas olvidadas no usa
+  // ninguna nueva lo sigue diciendo el último dato de esta comprobación.
+  const sqlBancard = ['124_bancard_precio_y_tablas.sql', '125_bancard_pagos.sql', '126_bancard_reloj_y_avisos.sql', '130_cambiar_de_plan.sql']
     .map((n) => leer(`supabase/migrations/${n}`)).join('\n');
   const pedidas = [...new Set(flujoFuente.match(/'bancard_[a-z_]+'/g) || [])].map((s) => s.slice(1, -1));
-  ok('la herramienta no necesita ninguna función nueva en la base: todas las que llama el flujo existen desde la 124-126',
+  ok('la herramienta no necesita ninguna función nueva en la base: todas las que llama el flujo existen en las migraciones de Bancard (124-126 y 130)',
     [pedidas.length > 15, pedidas.includes('bancard_tarjeta_interna'), pedidas.filter((n) => !sqlBancard.includes(`function public.${n}(`)),
       [...new Set((cuerpoBuscar + cuerpoBorrar).match(/'bancard_[a-z_]+'/g) || [])]],
     [true, true, [], ["'bancard_quitar_tarjeta'"]]);
@@ -708,6 +715,267 @@ console.log('\n── La respuesta de un cobro que no se entendió (07/10/2026) 
   const sanear = leer('supabase/migrations/125_bancard_pagos.sql');
   const prohibidas = sanear.slice(sanear.indexOf("lower(e.key) not in ("), sanear.indexOf("lower(e.key) not in (") + 400);
   ok('«forma» no está entre las claves que la base descarta del detalle', /'forma'/.test(prohibidas), false);
+}
+
+console.log('\n── Cambiar de plan con días pagos (130, 07/10/2026) ─────────');
+{
+  // Matías: «Si la persona quiere cambiar al Pro o al Premium me lleva al
+  // WhatsApp. ¿No hay una forma de que se pueda pagar con tarjeta o con QR?»
+  // Subir se paga hoy (la diferencia por los días que faltan); bajar se
+  // programa para la renovación. Lo que corre está en bancard-flujo.test.js
+  // y en cambiar-plan.test.js; acá, lo que solo se puede cuidar leyendo.
+  const cuantas = (fuente, re) => (fuente.match(re) || []).length;
+  const hoja = sinComentarios(leer('src/components/bancard/HojaCambiarPlan.tsx'));
+  const baja = sinComentarios(leer('src/components/bancard/BajaDePlan.tsx'));
+  const plan = sinComentarios(leer('src/app/(app)/plan/page.tsx'));
+  const servidor = sinComentarios(leer('src/lib/bancard-servidor.ts'));
+  const flujo = sinComentarios(leer('src/lib/bancard-flujo.ts'));
+  const ruta = sinComentarios(leer('src/app/api/pagos/bancard/plan/route.ts'));
+  const m130 = leer('supabase/migrations/130_cambiar_de_plan.sql');
+  const nuevos = ['HojaCambiarPlan', 'BotonCambiarPlan', 'BajaDePlan'];
+  /** El cuerpo de una función de la hoja, hasta su llave de cierre. */
+  const funcionDe = (fuente, nombre) => {
+    const i = fuente.indexOf(`async function ${nombre}(`);
+    return i < 0 ? '' : fuente.slice(i, fuente.indexOf('\n  }\n', i));
+  };
+
+  // ---- Del navegador no viaja un importe ni un período.
+  ok('los componentes nuevos son del navegador y no importan nada del servidor',
+    [nuevos.filter((n) => !/^'use client'/.test(leer(`src/components/bancard/${n}.tsx`))),
+      nuevos.filter((n) => /from ['"]@\/lib\/(bancard|bancard-servidor|bancard-flujo|supabase\/servicio)['"]/.test(leer(`src/components/bancard/${n}.tsx`)))],
+    [[], []]);
+  const cuerpoDelCambio = hoja.slice(hoja.indexOf('const cuerpo = () =>'), hoja.indexOf('});', hoja.indexOf('const cuerpo = () =>')) + 3);
+  ok('el pedido de cambio manda el tipo, a qué plan y cuántas personas; ni importe, ni período, ni fecha',
+    [cuerpoDelCambio.includes("tipo: 'cambio'"), cuerpoDelCambio.includes('plan: datos.plan'), cuerpoDelCambio.includes('personas: conPersonas ? personas : null'),
+      /importe|total|amount|monto|precio|periodo|vence|fecha|dias/.test(cuerpoDelCambio), cuantas(hoja, /body: cuerpo\(\)/g), cuantas(hoja, /JSON\.stringify\(/g)],
+    [true, true, true, false, 2, 1]);
+  ok('va por las dos rutas de pago de siempre, y esas rutas siguen leyendo el pedido con leerPedidoDePago (sin importe)',
+    [cuantas(hoja, /fetch\('\/api\/pagos\/bancard\/pago'/g), cuantas(hoja, /fetch\('\/api\/pagos\/bancard\/cobrar'/g), cuantas(hoja, /fetch\(/g),
+      ['pago', 'cobrar'].map((r) => sinComentarios(leer(`src/app/api/pagos/bancard/${r}/route.ts`)))
+        .map((s) => [s.includes('leerPedidoDePago(cuerpo)'), /cuerpo\.(importe|amount|monto|precio|periodo)/.test(s)])],
+    [1, 1, 2, [[true, false], [true, false]]]);
+  ok('leerPedidoDePago: del cambio sale el plan de destino (Pro o Premium) y el período va SIEMPRE en null',
+    [servidor.includes("if (c.plan !== 'pro' && c.plan !== 'negocio') return null;"), servidor.includes('return { tipo, plan: c.plan, periodo: null, personas };'),
+      servidor.includes("tipo: 'plan' | 'personas' | 'cambio';"), flujo.includes("tipo: 'plan' | 'personas' | 'cambio';")],
+    [true, true, true, true]);
+  ok('la hoja no hace ninguna cuenta: el importe sale de UNA lectura de la base (cotizar_cambio), con la sesión',
+    [cuantas(hoja, /rpc\('cotizar_cambio'/g), /[*/]\s*(30|365)\b|diferencia\s*[*/]|dias_[a-z]+\s*[*/]/.test(hoja), /Math\.(round|ceil|floor)/.test(hoja)],
+    [1, false, false]);
+  // La forma de lo que cotiza la base y la que espera la pantalla, clave por clave.
+  const devuelve = m130.slice(m130.indexOf('create or replace function public.prorrateo_de_plan('), m130.indexOf('revoke all on function public.prorrateo_de_plan('));
+  const clavesDeLaBase = [...devuelve.slice(devuelve.indexOf('return jsonb_build_object(')).matchAll(/\n\s+'([a-z_]+)',\s/g)].map((m) => m[1]).sort();
+  const cotizacion = leer('src/lib/cotizacion.ts');
+  const interfaz = cotizacion.slice(cotizacion.indexOf('export interface CotizacionDeCambio {'), cotizacion.indexOf('\n}\n', cotizacion.indexOf('export interface CotizacionDeCambio {')));
+  const clavesDeLaPantalla = [...interfaz.matchAll(/\n  ([a-z_]+): /g)].map((m) => m[1]).sort();
+  ok('lo que la pantalla espera de la cotización son las 25 claves que devuelve prorrateo_de_plan (130)',
+    [clavesDeLaBase.length, clavesDeLaPantalla.filter((k) => !clavesDeLaBase.includes(k)), clavesDeLaBase.filter((k) => !clavesDeLaPantalla.includes(k))], [25, [], []]);
+
+  // ---- Volver a cotizar antes de cobrar (con la tarjeta guardada no hay paso «Vas a pagar»).
+  const abrir = funcionDe(hoja, 'abrir');
+  const cobrar = funcionDe(hoja, 'cobrar');
+  const sigue = funcionDe(hoja, 'sigueIgual');
+  const antesDelPedido = (cuerpo, destino) => {
+    const i = cuerpo.indexOf('if (!(await sigueIgual())) {');
+    return [i > 0, i < cuerpo.indexOf(`fetch('/api/pagos/bancard/${destino}'`), /if \(!\(await sigueIgual\(\)\)\) \{\s+setPaso\('elegir'\);\s+return;\s+\}/.test(cuerpo)];
+  };
+  ok('los dos botones vuelven a pedirle la cotización a la base ANTES de mandar el pedido, y si cambió no cobran',
+    [antesDelPedido(abrir, 'pago'), antesDelPedido(cobrar, 'cobrar')], [[true, true, true], [true, true, true]]);
+  ok('«sigue igual» compara el importe y la fecha de la cotización nueva con lo que la hoja muestra; si cambió, deja lo nuevo a la vista',
+    [sigue.includes('const r = await cotizar(personas);'), sigue.includes('Number(nueva.importe) === Number(cot.importe)'),
+      sigue.includes('new Date(nueva.vence_hasta).getTime() === new Date(cot.vence_hasta).getTime()'),
+      sigue.includes('if (mismoImporte && mismaFecha) return true;'), sigue.includes('setCot(nueva);'), sigue.includes('q.cambioElImporte('),
+      sigue.trimEnd().endsWith('return false;')],
+    [true, true, true, true, true, true, true]);
+  ok('y no abre un formulario viejo que cobra otra cosa que lo recién cotizado',
+    /if \(Number\(d\.importe\) !== Number\(cot\.importe\)\) \{\s+setError\(h\.enCurso\);\s+setPaso\('elegir'\);\s+return;\s+\}\s+setAbierto\(/.test(abrir), true);
+  ok('el pago y el 3D Secure, como en las otras hojas: no reciben ni miran lo que dice el formulario',
+    [cuantas(hoja, /onTermino=\{\(\) => \{/g), cuantas(hoja, /onTermino=/g), hoja.includes('<ResultadoDelPago'), /payment_|_success|_fail/.test(hoja)], [2, 2, true, false]);
+
+  // ---- Lo que se lee antes de pagar.
+  ok('antes de pagar: cuánto se paga hoy, que la fecha no cambia, cuánto es la renovación (con y sin descuento) y qué día se cobra sola',
+    ['q.sePagaHoy(gs(cot.importe), cot.dias_restantes)', 'q.sePagaHoyEntero(gs(cot.importe), anual)', 'q.pruebaNoSeCobra(cot.dias_gratis)',
+      'q.mismaFecha(fecha(cot.vence_hasta))', 'q.desdeProxima(gs(cot.renovacion), anual)',
+      "q.desdeProximaConDescuento(gs(cot.renovacion), gs(cot.renovacion_hoy), anual, cot.descuento_fase === 'constancia')",
+      'diaDelCobro(datos.fechaDelDebito, locale)', 'conDescuento ? q.sinDescuento : q.sinDescuentoHoy', 'q.seActiva', 'q.otroPeriodo(anual)',
+      'q.cancelaLoProgramado', 'h.seCobraEnGuaranies', '<ContactoDePago />'].filter((p) => !hoja.includes(p)), []);
+  ok('con descuento se dicen los dos números solo si la base dice que hay descuento en la renovación',
+    hoja.includes('const conDescuento = cot ? Number(cot.renovacion_hoy) < Number(cot.renovacion) : false;'), true);
+
+  // ---- Bajar: por el servidor, sin cobro.
+  const programarEnPantalla = baja.slice(baja.indexOf('async function programar('), baja.indexOf('return { ocupado, error, setError, programar };'));
+  ok('bajar y deshacer van por /api/pagos/bancard/plan (null deshace): solo la cuenta y el plan, sin rpc desde el navegador',
+    [cuantas(baja, /fetch\('\/api\/pagos\/bancard\/plan'/g), programarEnPantalla.includes('body: JSON.stringify({ empresa: empresaId, plan }),'),
+      /rpc\(|clienteNavegador|importe|fecha|vence/.test(programarEnPantalla.slice(
+        programarEnPantalla.indexOf('const r = await fetch('), programarEnPantalla.indexOf('const d = await r.json()'))),
+      cuantas(baja, /await programar\(null\)/g), baja.includes('await programar(plan)')],
+    [1, true, false, 2, true]);
+  ok('ningún archivo de src llama bancard_programar_plan fuera del flujo del servidor',
+    archivos.filter((a) => sinComentarios(leer(a)).includes('bancard_programar_plan')), ['src/lib/bancard-flujo.ts']);
+  ok('lo que va a pagar desde la renovación lo cotiza la base (cotizar_plan, sobre el período de la cuenta), con y sin descuento',
+    [cuantas(baja, /rpc\('cotizar_plan'/g), baja.includes('p_empresa: empresaId, p_plan: plan, p_periodo: periodo, p_personas: null,'),
+      baja.includes('Number(cot.total) < Number(cot.subtotal)'), baja.includes('q.bajarDetalleConDescuento('), baja.includes('q.bajarDetalle('),
+      baja.includes('disabled={ocupado || !cot}')],
+    [1, true, true, true, true, true]);
+  ok('con un pago en curso no se ofrece «Deshacer» ni «Seguir con el…»: se dice que hay que esperar',
+    [/\{enCurso \? \(\s+<p [^>]*>\{q\.esperaElPago\}<\/p>\s+\) : \(\s+<button type="button" className="boton-suave w-full" onClick=\{deshacer\}/.test(baja),
+      /\{!programado \? children : enCurso \? \(\s+<p [^>]*>\{q\.esperaElPago\}<\/p>\s+\) : \(\s+<button type="button" className="boton-principal w-full" onClick=\{seguir\}/.test(baja),
+      /\) : enCurso \? \(\s+<p [^>]*>\{q\.esperaElPago\}<\/p>\s+\) : \(\s+<button type="button" className="boton-suave w-full" onClick=\{\(\) => \{ setError\(''\); setAviso\(''\); setAbierta\(true\); \}\}/.test(baja),
+      plan.includes('const pagoEnCurso = !!estadoBancard?.viva;'), cuantas(plan, /enCurso=\{pagoEnCurso\}/g)],
+    [true, true, true, true, 2]);
+  ok('si el equipo de hoy no entra en el plan más bajo, en vez del botón va el porqué',
+    /\) : noEntra \? \(\s+<p [^>]*>\{q\.equipoGrande\(nombre, h\.personas\(lugares\), miembros\)\}<\/p>/.test(baja) && baja.includes('const noEntra = miembros > lugares;'), true);
+
+  // ---- La ruta nueva.
+  ok('la ruta de la baja: sesión (401), después el acceso con el cliente DEL USUARIO, y recién ahí el cliente de servicio',
+    [ruta.indexOf('auth.getUser()') > 0, ruta.indexOf('auth.getUser()') < ruta.indexOf('accesoBancard(supabase, empresa)'),
+      ruta.indexOf('accesoBancard(supabase, empresa)') < ruta.indexOf('baseDeServicio()'), ruta.indexOf('accesoBancard(supabase, empresa)') < ruta.indexOf('dependencias()'),
+      ruta.includes("if (!user) return NextResponse.json({ error: t.servidor.necesitasSesion }, { status: 401 });")],
+    [true, true, true, true, true]);
+  ok('le pasa a la regla quién lo pide y si la cuenta ve Bancard; programar sin verlo contesta 403',
+    [ruta.includes('{ empresa, usuario: user.id, plan, veBancard: acceso.disponible },'),
+      /case 'no_disponible':\s+return NextResponse\.json\(\{ error: t\.bancard\.noDisponible \}, \{ status: 403 \}\)/.test(ruta)],
+    [true, true]);
+  const programarEnLaBase = m130.slice(m130.indexOf('create or replace function public.bancard_programar_plan('), m130.indexOf('revoke all on function public.bancard_programar_plan('));
+  ok('y que administre la cuenta lo vuelve a comprobar la base con ese usuario, antes que nada; la función es solo del servidor',
+    [/begin\s+if not public\.bancard_administra\(p_empresa, p_usuario\) then\s+raise exception 'Solo el dueño de la cuenta puede pagar el plan\.' using errcode = '42501';/.test(programarEnLaBase),
+      m130.includes('revoke all on function public.bancard_programar_plan(uuid, uuid, text) from public, anon, authenticated;'),
+      m130.includes('grant execute on function public.bancard_programar_plan(uuid, uuid, text) to service_role;')],
+    [true, true, true]);
+  ok('un cuerpo sin «plan» no deshace nada por descuido, y solo vale null, Básico o Pro (el Premium nunca es el destino de una baja)',
+    ruta.includes("if (!('plan' in cuerpo) || !(plan === null || plan === 'basico' || plan === 'pro')) {"), true);
+  ok('no lee un importe ni una fecha del pedido: del cuerpo usa solo la cuenta y el plan',
+    [[...new Set(ruta.match(/cuerpo\.[A-Za-z_]+/g) || [])].sort(), /importe|amount|monto|precio/.test(ruta.slice(0, ruta.indexOf('switch (r.estado)')))],
+    [['cuerpo.empresa', 'cuerpo.plan'], false]);
+  ok('deshacer anda con Bancard apagado: la base va por baseDeServicio(), y Bancard (si está) solo sirve para soltar un formulario abandonado',
+    [ruta.includes('const bd = baseDeServicio();'), ruta.includes('const d = acceso.disponible ? dependencias() : null;'), cuantas(ruta, /dependencias\(\)/g),
+      /\} : null,\s+\);/.test(ruta), ruta.includes("supabase.rpc('bancard_estado', { p_empresa: empresa, p_entorno: d.entorno })")],
+    [true, true, 1, true, true]);
+  ok('la ruta no es pública: la única de /api/pagos que pasa sin sesión por el middleware sigue siendo la confirmación',
+    (sinComentarios(leer('src/middleware.ts')).match(/'\/api\/pagos\/[^']*'/g) || []), ["'/api/pagos/bancard/confirmacion'"]);
+  ok('corre en Node, sin caché', [ruta.includes("runtime = 'nodejs'"), ruta.includes("dynamic = 'force-dynamic'")], [true, true]);
+
+  // ---- La regla del flujo.
+  ok('la regla vive en programarCambioDePlan: programar exige ver Bancard, deshacer (null) no',
+    flujo.includes("if (p.plan !== null && !p.veBancard) return { estado: 'no_disponible' };"), true);
+  const enCurso = (/ERROR_PAGO_EN_CURSO = '([^']+)'/.exec(flujo) || [])[1];
+  ok('el «hay un pago en curso» que reconoce el flujo es, letra por letra, el que escribe bancard_programar_plan (130)',
+    [enCurso, programarEnLaBase.includes(`raise exception '${enCurso}' using errcode = '22023';`)],
+    ['Hay un pago en curso. Esperá a que se confirme y probá de nuevo.', true]);
+  ok('y solo con ese mensaje, una sola vez, suelta lo abandonado con la misma función que usa el pago (liberarViva)',
+    [flujo.includes('if (intento === 0 && soltar && mensaje === ERROR_PAGO_EN_CURSO) {'),
+      /&& \(await liberarViva\(soltar\.d, viva\)\) !== 'en_curso'\) \{\s+continue;\s+\}/.test(flujo), cuantas(flujo, /'bancard_programar_plan'/g)],
+    [true, true, 1]);
+
+  const sql124a126 = ['124_bancard_precio_y_tablas.sql', '125_bancard_pagos.sql', '126_bancard_reloj_y_avisos.sql']
+    .map((n) => leer(`supabase/migrations/${n}`)).join('\n');
+  const queLlama = [...new Set(flujo.match(/'bancard_[a-z_]+'/g) || [])].map((s) => s.slice(1, -1));
+  ok('de todo lo que el flujo le pide a la base, lo único que no existía en la 124-126 es bancard_programar_plan, y lo crea la 130 (que se aplica antes que este código)',
+    [queLlama.filter((n) => !sql124a126.includes(`function public.${n}(`)),
+      m130.includes('create or replace function public.bancard_programar_plan(p_empresa uuid, p_usuario uuid, p_plan text)')],
+    [['bancard_programar_plan'], true]);
+
+  // ---- /plan: dónde quedó el WhatsApp.
+  const ramaDelCambio = plan.slice(plan.indexOf('if (cambiaPorBancard(plan) && planVigente !== null) {'), plan.indexOf('} else if (botonBancard) {'));
+  ok('en /plan, con un plan pago vigente y Bancard, la tarjeta de otro plan ya no manda al WhatsApp: sube con «Cambiar al…» o baja programando',
+    [ramaDelCambio.length > 500, ramaDelCambio.includes('<BotonCambiarPlan etiqueta={t.bancard.cambio.subir(t.plan[plan])} datos={cambio} />'),
+      ramaDelCambio.includes('<PieBajarDePlan'), /BotonSuscribirme|BotonCotizar|transferencia|whatsapp/.test(ramaDelCambio)],
+    [true, true, true, false]);
+  ok('es un cambio solo para un negocio que ve Bancard y tiene un plan pago vigente; el resto sigue como estaba',
+    [plan.includes('const cambiaPorBancard = (plan: PlanPago) => !!entornoBancard && !esPersonal && planVigente !== null && cambioConDiasPagos(plan);'),
+      plan.includes('const cambioConDiasPagos = (plan: PlanPago) => pagoVigente && ctx.planEfectivo !== plan;'),
+      plan.includes('const planVigente = pagoVigente ? planPagado : null;'),
+      plan.includes('<BotonCotizar whatsapp={whatsapp} empresa={ctx.empresa.nombre} />'), plan.includes('etiqueta={sus.en_prueba ? t.plan.activarEstePlan : t.plan.suscribirme}')],
+    [true, true, true, true, true]);
+  ok('subir es al plan más alto y bajar al más bajo, por el orden fijo de los planes (el de nivel_de_plan en la base)',
+    [plan.includes('const NIVEL: Record<PlanPago, number> = { basico: 1, pro: 2, negocio: 3 };'), ramaDelCambio.includes("if (plan !== 'basico' && NIVEL[plan] > NIVEL[planVigente]) {"),
+      m130.includes("select case p_plan when 'basico' then 1 when 'pro' then 2 when 'negocio' then 3 else 0 end;")],
+    [true, true, true]);
+  const datosDelCambio = plan.slice(plan.indexOf('const datosDelCambio = '), plan.indexOf('const renovarElProgramado = '));
+  ok('a la hoja de subir no se le pasa ningún importe ni el período de la cuenta: los lee de la base',
+    [datosDelCambio.length > 300, /importe|precio[A-Z(]|periodoDeLaCuenta|sus\.periodo/.test(datosDelCambio), datosDelCambio.includes('periodoElegido: periodo,')],
+    [true, false, true]);
+  ok('el equipo tiene que entrar en el plan que se paga: se dice en la tarjeta, antes de llegar a pagar (al subir, al pagar y al renovar)',
+    [plan.includes("const noEntraElEquipo = (plan: PlanPago) => !!entornoBancard && !esPersonal && plan !== 'negocio'"),
+      plan.includes('&& equipoHoy > LIMITES_VISIBLES[plan].miembros;'),
+      /pie = noEntraElEquipo\(plan\) \? \(\s+<p [^>]*>\{avisoDelEquipo\(plan\)\}<\/p>\s+\) : cambio \? \(/.test(ramaDelCambio),
+      /\{noEntraElEquipo\(plan\)\s+\? <p [^>]*>\{avisoDelEquipo\(plan\)\}<\/p>\s+: botonBancard\}/.test(plan),
+      plan.includes('(conCandado ? t.bancard.cambio.equipoNoEntraVencida : t.bancard.cambio.equipoNoEntra)(')],
+    [true, true, true, true, true]);
+  ok('el plan programado se paga a mano solo cuando la base dice que ya se puede; antes, ni «Renovar» ni «Cobrar ahora»',
+    [plan.includes('const programadoPagable = estadoBancard?.plan_proximo_pagable === true;'), plan.includes('if (!programadoPagable || noEntraElEquipo(plan)) return null;'),
+      plan.includes('if (planProgramadoEnLaBase !== null && !programadoPagable) return null;'),
+      plan.includes('{planProgramado === plan ? renovarElProgramado(plan) : null}'), plan.includes('aviso: t.bancard.cambio.alPagarCambia(t.plan[plan])'),
+      sinComentarios(leer('src/components/bancard/HojaPagar.tsx')).includes('{datos.aviso && <p className="font-medium text-ambar">{datos.aviso}</p>}')],
+    [true, true, true, true, true, true]);
+  ok('lo que la pantalla lee de bancard_estado para todo esto existe en la base con ese nombre',
+    ['plan_proximo', 'plan_proximo_pagable', 'miembros'].map((k) => [plan.includes(`estadoBancard?.${k}`), m130.includes(`'${k}', `)]), [[true, true], [true, true], [true, true]]);
+  ok('con una baja de plan programada, «Tu equipo» no deja sumar ni bajar personas',
+    [plan.includes('bloqueado={planProgramado !== null}'),
+      /\{bloqueado \? \(\s+<p [^>]*>\s+\{t\.bancard\.cambio\.equipoBloqueado\}\s+<\/p>\s+\) : \(/.test(sinComentarios(leer('src/components/bancard/EquipoPremium.tsx')))],
+    [true, true]);
+  ok('/plan sigue sin escribir a mano la lista de planes', plan.includes("['basico', 'pro', 'negocio']"), false);
+
+  // ---- El comprobante, el correo y /admin dicen «cambio», no «un mes de Pro».
+  ok('el comprobante, su correo y la lista de /admin nombran el cambio de plan',
+    [sinComentarios(leer('src/components/bancard/Comprobante.tsx')).includes("op.tipo === 'cambio'"),
+      sinComentarios(leer('src/components/bancard/Comprobante.tsx')).includes('c.conceptoCambio(planAntes, plan,'),
+      sinComentarios(leer('src/lib/avisos-bancard.ts')).includes("r.tipo === 'cambio'"),
+      sinComentarios(leer('src/lib/avisos-bancard.ts')).includes('c.conceptoCambio(planAntes, nombreDelPlan(r.plan, t),'),
+      sinComentarios(leer('src/components/bancard/PanelBancardAdmin.tsx')).includes("o.tipo === 'cambio' ? `Cambio"),
+      leer('src/components/bancard/tipos.ts').includes("tipo: 'plan' | 'personas' | 'cambio';")],
+    [true, true, true, true, true, true]);
+
+  // ---- Los textos: en los dos idiomas, con las mismas claves, cortos y sin ningún importe escrito.
+  const textosBancard = leer('src/i18n/textos/bancard.ts');
+  const es = textosBancard.slice(0, textosBancard.indexOf('export const bancardPt'));
+  const pt = textosBancard.slice(textosBancard.indexOf('export const bancardPt'));
+  const bloque = (idioma) => {
+    const i = idioma.indexOf('\n  cambio: {');
+    return i < 0 ? '' : sinComentarios(idioma.slice(i, idioma.indexOf('\n  },', i)));
+  };
+  const clavesDe = (b) => [...b.matchAll(/\n    ([A-Za-z0-9]+): /g)].map((m) => m[1]).sort();
+  ok('el bloque «cambio» tiene las mismas claves en español y en portugués',
+    [clavesDe(bloque(es)).length >= 38, clavesDe(bloque(es)).filter((k) => !clavesDe(bloque(pt)).includes(k)), clavesDe(bloque(pt)).filter((k) => !clavesDe(bloque(es)).includes(k)),
+      cuantas(textosBancard, /\n  cambio: \{/g), cuantas(textosBancard, /\n    conceptoCambio: /g)],
+    [true, [], [], 2, 2]);
+  ok('toda clave del bloque que usan las pantallas existe, y ninguna quedó sin usar',
+    (() => {
+      // En la hoja y en los pies de la baja, `q` es `t.bancard.cambio`; en las demás se nombra entero.
+      const conQ = [hoja, baja].join('\n');
+      const enteras = [hoja, baja, plan, ruta, sinComentarios(leer('src/components/bancard/EquipoPremium.tsx'))].join('\n');
+      const pedidas = [...new Set([
+        ...[...conQ.matchAll(/\bq\.([A-Za-z0-9]+)/g)].map((m) => m[1]),
+        ...[...enteras.matchAll(/t\.bancard\.cambio\.([A-Za-z0-9]+)/g)].map((m) => m[1]),
+      ])].sort();
+      return [pedidas.filter((k) => !clavesDe(bloque(es)).includes(k)), clavesDe(bloque(es)).filter((k) => !pedidas.includes(k))];
+    })(), [[], []]);
+  ok('ningún importe escrito en los textos (salen de la base), con voseo en español y sin «usted»',
+    [/Gs\.|[0-9]{4,}|US\$/.test(bloque(es) + bloque(pt)), /\b(puedes|tienes|pagas|sigues|revisa|toca|elige|prueba de nuevo|usted)\b/.test(bloque(es)),
+      /pagás/.test(bloque(es)), /Revisalo y tocá/.test(bloque(es)), /você paga/.test(bloque(pt))],
+    [false, false, true, true, true]);
+  const texto = (b, clave) => (new RegExp(`\\n    ${clave}: ([^\\n]*(?:\\n      [^\\n]*)*)`).exec(b) || [])[1] ?? '';
+  ok('las tres cosas que la persona lee antes de pagar, dichas en español',
+    [texto(bloque(es), 'sePagaHoy').includes('Se paga hoy ${importe}: la diferencia entre los dos planes por'),
+      texto(bloque(es), 'mismaFecha').includes('Tu plan sigue venciendo el ${fecha}. La fecha no cambia.'),
+      texto(bloque(es), 'desdeProxima').includes('Desde la próxima renovación pagás ${importe} por'),
+      texto(bloque(es), 'desdeProximaConDescuento').includes('de hoy, ${conDescuento}.'),
+      texto(bloque(es), 'debito').includes('se cobra solo de tu'),
+      texto(bloque(es), 'sinDescuento').includes('El cambio no lleva descuento. Tu descuento vuelve en la renovación.')],
+    [true, true, true, true, true, true]);
+  ok('bajar dice que no se cobra nada ahora y que no hay devolución; deshacer dice cuánto vuelve a ser la renovación',
+    [texto(bloque(es), 'bajarDetalle').includes('No se cobra nada ahora.'), texto(bloque(es), 'sinDevolucion').includes('no se devuelve'),
+      texto(bloque(es), 'deshecho').includes('La renovación vuelve a ser de ${importe}.'), texto(bloque(pt), 'sinDevolucion').includes('não é devolvido')],
+    [true, true, true, true]);
+  ok('«Tu plan es por N personas» ya no manda a escribir: «Sumar» y «Bajar» existen',
+    [/personasFijas: \(n: number\) =>\s+`[^`]*andá a «Tu equipo»[^`]*`/.test(es), /personasFijas[^\n]*\n[^\n]*escribinos/.test(es), /personasFijas[^\n]*\n[^\n]*fale com a gente/.test(pt)],
+    [true, false, false]);
+  ok('los componentes nuevos leen sus textos del diccionario: ninguna frase escrita en el código',
+    nuevos.filter((n) => {
+      const s = sinComentarios(leer(`src/components/bancard/${n}.tsx`));
+      return /'[^'\n]*[áéíóúñ¿¡][^'\n]*'|"[^"\n]*[áéíóúñ¿¡][^"\n]*"|`[^`\n]*[áéíóúñ¿¡][^`\n]*`/.test(s) || /^\s*[A-ZÁÉÍÓÚ¿¡][^<>{}=;()]*$/m.test(s)
+        || (n !== 'BotonCambiarPlan' && !s.includes('useTextos()'));
+    }), []);
+  ok('ningún loading.tsx en toda la aplicación', archivos.filter((a) => /(^|\/)loading\.tsx$/.test(a)), []);
 }
 
 console.log(`\n${corridas - fallos}/${corridas} comprobaciones de las fuentes de Bancard.`);

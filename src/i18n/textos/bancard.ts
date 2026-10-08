@@ -44,8 +44,9 @@ export const bancardEs = {
     cadaPersonaMas: (precio: string) => `Cada persona más, ${precio} por mes.`,
     yaSonEnTuEquipo: (n: number) => `Hoy ya son ${n} en tu equipo: no se puede pagar por menos.`,
     maximo: (n: number) => `Hasta ${n} personas.`,
+    // Decía «escribinos», y «Sumar personas» y «Bajar» ya existen (07/10/2026).
     personasFijas: (n: number) =>
-      `Tu plan es por ${n} personas y se renueva igual. Para cambiar la cantidad, escribinos.`,
+      `Tu plan es por ${n} personas y se renueva igual. Para cambiar la cantidad, andá a «Tu equipo», más abajo.`,
     /** «Premium Gs. 250.000 + 2 personas más × Gs. 60.000 = Gs. 370.000», la cuenta entera. */
     frase: (plan: string, base: string, extras: number, porPersona: string, total: string, anual: boolean) =>
       `${plan} ${base} + ${extras} ${extras === 1 ? 'persona más' : 'personas más'} × ${porPersona}${anual ? ' × 11 meses' : ''} = ${total}`,
@@ -105,6 +106,9 @@ export const bancardEs = {
       `Plan ${plan} ${anual ? 'anual' : 'mensual'}${personas ? ` · ${personas} personas` : ''}`,
     conceptoPersonas: (personas: number | null) =>
       `Personas de más en el Premium${personas ? ` · ${personas} en total` : ''}`,
+    /** Un cambio de plan con días pagos (130): de qué a qué. «Activo hasta» es la misma fecha de antes. */
+    conceptoCambio: (antes: string | null, despues: string, personas: number | null) =>
+      `Cambio de plan: ${antes ? `de ${antes} a ${despues}` : `a ${despues}`}${personas ? ` · ${personas} personas` : ''}`,
     activoHasta: 'Activo hasta',
     pagadoCon: 'Pagado con',
     tarjeta: (marca: string, ultimos4: string) => `${marca} •••• ${ultimos4}`,
@@ -250,6 +254,98 @@ export const bancardEs = {
     noSePudo: 'No se pudo cambiar la cantidad. Probá de nuevo.',
   },
 
+  /**
+   * CAMBIAR DE PLAN CON DÍAS PAGOS (07/10/2026; migración 130).
+   *
+   * Matías: «Me suscribí al Básico. Si la persona quiere cambiar al Pro o al
+   * Premium me lleva al WhatsApp. ¿No hay una forma de que se pueda pagar con
+   * tarjeta o con QR?». La regla, en dos líneas:
+   *
+   *   · SUBIR se paga hoy: la diferencia entre los dos planes por los días
+   *     que faltan. La fecha de renovación no cambia.
+   *   · BAJAR no se paga ni se devuelve: rige desde la próxima renovación.
+   *
+   * Antes de pagar la persona lee cuánto paga hoy, que su plan sigue
+   * venciendo el mismo día, y cuánto va a pagar desde la renovación (con y
+   * sin su descuento, si lo tiene) y cuándo se le cobra. Ningún importe está
+   * escrito acá: todos salen de la base. Donde dice {tope} o {personas} va
+   * `hoja.personas(n)` («1 persona», «3 personas»).
+   */
+  cambio: {
+    // ---- Subir (se paga hoy)
+    subir: (plan: string) => `Cambiar al ${plan}`,
+    subirTitulo: (plan: string) => `Cambiar al plan ${plan}`,
+    deA: (antes: string, despues: string) => `De ${antes} a ${despues}`,
+    sePagaHoy: (importe: string, dias: number) =>
+      `Se paga hoy ${importe}: la diferencia entre los dos planes por ${dias === 1 ? 'el día que falta' : `los ${dias} días que faltan`}.`,
+    /** Con días de prueba por delante se cobran solo los días pagos: no son «los que faltan». */
+    sePagaHoyDias: (importe: string, dias: number) =>
+      `Se paga hoy ${importe}: la diferencia entre los dos planes por ${dias === 1 ? '1 día' : `${dias} días`}.`,
+    /** Recién pagado en un mes de 31 días (o un año de 366): nunca más que el período entero. */
+    sePagaHoyEntero: (importe: string, anual: boolean) =>
+      `Se paga hoy ${importe}: la diferencia de un ${anual ? 'año' : 'mes'} entero.`,
+    pruebaNoSeCobra: (dias: number) =>
+      (dias === 1 ? 'El día de prueba que te queda no se cobra.' : `Los ${dias} días de prueba que te quedan no se cobran.`),
+    mismaFecha: (fecha: string) => `Tu plan sigue venciendo el ${fecha}. La fecha no cambia.`,
+    desdeProxima: (importe: string, anual: boolean) =>
+      `Desde la próxima renovación pagás ${importe} por ${anual ? 'año' : 'mes'}.`,
+    /** Con un descuento ganado van los dos números: el de lista y el que se cobraría hoy. */
+    desdeProximaConDescuento: (importe: string, conDescuento: string, anual: boolean, constancia: boolean) =>
+      `Desde la próxima renovación pagás ${importe} por ${anual ? 'año' : 'mes'}; con tu descuento ${constancia ? 'de constancia ' : ''}de hoy, ${conDescuento}.`,
+    /** Con la tarjeta guardada y el débito al día: qué día se cobra sola esa renovación. */
+    debito: (fecha: string, tarjeta: string | null) =>
+      (tarjeta ? `El ${fecha} se cobra solo de tu ${tarjeta}.` : `El ${fecha} se cobra solo de tu tarjeta guardada.`),
+    sinDescuento: 'El cambio no lleva descuento. Tu descuento vuelve en la renovación.',
+    sinDescuentoHoy: 'El cambio no lleva descuento.',
+    /** El selector de arriba muestra un período y la cuenta tiene el otro: sobre cuál se calcula. */
+    otroPeriodo: (anual: boolean): string => (anual
+      ? 'Tu plan es anual: el cambio se calcula por año.'
+      : 'Tu plan es mensual: el cambio se calcula por mes. Para pasar al año, renová después eligiendo «por año».'),
+    seActiva: 'El plan nuevo se activa apenas se confirma el pago. Si el pago no entra, no cambia nada.',
+    cancelaLoProgramado: 'Al cambiar se cancela la baja que tenías programada.',
+    /** Se volvió a cotizar justo antes de cobrar y ya no es lo que la hoja mostraba: no se cobra sin otro toque. */
+    cambioElImporte: (importe: string) => `El importe cambió: ahora son ${importe}. Revisalo y tocá de nuevo para pagar.`,
+    cambioLaFecha: 'La fecha de tu plan cambió. Revisá los datos y tocá de nuevo para pagar.',
+
+    // ---- Bajar (no se paga: se programa)
+    bajar: (plan: string) => `Bajar al ${plan} desde la renovación`,
+    bajarTitulo: (plan: string) => `Bajar al plan ${plan}`,
+    bajarDetalle: (actual: string, nuevo: string, importe: string, anual: boolean) =>
+      `No se cobra nada ahora. Seguís con el ${actual} hasta la próxima renovación; desde ahí tu plan es ${nuevo} y pagás ${importe} por ${anual ? 'año' : 'mes'}.`,
+    bajarDetalleConDescuento: (actual: string, nuevo: string, importe: string, conDescuento: string, anual: boolean, constancia: boolean) =>
+      `No se cobra nada ahora. Seguís con el ${actual} hasta la próxima renovación; desde ahí tu plan es ${nuevo} y pagás ${importe} por ${anual ? 'año' : 'mes'}; con tu descuento ${constancia ? 'de constancia ' : ''}de hoy, ${conDescuento}.`,
+    bajarIncluye: (nuevo: string, personas: string, capturas: number) =>
+      `El ${nuevo} es para ${personas} y trae ${capturas} capturas con IA por mes.`,
+    bajarTope: (personas: string) => `Mientras esté programado, tu equipo no puede pasar de ${personas}.`,
+    sinDevolucion: 'Lo que ya pagaste de este período no se devuelve.',
+    /** Programar el plan borra la baja de personas, y deshacer no la devuelve: se avisa antes. */
+    cancelaBajaDePersonas: (n: number) => `Se cancela la baja a ${n} personas que tenías programada.`,
+    programar: 'Programar el cambio',
+    pastilla: 'Desde la próxima renovación',
+    programado: (plan: string, fecha: string) => `Desde la renovación (${fecha}) tu plan pasa a ${plan}.`,
+    seguirCon: (plan: string) => `Seguir con el ${plan}`,
+    deshacer: 'Deshacer',
+    listo: (plan: string) => `Listo: desde la próxima renovación tu plan es ${plan}.`,
+    /** Deshacer después del aviso de vencimiento cambia lo que se cobra: se dice cuánto. */
+    deshecho: (plan: string, importe: string | null) =>
+      (importe ? `Listo: seguís con el ${plan}. La renovación vuelve a ser de ${importe}.` : `Listo: seguís con el ${plan}.`),
+    /** El plan programado solo se paga a mano los últimos días: al pagar, cambia ahí mismo. */
+    alPagarCambia: (plan: string) => `Al pagar, tu plan pasa a ${plan} en el momento.`,
+    equipoBloqueado: 'Tenés un cambio de plan programado. Deshacelo para cambiar la cantidad de personas.',
+    /** Con un pago sin terminar no se programa ni se deshace: se espera. */
+    esperaElPago: 'Hay un pago en curso. Cuando se confirme vas a poder cambiarlo.',
+    noSePudo: 'No se pudo programar el cambio. Probá de nuevo.',
+
+    // ---- El equipo tiene que entrar en el plan (se dice ANTES de llegar a pagar)
+    equipoGrande: (plan: string, tope: string, miembros: number) =>
+      `El ${plan} es para ${tope}. Hoy son ${miembros} en tu equipo: cuando sean menos vas a poder programar el cambio.`,
+    equipoNoEntra: (plan: string, tope: string, miembros: number) =>
+      `El ${plan} es para ${tope} y hoy son ${miembros} en tu equipo. Achicá el equipo o elegí un plan donde entren todos.`,
+    /** Con la cuenta vencida no se puede entrar a achicar el equipo: primero se paga el plan donde entran. */
+    equipoNoEntraVencida: (plan: string, tope: string, miembros: number) =>
+      `El ${plan} es para ${tope} y hoy son ${miembros} en tu equipo. Elegí un plan donde entren todos; después podés achicar el equipo y bajar de plan.`,
+  },
+
   /** Mientras Bancard está en pruebas. */
   pruebas: {
     soloVos: 'Solo lo ves vos · Bancard en pruebas',
@@ -308,7 +404,7 @@ export const bancardPt: typeof bancardEs = {
     yaSonEnTuEquipo: (n) => `Sua equipe já tem ${n} pessoas: não dá pra pagar por menos.`,
     maximo: (n) => `Até ${n} pessoas.`,
     personasFijas: (n) =>
-      `Seu plano é para ${n} pessoas e renova igual. Para mudar a quantidade, fale com a gente.`,
+      `Seu plano é para ${n} pessoas e renova igual. Para mudar a quantidade, vá em «Sua equipe», mais abaixo.`,
     frase: (plan, base, extras, porPersona, total, anual) =>
       `${plan} ${base} + ${extras} ${extras === 1 ? 'pessoa a mais' : 'pessoas a mais'} × ${porPersona}${anual ? ' × 11 meses' : ''} = ${total}`,
     planAnual: 'Plano anual: você paga 11 meses e usa 12.',
@@ -363,6 +459,8 @@ export const bancardPt: typeof bancardEs = {
       `Plano ${plan} ${anual ? 'anual' : 'mensal'}${personas ? ` · ${personas} pessoas` : ''}`,
     conceptoPersonas: (personas) =>
       `Pessoas a mais no Premium${personas ? ` · ${personas} no total` : ''}`,
+    conceptoCambio: (antes, despues, personas) =>
+      `Mudança de plano: ${antes ? `de ${antes} para ${despues}` : `para ${despues}`}${personas ? ` · ${personas} pessoas` : ''}`,
     activoHasta: 'Ativo até',
     pagadoCon: 'Pago com',
     tarjeta: (marca, ultimos4) => `${marca} •••• ${ultimos4}`,
@@ -475,6 +573,67 @@ export const bancardPt: typeof bancardEs = {
     deshacer: 'Desfazer',
     deshecha: 'Pronto: seu plano continua com as pessoas de hoje.',
     noSePudo: 'Não deu pra mudar a quantidade. Tente de novo.',
+  },
+
+  cambio: {
+    subir: (plan) => `Mudar para o ${plan}`,
+    subirTitulo: (plan) => `Mudar para o plano ${plan}`,
+    deA: (antes, despues) => `De ${antes} para ${despues}`,
+    sePagaHoy: (importe, dias) =>
+      `Paga-se hoje ${importe}: a diferença entre os dois planos ${dias === 1 ? 'pelo dia que falta' : `pelos ${dias} dias que faltam`}.`,
+    sePagaHoyDias: (importe, dias) =>
+      `Paga-se hoje ${importe}: a diferença entre os dois planos por ${dias === 1 ? '1 dia' : `${dias} dias`}.`,
+    sePagaHoyEntero: (importe, anual) =>
+      `Paga-se hoje ${importe}: a diferença de um ${anual ? 'ano' : 'mês'} inteiro.`,
+    pruebaNoSeCobra: (dias) =>
+      (dias === 1 ? 'O dia de teste que resta não é cobrado.' : `Os ${dias} dias de teste que restam não são cobrados.`),
+    mismaFecha: (fecha) => `Seu plano continua vencendo em ${fecha}. A data não muda.`,
+    desdeProxima: (importe, anual) =>
+      `A partir da próxima renovação você paga ${importe} por ${anual ? 'ano' : 'mês'}.`,
+    desdeProximaConDescuento: (importe, conDescuento, anual, constancia) =>
+      `A partir da próxima renovação você paga ${importe} por ${anual ? 'ano' : 'mês'}; com seu desconto ${constancia ? 'de constância ' : ''}de hoje, ${conDescuento}.`,
+    debito: (fecha, tarjeta) =>
+      (tarjeta ? `Em ${fecha} a cobrança sai sozinha do seu ${tarjeta}.` : `Em ${fecha} a cobrança sai sozinha do seu cartão salvo.`),
+    sinDescuento: 'A mudança não tem desconto. Seu desconto volta na renovação.',
+    sinDescuentoHoy: 'A mudança não tem desconto.',
+    otroPeriodo: (anual) => (anual
+      ? 'Seu plano é anual: a mudança é calculada por ano.'
+      : 'Seu plano é mensal: a mudança é calculada por mês. Para passar ao anual, renove depois escolhendo «por ano».'),
+    seActiva: 'O plano novo é ativado assim que o pagamento for confirmado. Se o pagamento não entrar, nada muda.',
+    cancelaLoProgramado: 'Ao mudar, a redução que você tinha programada é cancelada.',
+    cambioElImporte: (importe) => `O valor mudou: agora são ${importe}. Confira e toque de novo para pagar.`,
+    cambioLaFecha: 'A data do seu plano mudou. Confira os dados e toque de novo para pagar.',
+
+    bajar: (plan) => `Passar para o ${plan} a partir da renovação`,
+    bajarTitulo: (plan) => `Passar para o plano ${plan}`,
+    bajarDetalle: (actual, nuevo, importe, anual) =>
+      `Nada é cobrado agora. Você continua com o ${actual} até a próxima renovação; a partir daí seu plano é ${nuevo} e você paga ${importe} por ${anual ? 'ano' : 'mês'}.`,
+    bajarDetalleConDescuento: (actual, nuevo, importe, conDescuento, anual, constancia) =>
+      `Nada é cobrado agora. Você continua com o ${actual} até a próxima renovação; a partir daí seu plano é ${nuevo} e você paga ${importe} por ${anual ? 'ano' : 'mês'}; com seu desconto ${constancia ? 'de constância ' : ''}de hoje, ${conDescuento}.`,
+    bajarIncluye: (nuevo, personas, capturas) =>
+      `O ${nuevo} é para ${personas} e traz ${capturas} capturas com IA por mês.`,
+    bajarTope: (personas) => `Enquanto estiver programado, sua equipe não pode passar de ${personas}.`,
+    sinDevolucion: 'O que você já pagou deste período não é devolvido.',
+    cancelaBajaDePersonas: (n) => `A redução para ${n} pessoas que você tinha programada é cancelada.`,
+    programar: 'Programar a mudança',
+    pastilla: 'A partir da próxima renovação',
+    programado: (plan, fecha) => `A partir da renovação (${fecha}) seu plano passa a ${plan}.`,
+    seguirCon: (plan) => `Continuar com o ${plan}`,
+    deshacer: 'Desfazer',
+    listo: (plan) => `Pronto: a partir da próxima renovação seu plano é ${plan}.`,
+    deshecho: (plan, importe) =>
+      (importe ? `Pronto: você continua com o ${plan}. A renovação volta a ser de ${importe}.` : `Pronto: você continua com o ${plan}.`),
+    alPagarCambia: (plan) => `Ao pagar, seu plano passa a ${plan} na hora.`,
+    equipoBloqueado: 'Você tem uma mudança de plano programada. Desfaça para mudar a quantidade de pessoas.',
+    esperaElPago: 'Há um pagamento em andamento. Quando for confirmado você vai poder mudar.',
+    noSePudo: 'Não deu pra programar a mudança. Tente de novo.',
+
+    equipoGrande: (plan, tope, miembros) =>
+      `O ${plan} é para ${tope}. Hoje são ${miembros} na sua equipe: quando forem menos você vai poder programar a mudança.`,
+    equipoNoEntra: (plan, tope, miembros) =>
+      `O ${plan} é para ${tope} e hoje são ${miembros} na sua equipe. Reduza a equipe ou escolha um plano em que caibam todos.`,
+    equipoNoEntraVencida: (plan, tope, miembros) =>
+      `O ${plan} é para ${tope} e hoje são ${miembros} na sua equipe. Escolha um plano em que caibam todos; depois você pode reduzir a equipe e baixar de plano.`,
   },
 
   pruebas: {

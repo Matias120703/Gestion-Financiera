@@ -50,6 +50,12 @@ export const avisoVencimientoEs: TextosAvisoVencimiento = {
     // Con la tarjeta guardada (Bancard, 02/10/2026) no hay nada que renovar.
     fraseDebito: (plan, cuando) => `Tu plan ${plan} vence ${cuando}. Lo renovamos solos con la tarjeta que guardaste: no tenés que hacer nada.`,
     precio: (precio) => `Renovación: ${precio}.`,
+    // Con una baja de plan programada (130, 07/10/2026): el plan que tiene
+    // vence, y lo que se cobra es el plan al que pasa. Se nombran los dos.
+    cuerpoOtroPlan: (plan, nuevo, precio) => (precio
+      ? `Tu plan ${plan} se renueva como ${nuevo}: ${precio}. Pagalo para seguir sin cortes; lo que cargaste queda guardado.`
+      : `Tu plan ${plan} se renueva como ${nuevo}. Pagalo para seguir sin cortes; lo que cargaste queda guardado.`),
+    seRenuevaComo: (nuevo, precio) => (precio ? `Se renueva como ${nuevo}: ${precio}.` : `Se renueva como ${nuevo}.`),
     boton: 'Renovar mi plan',
     botonDebito: 'Ver mi plan',
     pie: 'Te escribimos porque administrás esta cuenta de Orden. Si ya pagaste, no hace falta que hagas nada.',
@@ -96,6 +102,10 @@ export const avisoVencimientoPt: TextosAvisoVencimiento = {
     frasePersonal: (plan, cuando) => `Seu plano ${plan} vence ${cuando}. Se não renovar, você passa pro plano Grátis: a voz, o orçamento, as dívidas e os relatórios ficam fechados, e o que você lançou fica guardado. Lançar suas despesas e entradas na mão continua grátis.`,
     fraseDebito: (plan, cuando) => `Seu plano ${plan} vence ${cuando}. Renovamos sozinhos com o cartão que você salvou: não precisa fazer nada.`,
     precio: (precio) => `Renovação: ${precio}.`,
+    cuerpoOtroPlan: (plan, nuevo, precio) => (precio
+      ? `Seu plano ${plan} renova como ${nuevo}: ${precio}. Pague pra continuar sem interrupção; o que você lançou fica guardado.`
+      : `Seu plano ${plan} renova como ${nuevo}. Pague pra continuar sem interrupção; o que você lançou fica guardado.`),
+    seRenuevaComo: (nuevo, precio) => (precio ? `Renova como ${nuevo}: ${precio}.` : `Renova como ${nuevo}.`),
     boton: 'Renovar meu plano',
     botonDebito: 'Ver meu plano',
     pie: 'Escrevemos porque você administra esta conta do Orden. Se já pagou, não precisa fazer nada.',

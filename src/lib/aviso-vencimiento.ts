@@ -62,6 +62,31 @@ export interface Vencimiento {
   debito?: DebitoDelAviso | null;
   /** 126: si la administración le habilitó el pago con Bancard. */
   bancard?: boolean;
+  /**
+   * 130: el plan que se va a cobrar en la renovación y su precio de lista.
+   * Con una baja de plan programada NO son los de hoy: `plan` y `precio`
+   * siguen diciendo el plan que la cuenta tiene, e `importe` ya es lo que se
+   * cobra. Sin nada programado son iguales a `plan` y `precio`.
+   */
+  plan_renovacion?: string | null;
+  precio_renovacion?: number | null;
+}
+
+/**
+ * EL PLAN AL QUE PASA EN LA RENOVACIÓN, SI NO ES EL QUE TIENE (130, 07/10/2026).
+ *
+ * Quien programó «Bajar al Básico desde la renovación» tiene hoy el Pro, y lo
+ * que se le va a cobrar es el Básico. El aviso nombra los dos: «Tu plan Pro
+ * vence mañana» y «Se renueva como Básico: Gs. 110.000 por mes». Sin esto
+ * decía «Renovación: Gs. 190.000», que no es lo que se le cobra.
+ *
+ * Null si no hay nada programado (o la fila viene de una base sin la 130):
+ * entonces el aviso es el de siempre, letra por letra.
+ */
+export function planQueSeRenueva(v: Pick<Vencimiento, 'tipo' | 'plan' | 'plan_renovacion'>): string | null {
+  if (v.tipo === 'prueba') return null;
+  const nuevo = typeof v.plan_renovacion === 'string' ? v.plan_renovacion : '';
+  return nuevo && nuevo !== v.plan ? nuevo : null;
 }
 
 /**
@@ -136,6 +161,10 @@ export interface TextosAvisoVencimiento {
     /** Con el débito al día: no hay que renovar nada, se cobra solo. */
     fraseDebito: (plan: string, cuando: string) => string;
     precio: (precio: string) => string;
+    /** 130: con una baja de plan programada, el push dice a qué plan pasa y cuánto es. */
+    cuerpoOtroPlan: (plan: string, nuevo: string, precio: string | null) => string;
+    /** 130: lo mismo en una línea: va en el correo (en vez de «Renovación: …») y al final del push del débito. */
+    seRenuevaComo: (nuevo: string, precio: string | null) => string;
     boton: string;
     botonDebito: string;
     pie: string;
@@ -182,9 +211,14 @@ export function nombreDelPlan(plan: string, t: TextosAvisoVencimiento): string {
   return t.planes[plan] ?? t.planes.pro ?? plan;
 }
 
-/** «Gs. 190.000 por mes», o null si no hay precio que sostener. */
+/**
+ * «Gs. 190.000 por mes», o null si no hay precio que sostener. Es el precio
+ * de lo que se RENUEVA: con una baja de plan programada (130), el del plan
+ * nuevo y no el del que tiene hoy.
+ */
 export function precioDelPlan(v: Vencimiento, t: TextosAvisoVencimiento, locale: string): string | null {
-  const n = v.precio === null || v.precio === undefined ? NaN : Number(v.precio);
+  const crudo = planQueSeRenueva(v) ? v.precio_renovacion : v.precio;
+  const n = crudo === null || crudo === undefined ? NaN : Number(crudo);
   if (!Number.isFinite(n) || n <= 0) return null;
   return `${precioEnGuaranies(n, locale)} ${v.periodo === 'anual' ? t.porAnio : t.porMes}`;
 }
@@ -231,8 +265,21 @@ export function textoDelDebito(v: Vencimiento, t: TextosAvisoVencimiento, locale
 export function pushDeVencimiento(
   v: Vencimiento, t: TextosAvisoVencimiento, locale: string, abierto = false,
 ): { titulo: string; cuerpo: string } {
+  // 130: con una baja de plan programada se dice a qué plan pasa. Si no,
+  // «cobramos Gs. 110.000» a quien tiene el Pro no se entiende.
+  const nuevo = planQueSeRenueva(v);
   if (comoSePaga(v, abierto) === 'debito') {
-    return { titulo: t.periodo.titulo(v.dias), cuerpo: textoDelDebito(v, t, locale) };
+    const debito = textoDelDebito(v, t, locale);
+    return {
+      titulo: t.periodo.titulo(v.dias),
+      cuerpo: nuevo ? `${debito} ${t.periodo.seRenuevaComo(nombreDelPlan(nuevo, t), null)}` : debito,
+    };
+  }
+  if (nuevo) {
+    return {
+      titulo: t.periodo.titulo(v.dias),
+      cuerpo: t.periodo.cuerpoOtroPlan(nombreDelPlan(v.plan, t), nombreDelPlan(nuevo, t), precioDelPlan(v, t, locale)),
+    };
   }
   const cuerpo = esPersonal(v) ? t.periodo.cuerpoPersonal : t.periodo.cuerpo;
   return {
@@ -284,7 +331,12 @@ export function correoDeVencimiento(
   // La frase de la personal ya dice que lo cargado queda guardado: repetirlo con
   // `guardado` en la oración siguiente sonaba a relleno (110, 28/09/2026).
   const cierre = personal || debito ? frase : `${frase} ${t.guardado}`;
-  const lineaPrecio = precio ? (esPrueba ? t.prueba.precio(plan, precio) : t.periodo.precio(precio)) : null;
+  // 130: con una baja de plan programada, la línea del precio nombra el plan
+  // al que pasa («Se renueva como Básico: Gs. 110.000 por mes.»), tenga o no
+  // precio que mostrar. `precio` ya es el del plan nuevo (`precioDelPlan`).
+  const nuevo = planQueSeRenueva(v);
+  const lineaPrecio = nuevo ? t.periodo.seRenuevaComo(nombreDelPlan(nuevo, t), precio)
+    : precio ? (esPrueba ? t.prueba.precio(plan, precio) : t.periodo.precio(precio)) : null;
   const boton = debito ? t.periodo.botonDebito : esPrueba ? t.prueba.boton : t.periodo.boton;
   const pie = esPrueba ? t.prueba.pie : t.periodo.pie;
   const comoPagar = como === 'debito' ? textoDelDebito(v, t, locale) : t.comoPagar[como];

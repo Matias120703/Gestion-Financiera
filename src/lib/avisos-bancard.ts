@@ -158,9 +158,16 @@ async function mandarComprobante(servicio: ClienteDeServicio, r: AvisoDePago): P
     const vence = typeof r.vence === 'string'
       ? new Date(r.vence).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Asuncion' })
       : '';
+    // Un cambio de plan (130) dice de qué plan a cuál: `plan_antes` viene en
+    // lo que devuelve `bancard_confirmar` para todo cambio.
+    const personas = typeof r.personas === 'number' ? r.personas : null;
+    const planAntes = r.plan_antes === 'basico' || r.plan_antes === 'pro' || r.plan_antes === 'negocio'
+      ? nombreDelPlan(r.plan_antes, t) : null;
     const concepto = r.tipo === 'personas'
-      ? c.conceptoPersonas(typeof r.personas === 'number' ? r.personas : null)
-      : c.conceptoPlan(nombreDelPlan(r.plan, t), r.periodo === 'anual', typeof r.personas === 'number' ? r.personas : null);
+      ? c.conceptoPersonas(personas)
+      : r.tipo === 'cambio'
+        ? c.conceptoCambio(planAntes, nombreDelPlan(r.plan, t), r.plan === 'negocio' ? personas : null)
+        : c.conceptoPlan(nombreDelPlan(r.plan, t), r.periodo === 'anual', personas);
     const tarjeta = r.tarjeta && typeof r.tarjeta === 'object'
       ? (r.tarjeta as { marca?: string; ultimos4?: string }) : null;
 

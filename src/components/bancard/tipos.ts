@@ -6,7 +6,8 @@
 export interface OperacionVista {
   operacion: number;
   estado: 'creada' | 'en_3ds' | 'incierta' | 'pagada' | 'rechazada' | 'revertida' | 'vencida';
-  tipo: 'plan' | 'personas';
+  /** 'cambio' = subir de plan con días pagos (130): `plan` es el nuevo y `desglose.plan_antes` el de antes. */
+  tipo: 'plan' | 'personas' | 'cambio';
   medio: 'formulario' | 'token';
   origen: 'usuario' | 'automatico';
   plan: 'basico' | 'pro' | 'negocio';

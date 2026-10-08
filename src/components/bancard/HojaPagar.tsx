@@ -36,6 +36,11 @@ export interface DatosDelPago {
   conPix: boolean;
   /** La tarjeta guardada de la cuenta (marca y últimos cuatro), o null. */
   tarjeta?: { id: number; marca: string | null; ultimos4: string | null } | null;
+  /**
+   * Algo que hay que leer antes de pagar, en ámbar. Hoy: al pagar el plan que
+   * se programó para la renovación, el plan cambia en ese momento (130).
+   */
+  aviso?: string | null;
 }
 
 type Paso = 'desglose' | 'abriendo' | 'formulario' | 'cobrando' | 'tresds' | 'resultado';
@@ -318,6 +323,7 @@ export function HojaPagar({ datos, onCerrar }: { datos: DatosDelPago; onCerrar: 
                 ? <p>{h.yaPagoHasta(fecha(datos.yaPagoHasta))}</p>
                 : null}
               <p>{h.activoHasta(fecha(cot.vence_hasta))}</p>
+              {datos.aviso && <p className="font-medium text-ambar">{datos.aviso}</p>}
               <p>{h.seCobraEnGuaranies}</p>
             </div>
           )}

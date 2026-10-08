@@ -373,8 +373,13 @@ function estadoActual(estado: string): EstadoResuelto {
 export interface PedidoDePago {
   empresa: string;
   usuario: string;
-  /** 'plan' = pagar (o renovar) un plan; 'personas' = sumar gente a un Premium vigente. */
-  tipo: 'plan' | 'personas';
+  /**
+   * 'plan' = pagar (o renovar) un plan; 'personas' = sumar gente a un Premium
+   * vigente; 'cambio' = subir de plan con días pagos (130): `plan` es el
+   * destino y `periodo` va en null (es el de la cuenta, lo pone la base).
+   * Los tres pasan por los mismos caminos: acá no hay lógica por tipo.
+   */
+  tipo: 'plan' | 'personas' | 'cambio';
   plan: string | null;
   periodo: string | null;
   /** Solo el Premium de un negocio; si no, null. */
@@ -752,6 +757,105 @@ export async function programarBajaDePersonas(
   } catch (e) {
     return { estado: 'error_base', mensaje: e instanceof Error ? e.message : '', codigo: '' };
   }
+}
+
+// ------------------------------------------------ la baja de plan (130)
+
+export type CambioDePlanProgramado =
+  | {
+    estado: 'listo';
+    /** El plan que quedó programado para la próxima renovación; null si se deshizo. */
+    planProximo: string | null;
+    /** El plan que la cuenta tiene hoy. */
+    plan: string | null;
+    /** Cuándo vence el período pago (ISO): desde esa renovación rige la baja. */
+    vence: string | null;
+    /** Lo que se cobra en la próxima renovación, con el descuento de hoy. Lo dice la base. */
+    importe: number | null;
+  }
+  /** La cuenta no ve Bancard y pidió PROGRAMAR una baja: no se escribe nada. */
+  | { estado: 'no_disponible' }
+  | { estado: 'error_base'; mensaje: string; codigo: string };
+
+/**
+ * Lo que contesta `bancard_programar_plan` (130) cuando la cuenta tiene un
+ * pago sin terminar. La base no le pone un código propio, así que se
+ * reconoce por el texto, letra por letra (lo vigila
+ * pruebas/bancard-fuentes.test.js contra la migración).
+ */
+export const ERROR_PAGO_EN_CURSO = 'Hay un pago en curso. Esperá a que se confirme y probá de nuevo.';
+
+/**
+ * «BAJAR AL BÁSICO DESDE LA RENOVACIÓN» (un plan) Y «DESHACER» (null), para
+ * la ruta `/api/pagos/bancard/plan` (07/10/2026). Hermana de
+ * `programarBajaDePersonas`, con la misma regla:
+ *
+ *   · Programar una baja sin ver Bancard: no se llama a la base.
+ *   · Deshacer (null) se permite SIEMPRE a quien administra la cuenta.
+ *
+ * No cobra nada: bajar rige desde la próxima renovación, sin devolución (la
+ * regla vive en `bancard_programar_plan`, que también comprueba que el
+ * equipo de hoy entre en el plan nuevo). El importe de esa renovación lo
+ * devuelve la base; del navegador no llega ninguno.
+ *
+ * CON UN PAGO EN CURSO LA BASE NO DEJA PROGRAMAR NI DESHACER (si se deshace
+ * con la renovación ya iniciada por el plan programado, ese pago entra «sin
+ * renovar» y al otro día se cobra el plan alto: dos cobros). Pero un
+ * formulario que la persona abrió y dejó también es «un pago en curso», y la
+ * dejaba esperando hasta media hora. Por eso, si la base contesta eso y hay
+ * con qué (`soltar`: Bancard configurado y la cuenta lo ve), se hace lo
+ * mismo que al iniciar un pago: se le pregunta a Bancard por esa operación
+ * (`liberarViva`) y se prueba UNA vez más. Un cobro con la tarjeta guardada
+ * que todavía puede estar procesándose, o un 3D Secure esperando a la
+ * persona, NO se sueltan: sigue contestando «hay un pago en curso».
+ *
+ * `soltar.viva` devuelve el número de la operación sin terminar de la cuenta
+ * (la ruta lo lee con la sesión de quien lo pide). Sin `soltar` no hay
+ * reintento: deshacer con Bancard apagado sigue andando igual.
+ */
+export async function programarCambioDePlan(
+  bd: BaseBancard,
+  p: { empresa: string; usuario: string; plan: 'basico' | 'pro' | null; veBancard: boolean },
+  soltar: { d: Deps; viva: () => Promise<number | null> } | null = null,
+): Promise<CambioDePlanProgramado> {
+  if (p.plan !== null && !p.veBancard) return { estado: 'no_disponible' };
+
+  for (let intento = 0; intento < 2; intento++) {
+    let mensaje = '';
+    let codigo = '';
+    try {
+      const { data, error } = await bd.rpc('bancard_programar_plan', {
+        p_empresa: p.empresa, p_usuario: p.usuario, p_plan: p.plan,
+      });
+      if (!error) {
+        const o = esObjeto(data) ? data : {};
+        const importe = Number(o.importe);
+        return {
+          estado: 'listo',
+          planProximo: typeof o.plan_proximo === 'string' ? o.plan_proximo : null,
+          plan: typeof o.plan === 'string' ? o.plan : null,
+          vence: typeof o.vence === 'string' ? o.vence : null,
+          importe: o.importe !== null && o.importe !== undefined && Number.isFinite(importe) ? importe : null,
+        };
+      }
+      mensaje = error.message ?? '';
+      codigo = error.code ?? '';
+    } catch (e) {
+      return { estado: 'error_base', mensaje: e instanceof Error ? e.message : '', codigo: '' };
+    }
+
+    // Un formulario abandonado se suelta y se prueba de nuevo, una vez.
+    if (intento === 0 && soltar && mensaje === ERROR_PAGO_EN_CURSO) {
+      let viva: number | null = null;
+      try { viva = await soltar.viva(); } catch { viva = null; }
+      if (viva !== null && Number.isSafeInteger(viva) && viva > 0
+          && (await liberarViva(soltar.d, viva)) !== 'en_curso') {
+        continue;
+      }
+    }
+    return { estado: 'error_base', mensaje, codigo };
+  }
+  return { estado: 'error_base', mensaje: '', codigo: '' };
 }
 
 // ---------------------------------------------------------------- revertir

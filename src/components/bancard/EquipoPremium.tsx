@@ -36,12 +36,18 @@ export interface PersonasVista {
  * Solo aparece con un Premium pago vigente que tiene cantidad (se pagó por
  * Bancard eligiendo las personas): un Premium «sin número», activado a mano,
  * primero se renueva eligiendo cuántas son.
+ *
+ * CON UN CAMBIO DE PLAN PROGRAMADO (130, 07/10/2026) no se suma ni se baja:
+ * desde la renovación la cuenta ya no es un Premium, y la base lleva una sola
+ * cosa programada por vez. Se dice, y se deshace desde la tarjeta del plan.
  */
-export function EquipoPremium({ datos, personas, renovacion }: {
+export function EquipoPremium({ datos, personas, renovacion, bloqueado = false }: {
   datos: Omit<DatosDelEquipo, 'contratadas' | 'miembros' | 'max'>;
   personas: PersonasVista;
   /** Cuándo vence el período pago (ISO): desde ahí rige la baja. */
   renovacion: string | null;
+  /** Hay una baja de PLAN programada: la cantidad de personas no se toca. */
+  bloqueado?: boolean;
 }) {
   const t = useTextos();
   const q = t.bancard.equipo;
@@ -98,16 +104,22 @@ export function EquipoPremium({ datos, personas, renovacion }: {
           </button>
         </p>
       )}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className="boton-principal px-4 py-2 text-[13.5px]" onClick={() => setSumando(true)} disabled={!puedeSumar} title={puedeSumar ? undefined : q.maximo}>
-          {q.sumar}
-        </button>
-        {puedeBajar && personas.proxima === null && (
-          <button type="button" className="boton-suave px-4 py-2 text-[13.5px]" onClick={() => { setError(''); setBajando(true); }}>
-            {q.bajar}
+      {bloqueado ? (
+        <p className="mt-2 rounded-xl bg-ambar-claro px-3 py-2 text-[13px] font-medium leading-relaxed text-ambar">
+          {t.bancard.cambio.equipoBloqueado}
+        </p>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className="boton-principal px-4 py-2 text-[13.5px]" onClick={() => setSumando(true)} disabled={!puedeSumar} title={puedeSumar ? undefined : q.maximo}>
+            {q.sumar}
           </button>
-        )}
-      </div>
+          {puedeBajar && personas.proxima === null && (
+            <button type="button" className="boton-suave px-4 py-2 text-[13.5px]" onClick={() => { setError(''); setBajando(true); }}>
+              {q.bajar}
+            </button>
+          )}
+        </div>
+      )}
       {aviso && <p className="mt-3 rounded-xl bg-verde-claro/60 px-3 py-2 text-[13px] font-medium text-verde-fuerte" role="status">{aviso}</p>}
       {error && !bajando && <p className="mt-3 rounded-xl bg-rojo-claro px-3 py-2 text-[13px] font-medium text-rojo" role="alert">{error}</p>}
 

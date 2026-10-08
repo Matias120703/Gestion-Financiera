@@ -679,7 +679,10 @@ function ListaOperaciones({ ops, conCuenta = false, onCambio }: {
                 <span className="ml-auto font-bold tabular-nums">{gs(o.importe)}</span>
               </div>
               <p className="text-tinta/60">
-                {o.tipo === 'personas' ? 'Sumar personas' : `${NOMBRE_PLAN[o.plan] ?? o.plan} ${o.periodo}`}
+                {o.tipo === 'personas' ? 'Sumar personas'
+                  // Subir de plan con días pagos (130): no es un período entero del plan nuevo.
+                  : o.tipo === 'cambio' ? `Cambio${o.antes?.plan ? ` de ${NOMBRE_PLAN[o.antes.plan] ?? o.antes.plan}` : ''} a ${NOMBRE_PLAN[o.plan] ?? o.plan}`
+                  : `${NOMBRE_PLAN[o.plan] ?? o.plan} ${o.periodo}`}
                 {o.personas ? ` · ${o.personas} personas` : ''} · {o.medio === 'token' ? 'tarjeta guardada' : 'formulario'}
                 {o.origen === 'automatico' ? ' (automático)' : ''} · creada {cuando(o.creada)}
                 {o.confirmada ? ` · confirmada ${cuando(o.confirmada)}` : ''}

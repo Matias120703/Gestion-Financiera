@@ -22,6 +22,9 @@ import { BotonPagarBancard } from '@/components/bancard/BotonPagarBancard';
 import { PagoEnCurso } from '@/components/bancard/EstadoDelPago';
 import { TarjetaGuardada, type DebitoVista, type TarjetaVista } from '@/components/bancard/TarjetaGuardada';
 import { EquipoPremium } from '@/components/bancard/EquipoPremium';
+import { BotonCambiarPlan } from '@/components/bancard/BotonCambiarPlan';
+import { PieBajarDePlan, PieDelPlanActual } from '@/components/bancard/BajaDePlan';
+import type { DatosDelCambio } from '@/components/bancard/HojaCambiarPlan';
 import type { DatosDelPago } from '@/components/bancard/HojaPagar';
 import type { MomentoDelDebito } from '@/components/bancard/tipos';
 
@@ -167,11 +170,69 @@ export default async function PaginaPlan({
   const pagoVigente = sus.estado === 'activa' && !sus.en_prueba && !!sus.periodo_fin
     && new Date(sus.periodo_fin).getTime() > ahora && ctx.planEfectivo !== 'gratis';
   /**
-   * Con días pagos, cambiar de plan no va por Bancard (habría que prorratear
-   * un plan contra otro): esa tarjeta sigue con el WhatsApp. La base lo
-   * frena igual («Tu plan actual está pago hasta el…»).
+   * Con días pagos, la tarjeta de OTRO plan no es un pago de plan: es un
+   * cambio. Pagarlo entero por el botón de siempre lo frena la base («Tu
+   * plan actual está pago hasta el…»).
    */
   const cambioConDiasPagos = (plan: PlanPago) => pagoVigente && ctx.planEfectivo !== plan;
+  /**
+   * CAMBIAR DE PLAN CON DÍAS PAGOS, POR BANCARD (migración 130, 07/10/2026).
+   *
+   * Matías: «Me suscribí al Básico. Si la persona quiere cambiar al Pro o al
+   * Premium me lleva al WhatsApp. ¿No hay una forma de que se pueda pagar con
+   * tarjeta o con QR?». Ahora, para un negocio que ve Bancard, en la tarjeta
+   * del otro plan:
+   *
+   *   · MÁS ALTO: «Cambiar al Pro». Se paga hoy la diferencia entre los dos
+   *     planes por los días que faltan; la fecha de renovación no cambia.
+   *   · MÁS BAJO: «Bajar al Básico desde la renovación». No se paga ni se
+   *     devuelve: se programa, y se deshace con un toque.
+   *
+   * El orden es fijo (Básico, Pro, Premium), el de `nivel_de_plan` en la
+   * base. Quien no ve Bancard sigue con el WhatsApp; la cuenta personal
+   * tiene un solo plan pago y no entra acá.
+   */
+  const NIVEL: Record<PlanPago, number> = { basico: 1, pro: 2, negocio: 3 };
+  const planVigente = pagoVigente ? planPagado : null;
+  const cambiaPorBancard = (plan: PlanPago) => !!entornoBancard && !esPersonal && planVigente !== null && cambioConDiasPagos(plan);
+  /** El cambio se calcula, y la renovación se cobra, sobre el período que la cuenta ya tiene (no el del selector). */
+  const periodoDeLaCuenta: PeriodoCobro = sus.periodo === 'anual' ? 'anual' : 'mensual';
+  /**
+   * La baja de plan programada para la próxima renovación, si la hay
+   * (`bancard_estado`, 130). `enLaBase` es lo que cobra la renovación
+   * también con el plan ya vencido; las tarjetas la muestran solo mientras
+   * el plan está pago y vigente.
+   */
+  const planProgramadoEnLaBase = estadoBancard?.plan_proximo === 'basico' || estadoBancard?.plan_proximo === 'pro'
+    ? estadoBancard.plan_proximo
+    : null;
+  const planProgramado = pagoVigente ? planProgramadoEnLaBase : null;
+  /**
+   * El plan programado se paga a mano solo los últimos días (la cuenta la
+   * hace la base): pagarlo antes baja el plan en ese momento y la persona
+   * pierde días que ya pagó.
+   */
+  const programadoPagable = estadoBancard?.plan_proximo_pagable === true;
+  /** Un pago sin terminar: no se programa ni se deshace una baja hasta que se resuelva. */
+  const pagoEnCurso = !!estadoBancard?.viva;
+  /** Cuántas personas tiene hoy el equipo. */
+  const equipoHoy = typeof estadoBancard?.miembros === 'number' ? estadoBancard.miembros : miembros;
+  /**
+   * EL EQUIPO TIENE QUE ENTRAR EN EL PLAN QUE SE PAGA (decisión 4, 130).
+   *
+   * Por Bancard no se puede pagar un plan con menos lugares que el equipo de
+   * hoy (ni dejando vencer): la base frena el pago y dice qué hacer. Acá se
+   * dice ANTES, en la tarjeta, en vez de ofrecer un botón que termina en un
+   * error. El Premium se paga por cantidad de personas y su selector no baja
+   * del equipo de hoy, así que siempre alcanza.
+   */
+  const noEntraElEquipo = (plan: PlanPago) => !!entornoBancard && !esPersonal && plan !== 'negocio'
+    && equipoHoy > LIMITES_VISIBLES[plan].miembros;
+  /** Con la cuenta vencida no se puede entrar a achicar el equipo (el candado solo deja ver esta pantalla). */
+  const conCandado = !esPersonal && !sus.en_prueba && ctx.planEfectivo === 'gratis';
+  const avisoDelEquipo = (plan: PlanPago) => (conCandado ? t.bancard.cambio.equipoNoEntraVencida : t.bancard.cambio.equipoNoEntra)(
+    t.plan[plan], t.bancard.hoja.personas(LIMITES_VISIBLES[plan].miembros), equipoHoy,
+  );
   /**
    * El Premium: con cuántas personas arranca el selector. Renovar un Premium
    * vigente que ya tiene cantidad es por esa cantidad (o la baja que
@@ -218,16 +279,95 @@ export default async function PaginaPlan({
     return <BotonPagarBancard etiqueta={etiqueta} datos={datos} />;
   };
   /**
-   * La tarjeta guardada y su «Cobrar ahora»: cobra el plan que la cuenta
-   * paga (o pagó), en su propio período. Sin plan pago, el botón no se
-   * ofrece: se elige un plan en su tarjeta.
+   * El cobro automático al día: qué día sale solo el próximo cobro
+   * ('AAAA-MM-DD'). Es el día anterior al vencimiento, y es cuando entra en
+   * vigencia una baja programada (el plan cambia cuando entra el pago de la
+   * renovación, no a la medianoche del vencimiento).
+   */
+  const fechaDelDebito = tarjetaGuardada && estadoBancard?.debito?.activo === true
+    && estadoBancard.debito.estado === 'al_dia' && estadoBancard.debito.fecha_cobro
+    ? estadoBancard.debito.fecha_cobro
+    : null;
+  /** «5 de noviembre» (con el año solo si no es este): desde cuándo rige lo programado. */
+  const fechaDeRenovacion = (() => {
+    const anioDeHoy = new Date(ahora).getUTCFullYear();
+    if (fechaDelDebito) {
+      const [a, m, d] = fechaDelDebito.slice(0, 10).split('-').map(Number);
+      if (a && m && d) {
+        return new Intl.DateTimeFormat(locale, {
+          timeZone: 'UTC', day: 'numeric', month: 'long', ...(a !== anioDeHoy ? { year: 'numeric' as const } : {}),
+        }).format(new Date(Date.UTC(a, m - 1, d)));
+      }
+    }
+    if (!sus.periodo_fin) return '';
+    const fin = new Date(sus.periodo_fin);
+    return fin.toLocaleDateString(locale, {
+      timeZone: ctx.zonaHoraria, day: 'numeric', month: 'long', ...(fin.getUTCFullYear() !== anioDeHoy ? { year: 'numeric' as const } : {}),
+    });
+  })();
+  /**
+   * Lo que la hoja de «Cambiar al Pro» necesita. NO lleva ningún importe ni
+   * el período de la cuenta: la hoja se los pide a la base (`cotizar_cambio`)
+   * y al pagar viaja solo a qué plan (y cuántas personas, si es el Premium).
+   */
+  const datosDelCambio = (plan: 'pro' | 'negocio'): DatosDelCambio | null => {
+    if (!entornoBancard) return null;
+    return {
+      empresaId: ctx.empresa.id,
+      plan,
+      entorno: entornoBancard,
+      urlScript: urlDelScript(entornoBancard),
+      origen: HOST_BANCARD[entornoBancard],
+      zona: ctx.zonaHoraria,
+      conPix,
+      // Nunca menos que las que trae el Premium ni que el equipo de hoy.
+      personasInicial: plan === 'negocio'
+        ? Math.min(LIMITES_VISIBLES.negocio.miembros, Math.max(PERSONAS_INCLUIDAS_PREMIUM, equipoHoy))
+        : null,
+      personasMax: LIMITES_VISIBLES.negocio.miembros,
+      tarjeta: tarjetaGuardada,
+      fechaDelDebito,
+      // Subir cancela lo que estuviera programado (la baja de plan o la de personas).
+      hayBajaProgramada: planProgramado !== null || (estadoBancard?.personas?.proxima ?? null) !== null,
+      periodoElegido: periodo,
+      conCartelDeDescuento: descuento?.logrado === true,
+    };
+  };
+  /**
+   * «Renovar con tarjeta o QR» del plan PROGRAMADO, en su tarjeta: solo
+   * cuando ya se puede pagar a mano (los últimos días). Avisa que al pagar
+   * el plan cambia en ese momento.
+   */
+  const renovarElProgramado = (plan: 'basico' | 'pro') => {
+    if (!programadoPagable || noEntraElEquipo(plan)) return null;
+    const datos = datosDelPago(plan, true, periodo);
+    if (!datos) return null;
+    return (
+      <BotonPagarBancard
+        etiqueta={conPix ? t.bancard.boton.renovarConPix : t.bancard.boton.renovar}
+        datos={{ ...datos, aviso: t.bancard.cambio.alPagarCambia(t.plan[plan]) }}
+      />
+    );
+  };
+  /**
+   * La tarjeta guardada y su «Cobrar ahora»: cobra lo que cobraría la
+   * renovación, en el período de la cuenta: el plan que paga (o pagó), o el
+   * que programó para la renovación. Sin plan pago, el botón no se ofrece:
+   * se elige un plan en su tarjeta. Con una baja programada tampoco se
+   * ofrece hasta los últimos días: todavía no hay nada que cobrar, y pagarla
+   * antes le sacaría a la persona días del plan que ya pagó.
    */
   const planDelDebito = !esPersonal || ctx.planEfectivo !== 'gratis'
     ? PLANES_PAGOS.find((p) => p === sus.plan) ?? null
     : null;
-  const renovacionDelDebito = planDelDebito && !sus.en_prueba
-    ? datosDelPago(planDelDebito, true, sus.periodo === 'anual' ? 'anual' : 'mensual')
-    : null;
+  const planACobrar: PlanPago | null = planDelDebito ? (planProgramadoEnLaBase ?? planDelDebito) : null;
+  const renovacionDelDebito = ((): DatosDelPago | null => {
+    if (!planACobrar || sus.en_prueba) return null;
+    if (planProgramadoEnLaBase !== null && !programadoPagable) return null;
+    const datos = datosDelPago(planACobrar, true, periodoDeLaCuenta);
+    if (!datos || planProgramado === null) return datos;
+    return { ...datos, aviso: t.bancard.cambio.alPagarCambia(t.plan[planACobrar]) };
+  })();
   /**
    * ¿Se le cobra sola si guarda la tarjeta? Solo con un plan pago activo: es
    * la misma condición de la base (`bancard_tomar_cobro`, 125). En la prueba
@@ -428,6 +568,119 @@ export default async function PaginaPlan({
            */
           const esActual = !sus.en_prueba && ctx.planEfectivo === plan;
 
+          // «Prefiero pagar por transferencia»: el WhatsApp de siempre, en chico.
+          const transferencia = !whatsapp ? null : plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
+            <BotonCotizar
+              whatsapp={whatsapp}
+              empresa={ctx.empresa.nombre}
+              etiqueta={t.bancard.boton.prefieroTransferir}
+              comoEnlace
+            />
+          ) : (
+            <BotonSuscribirme
+              whatsapp={whatsapp}
+              empresa={ctx.empresa.nombre}
+              plan={t.plan[plan]}
+              precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
+              periodo={periodo}
+              etiqueta={t.bancard.boton.prefieroTransferir}
+              esPersonal={esPersonal}
+              comoEnlace
+            />
+          );
+
+          /**
+           * EL PIE DE LA TARJETA, por orden:
+           *
+           *   1. UN CAMBIO DE PLAN CON DÍAS PAGOS, por Bancard (130): a un
+           *      plan más alto, «Cambiar al Pro» (se paga hoy la diferencia);
+           *      a uno más bajo, «Bajar al Básico desde la renovación» (se
+           *      programa). Acá no va la transferencia: el WhatsApp queda
+           *      como contacto adentro de cada hoja.
+           *   2. CON BANCARD: el botón de pagar (también en el plan actual,
+           *      para renovar) y, si hay WhatsApp, la transferencia en chico.
+           *      Si el equipo de hoy no entra en ese plan, en vez del botón va
+           *      el porqué (decisión 4). En el plan actual con una baja
+           *      programada, «Seguir con el Pro» en vez de «Renovar».
+           *   3. SIN BANCARD: el WhatsApp de siempre, o el botón de la pasarela.
+           */
+          const botonBancard = pagoBancard(plan, esActual);
+          let pie: React.ReactNode = null;
+          if (cambiaPorBancard(plan) && planVigente !== null) {
+            if (plan !== 'basico' && NIVEL[plan] > NIVEL[planVigente]) {
+              const cambio = datosDelCambio(plan);
+              pie = noEntraElEquipo(plan) ? (
+                <p className="text-[13px] leading-relaxed text-tinta/65">{avisoDelEquipo(plan)}</p>
+              ) : cambio ? (
+                <BotonCambiarPlan etiqueta={t.bancard.cambio.subir(t.plan[plan])} datos={cambio} />
+              ) : null;
+            } else if (plan !== 'negocio' && planVigente !== 'basico') {
+              pie = (
+                <PieBajarDePlan
+                  empresaId={ctx.empresa.id}
+                  plan={plan}
+                  planActual={planVigente}
+                  programado={planProgramado === plan}
+                  fecha={fechaDeRenovacion}
+                  periodo={periodoDeLaCuenta}
+                  lugares={limites.miembros}
+                  capturas={limites.capturas}
+                  miembros={equipoHoy}
+                  enCurso={pagoEnCurso}
+                  bajaDePersonas={estadoBancard?.personas?.proxima ?? null}
+                >
+                  {planProgramado === plan ? renovarElProgramado(plan) : null}
+                </PieBajarDePlan>
+              );
+            }
+          } else if (botonBancard) {
+            const deSiempre = (
+              <div className="space-y-1.5">
+                {noEntraElEquipo(plan)
+                  ? <p className="text-[13px] leading-relaxed text-tinta/65">{avisoDelEquipo(plan)}</p>
+                  : botonBancard}
+                {transferencia}
+              </div>
+            );
+            pie = esActual && pagoVigente && !esPersonal ? (
+              <PieDelPlanActual
+                empresaId={ctx.empresa.id}
+                plan={plan}
+                programado={planProgramado !== null}
+                enCurso={pagoEnCurso}
+              >
+                {deSiempre}
+              </PieDelPlanActual>
+            ) : deSiempre;
+          } else if (esActual) {
+            pie = null;
+          } else if (whatsapp) {
+            // Premium se cotiza: el precio depende de cuántos vendedores,
+            // así que se manda la pregunta y no un número.
+            pie = plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
+              <BotonCotizar whatsapp={whatsapp} empresa={ctx.empresa.nombre} />
+            ) : (
+              <BotonSuscribirme
+                whatsapp={whatsapp}
+                empresa={ctx.empresa.nombre}
+                plan={t.plan[plan]}
+                precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
+                periodo={periodo}
+                etiqueta={sus.en_prueba ? t.plan.activarEstePlan : t.plan.suscribirme}
+                esPersonal={esPersonal}
+              />
+            );
+          } else {
+            pie = (
+              <BotonPagar
+                plan={plan}
+                periodo={periodo}
+                etiqueta={t.plan.elegir}
+                sinPasarela={t.plan.pagoNoDisponible}
+              />
+            );
+          }
+
           return (
             <Tarjeta
               key={plan}
@@ -489,57 +742,9 @@ export default async function PaginaPlan({
                           t.plan.conExcel,
                         ]
               }
-              pie={
-                // Con Bancard: el botón de pagar (también en el plan actual,
-                // para renovar) y, si hay WhatsApp, la transferencia en chico.
-                pagoBancard(plan, esActual) ? (
-                  <div className="space-y-1.5">
-                    {pagoBancard(plan, esActual)}
-                    {whatsapp && (plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
-                      <BotonCotizar
-                        whatsapp={whatsapp}
-                        empresa={ctx.empresa.nombre}
-                        etiqueta={t.bancard.boton.prefieroTransferir}
-                        comoEnlace
-                      />
-                    ) : (
-                      <BotonSuscribirme
-                        whatsapp={whatsapp}
-                        empresa={ctx.empresa.nombre}
-                        plan={t.plan[plan]}
-                        precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
-                        periodo={periodo}
-                        etiqueta={t.bancard.boton.prefieroTransferir}
-                        esPersonal={esPersonal}
-                        comoEnlace
-                      />
-                    ))}
-                  </div>
-                ) : esActual ? null : whatsapp ? (
-                  // Premium se cotiza: el precio depende de cuántos vendedores,
-                  // así que se manda la pregunta y no un número.
-                  plan === 'negocio' && ctx.empresa.tipo_cuenta === 'emprendedor' ? (
-                    <BotonCotizar whatsapp={whatsapp} empresa={ctx.empresa.nombre} />
-                  ) : (
-                    <BotonSuscribirme
-                      whatsapp={whatsapp}
-                      empresa={ctx.empresa.nombre}
-                      plan={t.plan[plan]}
-                      precio={precio ? precioTexto(Number(precio.importe), moneda, locale) : ''}
-                      periodo={periodo}
-                      etiqueta={sus.en_prueba ? t.plan.activarEstePlan : t.plan.suscribirme}
-                      esPersonal={esPersonal}
-                    />
-                  )
-                ) : (
-                  <BotonPagar
-                    plan={plan}
-                    periodo={periodo}
-                    etiqueta={t.plan.elegir}
-                    sinPasarela={t.plan.pagoNoDisponible}
-                  />
-                )
-              }
+              /* La baja programada se ve desde arriba: en qué plan queda. */
+              pastilla={planProgramado === plan ? t.bancard.cambio.pastilla : null}
+              pie={pie}
             />
           );
         })}
@@ -559,7 +764,7 @@ export default async function PaginaPlan({
           urlScript={urlDelScript(entornoBancard)}
           origen={HOST_BANCARD[entornoBancard]}
           zona={ctx.zonaHoraria}
-          anual={(renovacionDelDebito?.periodo ?? periodo) === 'anual'}
+          anual={(renovacionDelDebito?.periodo ?? (planProgramadoEnLaBase ? periodoDeLaCuenta : periodo)) === 'anual'}
           momento={momentoDelDebito}
           tarjeta={tarjetaGuardada}
           debito={estadoBancard.debito}
@@ -586,6 +791,7 @@ export default async function PaginaPlan({
           }}
           personas={{ ...estadoBancard.personas, contratadas: estadoBancard.personas.contratadas }}
           renovacion={sus.periodo_fin}
+          bloqueado={planProgramado !== null}
         />
       )}
 
@@ -631,17 +837,23 @@ export default async function PaginaPlan({
   );
 }
 
-/** Lo que usa esta pantalla de `bancard_estado` (125). */
+/** Lo que usa esta pantalla de `bancard_estado` (125; las tres últimas, de la 130). */
 interface EstadoBancard {
   tarjeta: { id: number; marca: string | null; ultimos4: string | null; tipo: string | null } | null;
   debito: DebitoVista;
   personas: { contratadas: number | null; proxima: number | null; miembros: number; min: number; max: number } | null;
   viva: { operacion: number; estado: string; tipo: string; medio: string; importe: number; minutos: number; puede_3ds: boolean } | null;
+  /** El plan programado para la próxima renovación (una baja), o null. */
+  plan_proximo?: string | null;
+  /** Si ese plan ya se puede pagar a mano: faltan pocos días, o venció. */
+  plan_proximo_pagable?: boolean;
+  /** Cuántas personas tiene hoy el equipo, con cualquier plan. */
+  miembros?: number;
 }
 
 function Tarjeta({
   nombre, precio, porPeriodo, puntos, incluye, actual, etiquetaActual, destacado = false, pie = null, nota = null,
-  referencia = null, ayudaReferencia = '',
+  referencia = null, ayudaReferencia = '', pastilla = null,
 }: {
   nombre: string;
   precio: string;
@@ -657,13 +869,18 @@ function Tarjeta({
   pie?: React.ReactNode;
   /** «−18% tu primer mes» (−5% en la cuenta personal, 123), cuando la promo ya está ganada (078). */
   nota?: string | null;
+  /** «Desde la próxima renovación»: el plan que quedó programado (130). */
+  pastilla?: string | null;
 }) {
   return (
     <div className={`tarjeta flex flex-col p-5 ${destacado ? 'border-verde/50 ring-1 ring-verde/20' : ''}`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[16px] font-bold tracking-tight">{nombre}</h2>
         {actual && (
           <span className="pastilla bg-verde-claro text-verde-fuerte">{etiquetaActual}</span>
+        )}
+        {pastilla && (
+          <span className="pastilla bg-ambar-claro text-ambar">{pastilla}</span>
         )}
       </div>
 

@@ -404,6 +404,75 @@ function cargarTs(relativo, reemplazos = {}) {
     ok('y lee configBancard() una sola vez', (f.match(/configBancard\(\)/g) || []).length, 1);
   }
 
+  // =====================================================================
+  grupo('4 · Con una baja de plan programada, el aviso nombra los dos planes (130, 07/10)');
+  // =====================================================================
+  // Quien programó «Bajar al Básico desde la renovación» tiene hoy el Pro y
+  // se le va a cobrar el Básico. La base (130) deja `plan` y `precio` como
+  // estaban y suma `plan_renovacion` y `precio_renovacion`; `importe` ya es
+  // lo que se cobra. Sin esto el correo decía «Renovación: Gs. 190.000».
+  {
+    const baja = { ...base, plan: 'pro', precio: 190000, plan_renovacion: 'basico', precio_renovacion: 110000, importe: 110000 };
+    const debito = { marca: 'Visa', ultimos4: '0016', fecha_cobro: '2026-09-26' };
+    ok('sin nada programado no hay «otro plan»: ni sin las claves (una base sin la 130), ni con el mismo plan, ni en la prueba',
+      [L.planQueSeRenueva(base), L.planQueSeRenueva({ ...base, plan_renovacion: 'pro', precio_renovacion: 190000 }),
+        L.planQueSeRenueva({ ...base, plan_renovacion: null }), L.planQueSeRenueva({ ...baja, tipo: 'prueba' })],
+      [null, null, null, null]);
+    ok('y entonces el aviso es el de siempre, letra por letra (push y correo)',
+      [JSON.stringify(L.pushDeVencimiento({ ...base, plan_renovacion: 'pro', precio_renovacion: 190000 }, es, 'es-PY')) === JSON.stringify(L.pushDeVencimiento(base, es, 'es-PY')),
+        L.correoDeVencimiento({ ...base, plan_renovacion: 'pro', precio_renovacion: 190000 }, yo, es, 'es-PY', 'https://orden.com.py').texto
+          === L.correoDeVencimiento(base, yo, es, 'es-PY', 'https://orden.com.py').texto],
+      [true, true]);
+    ok('con la baja programada: el plan al que pasa, y el precio es el de ESE plan',
+      [L.planQueSeRenueva(baja), L.precioDelPlan(baja, es, 'es-PY')], ['basico', 'Gs. 110.000 por mes']);
+    ok('el push nombra los dos planes y el precio del nuevo, no el del que tiene',
+      L.pushDeVencimiento(baja, es, 'es-PY').cuerpo,
+      'Tu plan Pro se renueva como Básico: Gs. 110.000 por mes. Pagalo para seguir sin cortes; lo que cargaste queda guardado.');
+    const correo = L.correoDeVencimiento(baja, yo, es, 'es-PY', 'https://orden.com.py');
+    ok('el correo: el asunto dice el plan que vence; la línea del precio, a cuál pasa y cuánto; y ya no «Renovación: Gs. 190.000»',
+      [correo.asunto, correo.texto.includes('Se renueva como Básico: Gs. 110.000 por mes.'), /Renovación:|190\.000/.test(correo.texto),
+        correo.html.includes('Se renueva como Básico: Gs. 110.000 por mes.')],
+      ['Tu plan Pro de Orden vence el 27 de septiembre', true, false, true]);
+    ok('con el débito al día: qué día se cobra, CUÁNTO (lo del plan nuevo) y de qué tarjeta, y a qué plan pasa',
+      L.pushDeVencimiento({ ...baja, debito }, es, 'es-PY').cuerpo,
+      'El 26 de septiembre cobramos Gs. 110.000 de tu Visa •••• 0016. No tenés que hacer nada. Se renueva como Básico.');
+    const conDebito = L.correoDeVencimiento({ ...baja, debito }, yo, es, 'es-PY', 'https://orden.com.py');
+    ok('y su correo dice el plan nuevo una sola vez, con el importe del débito',
+      [(conDebito.texto.match(/Se renueva como Básico/g) || []).length, conDebito.texto.includes('cobramos Gs. 110.000 de tu Visa •••• 0016'), /190\.000/.test(conDebito.texto)],
+      [1, true, false]);
+    ok('sin precio cargado para el plan nuevo no se inventa un número, pero el plan se nombra igual',
+      [L.pushDeVencimiento({ ...baja, precio_renovacion: null }, es, 'es-PY').cuerpo,
+        /Gs\.|\d/.test(L.correoDeVencimiento({ ...baja, precio_renovacion: null }, yo, es, 'es-PY', 'https://orden.com.py').texto.split('\n').find((l) => l.startsWith('Se renueva')) ?? 'x1')],
+      ['Tu plan Pro se renueva como Básico. Pagalo para seguir sin cortes; lo que cargaste queda guardado.', false]);
+    ok('en portugués',
+      [L.pushDeVencimiento({ ...baja, plan: 'negocio', plan_renovacion: 'pro', precio_renovacion: 190000 }, pt, 'pt-BR').cuerpo,
+        L.correoDeVencimiento(baja, { ...yo, idioma: 'pt' }, pt, 'pt-BR', 'https://orden.com.py').texto.includes('Renova como Básico: Gs. 110.000 por mês.')],
+      ['Seu plano Premium renova como Pro: Gs. 190.000 por mês. Pague pra continuar sem interrupção; o que você lançou fica guardado.', true]);
+    // La fila de verdad: una cuenta con el Pro pago que programó el Básico.
+    // El grupo 3 volvió a aplicar la 126 sobre esta base, y la 126 define
+    // `vencimientos_por_avisar` SIN las dos claves nuevas: se aplica la 130
+    // de nuevo, que es el orden en que quedan en producción (126 y después
+    // 130). Dicho de otro modo: reaplicar la 126 después de la 130 deshace
+    // esta parte de la 130.
+    const antesDeLa130 = (await leer()).some((x) => 'plan_renovacion' in x);
+    await H.aplicarMigracion(db, '130');
+    const dueno = await H.montarEmpresa(db, { email: 'baja-programada@aviso.test', nombre: 'Baja Programada' });
+    await db.query(
+      `update public.suscripciones
+          set plan = 'pro', estado = 'activa', periodo = 'mensual', prueba_fin = now() - interval '40 days',
+              periodo_fin = ((public.hoy_empresa(empresa_id) + 3)::timestamp + interval '12 hours') at time zone 'America/Asuncion'
+        where empresa_id = $1`, [dueno.empresaId]);
+    await H.comoServicio(db, () => db.query('select public.bancard_programar_plan($1, $2, $3)', [dueno.empresaId, dueno.uid, 'basico']));
+    const fila = await de(dueno.empresaId);
+    ok('(la 126 reaplicada había dejado el aviso sin las claves de la 130: por eso va la 130 otra vez encima)', antesDeLa130, false);
+    ok('la base manda el plan de hoy y, aparte, el que se renueva con su precio; el importe ya es el del plan nuevo',
+      [fila?.plan, Number(fila?.precio), fila?.plan_renovacion, Number(fila?.precio_renovacion), Number(fila?.importe), fila?.dias],
+      ['pro', 190000, 'basico', 110000, 110000, 3]);
+    ok('y con esa fila, tal cual, el push dice lo que se va a cobrar',
+      L.pushDeVencimiento(fila, es, 'es-PY').cuerpo,
+      'Tu plan Pro se renueva como Básico: Gs. 110.000 por mes. Pagalo para seguir sin cortes; lo que cargaste queda guardado.');
+  }
+
   console.log(`\n${'═'.repeat(62)}`);
   if (fallos > 0) {
     console.log(`>>> ${fallos} DE ${corridas} COMPROBACIONES DEL AVISO DE VENCIMIENTO FALLARON`);

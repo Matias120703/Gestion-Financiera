@@ -28,9 +28,18 @@ export function Comprobante({ op, locale, zona }: { op: OperacionVista; locale: 
   const vence = op.vence
     ? new Date(op.vence).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: zona })
     : null;
+  // Un cambio de plan (130) no es «Plan Pro mensual»: no pagó un mes de Pro,
+  // pagó la diferencia. Dice de qué plan a cuál; «Activo hasta» es la misma
+  // fecha de antes, porque el cambio no la mueve.
+  const antes = op.tipo === 'cambio' && op.desglose && typeof op.desglose === 'object'
+    ? (op.desglose as { plan_antes?: unknown }).plan_antes
+    : null;
+  const planAntes = antes === 'basico' || antes === 'pro' || antes === 'negocio' ? t.plan[antes] : null;
   const concepto = op.tipo === 'personas'
     ? c.conceptoPersonas(op.personas)
-    : c.conceptoPlan(plan, op.periodo === 'anual', op.personas);
+    : op.tipo === 'cambio'
+      ? c.conceptoCambio(planAntes, plan, op.plan === 'negocio' ? op.personas : null)
+      : c.conceptoPlan(plan, op.periodo === 'anual', op.personas);
 
   const filas: [string, string][] = [
     [c.fechaYHora, fechaYHora],

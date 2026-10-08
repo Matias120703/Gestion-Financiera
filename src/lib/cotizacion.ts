@@ -68,6 +68,53 @@ export interface Cotizacion {
   vence_hasta: string;
 }
 
+/**
+ * La respuesta de `cotizar_cambio` (130): SUBIR de plan con días pagos.
+ *
+ * Se paga hoy la diferencia de lista entre los dos planes por los días que
+ * faltan, sin descuento, y la fecha de vencimiento no cambia. Acá no hay
+ * espejo: cada cantidad de personas se le pide a la base (son pocos toques,
+ * y la cuenta de los días no se repite en la pantalla). Como siempre, lo que
+ * se cobra lo vuelve a calcular el servidor al crear la operación.
+ */
+export interface CotizacionDeCambio {
+  /** El plan que la cuenta tiene hoy, y al que sube. */
+  plan_antes: string;
+  plan: string;
+  /** El período de la CUENTA: el cambio se calcula sobre el que ya tiene. */
+  periodo: 'mensual' | 'anual';
+  /** Solo si sube al Premium; si no, null. */
+  personas: number | null;
+  personas_min: number | null;
+  personas_max: number | null;
+  personas_incluidas: number | null;
+  precio_por_persona: number | null;
+  miembros: number;
+  /** De lista, sin descuento: lo que cuesta un período de cada plan. */
+  precio_antes: number;
+  precio: number;
+  diferencia: number;
+  /** Los que faltan para el vencimiento; de esos, los de la prueba no se cobran. */
+  dias_restantes: number;
+  dias_gratis: number;
+  dias_pagos: number;
+  /** Los que entran en la cuenta (nunca más que un período entero recién pagado). */
+  dias_cobrados: number;
+  /** 30 o 365. */
+  dias_del_periodo: number;
+  /** Lo que se paga hoy, en guaraníes enteros. */
+  importe: number;
+  total: number;
+  moneda: 'PYG';
+  /** La fecha de vencimiento, que NO cambia. */
+  vence_hasta: string;
+  /** Lo que cuesta el plan nuevo por período: de lista, y con el descuento que la cuenta tiene hoy. */
+  renovacion: number;
+  renovacion_hoy: number;
+  descuento_fase: 'prueba' | 'constancia' | null;
+  descuento_porcentaje: number;
+}
+
 /** El redondeo de `redondeo_de_cobro` (124): al guaraní. */
 function alGuarani(n: number): number {
   return Math.round(n);

@@ -2368,6 +2368,300 @@ async function principal() {
       [...new Set((await eventosDeOlvidadas(null)).flatMap((e) => Object.keys(e.detalle)))].sort(), ['actor', 'cuantas', 'ids', 'motivo', 'origen', 'user_id']);
   }
 
+  // ═══════════════════════════════════════════════════════════
+  grupo('35 · Cambiar de plan con días pagos: subir se paga, bajar se programa (130, 07/10)');
+  // ═══════════════════════════════════════════════════════════
+  // Matías: «Me suscribí al Básico. Si la persona quiere cambiar al Pro o al
+  // Premium me lleva al WhatsApp. ¿No hay una forma de que se pueda pagar con
+  // tarjeta o con QR?». La base (130) tiene sus pruebas en
+  // cambiar-plan.test.js; acá va el camino del servidor, de punta a punta,
+  // contra el Bancard de mentira: el pedido que llega del navegador, el
+  // formulario, la tarjeta guardada, un cambio que se deja a medias, y
+  // programar y deshacer la baja.
+  {
+    const { d, falso, avisos } = armar('produccion');
+    const EN_CURSO = 'Hay un pago en curso. Esperá a que se confirme y probá de nuevo.';
+    const hace = (minutos, op) => db.query(
+      `update public.bancard_operaciones set created_at = now() - make_interval(mins => $2::int) where id = $1`, [op, minutos]);
+    /**
+     * Una cuenta con un plan mensual pago por el formulario, a la que le
+     * faltan N días, todos pagos (la prueba ya terminó: los días de prueba
+     * que quedan por delante no se cobran, y acá se quiere la cuenta redonda).
+     */
+    async function cuentaCon(plan, email, nombre, dias, personas = null) {
+      const c = await H.montarEmpresa(db, { email, nombre });
+      const r = await F.iniciarPago(d, { empresa: c.empresaId, usuario: c.uid, tipo: 'plan', plan, periodo: 'mensual', personas });
+      falso.pagar(r.operacion);
+      await F.recibirConfirmacion(d, cuerpo(falso, r.operacion));
+      await db.query(
+        `update public.suscripciones
+            set periodo_fin = now() + make_interval(days => $2::int), prueba_fin = now() - interval '40 days'
+          where empresa_id = $1`, [c.empresaId, dias]);
+      return c;
+    }
+    /** Lo que la hoja le pide a la base antes de pagar, con la sesión del dueño. */
+    const cotizar = async (c, plan, personas = null) => (await H.comoUsuario(db, c.uid, () => db.query(
+      'select public.cotizar_cambio(p_empresa => $1, p_plan => $2, p_personas => $3) j', [c.empresaId, plan, personas]))).rows[0].j;
+    const estadoDe = async (c) => (await H.comoUsuario(db, c.uid, () => db.query(
+      'select public.bancard_estado(p_empresa => $1, p_entorno => $2) j', [c.empresaId, 'produccion']))).rows[0].j;
+    const planProximo = async (c) => (await J('select plan_proximo from public.bancard_cuentas where empresa_id = $1', [c.empresaId]))?.plan_proximo ?? null;
+    const topeDe = async (c) => (await J('select public.tope_de_miembros($1) n', [c.empresaId])).n;
+    const operacionesDe = async (c) => (await J('select count(*)::int n from public.bancard_operaciones where empresa_id = $1', [c.empresaId])).n;
+    /**
+     * La baja de plan como la pide la ruta /api/pagos/bancard/plan: por el
+     * servidor, con quién lo pide, si esa cuenta ve Bancard y, si lo ve, con
+     * qué soltar un formulario abandonado (la ruta lee la operación viva con
+     * la sesión; acá, de la tabla).
+     */
+    const bdDelPlan = crearBd(db);
+    const vivaDe = (c) => async () => {
+      const f = await J(`select id from public.bancard_operaciones where empresa_id = $1 and estado in ('creada', 'en_3ds', 'incierta') limit 1`, [c.empresaId]);
+      return f ? Number(f.id) : null;
+    };
+    const programar = (c, uid, plan, { veBancard = true, soltar = true } = {}) => F.programarCambioDePlan(
+      bdDelPlan, { empresa: c.empresaId, usuario: uid, plan, veBancard }, soltar ? { d, viva: vivaDe(c) } : null);
+
+    // ---- 1. EL PEDIDO QUE LLEGA DEL NAVEGADOR: la función de verdad de
+    // bancard-servidor.ts (se pasa de TypeScript a JavaScript acá mismo; lo
+    // que ese archivo importa de Next y de Supabase no hace falta para leer
+    // un pedido, y va vacío).
+    const leerPedidoDePago = (() => {
+      const ts = require('typescript');
+      const fuente = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'lib', 'bancard-servidor.ts'), 'utf8');
+      const js = ts.transpileModule(fuente, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+      const modulo = { exports: {} };
+      new Function('require', 'module', 'exports', js)(() => ({}), modulo, modulo.exports);
+      return modulo.exports.leerPedidoDePago;
+    })();
+    ok('leerPedidoDePago acepta el cambio: a qué plan, y cuántas personas si es el Premium',
+      [leerPedidoDePago({ tipo: 'cambio', plan: 'pro' }), leerPedidoDePago({ tipo: 'cambio', plan: 'negocio', personas: 6 })],
+      [{ tipo: 'cambio', plan: 'pro', periodo: null, personas: null }, { tipo: 'cambio', plan: 'negocio', periodo: null, personas: 6 }]);
+    ok('el período y el importe que mande el navegador se tiran: del pedido salen cuatro datos y ninguno es plata',
+      [leerPedidoDePago({ tipo: 'cambio', plan: 'pro', periodo: 'anual', importe: 1, total: 1, amount: 1, vence_hasta: '2030-01-01' }),
+        Object.keys(leerPedidoDePago({ tipo: 'cambio', plan: 'pro', importe: 1 })).sort()],
+      [{ tipo: 'cambio', plan: 'pro', periodo: null, personas: null }, ['periodo', 'personas', 'plan', 'tipo']]);
+    ok('no se sube al Básico, ni sin plan, ni con una cantidad rara; y un tipo inventado sigue sin pasar',
+      [leerPedidoDePago({ tipo: 'cambio', plan: 'basico' }), leerPedidoDePago({ tipo: 'cambio' }), leerPedidoDePago({ tipo: 'cambio', plan: 'negocio', personas: 0 }),
+        leerPedidoDePago({ tipo: 'cambio', plan: 'negocio', personas: '6' }), leerPedidoDePago({ tipo: 'regalo', plan: 'pro' })],
+      [null, null, null, null, null]);
+    ok('y los dos pedidos de siempre se leen igual que antes',
+      [leerPedidoDePago({ plan: 'pro' }), leerPedidoDePago({ tipo: 'plan', plan: 'negocio', periodo: 'anual', personas: 6 }), leerPedidoDePago({ tipo: 'personas', personas: 8 })],
+      [{ tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null }, { tipo: 'plan', plan: 'negocio', periodo: 'anual', personas: 6 },
+        { tipo: 'personas', plan: null, periodo: null, personas: 8 }]);
+
+    // ---- 2. DE PUNTA A PUNTA POR EL FORMULARIO: Básico → Pro con 15 días.
+    const B1 = await cuentaCon('basico', 'sube1@cambio.test', 'Sube Uno', 15);
+    const antes1 = await sus(B1);
+    const cot1 = await cotizar(B1, 'pro');
+    ok('la hoja lee de la base: de Básico a Pro, Gs. 40.000 por los 15 días que faltan; la fecha no cambia; después, Gs. 190.000',
+      [cot1.plan_antes, cot1.plan, cot1.importe, cot1.dias_restantes, cot1.dias_cobrados, cot1.renovacion, cot1.renovacion_hoy,
+        new Date(cot1.vence_hasta).getTime() === new Date(antes1.fin).getTime()],
+      ['basico', 'pro', 40000, 15, 15, 190000, 190000, true]);
+    falso.pedidos.length = 0;
+    avisos.length = 0;
+    const pedido1 = leerPedidoDePago({ tipo: 'cambio', plan: 'pro', periodo: 'anual', importe: 1 });
+    const r1 = await F.iniciarPago(d, { empresa: B1.empresaId, usuario: B1.uid, ...pedido1 });
+    ok('iniciarPago con el cambio: la base congela lo mismo que cotizó, y Bancard abre el formulario',
+      [r1.estado, r1.importe, r1.importe === cot1.importe, r1.desglose.plan_antes, r1.desglose.dias_cobrados, r1.reusada],
+      ['listo', 40000, true, 'basico', 15, false]);
+    const sb1 = falso.pedidos.find((p) => p.ruta === '/single_buy');
+    ok('single_buy: EL IMPORTE QUE COBRA BANCARD ES EL DE LA BASE, en guaraníes, con «Orden cambio Pro» y el md5 del manual',
+      [sb1.cuerpo.operation.amount, sb1.cuerpo.operation.currency, sb1.cuerpo.operation.description,
+        sb1.cuerpo.operation.token === md5(CLAVE + r1.operacion + '40000.00' + 'PYG')],
+      ['40000.00', 'PYG', 'Orden cambio Pro', true]);
+    const op1 = await opDe(r1.operacion);
+    ok('la operación: de tipo cambio, al Pro, sobre el período de la cuenta (mensual, aunque el pedido dijera «anual»)',
+      [op1.tipo, op1.plan, op1.periodo, Number(op1.importe), op1.estado], ['cambio', 'pro', 'mensual', 40000, 'creada']);
+    ok('abrir el formulario no cambia nada: sigue en el Básico', [(await sus(B1)).plan, (await sus(B1)).fin === antes1.fin], ['basico', true]);
+    falso.pagar(r1.operacion);
+    ok('la confirmación de Bancard: 200', (await F.recibirConfirmacion(d, cuerpo(falso, r1.operacion))).http, 200);
+    const s1 = await sus(B1);
+    ok('ya es Pro: cambió el plan y NADA más (misma fecha, mismo período, sigue activa, sin tope de personas)',
+      [s1.plan, s1.efectivo, s1.estado, s1.periodo, s1.fin === antes1.fin, s1.tope_vendedores, s1.importe === antes1.importe],
+      ['pro', 'pro', 'activa', 'mensual', true, null, true]);
+    ok('en Orden: el ingreso por los 40.000 y el renglón «bancard_cambio»; la operación, pagada por la confirmación',
+      [(await ingresos(`Bancard ${r1.operacion}`)).map((i) => i.monto), (await registroDe(B1)).map((x) => x.accion),
+        (await opDe(r1.operacion)).estado, (await opDe(r1.operacion)).fuente],
+      [[40000], ['cambiar_plan', 'bancard_cambio'], 'pagada', 'confirmacion']);
+    ok('se avisa una vez, con lo que el comprobante necesita para decir «de Básico a Pro» y sin nada que no se pueda mostrar',
+      [avisos.length, avisos[0]?.aprobada, avisos[0]?.tipo, avisos[0]?.plan_antes, avisos[0]?.plan, avisos[0]?.conflicto,
+        ['authorization_number', 'response_code', 'token', 'process_id'].filter((k) => JSON.stringify(avisos[0]).includes(k))],
+      [1, true, 'cambio', 'basico', 'pro', false, []]);
+    ok('la renovación ya es la del Pro, y la pantalla lo lee de la base', (await estadoDe(B1)).debito.importe, 190000);
+    ok('subir de nuevo al mismo plan ya no es un cambio: lo dice la base',
+      [(await F.iniciarPago(d, { empresa: B1.empresaId, usuario: B1.uid, tipo: 'cambio', plan: 'pro', periodo: null, personas: null })).mensaje],
+      ['Ese pedido de pago no es válido.']);
+
+    // ---- 3. CON LA TARJETA GUARDADA: Básico → Premium de 6 con 29 días.
+    const B2 = await cuentaCon('basico', 'sube2@cambio.test', 'Sube Dos', 29);
+    await guardarTarjeta(d, falso, B2, { marca: 'Visa', enmascarado: '4000********0016' });
+    const antes2 = await sus(B2);
+    const cot2 = await cotizar(B2, 'negocio', 6);
+    falso.pedidos.length = 0;
+    const c2 = await F.cobrarConTarjeta(d, { empresa: B2.empresaId, usuario: B2.uid, tipo: 'cambio', plan: 'negocio', periodo: null, personas: 6 });
+    const ch2 = falso.pedidos.find((p) => p.ruta === '/charge');
+    ok('«Pagar con mi Visa»: (250.000 + 2 × 60.000 − 110.000) × 29/30 = 251.333, y es lo que se le cobra a la tarjeta',
+      [cot2.importe, c2.estado, ch2.cuerpo.operation.amount, ch2.cuerpo.operation.currency, ch2.cuerpo.operation.description,
+        ch2.cuerpo.operation.token === md5(CLAVE + c2.operacion + 'charge' + '251333.00' + 'PYG' + ch2.cuerpo.operation.alias_token)],
+      [251333, 'pagada', '251333.00', 'PYG', 'Orden cambio Premium', true]);
+    const s2 = await sus(B2);
+    ok('ya es Premium de 6 (tope 5 más el dueño), con la misma fecha; el débito sigue al día, por 370.000',
+      [s2.plan, s2.tope_vendedores, s2.fin === antes2.fin, (await cuentaDe(B2)).debito_estado, (await estadoDe(B2)).debito.importe,
+        (await opDe(c2.operacion)).tipo, (await opDe(c2.operacion)).fuente],
+      ['negocio', 5, true, 'al_dia', 370000, 'cambio', 'charge']);
+    await apagar(B2);
+
+    // ---- 4. UN CAMBIO QUE SE DEJA A MEDIAS, Y VOLVER A COTIZAR.
+    const B3 = await cuentaCon('basico', 'sube3@cambio.test', 'Sube Tres', 15);
+    const p3 = { empresa: B3.empresaId, usuario: B3.uid, tipo: 'cambio', plan: 'pro', periodo: null, personas: null };
+    const a1 = await F.iniciarPago(d, p3);
+    const a2 = await F.iniciarPago(d, p3);
+    ok('abre el formulario (Gs. 40.000) y lo deja; si toca de nuevo es el mismo formulario, no otro cobro',
+      [a1.estado, a1.importe, a2.reusada, a2.operacion === a1.operacion, a2.processId === a1.processId], ['listo', 40000, true, true, true]);
+    // En el medio la cuenta se renueva (el cobro automático, u otro teléfono): le quedan 45 días.
+    await db.query(`update public.suscripciones set periodo_fin = now() + interval '45 days' where empresa_id = $1`, [B3.empresaId]);
+    const cot3 = await cotizar(B3, 'pro');
+    ok('la hoja vuelve a cotizar antes de cobrar y ya no es lo que mostraba: otro importe y otra fecha (por eso pide otro toque)',
+      [cot3.importe, cot3.dias_cobrados, cot3.importe !== a1.importe, new Date(cot3.vence_hasta).getTime() !== new Date(a1.desglose.vence_hasta).getTime()],
+      [120000, 45, true, true]);
+    const a3 = await F.iniciarPago(d, p3);
+    ok('por diez minutos el servidor devuelve el formulario de antes, con SU importe: la hoja lo compara con lo recién cotizado y no lo abre',
+      [a3.reusada, a3.operacion === a1.operacion, a3.importe, a3.importe === cot3.importe], [true, true, 40000, false]);
+    await hace(11, a1.operacion);
+    falso.pedidos.length = 0;
+    const a4 = await F.iniciarPago(d, p3);
+    ok('pasados los diez minutos, pedirlo de nuevo cierra el formulario abandonado en Bancard y abre otro, por lo que la base cotiza HOY',
+      [a4.estado, a4.reusada, a4.operacion !== a1.operacion, a4.importe, a4.importe === cot3.importe, (await opDe(a1.operacion)).estado, rutas(falso)],
+      ['listo', false, true, 120000, true, 'vencida', ['/single_buy/confirmations', '/single_buy/rollback', '/single_buy']]);
+    ok('mientras tanto la cuenta no cambió: sigue en el Básico', (await sus(B3)).plan, 'basico');
+    // Si alguien llegara a pagar el formulario viejo (cotizado para otra fecha): la plata se anota, el plan no se toca.
+    avisos.length = 0;
+    falso.pagar(a1.operacion);
+    await F.recibirConfirmacion(d, cuerpo(falso, a1.operacion));
+    const viejo = await opDe(a1.operacion);
+    ok('el formulario viejo pagado tarde: se anota la plata, queda para revisar, y NO cambia el plan ni avisa «tu plan está activo»',
+      [viejo.estado, typeof viejo.revisar, (await sus(B3)).plan, avisos[0]?.conflicto, (await ingresos(`Bancard ${a1.operacion}`)).map((i) => i.monto)],
+      ['pagada', 'string', 'basico', true, [40000]]);
+    const fin3 = (await sus(B3)).fin;
+    falso.pagar(a4.operacion);
+    await F.recibirConfirmacion(d, cuerpo(falso, a4.operacion));
+    ok('y el formulario nuevo, pagado: ahora sí es Pro, con la fecha que tenía', [(await sus(B3)).plan, (await sus(B3)).fin === fin3], ['pro', true]);
+
+    // Rechazado el último día: no cambia nada, y se puede probar de nuevo.
+    const B4 = await cuentaCon('basico', 'sube4@cambio.test', 'Sube Cuatro', 1);
+    const rj = await F.iniciarPago(d, { empresa: B4.empresaId, usuario: B4.uid, tipo: 'cambio', plan: 'negocio', periodo: null, personas: 4 });
+    falso.rechazar(rj.operacion, '51', 'NO APROBADA-INSUF.DE FONDOS');
+    await F.recibirConfirmacion(d, cuerpo(falso, rj.operacion));
+    ok('el último día, al Premium de 4: Gs. 4.667; el banco lo rechaza y la cuenta sigue igual (Básico, sin tope, sin ingreso)',
+      [rj.importe, (await opDe(rj.operacion)).estado, (await sus(B4)).plan, (await sus(B4)).tope_vendedores, (await ingresos(`Bancard ${rj.operacion}`)).length],
+      [4667, 'rechazada', 'basico', null, 0]);
+
+    // ---- 5. EL EQUIPO TIENE QUE ENTRAR EN EL PLAN QUE SE PAGA (decisión 4).
+    const E1 = await H.montarEmpresa(db, { email: 'equipo@cambio.test', nombre: 'Equipo de Tres' });
+    await H.sumarMiembro(db, E1.empresaId, 'e2@cambio.test');
+    await H.sumarMiembro(db, E1.empresaId, 'e3@cambio.test');
+    falso.pedidos.length = 0;
+    const e1 = await F.iniciarPago(d, { empresa: E1.empresaId, usuario: E1.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null });
+    ok('en la prueba, con 3 en el equipo, pagar el Básico: lo frena la base y dice qué hacer; a Bancard no se le pide nada',
+      [e1.estado, e1.mensaje, falso.pedidos.length, await operacionesDe(E1)],
+      ['error_base', 'Tu equipo tiene 3 personas y el plan Básico admite hasta 1. Achicá el equipo o elegí un plan donde entren todos.', 0, 0]);
+    ok('el Pro, donde entran los tres, sí',
+      (await F.iniciarPago(d, { empresa: E1.empresaId, usuario: E1.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null })).estado, 'listo');
+
+    // ---- 6. BAJAR: SE PROGRAMA, NO SE COBRA, Y SE DESHACE.
+    const P1 = await cuentaCon('pro', 'baja1@cambio.test', 'Baja Uno', 15);
+    const antesP1 = await sus(P1);
+    const opsP1 = await operacionesDe(P1);
+    const llamadas = bdDelPlan.llamadas;
+    const sinVer = await programar(P1, P1.uid, 'basico', { veBancard: false });
+    ok('una cuenta que no ve Bancard no puede programar una baja: ni siquiera se llama a la base',
+      [sinVer.estado, bdDelPlan.llamadas - llamadas, await planProximo(P1)], ['no_disponible', 0, null]);
+    falso.pedidos.length = 0;
+    const baja = await programar(P1, P1.uid, 'basico');
+    ok('«Bajar al Básico desde la renovación»: queda programado; la base contesta cuánto va a ser esa renovación y cuándo',
+      [baja.estado, baja.planProximo, baja.plan, baja.importe, new Date(baja.vence).getTime() === new Date(antesP1.fin).getTime()],
+      ['listo', 'basico', 'pro', 110000, true]);
+    ok('no se cobró ni se pidió nada: ninguna operación nueva, ningún pedido a Bancard, y la cuenta sigue en el Pro con su fecha',
+      [await operacionesDe(P1) - opsP1, falso.pedidos.length, (await sus(P1)).plan, (await sus(P1)).fin === antesP1.fin], [0, 0, 'pro', true]);
+    const eP1 = await estadoDe(P1);
+    ok('la pantalla lo lee de la base: el plan programado, que todavía no se puede pagar a mano (faltan 15 días), y el próximo cobro ya es el del Básico',
+      [eP1.plan_proximo, eP1.plan_proximo_pagable, eP1.miembros, eP1.debito.importe], ['basico', false, 1, 110000]);
+    ok('mientras está programado, el equipo no puede pasar de lo que admite el Básico', await topeDe(P1), 1);
+    ok('pagar el Básico ahora, con 15 días de Pro pagos por delante: no (bajaría el plan hoy)',
+      /está pago hasta el/.test((await F.iniciarPago(d, { empresa: P1.empresaId, usuario: P1.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null })).mensaje ?? ''), true);
+    const ajeno = await programar(P1, A.uid, null);
+    const vendedorP1 = await H.sumarMiembro(db, P1.empresaId, 'vend@cambio.test').catch(() => null);
+    ok('otro dueño no la deshace, y con la baja programada no entra nadie más al equipo',
+      [ajeno.estado, ajeno.codigo, await planProximo(P1), vendedorP1], ['error_base', '42501', 'basico', null]);
+    const deshecha = await programar(P1, P1.uid, null, { veBancard: false, soltar: false });
+    ok('«Deshacer» se permite aunque la cuenta ya no vea Bancard: vuelve todo, y la base dice cuánto vuelve a ser la renovación',
+      [deshecha.estado, deshecha.planProximo, deshecha.plan, deshecha.importe, await planProximo(P1), await topeDe(P1)],
+      ['listo', null, 'pro', 190000, null, 3]);
+    ok('quedó escrito quién programó y quién deshizo',
+      (await registroDe(P1)).filter((x) => x.accion === 'bancard_plan_programado').map((x) => [x.detalle.plan_proximo, x.detalle.habia]),
+      [['basico', null], [null, 'basico']]);
+
+    // Con el equipo adentro no se programa: el Pro con 2 personas no baja al Básico.
+    const P2 = await cuentaCon('pro', 'baja2@cambio.test', 'Baja Dos', 15);
+    await H.sumarMiembro(db, P2.empresaId, 'p2b@cambio.test');
+    const grande = await programar(P2, P2.uid, 'basico');
+    ok('si el equipo de hoy no entra en el plan nuevo, no se programa, y dice por qué',
+      [grande.estado, grande.mensaje, await planProximo(P2)],
+      ['error_base', 'Tu equipo tiene 2 personas y el plan Básico admite hasta 1. Achicá el equipo o elegí un plan donde entren todos.', null]);
+
+    // ---- 7. CON UN PAGO EN CURSO NO SE PROGRAMA NI SE DESHACE… salvo que
+    // sea un formulario que la persona abrió y dejó: ese se suelta.
+    await programar(P1, P1.uid, 'basico');
+    const renueva = await F.iniciarPago(d, { empresa: P1.empresaId, usuario: P1.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null });
+    ok('con la baja programada abre «Renovar» del Pro y deja el formulario', [renueva.estado, (await opDe(renueva.operacion)).estado], ['listo', 'creada']);
+    const trabada = await programar(P1, P1.uid, null, { soltar: false });
+    ok('sin con qué soltarlo (Bancard apagado), deshacer contesta «hay un pago en curso» y la baja sigue programada',
+      [trabada.estado, trabada.mensaje === EN_CURSO, trabada.mensaje === F.ERROR_PAGO_EN_CURSO, await planProximo(P1)], ['error_base', true, true, 'basico']);
+    falso.pedidos.length = 0;
+    const suelta = await programar(P1, P1.uid, null);
+    ok('con Bancard: le pregunta por ese formulario, no se pagó, lo cierra con la reversa, y recién ahí deshace (un solo reintento)',
+      [suelta.estado, suelta.planProximo, rutas(falso), (await opDe(renueva.operacion)).estado, await planProximo(P1)],
+      ['listo', null, ['/single_buy/confirmations', '/single_buy/rollback'], 'vencida', null]);
+    // Si ese formulario en realidad se había pagado (QR, y la confirmación no llegó): no se pierde.
+    const renueva2 = await F.iniciarPago(d, { empresa: P1.empresaId, usuario: P1.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null });
+    falso.pagar(renueva2.operacion);
+    const finP1 = (await sus(P1)).fin;
+    const trasPago = await programar(P1, P1.uid, 'basico');
+    ok('y si el formulario «abandonado» estaba pago, primero se activa ese pago (un mes más de Pro) y después se programa la baja',
+      [(await opDe(renueva2.operacion)).estado, (await opDe(renueva2.operacion)).fuente, (await sus(P1)).fin !== finP1, trasPago.estado, trasPago.planProximo, (await sus(P1)).plan],
+      ['pagada', 'consulta', true, 'listo', 'basico', 'pro']);
+    await programar(P1, P1.uid, null);
+
+    // Un 3D Secure esperando a la persona NO se suelta. Es el caso que
+    // cobraba dos veces: la renovación por el plan programado ya salió, y
+    // deshacer en ese momento la dejaba «plata anotada, sin renovar».
+    const P3 = await cuentaCon('pro', 'baja3@cambio.test', 'Baja Tres', 15);
+    await guardarTarjeta(d, falso, P3, { marca: 'Visa', enmascarado: '4000********0016' });
+    await venceEn(P3, 2);
+    await programar(P3, P3.uid, 'basico');
+    ok('a dos días del vencimiento el plan programado ya se puede pagar a mano', (await estadoDe(P3)).plan_proximo_pagable, true);
+    const finP3 = (await sus(P3)).fin;
+    falso.proximoCobro({ tipo: '3ds' });
+    const tres = await F.cobrarConTarjeta(d, { empresa: P3.empresaId, usuario: P3.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null });
+    ok('paga la renovación por el Básico con su tarjeta y el banco pide 3D Secure: Gs. 110.000, esperando',
+      [tres.estado, Number((await opDe(tres.operacion)).importe), (await opDe(tres.operacion)).plan], ['en_3ds', 110000, 'basico']);
+    falso.pedidos.length = 0;
+    const noDeshace = await programar(P3, P3.uid, null);
+    ok('en ese momento «Deshacer» no pasa, tampoco con Bancard a mano: se le pregunta, sigue esperando, y la baja queda como estaba',
+      [noDeshace.estado, noDeshace.mensaje === EN_CURSO, await planProximo(P3), (await opDe(tres.operacion)).estado, rollbacks(falso)],
+      ['error_base', true, 'basico', 'en_3ds', []]);
+    const noReprograma = await programar(P3, P3.uid, 'basico');
+    ok('ni volver a programar', [noReprograma.estado, noReprograma.mensaje === EN_CURSO], ['error_base', true]);
+    avisos.length = 0;
+    falso.pagar(tres.operacion);
+    await F.recibirConfirmacion(d, cuerpo(falso, tres.operacion));
+    const sP3 = await sus(P3);
+    ok('confirma en el banco: la renovación entra por el plan programado, sin conflicto: Básico, un mes más, y ya no hay nada programado',
+      [sP3.plan, sP3.estado, sP3.fin !== finP3, (await opDe(tres.operacion)).revisar, avisos[0]?.conflicto, await planProximo(P3), (await estadoDe(P3)).plan_proximo],
+      ['basico', 'activa', true, null, false, null, null]);
+    await apagar(P3);
+  }
+
   console.log(`\n${corridas - fallos}/${corridas} comprobaciones del pago ocasional con Bancard.`);
   if (fallos > 0) {
     console.log(`${fallos} fallaron.`);

@@ -157,9 +157,10 @@ function baseSobre(servicio: ReturnType<typeof clienteDeServicio>): BaseBancard 
 
 /**
  * La base sola, sin Bancard: para lo único que tiene que andar con Bancard
- * apagado, deshacer una baja de personas programada
- * (`/api/pagos/bancard/personas`). Como `dependencias()`, se arma DESPUÉS
- * de validar la sesión y el acceso con el cliente del usuario.
+ * apagado, deshacer una baja programada, de personas
+ * (`/api/pagos/bancard/personas`) o de plan (`/api/pagos/bancard/plan`).
+ * Como `dependencias()`, se arma DESPUÉS de validar la sesión y el acceso
+ * con el cliente del usuario.
  */
 export function baseDeServicio(): BaseBancard {
   return baseSobre(clienteDeServicio());
@@ -215,7 +216,11 @@ export async function empresaDelPedido(
 
 /** Lo que el navegador manda para pagar: QUÉ se paga, nunca cuánto. */
 export interface PedidoLeido {
-  tipo: 'plan' | 'personas';
+  /**
+   * 'plan' = pagar o renovar un plan; 'personas' = sumar gente a un Premium
+   * vigente; 'cambio' = subir de plan con días pagos (130, 07/10/2026).
+   */
+  tipo: 'plan' | 'personas' | 'cambio';
   plan: string | null;
   periodo: string | null;
   personas: number | null;
@@ -228,7 +233,10 @@ export interface PedidoLeido {
  * el equipo de hoy) y calcula el importe.
  */
 export function leerPedidoDePago(c: Record<string, unknown>): PedidoLeido | null {
-  const tipo = c.tipo === 'personas' ? 'personas' : c.tipo === 'plan' || c.tipo === undefined ? 'plan' : null;
+  const tipo = c.tipo === 'personas' ? 'personas'
+    : c.tipo === 'cambio' ? 'cambio'
+    : c.tipo === 'plan' || c.tipo === undefined ? 'plan'
+    : null;
   if (!tipo) return null;
 
   const personas = c.personas === null || c.personas === undefined ? null : c.personas;
@@ -240,6 +248,16 @@ export function leerPedidoDePago(c: Record<string, unknown>): PedidoLeido | null
     // Sumar personas a un Premium vigente: el plan y el período son los que
     // ya tiene la cuenta (los pone la base).
     return personas === null ? null : { tipo, plan: null, periodo: null, personas };
+  }
+
+  if (tipo === 'cambio') {
+    // SUBIR DE PLAN CON DÍAS PAGOS (130). Viaja solo A QUÉ plan (y cuántas
+    // personas, si es el Premium). El período NO viaja: el cambio se calcula
+    // sobre el que la cuenta ya tiene, y lo pone la base; lo que mande el
+    // navegador en `periodo` se tira acá. El Básico nunca es el destino de
+    // una subida (bajar se programa por /api/pagos/bancard/plan, sin cobro).
+    if (c.plan !== 'pro' && c.plan !== 'negocio') return null;
+    return { tipo, plan: c.plan, periodo: null, personas };
   }
 
   const plan = c.plan;
