@@ -1,5 +1,6 @@
 import { avisar, correoConfigurado, enviarEmail } from './avisos';
 import { avisarPlanActivo, type ClienteDeServicio } from './aviso-plan-activo';
+import { textoDelCobroParaLaAdministracion } from './aviso-cobro-admin';
 import type { AvisoDePago } from './bancard-flujo';
 import { diccionario } from '@/i18n/diccionarios';
 import { FICHA, esIdioma, IDIOMA_POR_DEFECTO, type Idioma } from '@/i18n/idiomas';
@@ -127,6 +128,24 @@ function escapar(texto: string): string {
   return texto.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
+/**
+ * Qué se pagó, en palabras: el plan, sumar personas o un cambio de plan. Un
+ * cambio de plan (130) dice de qué plan a cuál: `plan_antes` viene en lo que
+ * devuelve `bancard_confirmar` para todo cambio. Lo usan el comprobante y el
+ * aviso a la administración, para que digan lo mismo.
+ */
+function conceptoDelPago(r: AvisoDePago, t: ReturnType<typeof diccionario>): string {
+  const c = t.bancard.comprobante;
+  const personas = typeof r.personas === 'number' ? r.personas : null;
+  const planAntes = r.plan_antes === 'basico' || r.plan_antes === 'pro' || r.plan_antes === 'negocio'
+    ? nombreDelPlan(r.plan_antes, t) : null;
+  return r.tipo === 'personas'
+    ? c.conceptoPersonas(personas)
+    : r.tipo === 'cambio'
+      ? c.conceptoCambio(planAntes, nombreDelPlan(r.plan, t), r.plan === 'negocio' ? personas : null)
+      : c.conceptoPlan(nombreDelPlan(r.plan, t), r.periodo === 'anual', personas);
+}
+
 async function mandarComprobante(servicio: ClienteDeServicio, r: AvisoDePago): Promise<void> {
   if (!correoConfigurado()) return;
   const destinatarios = Array.isArray(r.destinatarios) ? r.destinatarios : [];
@@ -158,16 +177,7 @@ async function mandarComprobante(servicio: ClienteDeServicio, r: AvisoDePago): P
     const vence = typeof r.vence === 'string'
       ? new Date(r.vence).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Asuncion' })
       : '';
-    // Un cambio de plan (130) dice de qué plan a cuál: `plan_antes` viene en
-    // lo que devuelve `bancard_confirmar` para todo cambio.
-    const personas = typeof r.personas === 'number' ? r.personas : null;
-    const planAntes = r.plan_antes === 'basico' || r.plan_antes === 'pro' || r.plan_antes === 'negocio'
-      ? nombreDelPlan(r.plan_antes, t) : null;
-    const concepto = r.tipo === 'personas'
-      ? c.conceptoPersonas(personas)
-      : r.tipo === 'cambio'
-        ? c.conceptoCambio(planAntes, nombreDelPlan(r.plan, t), r.plan === 'negocio' ? personas : null)
-        : c.conceptoPlan(nombreDelPlan(r.plan, t), r.periodo === 'anual', personas);
+    const concepto = conceptoDelPago(r, t);
     const tarjeta = r.tarjeta && typeof r.tarjeta === 'object'
       ? (r.tarjeta as { marca?: string; ultimos4?: string }) : null;
 
@@ -228,6 +238,46 @@ async function avisarAdministracion(servicio: ClienteDeServicio, r: AvisoDePago,
   })));
 }
 
+/**
+ * A la administración de Orden: ENTRÓ UN PAGO (08/10/2026). Matías: «cuando
+ * se hace el pago con la tarjeta o QR, a mí no me llega notificación de que
+ * un cliente hizo un pago». Hasta acá el aviso de un pago aprobado iba solo a
+ * quien pagó (y al socio); a la administración le llegaba únicamente lo que
+ * había que revisar.
+ *
+ * Un push por pago aprobado, una sola vez por pedido: cuánto, quién y qué
+ * pagó. En el ambiente de prueba sale igual, marcado «Prueba», porque es con
+ * lo que se certifica. No lleva ningún dato de la tarjeta. Lo que haya que
+ * revisar sigue saliendo aparte, con su propio aviso.
+ */
+async function avisarCobroALaAdministracion(servicio: ClienteDeServicio, r: AvisoDePago): Promise<void> {
+  const operacion = String(r.operacion ?? '');
+  if (!operacion) return;
+  const { data: reservado } = await servicio.rpc('reservar_envio', {
+    p_tipo: 'bancard_cobro_admin',
+    p_clave: `bancard_cobro_admin:${operacion}`,
+    p_user: null,
+    p_empresa: typeof r.empresa_id === 'string' ? r.empresa_id : null,
+    p_canal: 'push',
+  });
+  if (!reservado) return;
+
+  const { data: admins } = await servicio.rpc('usuarios_de_la_administracion');
+  const ids: string[] = Array.isArray(admins) ? admins : [];
+  if (ids.length === 0) return;
+
+  // El panel de administración está en español: este aviso también.
+  const { titulo, cuerpo } = textoDelCobroParaLaAdministracion({
+    importe: r.importe,
+    nombre: r.nombre,
+    concepto: conceptoDelPago(r, diccionario(IDIOMA_POR_DEFECTO)),
+    entorno: r.entorno,
+    origen: r.origen,
+    medio: r.medio,
+  });
+  await Promise.all(ids.map((id) => avisar(id, { titulo, cuerpo, url: '/admin', tag: `bancard-cobro-${operacion}` })));
+}
+
 /** El mismo texto que la base deja en `bancard_operaciones.revisar` (125, bancard_cerrar_operacion). */
 const MOTIVO_REVERSA_SOBRE_PAGADA = 'Bancard devolvió este pago (reversa) y el plan quedó activo: revertirlo a mano';
 
@@ -268,6 +318,7 @@ export async function avisarResultado(servicio: ClienteDeServicio, r: AvisoDePag
         await avisarPlanActivo(servicio, r.empresa_id).catch(() => 0);
       }
       await mandarComprobante(servicio, r).catch(() => undefined);
+      await avisarCobroALaAdministracion(servicio, r).catch(() => undefined);
       if (typeof r.revisar === 'string' && r.revisar) await avisarAdministracion(servicio, r, r.revisar);
       return;
     }

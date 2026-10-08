@@ -252,6 +252,12 @@ console.log('\n── La confirmación: pública, sin cookies, con tope ──�
     [/cookies\(|clienteServidor|redirect\(/.test(conf)], [false]);
   ok('lee el cuerpo con tope de 64 KB', conf.includes('64 * 1024'), true);
   ok('corre en Node, sin caché, con 30 s', [conf.includes("runtime = 'nodejs'"), conf.includes("dynamic = 'force-dynamic'"), conf.includes('maxDuration = 30')], [true, true, true]);
+  // 08/10/2026: el portal de Bancard no guardaba la dirección; una visita contestaba 405.
+  const visita = conf.slice(conf.indexOf('export async function GET('), conf.indexOf('async function leerConTope('));
+  ok('una visita (GET) contesta 200 con el mismo «success», sin recibir el pedido',
+    [/export async function GET\(\)/.test(conf), visita.includes("status: 'success'"), visita.includes('status: 200')], [true, true, true]);
+  ok('y no hace nada: ni la base, ni Bancard, ni lee el pedido',
+    /dependencias\(|recibirConfirmacion|recibirSinConfigurar|request|leerConTope\(/.test(visita), false);
 }
 
 console.log('\n── Del navegador no viaja un importe ──────────────────────');
@@ -343,6 +349,58 @@ console.log('\n── La revisión final del 07/10, en las pantallas ───�
     [m125.includes(`'${motivoReversa}'`), sinComentarios(avisosB).includes("r.aviso === 'reversa_sobre_pagada'"),
       sinComentarios(avisosB).includes("avisarAdministracion(servicio, r, MOTIVO_REVERSA_SOBRE_PAGADA, 'reversa')")],
     [true, true, true]);
+
+  // 08/10/2026 · «Entró un pago»: a la administración le llega un push por cada pago aprobado.
+  {
+    const A = require('../.compilado/aviso-cobro-admin.js');
+    const codigo = sinComentarios(avisosB);
+    const bloque = codigo.slice(codigo.indexOf('async function avisarCobroALaAdministracion('), codigo.indexOf('const MOTIVO_REVERSA_SOBRE_PAGADA'));
+    ok('un pago aprobado le avisa a la administración, después del comprobante y aparte del «para revisar»',
+      /await mandarComprobante\(servicio, r\)\.catch\(\(\) => undefined\);\s+await avisarCobroALaAdministracion\(servicio, r\)\.catch\(\(\) => undefined\);\s+if \(typeof r\.revisar === 'string' && r\.revisar\) await avisarAdministracion\(/.test(codigo), true);
+    ok('una sola vez por pedido (reserva el envío con el número de operación) y solo a la administración',
+      [bloque.includes("p_clave: `bancard_cobro_admin:${operacion}`"), bloque.includes("rpc('usuarios_de_la_administracion')"), bloque.includes('destinatariosDe(')],
+      [true, true, false]);
+    ok('y no lleva nada de la tarjeta', /tarjeta|ultimos4|marca|alias/.test(bloque.replace(/tarjeta guardada/g, '')), false);
+    ok('el texto: cuánto, quién, qué y cómo',
+      A.textoDelCobroParaLaAdministracion({ importe: 190000, nombre: ' Kiosco Rosa ', concepto: 'Plan Pro, por mes', entorno: 'produccion', origen: 'usuario', medio: 'formulario' }),
+      { titulo: 'Cobraste Gs. 190.000', cuerpo: 'Kiosco Rosa · Plan Pro, por mes · con tarjeta o QR' });
+    ok('en el ambiente de prueba va marcado «Prueba», para no leerlo como plata de verdad',
+      A.textoDelCobroParaLaAdministracion({ importe: '80000.00', nombre: 'Prueba', concepto: 'Cambio de plan: de Básico a Pro', entorno: 'staging', origen: 'usuario', medio: 'token' }),
+      { titulo: 'Prueba · Cobraste Gs. 80.000', cuerpo: 'Prueba · Cambio de plan: de Básico a Pro · con su tarjeta guardada' });
+    ok('el cobro automático lo dice, y un dato raro no rompe el aviso',
+      [A.textoDelCobroParaLaAdministracion({ importe: 250000, nombre: 'Taller', concepto: 'Plan Premium, por mes', entorno: 'produccion', origen: 'automatico', medio: 'token' }).cuerpo,
+        A.textoDelCobroParaLaAdministracion({ importe: null, nombre: null, concepto: '', entorno: undefined, origen: null, medio: null })],
+      ['Taller · Plan Premium, por mes · cobro automático', { titulo: 'Prueba · Cobraste Gs. 0', cuerpo: 'con tarjeta o QR' }]);
+  }
+
+  // 08/10/2026 · el panel muestra solo lo pagado; abrir el formulario y salir no es un pago.
+  {
+    const P = require('../.compilado/pagos-admin.js');
+    const ops = [
+      { id: 13, estado: 'creada', revisar: null },
+      { id: 12, estado: 'revertida', revisar: null },
+      { id: 11, estado: 'vencida', revisar: null },
+      { id: 10, estado: 'pagada', revisar: null },
+      { id: 9, estado: 'rechazada', revisar: null },
+      { id: 8, estado: 'incierta', revisar: null },
+      { id: 7, estado: 'en_3ds', revisar: null },
+      { id: 6, estado: 'vencida', revisar: 'Pago que entró tarde, sobre una operación ya vencida' },
+      { id: 5, estado: 'rechazada', revisar: '   ' },
+    ];
+    const s = P.separarPagos(ops);
+    ok('pagos: lo pagado, lo revertido, lo que está sin resolver y lo que hay que revisar, en el mismo orden',
+      s.pagos.map((o) => o.id), [12, 10, 8, 7, 6]);
+    ok('intentos: abrir y salir, dejar vencer y un rechazo', s.intentos.map((o) => o.id), [13, 11, 9, 5]);
+    ok('nada se pierde ni se repite', [s.pagos.length + s.intentos.length, new Set([...s.pagos, ...s.intentos].map((o) => o.id)).size], [9, 9]);
+    ok('el enlace dice cuántos hay, en singular y en plural, y cómo esconderlos',
+      [P.textoDeIntentos(1, false), P.textoDeIntentos(4, false), P.textoDeIntentos(4, true)],
+      ['Ver también 1 intento sin pagar', 'Ver también 4 intentos sin pagar', 'Ocultar los intentos sin pagar']);
+    const panel = sinComentarios(leer('src/components/bancard/PanelBancardAdmin.tsx'));
+    ok('«Últimos pagos» y los pagos de una cuenta pasan por esa regla; la lista entera solo se arma adentro',
+      [(panel.match(/<PagosYIntentos /g) || []).length, (panel.match(/<ListaOperaciones /g) || []).length,
+        panel.includes('const lista = verIntentos ? ops : pagos;'), panel.includes('<ListaOperaciones ops={paraRevisar} conCuenta onCambio={cargar} />')],
+      [2, 2, true, true]);
+  }
 
   // D5 · un 5xx al cobrar con la tarjeta guardada queda incierta.
   ok('cobrarOperacionTomada solo cierra como «no se cobró» un error de Bancard por debajo de 500',

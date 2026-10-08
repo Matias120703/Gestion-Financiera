@@ -38,6 +38,19 @@ export async function POST(request: Request) {
   return NextResponse.json(r.cuerpo, { status: r.http, headers: { 'Cache-Control': 'no-store' } });
 }
 
+/**
+ * UNA VISITA SIMPLE (GET, y con él HEAD) CONTESTA 200 Y NO HACE NADA
+ * (08/10/2026). El portal de Bancard no guardaba esta dirección en «Perfil de
+ * aplicación»: al recargar volvía vacía, sin ningún mensaje. Desde afuera el
+ * POST contestaba 200, pero una visita contestaba 405; si el portal comprueba
+ * la dirección visitándola antes de guardarla, la descartaba. Acá no se lee
+ * nada del pedido, no se toca la base y no se arma el cliente de Bancard: una
+ * confirmación de verdad llega siempre por POST.
+ */
+export async function GET() {
+  return NextResponse.json({ status: 'success' }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+}
+
 /** El cuerpo como texto, cortando si pasa del tope. Null si pasó. */
 async function leerConTope(request: Request): Promise<string | null> {
   const declarado = Number(request.headers.get('content-length') ?? '0');

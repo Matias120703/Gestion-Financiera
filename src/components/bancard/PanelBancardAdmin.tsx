@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { Confirmar, Hoja, MensajeError, PieHoja } from '@/components/Hoja';
+import { separarPagos, textoDeIntentos } from '@/lib/pagos-admin';
 
 /**
  * BANCARD EN EL PANEL DE LA ADMINISTRACIÓN (español fijo, como todo /admin).
@@ -124,7 +125,9 @@ function useOperaciones(empresaId: string | null, limite: number) {
 // ------------------------------------------------------------ la general
 
 export function TarjetaBancardAdmin({ config }: { config: ConfigBancardAdmin }) {
-  const { datos, error, cargar } = useOperaciones(null, 20);
+  // 60 y no 20: los intentos sin pagar (abrir el formulario y salir) ya no se
+  // muestran, y no tienen que dejar afuera de la lista a los pagos de verdad.
+  const { datos, error, cargar } = useOperaciones(null, 60);
   const [probando, setProbando] = useState(false);
   const [prueba, setPrueba] = useState('');
 
@@ -187,11 +190,7 @@ export function TarjetaBancardAdmin({ config }: { config: ConfigBancardAdmin }) 
       )}
       <div className="mt-4">
         <p className="titulo-seccion mb-2">Últimos pagos</p>
-        {datos && ops.length === 0 ? (
-          <p className="text-[13px] text-tinta/50">Todavía no hay pagos con Bancard.</p>
-        ) : (
-          <ListaOperaciones ops={ops} conCuenta onCambio={cargar} />
-        )}
+        {datos && <PagosYIntentos ops={ops} conCuenta onCambio={cargar} vacio="Todavía no hay pagos con Bancard." />}
       </div>
     </section>
   );
@@ -627,13 +626,54 @@ export function PagosBancardDeCuenta({ empresaId }: { empresaId: string }) {
         </p>
       )}
       <div className="mt-3">
-        {datos && datos.operaciones.length === 0 ? (
-          <p className="text-[13px] text-tinta/50">Sin pagos con Bancard.</p>
-        ) : (
-          <ListaOperaciones ops={datos?.operaciones ?? []} onCambio={cargar} />
-        )}
+        {datos && <PagosYIntentos ops={datos.operaciones} onCambio={cargar} vacio="Sin pagos con Bancard." />}
       </div>
     </div>
+  );
+}
+
+// ------------------------------------------- los pagos, y los intentos aparte
+
+/**
+ * SOLO LO PAGADO, Y LOS INTENTOS SI SE PIDEN (08/10/2026). Matías: «cuando
+ * entro en cambiar el plan y salgo sin pagar, en mi panel me aparece que se
+ * abrió eso; solo me tiene que aparecer lo pagado». Abrir el formulario y
+ * salir deja una operación «Abierta» (y después «Vencida»): no es un pago.
+ *
+ * Qué es un pago y qué un intento lo decide `separarPagos` (pagos-admin.ts,
+ * probado): lo pagado, lo revertido, lo que está sin resolver y lo que hay
+ * que revisar se ve siempre. Los intentos quedan detrás de un enlace, porque
+ * para certificar o para atender a alguien que dice «quise pagar y no pude»
+ * hace falta poder verlos.
+ */
+function PagosYIntentos({ ops, conCuenta = false, onCambio, vacio }: {
+  ops: OperacionAdmin[];
+  conCuenta?: boolean;
+  onCambio: () => Promise<void> | void;
+  /** Lo que se dice cuando no hay ningún pago para mostrar. */
+  vacio: string;
+}) {
+  const [verIntentos, setVerIntentos] = useState(false);
+  const { pagos, intentos } = separarPagos(ops);
+  const lista = verIntentos ? ops : pagos;
+  return (
+    <>
+      {lista.length === 0 ? (
+        <p className="text-[13px] text-tinta/50">{vacio}</p>
+      ) : (
+        <ListaOperaciones ops={lista} conCuenta={conCuenta} onCambio={onCambio} />
+      )}
+      {intentos.length > 0 && (
+        <button
+          type="button"
+          className="mt-2 text-[12.5px] text-tinta/55 underline-offset-2 hover:underline"
+          aria-expanded={verIntentos}
+          onClick={() => setVerIntentos((v) => !v)}
+        >
+          {textoDeIntentos(intentos.length, verIntentos)}
+        </button>
+      )}
+    </>
   );
 }
 
