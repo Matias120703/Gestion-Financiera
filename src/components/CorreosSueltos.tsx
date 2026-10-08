@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { mensajeDeError } from '@/lib/errores';
-import { mensajeDeCorreoBorrado, mismoCorreo, textoDeMotivo } from '@/lib/borrar-correo';
+import { mensajeDeCorreoBorrado, mismoCorreo, sueltosALaVista, textoDeMotivo } from '@/lib/borrar-correo';
 import type { CorreoSuelto } from '@/lib/tipos';
 import { Hoja, PieHoja } from '@/components/Hoja';
 
@@ -97,7 +97,11 @@ export function CorreosSueltos({ sueltos, onHecho }: {
     }
   }
 
-  const cuantos = sueltos?.length ?? 0;
+  // Llega uno más de los que se muestran: si llegó, la lista quedó cortada
+  // (van primero los más nuevos) y hay que decirlo. Si no, quien busca un
+  // correo viejo lee «200 correos», no lo encuentra y cree que no existe.
+  const { visibles, hayMas } = sueltosALaVista(sueltos ?? []);
+  const cuantos = visibles.length;
 
   return (
     <section className="rounded-2xl border border-borde bg-superficie">
@@ -111,20 +115,27 @@ export function CorreosSueltos({ sueltos, onHecho }: {
         </div>
         {sueltos !== null && (
           <span className="shrink-0 text-[13px] font-semibold text-tinta/40">
-            {cuantos} {cuantos === 1 ? 'correo' : 'correos'}
+            {hayMas ? `Más de ${cuantos}` : cuantos} {cuantos === 1 ? 'correo' : 'correos'}
           </span>
         )}
       </div>
+
+      {hayMas && (
+        <p className="border-b border-borde bg-ambar-claro px-4 py-3 text-[13px] font-medium leading-relaxed text-ambar">
+          Se muestran los {cuantos} más nuevos. Hay más correos sin cuenta que no entran en esta lista:
+          si buscás uno más viejo y no lo ves, no quiere decir que no exista.
+        </p>
+      )}
 
       {sueltos === null ? (
         <p className="px-4 py-8 text-center text-[13.5px] font-medium text-ambar">
           No se pudo leer esta lista. Recargá la página.
         </p>
-      ) : sueltos.length === 0 ? (
+      ) : visibles.length === 0 ? (
         <p className="px-4 py-8 text-center text-[13.5px] text-tinta/45">No hay ninguno.</p>
       ) : (
         <ul className="divide-y divide-borde">
-          {sueltos.map((s) => (
+          {visibles.map((s) => (
             <li key={s.usuario} className="flex items-center gap-3 px-4 py-3.5">
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1">

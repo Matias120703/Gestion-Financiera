@@ -48393,7 +48393,8 @@ grant execute on function public.avisos_del_dia(text) to service_role;
 --     el dueño y también su personal. Nunca: a la administración de Orden,
 --     a quien aprieta el botón, a quien todavía es de otro negocio, ni a
 --     quien recomienda Orden (un socio con cuenta: tiene plata de por medio
---     y perdería la pantalla desde donde la cobra).
+--     y perdería la pantalla desde donde la cobra; también el que la
+--     administración cargó por su correo y todavía no pidió su código).
 --   · EL USUARIO LO BORRA EL SERVIDOR, por la API de Auth y con la clave de
 --     servicio, nunca una función llamada desde el navegador. Con una sesión
 --     puesta, los candados de una cuenta vencida rechazan el rastro que esa
@@ -48532,6 +48533,16 @@ comment on function public.correo_tapado(text) is
 -- DESPUÉS de borrar el negocio, pegado al borrado de cada persona: si en el
 -- medio se creó otro negocio o se unió a uno, ya no se la borra.
 --
+-- QUIÉN ES SOCIO: el mismo criterio que `mi_codigo_socio` (061), que es la
+-- que decide de quién es cada fila de `socios`. Lo es quien ya la tiene
+-- pegada a su cuenta (`user_id`) y también quien tiene el correo de una fila
+-- todavía sin cuenta: la administración lo cargó por su correo antes de que
+-- se registrara, y esa fila (su código y su saldo) lo espera hasta que pida
+-- el código. Si se le borrara el usuario, el correo quedaría libre con la
+-- fila esperando a quien se registre con él. Un socio cargado sin correo no
+-- le pone candado a nadie. Para soltar el candado: sacarle el correo a ese
+-- socio en «Socios».
+--
 -- El orden de los «when» es el orden en que se explica.
 create or replace function public.motivo_para_no_borrar(
   p_usuario uuid,
@@ -48550,6 +48561,11 @@ returns text language sql stable security definer set search_path = public as $f
         and (p_empresa is null or m.empresa_id <> p_empresa)
     ) then 'otro_negocio'
     when exists (select 1 from public.socios s where s.user_id = p_usuario) then 'socio'
+    when exists (
+      select 1 from public.socios s
+      join auth.users u on u.id = p_usuario
+      where s.user_id is null and s.email <> '' and s.email = lower(coalesce(u.email, ''))
+    ) then 'socio'
     else null
   end;
 $fn$;
@@ -48593,9 +48609,11 @@ begin
       ) x
       where m.empresa_id = p_empresa
     ), '[]'::jsonb),
+    -- También la que ya se pidió quitar y Bancard no confirmó: sigue
+    -- guardada allá (ver `borrar_cuenta_entera`).
     'tarjeta', exists (
       select 1 from public.bancard_tarjetas t
-      where t.empresa_id = p_empresa and t.estado = 'activa'
+      where t.empresa_id = p_empresa and t.estado in ('activa', 'por_quitar')
     )
   );
 end $fn$;
@@ -48691,6 +48709,21 @@ comment on function public.correos_sueltos(integer) is
 -- `personas` (un número) son los de la 022; lo demás se suma. `empresa` es
 -- el id en texto: sirve para encontrar comprobantes que hayan quedado bajo
 -- su carpeta si el depósito falla.
+--
+-- LA TARJETA GUARDADA. Cuando esto borra de verdad, el servidor ya pasó por
+-- Bancard. Si pudo pedirle que la borre, la tarjeta dejó de estar `activa`
+-- (quedó `quitada` si Bancard contestó, `por_quitar` si no); si no pudo (es
+-- del otro entorno, o el servidor no tiene Bancard), sigue `activa`. Por eso
+-- acá «tiene tarjeta» es `activa` O `por_quitar`: las dos siguen guardadas
+-- en Bancard. Con la cuenta se van sus filas y la conciliación ya no las
+-- encuentra, así que la constancia es el único rastro que queda:
+--
+--   tenia_tarjeta           la cuenta guardó alguna vez una tarjeta en
+--                           Bancard (también si ya está quitada)
+--   tarjetas_sin_confirmar  las que Bancard NO confirmó que borró, con lo
+--                           que hace falta para pedírselo a mano: el número
+--                           de la tarjeta, el del pagador y el entorno. Son
+--                           números de Orden; de la tarjeta no hay ningún dato.
 create or replace function public.borrar_cuenta_entera(
   p_actor          uuid,
   p_empresa        uuid,
@@ -48742,9 +48775,13 @@ begin
   select coalesce(jsonb_agg(v.ruta), '[]'::jsonb) into v_videos
   from public.videos v where v.empresa_id = p_empresa;
 
+  -- Lo que el ensayo le dice al servidor: si hay una tarjeta que Bancard
+  -- todavía tiene. Con una `por_quitar` (un intento anterior que se cortó, o
+  -- el dueño la quitó y Bancard no confirmó) el servidor no la puede pedir
+  -- de nuevo: así lo avisa en vez de contestar «no tenía tarjeta».
   v_tarjeta := exists (
     select 1 from public.bancard_tarjetas t
-    where t.empresa_id = p_empresa and t.estado = 'activa'
+    where t.empresa_id = p_empresa and t.estado in ('activa', 'por_quitar')
   );
 
   if coalesce(p_solo_comprobar, false) then
@@ -48765,7 +48802,17 @@ begin
     'empresa', p_empresa::text,
     'fotos', jsonb_array_length(v_archivos),
     'videos', jsonb_array_length(v_videos),
-    'tenia_tarjeta', v_tarjeta,
+    'tenia_tarjeta', exists (
+      select 1 from public.bancard_tarjetas t
+      where t.empresa_id = p_empresa and t.estado in ('activa', 'por_quitar', 'quitada')
+    ),
+    'tarjetas_sin_confirmar', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'tarjeta', t.id, 'pagador', t.pagador_id, 'entorno', t.entorno
+      ) order by t.id)
+      from public.bancard_tarjetas t
+      where t.empresa_id = p_empresa and t.estado in ('activa', 'por_quitar')
+    ), '[]'::jsonb),
     'correos', coalesce((
       select jsonb_agg(public.correo_tapado(p ->> 'correo'))
       from jsonb_array_elements(v_personas) p where p ->> 'motivo' is null

@@ -391,7 +391,18 @@ export function PanelAdmin({
           rechazado={rechazoPorEmpresa.get(abierta.empresa_id) ?? null}
           whatsapp={whatsapp}
           onCerrar={() => setAbierta(null)}
-          onHecho={(mensaje, conOjo) => { setAbierta(null); setHecho(mensaje ?? ''); setOjo(conOjo === true); router.refresh(); }}
+          onHecho={(mensaje, conOjo) => {
+            setAbierta(null);
+            setHecho(mensaje ?? '');
+            setOjo(conOjo === true);
+            router.refresh();
+            // El cartel sale arriba de todo y la lista de cuentas queda más
+            // abajo: en el teléfono hay que bajar para tocar una, y lo que
+            // quedó a medias al borrar (un correo, la tarjeta, archivos) se
+            // dice SOLO en ese cartel. Se sube para que se lea. Sin mensaje
+            // («Entendido, cerrar») la página no se mueve.
+            if (mensaje) window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
       )}
     </div>

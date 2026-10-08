@@ -26,13 +26,18 @@
  *      no se lo puede borrar; con la 129 sí, y la fecha se sigue exigiendo.
  *   2. Quién se borra: el dueño y su personal, si quedan sin ningún negocio.
  *   3. Quién no, nunca: quien tiene otro negocio, la administración, quien
- *      aprieta el botón, quien recomienda Orden.
+ *      aprieta el botón, quien recomienda Orden (con su cuenta ya pegada o
+ *      cargado por su correo: la identidad de `mi_codigo_socio`).
  *   4. `personas_de_cuenta`: lo que la ficha muestra antes de confirmar.
  *   5. `borrar_cuenta_entera`: solo el servidor, con un actor que administre;
  *      el ensayo no toca nada; de verdad devuelve archivos, videos y personas.
  *   6. `correo_borrable`: la comprobación pegada al borrado, y la carrera.
  *   7. La constancia: correos tapados, nunca enteros.
- *   8. `correos_sueltos`: la lista del panel.
+ *   7 bis. LA TARJETA, PASANDO POR BANCARD: el paso B de la ruta con el
+ *      código de verdad (`quitarTarjeta`) contra un Bancard de mentira. Qué
+ *      queda escrito cuando Bancard contesta, cuando no, y cuando la tarjeta
+ *      ya estaba a medio quitar.
+ *   8. `correos_sueltos`: la lista del panel, y el aviso cuando no entran todos.
  *   9. EL SERVIDOR, DE PUNTA A PUNTA: el código de
  *      src/lib/borrar-correo-servidor.ts contra esta base, con un Auth de
  *      mentira. Quién quedó y quién no, la carrera, y Auth fallando.
@@ -49,6 +54,11 @@ const { execFileSync } = require('child_process');
 const H = require('./ayuda-db.js');
 const { borrarCorreo } = require('../.compilado/borrar-correo-servidor.js');
 const T = require('../.compilado/borrar-correo.js');
+// El paso B de la ruta (la tarjeta), con el código de verdad y un Bancard de
+// mentira: nunca se llama a Bancard, y las claves de acá son inventadas.
+const { crearBancard } = require('../.compilado/bancard.js');
+const { quitarTarjeta } = require('../.compilado/bancard-flujo.js');
+const { crearBancardFalso, CLAVES_DE_PRUEBA } = require('./bancard-falso.js');
 
 const RAIZ = path.join(__dirname, '..');
 let fallos = 0;
@@ -111,6 +121,12 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   // Con la sesión de alguien (el navegador) y con la clave de servicio (el servidor).
   const sesion = (uid, sql, args = []) => H.intentar(db, uid, () => db.query(sql, args));
   const servidor = (sql, args = []) => H.intentarComo(db, 'service_role', '', () => db.query(sql, args));
+  /** Una función de la base como la llama el servidor (`supabase.rpc`, con la clave de servicio). */
+  const rpcDelServidor = async (funcion, args) => {
+    const claves = Object.keys(args);
+    const res = await servidor(`select public.${funcion}(${claves.map((k, i) => `${k} => $${i + 1}`).join(', ')}) as r`, claves.map((k) => args[k]));
+    return res.ok ? { data: res.valor.rows[0].r, error: null } : { data: null, error: { code: 'XX000', message: res.error } };
+  };
   const r = (res) => { if (!res.ok) throw new Error(res.error); return res.valor.rows[0].r; };
   const fila = async (sql, args = []) => (await db.query(sql, args)).rows[0];
   const existe = async (uid) => (await fila('select count(*)::int n from auth.users where id = $1', [uid])).n === 1;
@@ -269,9 +285,11 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   await db.query(`insert into public.adjuntos (empresa_id, movimiento_id, tipo, ruta, mime, bytes) values ($1,$2,'foto',$3,'image/webp',10)`,
     [A.empresaId, movA, rutaFoto]);
   const video = (await fila(`insert into public.videos (empresa_id, segundos, bytes, estado) values ($1, 10, 1000, 'listo') returning ruta`, [A.empresaId])).ruta;
-  const pagador = (await fila(`insert into public.bancard_pagadores (empresa_id, entorno) values ($1, 'staging') returning id`, [A.empresaId])).id;
-  await db.query(`insert into public.bancard_tarjetas (empresa_id, pagador_id, entorno, estado, marca, ultimos4, tipo)
-    values ($1, $2, 'staging', 'activa', 'Visa', '0016', 'credit')`, [A.empresaId, pagador]);
+  // La tarjeta es de «staging»: desde un servidor en producción no se alcanza
+  // (el grupo 7 bis hace el camino con Bancard; acá nadie se la pide).
+  const pagador = Number((await fila(`insert into public.bancard_pagadores (empresa_id, entorno) values ($1, 'staging') returning id`, [A.empresaId])).id);
+  const tarjetaA = Number((await fila(`insert into public.bancard_tarjetas (empresa_id, pagador_id, entorno, estado, marca, ultimos4, tipo)
+    values ($1, $2, 'staging', 'activa', 'Visa', '0016', 'credit') returning id`, [A.empresaId, pagador])).id);
 
   // Otros, fuera de A.
   const suelto = await H.crearUsuario(db, 'suelto@nadie.test');
@@ -279,6 +297,14 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   // Un negocio sin nadie adentro (le borraron el usuario desde Supabase).
   const hueco = await H.montarEmpresa(db, { email: 'fantasma@hueco.test', nombre: 'Hueco' });
   await authBorra(hueco.uid);
+  // UNA SOCIA CARGADA POR SU CORREO (revisión del 07/10). La administración
+  // la anotó en «Socios» ANTES de que tuviera cuenta. Después se registró con
+  // ese correo y armó su negocio; todavía no pidió su código, así que su fila
+  // de socios sigue sin usuario: la base la reconoce por el correo
+  // (`mi_codigo_socio`). Con mayúsculas y espacios, como se escribe a mano.
+  const GUARDAR_SOCIO = `select public.guardar_socio(p_socio => $1, p_nombre => $2, p_telefono => '', p_email => $3) as r`;
+  const altaSocia = r(await sesion(jefe, GUARDAR_SOCIO, [null, 'Socia', ' Socia@Correo.test ']));
+  const socia = await H.montarEmpresa(db, { email: 'socia@correo.test', nombre: 'De la socia' });
 
   const motivo = async (uid, actor = jefe, empresa = null) =>
     (await fila('select public.motivo_para_no_borrar($1,$2,$3) m', [uid, actor, empresa])).m;
@@ -308,6 +334,24 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     if (!c.ok) throw new Error(c.error);
     return motivo(s2);
   })(), 'socio');
+  // Cargada por su correo: es la misma persona para la base, la misma regla.
+  ok('la socia cargada por su correo se registró después: su fila sigue sin usuario',
+    await fila('select email, user_id is null as sin_usuario from public.socios where id = $1', [altaSocia.id]), { email: 'socia@correo.test', sin_usuario: true });
+  ok('también recomienda Orden: al borrar su negocio, su correo se queda', await motivo(socia.uid, jefe, socia.empresaId), 'socio');
+  const altaOtra = r(await sesion(jefe, GUARDAR_SOCIO, [null, 'Otra', 'otra@correo.test']));
+  const otraSocia = await H.crearUsuario(db, 'otra@correo.test');
+  ok('y suelta, sin ningún negocio, igual', await motivo(otraSocia), 'socio');
+  // Lo que NO pone candado: un socio cargado sin correo y un usuario sin correo
+  // no son «el mismo correo».
+  r(await sesion(jefe, GUARDAR_SOCIO, [null, 'Sin correo', '']));
+  const sinCorreo = (await fila('insert into auth.users (email) values (null) returning id')).id;
+  ok('un socio cargado sin correo no le pone candado a nadie (ni a quien no tiene correo, ni a un suelto cualquiera)',
+    [await motivo(sinCorreo), await motivo(suelto)], [null, null]);
+  await authBorra(sinCorreo);
+  // La salida para la administración: sacarle el correo a ese socio en «Socios».
+  r(await sesion(jefe, GUARDAR_SOCIO, [altaOtra.id, 'Otra', '']));
+  ok('si en «Socios» se le saca el correo, el candado se abre', await motivo(otraSocia), null);
+  await authBorra(otraSocia);
   ok('un id que no existe no es un candado: ya no está',
     [await motivo('00000000-0000-0000-0000-000000000001'), await motivo(null)], ['no_existe', 'no_existe']);
   ok('un cliente común, dueño de su negocio', await motivo(comun.uid), 'otro_negocio');
@@ -332,6 +376,9 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   ok('se_borra es «sin motivo»', ficha.personas.every((p) => p.se_borra === (p.motivo === null)), true);
   ok('claves exactas de cada persona (sin ids de usuario)', Object.keys(ficha.personas[0]).sort(), ['correo', 'motivo', 'nombre', 'rol', 'se_borra']);
   ok('y avisa que tiene una tarjeta guardada', [Object.keys(ficha).sort(), ficha.tarjeta], [['personas', 'tarjeta'], true]);
+  ok('la ficha del negocio de la socia cargada por correo la muestra con su candado',
+    r(await sesion(jefe, 'select public.personas_de_cuenta($1) as r', [socia.empresaId])).personas.map((p) => [p.correo, p.se_borra, p.motivo]),
+    [['socia@correo.test', false, 'socio']]);
   ok('un negocio sin nadie adentro', r(await sesion(jefe, 'select public.personas_de_cuenta($1) as r', [hueco.empresaId])), { tarjeta: false, personas: [] });
   ok('una cuenta que no existe', r(await sesion(jefe, 'select public.personas_de_cuenta($1) as r', ['00000000-0000-0000-0000-000000000002'])), { tarjeta: false, personas: [] });
   rechazado('un cliente común no la puede leer', await sesion(comun.uid, 'select public.personas_de_cuenta($1) as r', [A.empresaId]), 'administración de Orden');
@@ -385,6 +432,9 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   rechazado('dos veces: la segunda dice que no existe', await servidor(ENTERA, [jefe, A.empresaId, 'Negocio A', false]), 'Esa cuenta no existe');
   const sinNadie = r(await servidor(ENTERA, [jefe, hueco.empresaId, 'Hueco', false]));
   ok('un negocio sin nadie adentro se borra y no devuelve personas', [sinNadie.borrada, sinNadie.personas, sinNadie.tarjeta], [true, [], false]);
+  const deLaSocia = r(await servidor(ENTERA, [jefe, socia.empresaId, 'De la socia', false]));
+  ok('el negocio de la socia cargada por correo se borra, y a ella la deja',
+    [deLaSocia.borrada, deLaSocia.personas.map((p) => [p.correo, p.motivo])], [true, [['socia@correo.test', 'socio']]]);
 
   // ═══════════════════════════════════════════════════════════
   grupo('6 · correo_borrable: la comprobación pegada al borrado');
@@ -403,6 +453,8 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   ok('con la confirmación vacía (no es lo mismo que no mandarla)', (await borrable(suelto, '')).motivo, 'confirmacion');
   ok('con el correo bien, aunque tenga mayúsculas y espacios', (await borrable(suelto, '  Suelto@Nadie.test ')).borrable, true);
   ok('la confirmación no le gana a un candado', (await borrable(socio, 'socio@a.test')).motivo, 'socio');
+  ok('la socia cargada por su correo, ya sin negocio: tampoco, ni escribiéndolo',
+    await borrable(socia.uid, 'socia@correo.test'), { correo: 'socia@correo.test', motivo: 'socio', borrable: false });
   // LA CARRERA: con la sesión abierta, el corredor se crea un negocio justo ahora.
   ok('el corredor, antes de correr, se podía borrar', (await borrable(corredor)).borrable, true);
   let justoATiempo;
@@ -424,6 +476,10 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     [constancia.detalle.nombre, constancia.detalle.movimientos, constancia.detalle.personas], ['Negocio A', 1, 8]);
   ok('lo nuevo: el id de la cuenta, fotos, videos y si tenía tarjeta',
     [constancia.detalle.empresa === A.empresaId, constancia.detalle.fotos, constancia.detalle.videos, constancia.detalle.tenia_tarjeta], [true, 1, 1, true]);
+  ok('y la tarjeta que nadie le pidió a Bancard (era del otro entorno): con lo que hace falta para pedírselo a mano',
+    constancia.detalle.tarjetas_sin_confirmar, [{ entorno: 'staging', pagador, tarjeta: tarjetaA }]);
+  ok('claves exactas de la constancia', Object.keys(constancia.detalle).sort(),
+    ['correos', 'empresa', 'fotos', 'movimientos', 'nombre', 'personas', 'se_quedan', 'tarjetas_sin_confirmar', 'tenia_tarjeta', 'videos']);
   ok('los correos que se iban a borrar, tapados', constancia.detalle.correos, ['du***@a.test', 've***@a.test', 'en***@a.test', 'co***@a.test']);
   ok('y los que se quedan, tapados y con su motivo', constancia.detalle.se_quedan,
     [{ correo: 'co***@a.test', motivo: 'otro_negocio' }, { correo: 'so***@a.test', motivo: 'socio' },
@@ -439,6 +495,88 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     { a: 'ma***@correo.test', b: 'a***@b.test', c: '', d: '***', e: '', f: 'ab***@c.test', g: '***' });
 
   // ═══════════════════════════════════════════════════════════
+  grupo('7 bis · La tarjeta guardada, pasando por Bancard');
+  // ═══════════════════════════════════════════════════════════
+  // La ruta hace A (ensayo) → B (pedirle la tarjeta a Bancard) → C (borrar).
+  // Los grupos de arriba van de A a C; en la vida real, cuando C corre, B ya
+  // sacó la tarjeta de «activa». Acá B es el código de verdad
+  // (`quitarTarjeta`, con la administración como quien lo pide) contra un
+  // Bancard de mentira. Lo que se cuida: que lo único que queda escrito de
+  // una cuenta borrada no diga «no tenía tarjeta» justo cuando Bancard la
+  // sigue teniendo.
+  const falso = crearBancardFalso({ entorno: 'produccion' });
+  const bancardDePrueba = {
+    bd: { rpc: rpcDelServidor },
+    bancard: crearBancard({ entorno: 'produccion', clavePublica: CLAVES_DE_PRUEBA.clavePublica, clavePrivada: CLAVES_DE_PRUEBA.clavePrivada, con3ds: true }, falso.transporte),
+    entorno: 'produccion', clavePrivada: CLAVES_DE_PRUEBA.clavePrivada, sitio: 'https://orden.test',
+    avisar: async () => {}, registrar: () => {},
+  };
+  const bancardNoContesta = () => falso.programar(/^\/users\/[0-9]+\/cards$/, 'red');
+  /** Una cuenta con una tarjeta activa que Bancard tiene guardada. */
+  const cuentaConTarjeta = async (nombre, correo) => {
+    const c = await H.montarEmpresa(db, { email: correo, nombre });
+    const suPagador = Number((await fila(`insert into public.bancard_pagadores (empresa_id, entorno) values ($1, 'produccion') returning id`, [c.empresaId])).id);
+    const tarjeta = Number((await fila(`insert into public.bancard_tarjetas (empresa_id, pagador_id, entorno, estado, marca, ultimos4, tipo)
+      values ($1, $2, 'produccion', 'activa', 'Visa', '0016', 'credit') returning id`, [c.empresaId, suPagador])).id);
+    falso.registrarTarjeta(suPagador, tarjeta);
+    return { ...c, nombre, pagador: suPagador, tarjeta };
+  };
+  const estadoDeTarjeta = async (c) => (c.tarjeta ? (await fila('select estado from public.bancard_tarjetas where id = $1', [c.tarjeta]))?.estado ?? null : null);
+  /** De A a C, como la ruta: qué leyó el ensayo, qué contestó B, cómo estaba la tarjeta al borrar, y qué quedó escrito. */
+  const deAaC = async (c) => {
+    const visto = r(await servidor(ENTERA, [jefe, c.empresaId, c.nombre, true]));
+    const b = await quitarTarjeta(bancardDePrueba, { empresa: c.empresaId, usuario: jefe });
+    const alBorrar = await estadoDeTarjeta(c);
+    const borrada = r(await servidor(ENTERA, [jefe, c.empresaId, c.nombre, false])).borrada;
+    const escrito = (await fila(`select detalle from public.registro_admin where accion = 'borrar_cuenta' and detalle ->> 'nombre' = $1`, [c.nombre])).detalle;
+    return {
+      ensayo: visto.tarjeta, pasoB: b.ok ? (b.pendienteEnBancard ? 'pendiente' : 'quitada') : b.motivo, alBorrar, borrada,
+      tenia_tarjeta: escrito.tenia_tarjeta, sin_confirmar: escrito.tarjetas_sin_confirmar,
+    };
+  };
+
+  const conRespuesta = await cuentaConTarjeta('Tarjeta uno', 'uno@tarjeta.test');
+  ok('Bancard contesta: la borra; queda escrito que TENÍA tarjeta y que no hay ninguna sin confirmar',
+    await deAaC(conRespuesta), { ensayo: true, pasoB: 'quitada', alBorrar: 'quitada', borrada: true, tenia_tarjeta: true, sin_confirmar: [] });
+  ok('y Bancard ya no la tiene', falso.tarjetasDe(conRespuesta.pagador).length, 0);
+
+  const sinRespuesta = await cuentaConTarjeta('Tarjeta dos', 'dos@tarjeta.test');
+  bancardNoContesta();
+  ok('Bancard NO contesta: la cuenta se borra igual, y queda escrito con qué pedírselo a mano',
+    await deAaC(sinRespuesta), { ensayo: true, pasoB: 'pendiente', alBorrar: 'por_quitar', borrada: true, tenia_tarjeta: true,
+      sin_confirmar: [{ entorno: 'produccion', pagador: sinRespuesta.pagador, tarjeta: sinRespuesta.tarjeta }] });
+  ok('Bancard la sigue teniendo, y en la base no queda ni la tarjeta ni el pagador: la constancia es el único rastro',
+    [falso.tarjetasDe(sinRespuesta.pagador).length, await fila(`select (select count(*)::int from public.bancard_tarjetas where id = $1) tarjetas,
+      (select count(*)::int from public.bancard_pagadores where id = $2) pagadores`, [sinRespuesta.tarjeta, sinRespuesta.pagador])],
+    [1, { tarjetas: 0, pagadores: 0 }]);
+
+  // Ya estaba a medio quitar: un intento anterior que se cortó entre B y C, o
+  // el dueño tocó «Eliminar tarjeta» y Bancard no confirmó.
+  const aMedias = await cuentaConTarjeta('Tarjeta tres', 'tres@tarjeta.test');
+  bancardNoContesta();
+  const elDuenio = await quitarTarjeta(bancardDePrueba, { empresa: aMedias.empresaId, usuario: aMedias.uid });
+  ok('el dueño la quitó y Bancard no confirmó: queda por quitar, anotada para que la conciliación termine',
+    [elDuenio.ok && elDuenio.pendienteEnBancard, await estadoDeTarjeta(aMedias),
+      (await rpcDelServidor('bancard_por_conciliar', { p_entorno: 'produccion', p_limite: 10 })).data.tarjetas_por_quitar.map((x) => Number(x.tarjeta_id))],
+    [true, 'por_quitar', [aMedias.tarjeta]]);
+  ok('la ficha avisa que tiene una tarjeta guardada: Bancard la sigue teniendo',
+    r(await sesion(jefe, 'select public.personas_de_cuenta($1) as r', [aMedias.empresaId])).tarjeta, true);
+  // El ensayo dice que hay tarjeta y el paso B contesta «sin_tarjeta» (solo
+  // sabe pedir la activa): con eso la ruta contesta «fallo», en ámbar (grupo
+  // 13). Si el ensayo dijera que no, saldría «sin_tarjeta», en verde.
+  ok('al borrar esa cuenta: el ensayo ve la tarjeta, el servidor ya no la puede pedir, y quedan escritos sus números',
+    await deAaC(aMedias), { ensayo: true, pasoB: 'sin_tarjeta', alBorrar: 'por_quitar', borrada: true, tenia_tarjeta: true,
+      sin_confirmar: [{ entorno: 'produccion', pagador: aMedias.pagador, tarjeta: aMedias.tarjeta }] });
+  ok('la conciliación ya no la encuentra (se fue con la cuenta)',
+    (await rpcDelServidor('bancard_por_conciliar', { p_entorno: 'produccion', p_limite: 10 })).data.tarjetas_por_quitar, []);
+
+  const sinTarjeta = { ...(await H.montarEmpresa(db, { email: 'cuatro@tarjeta.test', nombre: 'Tarjeta ninguna' })), nombre: 'Tarjeta ninguna' };
+  ok('una cuenta que nunca guardó una tarjeta: nada que avisar ni que anotar',
+    await deAaC(sinTarjeta), { ensayo: false, pasoB: 'sin_tarjeta', alBorrar: null, borrada: true, tenia_tarjeta: false, sin_confirmar: [] });
+  // Sus dueños quedaron sueltos: se van, para que las listas de abajo sean las del escenario.
+  for (const c of [conRespuesta, sinRespuesta, aMedias, sinTarjeta]) await authBorra(c.uid);
+
+  // ═══════════════════════════════════════════════════════════
   grupo('8 · correos_sueltos: la lista del panel');
   // ═══════════════════════════════════════════════════════════
   const lista1 = r(await sesion(jefe, 'select public.correos_sueltos() as r'));
@@ -449,7 +587,8 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   ok('no está la administración (ni quien aprieta ni la otra), ni quien tiene negocio',
     ['jefe@orden.test', 'jefa@orden.test', 'conotro@a.test', 'corredor@a.test', 'comun@otro.test', 'duenio@vivo.test'].filter((c) => en(lista1, c)), []);
   ok('quien recomienda Orden aparece, con su candado', [en(lista1, 'socio@a.test').se_puede, en(lista1, 'socio@a.test').motivo], [false, 'socio']);
-  ok('los demás se pueden borrar', lista1.filter((x) => !x.se_puede).map((x) => x.correo).sort(), ['socio2@nadie.test', 'socio@a.test']);
+  ok('la socia cargada por su correo también: aparece y no se ofrece borrarla', [en(lista1, 'socia@correo.test').se_puede, en(lista1, 'socia@correo.test').motivo], [false, 'socio']);
+  ok('los demás se pueden borrar', lista1.filter((x) => !x.se_puede).map((x) => x.correo).sort(), ['socia@correo.test', 'socio2@nadie.test', 'socio@a.test']);
   ok('claves exactas', Object.keys(lista1[0]).sort(),
     ['con_codigo', 'confirmado', 'correo', 'creado', 'motivo', 'reciente', 'se_puede', 'ultimo_ingreso', 'usuario']);
   ok('el id es el del usuario (lo manda la pantalla para borrarlo)', en(lista1, 'suelto@nadie.test').usuario, suelto);
@@ -484,6 +623,25 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   ok('de la fila de Auth no sale nada más (ni la contraseña cifrada)', JSON.stringify(lista2).includes('SECRETO-DE-PRUEBA'), false);
   ok('el tope: con 1 trae uno, y nunca menos',
     [r(await sesion(jefe, 'select public.correos_sueltos(1) as r')).length, r(await sesion(jefe, 'select public.correos_sueltos(0) as r')).length], [1, 1]);
+  // CUANDO NO ENTRAN TODOS (revisión del 07/10). La lista va del más nuevo al
+  // más viejo y se corta: los que se caen son justo los que quedaron de
+  // cuentas borradas hace tiempo. El panel pide UNO MÁS que lo que muestra
+  // (src/lib/admin.ts, grupo 13): si llega, sabe que hay más y lo dice. Pidiendo
+  // justo el tope, el correo viejo no aparecía y nada avisaba que faltaba.
+  const TOPE = T.TOPE_DE_SUELTOS;
+  await db.query(`insert into auth.users (email, created_at) values ('viejo@borrada.test', now() - interval '90 days')`);
+  await db.query(`insert into auth.users (email, created_at)
+    select 'nuevo' || g || '@registro.test', now() - (g || ' minutes')::interval from generate_series(1, $1::int) g`, [TOPE]);
+  const loQueLlega = r(await sesion(jefe, 'select public.correos_sueltos($1) as r', [TOPE + 1]));
+  const aLaVista = T.sueltosALaVista(loQueLlega);
+  ok('con más sueltos que el tope: se muestran los más nuevos, el viejo no entra, y el panel SABE que hay más',
+    [TOPE, loQueLlega.length, aLaVista.visibles.length, aLaVista.visibles[0].correo, aLaVista.visibles.some((x) => x.correo === 'viejo@borrada.test'), aLaVista.hayMas],
+    [200, 201, 200, 'nuevo1@registro.test', false, true]);
+  ok('la base deja pedir uno más que el tope (corta recién en 500)',
+    r(await sesion(jefe, 'select public.correos_sueltos(9999) as r')).some((x) => x.correo === 'viejo@borrada.test'), true);
+  await db.query(`delete from auth.users where email = 'viejo@borrada.test' or email like 'nuevo%@registro.test'`);
+  ok('sin esos, la lista vuelve a entrar entera y no se avisa nada',
+    T.sueltosALaVista(r(await sesion(jefe, 'select public.correos_sueltos($1) as r', [TOPE + 1]))).hayMas, false);
 
   // ═══════════════════════════════════════════════════════════
   grupo('9 · El servidor, de punta a punta (el código de verdad, con un Auth de mentira)');
@@ -494,12 +652,7 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     const llamadas = [];
     return {
       llamadas,
-      rpc: async (funcion, args) => {
-        llamadas.push(funcion);
-        const claves = Object.keys(args);
-        const res = await servidor(`select public.${funcion}(${claves.map((k, i) => `${k} => $${i + 1}`).join(', ')}) as r`, claves.map((k) => args[k]));
-        return res.ok ? { data: res.valor.rows[0].r, error: null } : { data: null, error: { code: 'XX000', message: res.error } };
-      },
+      rpc: async (funcion, args) => { llamadas.push(funcion); return rpcDelServidor(funcion, args); },
       auth: { admin: { deleteUser: async (id) => {
         llamadas.push('deleteUser');
         if (authFalla) return { error: { status: 500, code: 'unexpected_failure' } };
@@ -572,6 +725,14 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     await sueltoCon(encargada, 'encargada@a.test'), { estado: 'ya_no_estaba', correo: '', llamadas: 'correo_borrable' });
   ok('el socio no se borra ni escribiendo su correo',
     [await sueltoCon(socio, 'socio@a.test'), await existe(socio)], [{ estado: 'se_queda', correo: 'socio@a.test', motivo: 'socio', llamadas: 'correo_borrable' }, true]);
+  ok('la socia cargada por su correo tampoco: ni se le pide a Auth',
+    [await sueltoCon(socia.uid, 'socia@correo.test'), await existe(socia.uid)],
+    [{ estado: 'se_queda', correo: 'socia@correo.test', motivo: 'socio', llamadas: 'correo_borrable' }, true]);
+  // Sin `r()`: si a la socia se la hubiera borrado, esto tiene que fallar, no tumbar la prueba.
+  const suCodigo = await sesion(socia.uid, 'select public.mi_codigo_socio() as r');
+  ok('y su fila la esperó: cuando pide su código recibe el de siempre, pegado a su cuenta',
+    [suCodigo.ok && suCodigo.valor.rows[0].r.codigo === altaSocia.codigo,
+      (await fila('select user_id = $2 as suya from public.socios where id = $1', [altaSocia.id, socia.uid])).suya === true], [true, true]);
   ok('la administración tampoco, ni a sí misma',
     [(await sueltoCon(jefa, 'jefa@orden.test')).motivo, (await sueltoCon(jefe, 'jefe@orden.test')).motivo, await existe(jefa), await existe(jefe)],
     ['administracion', 'vos', true, true]);
@@ -706,6 +867,10 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     ['Listo: se borró el correo ana@a.test. Ya se puede registrar de nuevo.', 'Ese correo ya estaba borrado.']);
   ok('si el pedido se corta, también es ámbar y manda a mirar las listas',
     [T.BORRADO_SIN_RESPUESTA.startsWith('Ojo:'), T.BORRADO_SIN_RESPUESTA.includes('«Correos sin cuenta»')], [true, true]);
+  const deLargo = (n) => T.sueltosALaVista(Array.from({ length: n }, (_, i) => i));
+  ok('la lista de sueltos: hasta el tope entra entera; con uno más se muestran los primeros y se sabe que hay más',
+    [T.sueltosALaVista([]), deLargo(200).hayMas, deLargo(200).visibles.length, deLargo(201).hayMas, deLargo(201).visibles.length, deLargo(201).visibles[199]],
+    [{ visibles: [], hayMas: false }, false, 200, true, 200, 199]);
 
   // ═══════════════════════════════════════════════════════════
   grupo('13 · Las fuentes');
@@ -733,6 +898,16 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   const post = cuentas.slice(cuentas.indexOf('export async function POST'), cuentas.search(/\n(?:async )?function /));
   ok('la ruta de cuentas: ensayo → tarjeta → borrado → archivos → correos',
     antesQue(post, 'p_solo_comprobar: true', 'quitarTarjeta(', 'p_solo_comprobar: false', ".from('comprobantes').remove(", 'borrarCorreo('), true);
+  // Que el ensayo CORTE: sin esa línea, con el nombre mal escrito la ruta
+  // seguiría y le quitaría la tarjeta a la cuenta antes de fallar.
+  ok('si el ensayo dice que no, la ruta corta ahí: antes de tocar la tarjeta',
+    antesQue(post, 'p_solo_comprobar: true', 'if (ensayo.error) return noSePudo(', 'quitarTarjeta('), true);
+  // La tarjeta que el ensayo vio y el paso B no pudo pedir (por quitar, o del
+  // otro entorno: grupo 7 bis) es «fallo», en ámbar; nunca «sin_tarjeta».
+  ok('lo que el ensayo vio de la tarjeta decide entre «fallo» y «sin_tarjeta»',
+    [post.includes('const teniaTarjeta = (ensayo.data as { tarjeta?: unknown } | null)?.tarjeta === true;'),
+      (post.match(/tarjeta = teniaTarjeta \? 'fallo' : 'sin_tarjeta';/g) ?? []).length, T.hayOjo({ ...base, tarjeta: 'fallo' }), T.hayOjo({ ...base, tarjeta: 'sin_tarjeta' })],
+    [true, 2, true, false]);
   ok('borra los videos también, y de a 100', [post.includes(".from('videos').remove("), /i \+= 100/.test(cuentas)], [true, true]);
   ok('del pedido lee la cuenta y el nombre escrito, y nada más (ninguna lista de personas)',
     [...new Set([...cuentas.matchAll(/cuerpo\.(\w+)/g)].map((m) => m[1]))].sort(), ['confirmacion', 'empresa']);
@@ -746,6 +921,11 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
   ok('la ruta de correos lee el usuario y el correo escrito, y nada más',
     [...new Set([...correosRuta.matchAll(/cuerpo\.(\w+)/g)].map((m) => m[1]))].sort(), ['confirmacion', 'usuario']);
   ok('sin el correo escrito no llega a la base', antesQue(correosRuta, 'if (!confirmacion)', 'clienteDeServicio(', 'borrarCorreo('), true);
+  // Sin «confirmacion» en esa llamada la base no compara nada: con cualquier
+  // texto se borraría el usuario cuyo id venga en el pedido.
+  ok('y el correo escrito LLEGA a la base: es ella la que lo compara con el de ese usuario',
+    [correosRuta.includes("borrarCorreo(servicio, { actor: user.id, usuario, confirmacion, origen: 'suelto' })"), (correosRuta.match(/borrarCorreo\(/g) ?? []).length],
+    [true, 1]);
 
   const pieza = sinComentarios(leer('src/lib/borrar-correo-servidor.ts'));
   ok('la pieza compartida: la base dice que sí → Auth borra → queda la constancia',
@@ -779,6 +959,15 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     ['faltoComision', 'onHecho([contar?.(data), comision]', '<p role="alert" className="rounded-xl bg-rojo-claro px-3.5', 'Mantiene su racha',
       'avisarActivacion(', 'En un Premium escribí siempre el número', "rpc('asignar_referido'", "rpc('quitar_referido'"].filter((c) => !panel.includes(c)), []);
   ok('el cartel va en ámbar cuando quedó algo a medias', /ojo \? 'bg-ambar-claro' : 'bg-verde-claro'/.test(panelSin), true);
+  ok('y la ficha le avisa al panel que quedó algo a medias (sin eso, el cartel saldría verde)',
+    panelSin.includes('onHecho(mensajeDeCuentaBorrada(hecha), hayOjo(hecha));'), true);
+  // En el teléfono la lista de cuentas queda debajo de la primera pantalla: sin
+  // subir, el cartel (lo único que dice qué quedó a medias) no se llega a ver.
+  const alCerrarLaFicha = panelSin.slice(panelSin.indexOf('<FichaCuenta'), panelSin.indexOf('/>', panelSin.indexOf('<FichaCuenta')));
+  ok('después de una acción de la ficha la página sube al cartel, y solo si hay algo que leer',
+    [alCerrarLaFicha.includes("setHecho(mensaje ?? '');"), alCerrarLaFicha.includes("if (mensaje) window.scrollTo({ top: 0, behavior: 'smooth' });"),
+      (panelSin.match(/window\.scrollTo\(\{ top: 0/g) ?? []).length],
+    [true, true, 2]);
 
   const lista = leer('src/components/CorreosSueltos.tsx');
   const listaSin = sinComentarios(lista);
@@ -789,10 +978,16 @@ const NOMBRES = Object.keys(LAS_SIETE).map((f) => f.slice('public.'.length, f.in
     [/\bbg-white(?!\/)|\bbg-black\b|\bdark:/.test(lista), listaSin.includes('fixed inset-0'), listaSin.includes('useTextos'), listaSin.includes('<Hoja'),
       lista.startsWith("'use client'")], [false, false, false, true, true]);
   ok('no hay «borrar todos»', /borrar todos|todos los correos/i.test(listaSin), false);
+  ok('la lista muestra lo que entra y avisa cuando hay más (título y cartel)',
+    [listaSin.includes('const { visibles, hayMas } = sueltosALaVista(sueltos ?? []);'), listaSin.includes('{visibles.map((s) => ('), /\{sueltos\.map\(/.test(listaSin),
+      listaSin.includes('{hayMas ? `Más de ${cuantos}` : cuantos}'), /\{hayMas && \(\s*<p [^>]*>\s*Se muestran los \{cuantos\} más nuevos\. Hay más correos sin cuenta/.test(listaSin)],
+    [true, true, false, true, true]);
 
   const admin = sinComentarios(leer('src/lib/admin.ts'));
   ok('la lista se lee con la sesión (no con la clave de servicio) y no tira el panel si falla',
     [admin.includes("rpc('correos_sueltos'"), admin.includes('clienteDeServicio'), /if \(error\) return null;/.test(admin)], [true, false, true]);
+  ok('y pide uno más que el tope, para saber si quedó cortada',
+    admin.includes("rpc('correos_sueltos', { p_limite: TOPE_DE_SUELTOS + 1 })"), true);
   ok('y la página la pide y la pasa', [leer('src/app/admin/page.tsx').includes('traerCorreosSueltos()'), leer('src/app/admin/page.tsx').includes('sueltos={sueltos}')], [true, true]);
 
   const medio = leer('src/middleware.ts');

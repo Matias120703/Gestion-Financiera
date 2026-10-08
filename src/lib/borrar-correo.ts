@@ -42,6 +42,22 @@ export function mismoCorreo(escrito: string, correo: string): boolean {
   return a !== '' && a === correo.trim().toLowerCase();
 }
 
+/**
+ * CUÁNTOS «CORREOS SIN CUENTA» MUESTRA EL PANEL.
+ *
+ * La lista va del más nuevo al más viejo y se corta: los que se caen son los
+ * que quedaron de cuentas borradas hace tiempo. A la base se le pide UNO MÁS
+ * (`traerCorreosSueltos`): si llega, hay más de los que se ven y la pantalla
+ * lo dice. Una lista cortada que no avisa repite el malentendido que se vino
+ * a arreglar: «no existe porque no está en mi panel».
+ */
+export const TOPE_DE_SUELTOS = 200;
+
+/** De lo que llegó, lo que se muestra; y si quedaron correos afuera. */
+export function sueltosALaVista<T>(lista: T[]): { visibles: T[]; hayMas: boolean } {
+  return { visibles: lista.slice(0, TOPE_DE_SUELTOS), hayMas: lista.length > TOPE_DE_SUELTOS };
+}
+
 /** ¿Quedó algo sin hacer? El cartel va en ámbar y no en verde. */
 export function hayOjo(d: Pick<CuentaBorrada, 'correos' | 'tarjeta' | 'archivos_sin_borrar'>): boolean {
   return d.correos.some((c) => c.estado === 'fallo')

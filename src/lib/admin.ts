@@ -1,5 +1,6 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
+import { TOPE_DE_SUELTOS } from './borrar-correo';
 import type {
   CodigoRechazado, ComisionAdmin, CorreoSuelto, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, RetiroAdmin, SocioAdmin,
 } from './tipos';
@@ -104,10 +105,13 @@ export async function traerCodigosRechazados(): Promise<CodigoRechazado[]> {
  * tiene que seguir andando. Pero devuelve null y no una lista vacía: «no hay
  * ninguno» y «no se pudo leer» no son lo mismo, y confundirlos le diría a
  * quien administra que un correo no existe cuando sí.
+ *
+ * Pide UNO MÁS de los que el panel muestra: así la pantalla sabe si la lista
+ * quedó cortada y lo avisa (`sueltosALaVista`).
  */
 export async function traerCorreosSueltos(): Promise<CorreoSuelto[] | null> {
   const supabase = clienteServidor();
-  const { data, error } = await supabase.rpc('correos_sueltos', { p_limite: 200 });
+  const { data, error } = await supabase.rpc('correos_sueltos', { p_limite: TOPE_DE_SUELTOS + 1 });
   if (error) return null;
   return Array.isArray(data) ? (data as CorreoSuelto[]) : [];
 }
