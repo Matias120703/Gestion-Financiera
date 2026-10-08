@@ -63,6 +63,28 @@
 --      crear y confirmar) se activa igual que hoy, y además queda «para
 --      revisar»: 'Pagó un plan con menos lugares que las personas de su
 --      equipo'.
+--   d. Si además tiene una tarjeta guardada con el débito al día, deja de
+--      anunciarse el cobro que (b) no va a hacer: en su fila del aviso de
+--      vencimiento `debito` va null (el aviso publicado dice entonces que
+--      pague, en vez de «se cobra solo de tu tarjeta»), y en
+--      `bancard_estado` `debito.fecha_cobro` va null (la pantalla publicada
+--      no muestra «Próximo cobro»). La pregunta la contesta una función,
+--      `bancard_renovacion_frenada`, que le pregunta a la misma decisión 4:
+--      apagada la decisión, esto también se apaga.
+--
+-- Hoy esas cuentas son las que la administración activó a mano con más
+-- gente que lugares (`cambiar_plan_cuenta` no mira el equipo). Antes de
+-- aplicar conviene contarlas (solo lee):
+--
+--   select e.nombre, s.plan, s.estado, s.periodo_fin, c.debito_activo,
+--          (select count(*) from miembros m where m.empresa_id = e.id) as equipo
+--   from suscripciones s
+--   join empresas e on e.id = s.empresa_id
+--   left join bancard_cuentas c on c.empresa_id = e.id
+--   where s.plan in ('basico', 'pro')
+--     and coalesce(e.tipo_cuenta, 'emprendedor') <> 'personal'
+--     and (select count(*) from miembros m where m.empresa_id = e.id)
+--         > (limites_plan(s.plan)->>'miembros')::int;
 --
 -- Y se suman claves que el código publicado no lee: `plan_proximo`,
 -- `plan_proximo_pagable` y `miembros` en `bancard_estado`; `plan_antes` en
@@ -70,7 +92,25 @@
 -- `bancard_revertir` y en su renglón; `plan_renovacion` y
 -- `precio_renovacion` en cada fila de `vencimientos_por_avisar` (donde
 -- `plan` y `precio` siguen siendo los de HOY); `plan_proximo` y `conflicto`
--- en la foto `antes` de una operación.
+-- en la foto `antes` de una operación (y `debito`, solo en la foto de un
+-- 'cambio').
+--
+-- SI HAY QUE VOLVER ATRÁS
+--
+--   · Apagar la decisión 4 sola: `create or replace` de
+--     `pago_de_plan_exige_lugar` con `return;` como primera línea del cuerpo.
+--     Se apagan con ella (a), (b) y (d).
+--   · Volver al código anterior dejando la 130 aplicada: se puede, pero
+--     ANTES hay que avisar a las cuentas con `bancard_cuentas.plan_proximo`
+--     escrito y vaciarlo. La pantalla vieja no muestra esa baja ni deja
+--     deshacerla, y la base la sigue cobrando y topando el equipo.
+--   · Sacar la 130: NO alcanza con volver a aplicar la 125 y la 126. No dan
+--     error y no vuelven atrás: quedan las funciones nuevas, la restricción
+--     con 'cambio' y las bajas escritas, y a quien programó una baja la
+--     tarea le cobra el plan alto después de haberle anunciado el bajo. Hace
+--     falta un SQL propio (las doce funciones con su texto anterior, fuera
+--     las nuevas, la columna y las restricciones), que se niega si queda un
+--     pedido 'cambio' o una baja programada.
 --
 -- LAS DOCE FUNCIONES QUE SE VUELVEN A DEFINIR
 --
@@ -247,6 +287,9 @@ end $fn$;
 --
 -- Para apagarla: que la primera línea del cuerpo sea `return;`. Para que no
 -- frene el cobro automático: `if p_origen = 'automatico' then return; end if;`.
+-- Lo que se le anuncia a la persona (el aviso de vencimiento y «Próximo
+-- cobro») sale de preguntarle a esta misma función
+-- (`bancard_renovacion_frenada`): cambia sola con cualquiera de las dos.
 create or replace function public.pago_de_plan_exige_lugar(
   p_empresa  uuid,
   p_plan     text,
@@ -486,6 +529,9 @@ grant execute on function public.cotizar_cambio(uuid, text, integer) to authenti
 --         esto, deshacer con la renovación ya iniciada por el plan
 --         programado la dejaba «plata anotada, sin renovar», y al otro día
 --         el débito cobraba el plan alto: dos cobros por un mes.
+--         Cuenta también el formulario RECHAZADO de esa renovación que
+--         sigue abierto en Bancard (`bancard_rechazadas_abiertas`, abajo),
+--         cuando lo programado se va a borrar o a reemplazar.
 --      3. Null: deshace y termina.
 --      4. Un negocio con el plan activo y vigente, hacia un plan más bajo.
 --      5. El plan es de su rubro y tiene precio (lo dice la fuente del
@@ -498,6 +544,38 @@ grant execute on function public.cotizar_cambio(uuid, text, integer) to authenti
 --    plan nuevo (`tope_de_miembros`): si no, entre programar y renovar el
 --    equipo crecería y la renovación quedaría imposible.
 -- ------------------------------------------------------------
+
+-- UN FORMULARIO RECHAZADO SIGUE SIENDO PAGABLE. Cuando el banco rechaza un
+-- pago por el formulario, la operación queda 'rechazada' (ya no es «un pago
+-- en curso»), pero su formulario sigue abierto en Bancard hasta que alguien
+-- lo cierra con la reversa: la conciliación a los diez minutos, o el
+-- servidor cuando la persona abre otro pago. Es la misma condición que
+-- `reemplaza` en `bancard_crear_operacion_interna` (125).
+--
+-- Importa acá por esto: con el Básico programado, la persona abre la
+-- renovación del Básico, el banco la rechaza, toca «Seguir con el Pro» y
+-- después paga ese formulario (el QR ya escaneado, otro teléfono). Entraba
+-- como «pagó un plan distinto», sin renovar, y al otro día el débito cobraba
+-- el Pro: dos cobros por un mes.
+--
+-- Devuelve los números de esas operaciones (un arreglo, vacío si no hay).
+-- Con `p_plan`, solo los pagos de PLAN por ese plan: los que quedarían «sin
+-- renovar» si esa baja se borrara. Con `p_entorno`, solo los de ese ambiente
+-- (los que ese servidor puede cerrar en Bancard). Solo del servidor.
+create or replace function public.bancard_rechazadas_abiertas(p_empresa uuid, p_entorno text, p_plan text)
+returns jsonb language sql stable security definer set search_path = public as $fn$
+  select coalesce(jsonb_agg(o.id order by o.id), '[]'::jsonb)
+  from public.bancard_operaciones o
+  where o.empresa_id = p_empresa
+    and o.estado = 'rechazada' and o.medio = 'formulario' and o.process_id is not null
+    and o.created_at > now() - interval '24 hours'
+    and (p_entorno is null or o.entorno = p_entorno)
+    and (p_plan is null or (o.tipo = 'plan' and o.plan = p_plan));
+$fn$;
+
+revoke all on function public.bancard_rechazadas_abiertas(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.bancard_rechazadas_abiertas(uuid, text, text) to service_role;
+
 create or replace function public.bancard_programar_plan(p_empresa uuid, p_usuario uuid, p_plan text)
 returns jsonb language plpgsql security definer set search_path = public as $fn$
 declare
@@ -530,6 +608,16 @@ begin
   end if;
 
   select c.plan_proximo into v_habia from public.bancard_cuentas c where c.empresa_id = p_empresa;
+
+  -- Lo programado se va a borrar (deshacer) o a reemplazar (otro plan), y el
+  -- formulario RECHAZADO de la renovación por ese plan sigue abierto en
+  -- Bancard: también es un pago en curso. Pagado después, entraría «sin
+  -- renovar» y el débito cobraría el plan alto. El servidor lo cierra con la
+  -- reversa y prueba de nuevo; si no puede, lo cierra la conciliación.
+  if v_habia is not null and p_plan is distinct from v_habia
+     and public.bancard_rechazadas_abiertas(p_empresa, null, v_habia) <> '[]'::jsonb then
+    raise exception 'Hay un pago en curso. Esperá a que se confirme y probá de nuevo.' using errcode = '22023';
+  end if;
 
   -- Deshacer: siempre, también donde programar ya no se puede (la cuenta
   -- venció, o dejó de ver Bancard).
@@ -654,6 +742,34 @@ end $fn$;
 
 revoke all on function public.bancard_personas_de_renovacion(uuid) from public, anon, authenticated;
 revoke all on function public.bancard_importe_de_renovacion(uuid) from public, anon, authenticated;
+
+-- ¿EL COBRO AUTOMÁTICO DE ESTA CUENTA SE VA A FRENAR POR LA DECISIÓN 4?
+--
+-- Si el equipo de hoy no entra en el plan de la renovación, la tarea no crea
+-- el cobro: pausa el débito y le avisa a la administración. Entonces nadie
+-- puede anunciarle a la persona que «se cobra solo de tu tarjeta»: ni el
+-- aviso de vencimiento, ni «Próximo cobro» en /plan. Los dos preguntan acá.
+--
+-- NO repite la regla: le pregunta a `pago_de_plan_exige_lugar`, con el mismo
+-- plan, las mismas personas y el mismo origen ('automatico') con que lo va a
+-- llamar la tarea. Si la decisión 4 se apaga, o se decide que no frene el
+-- cobro automático, esto contesta «no» solo. Cerrada a todos: la llaman
+-- `bancard_estado` y `vencimientos_por_avisar`, que son definer.
+create or replace function public.bancard_renovacion_frenada(p_empresa uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $fn$
+begin
+  perform public.pago_de_plan_exige_lugar(
+    p_empresa,
+    public.bancard_plan_de_renovacion(p_empresa),
+    public.bancard_personas_de_renovacion(p_empresa),
+    'automatico');
+  return false;
+exception when invalid_parameter_value then
+  -- El errcode de «Tu equipo tiene … personas y el plan … admite hasta …».
+  return true;
+end $fn$;
+
+revoke all on function public.bancard_renovacion_frenada(uuid) from public, anon, authenticated, service_role;
 
 -- ------------------------------------------------------------
 -- 8. INICIAR UNA OPERACIÓN
@@ -902,7 +1018,8 @@ revoke all on function public.bancard_crear_operacion_interna(uuid, uuid, text, 
 -- 9. CONFIRMAR
 --
 --    Copia exacta de la 125. Cambia:
---      · la foto `antes` suma `plan_proximo` y `conflicto`;
+--      · la foto `antes` suma `plan_proximo` y `conflicto` (y, solo en un
+--        'cambio', `debito`: cómo estaba el cobro automático);
 --      · la regla 6a (un plan distinto del que tiene pago) no aplica al
 --        plan que la cuenta programó;
 --      · un 'cambio' vale solo sobre la cuenta que se cotizó (6a bis);
@@ -1116,6 +1233,19 @@ begin
     'personas_proxima',  v_cuenta.personas_proxima);
   -- (130) La baja de PLAN programada también entra en la foto.
   v_antes := v_antes || jsonb_build_object('plan_proximo', v_cuenta.plan_proximo);  -- (130)
+  -- (130) Y en un CAMBIO de plan, cómo estaba el débito antes de este pago: el
+  -- (130) paso 9 lo destraba con cualquier pago, y la reversa de un cambio no lo
+  -- (130) pausa. Sin esto, un débito que estaba pausado quedaba al día después de
+  -- (130) revertir, y la tarea le cobraba sola la renovación.
+  if v_op.tipo = 'cambio' then  -- (130)
+    v_antes := v_antes || jsonb_build_object('debito', jsonb_build_object(  -- (130)
+      'estado',        v_cuenta.debito_estado,  -- (130)
+      'intentos',      v_cuenta.intentos,  -- (130)
+      'ciclo_fin',     v_cuenta.ciclo_fin,  -- (130)
+      'ultimo_error',  v_cuenta.ultimo_error,  -- (130)
+      'ultimo_codigo', v_cuenta.ultimo_codigo,  -- (130)
+      'tarjeta_id',    v_cuenta.tarjeta_id));  -- (130)
+  end if;  -- (130)
 
   if v_op.estado = 'vencida' then
     v_revisar := 'Pago que entró tarde, sobre una operación ya vencida';
@@ -1422,11 +1552,16 @@ grant execute on function public.bancard_confirmar(bigint, jsonb, text) to servi
 --
 --     Copia exacta de la 125. Cambia, para un 'cambio':
 --       · «tiene que ser lo último»: que no se haya renovado después y que
---         el plan siga siendo el que dejó ese pago (el de la operación si
---         se aplicó; el de antes si quedó en conflicto, que es justo el
---         que más hay que poder devolver);
+--         el plan siga siendo el que dejó ese pago;
+--       · un cambio que quedó EN CONFLICTO (plata anotada, plan sin tocar)
+--         se puede devolver SIEMPRE, también después de que la cuenta pagó
+--         otra cosa: no tocó la suscripción, así que no pasa por «lo
+--         último», no repone ninguna foto ni lo programado, y solo anula el
+--         ingreso, marca la operación y deja su renglón;
 --       · NO pausa el débito: el cambio no movió la fecha, y la próxima
---         renovación tiene que salir sola, por el plan de antes;
+--         renovación tiene que salir sola, por el plan de antes. Lo deja
+--         COMO ESTABA: si antes de ese pago estaba pausado, vuelve a
+--         estarlo, con su motivo;
 --       · su renglón (`bancard_cambio`) entra en las dos listas.
 --     Y para todos: la baja de plan programada vuelve de la foto en la
 --     MISMA sentencia que la de personas (la restricción «una sola baja»
@@ -1450,6 +1585,7 @@ declare
   v_anulado  boolean := false;
   v_pausado  boolean := false;
   v_de_mas   integer := 0;  -- (130) personas que no entran en el plan al que vuelve
+  v_suelto   boolean := false;  -- (130) un cambio que quedó en conflicto: no tocó la cuenta
 begin
   if p_actor is null or not exists (select 1 from public.superadmins s where s.usuario_id = p_actor) then
     raise exception 'Este panel es solo para la administración de Orden.' using errcode = '42501';
@@ -1475,15 +1611,23 @@ begin
   -- nunca existió.
   select * into v_sus from public.suscripciones where empresa_id = v_op.empresa_id for update;
 
+  -- (130) UN CAMBIO DE PLAN QUE QUEDÓ EN CONFLICTO no tocó la suscripción: la
+  -- (130) plata se anotó y el plan no se movió. No hay nada que proteger con
+  -- (130) «tiene que ser lo último», y es el pago que más hay que poder
+  -- (130) devolver: la persona quedó con el candado y lo normal es que pague
+  -- (130) otra cosa enseguida, o que el débito renueve al otro día. Con esos
+  -- (130) chequeos, desde ahí ya no se podía devolver ni marcar nunca más.
+  -- (130) Solo para 'cambio': un pago de plan o de personas en conflicto se
+  -- (130) revierte como siempre. Las operaciones de antes no traen la clave.
+  -- (130) (El «if» de abajo queda con su sangría de la 125 a propósito.)
+  v_suelto := v_op.tipo = 'cambio' and coalesce((v_op.antes ->> 'conflicto')::boolean, false);  -- (130)
+  if not v_suelto then  -- (130)
   if (v_op.tipo = 'plan' and v_sus.periodo_fin is distinct from v_op.vence_despues)
-     -- (130) Un cambio de plan: que no se haya renovado después (la fecha es la
-     -- (130) que dejó) y que el plan siga siendo el que dejó ese pago: el de la
-     -- (130) operación si se aplicó, el de antes si quedó en conflicto.
+     -- (130) Un cambio de plan que se aplicó: que no se haya renovado después (la
+     -- (130) fecha es la que dejó) y que el plan siga siendo el de ese pago.
      or (v_op.tipo = 'cambio' and (  -- (130)
            v_sus.periodo_fin is distinct from v_op.vence_despues  -- (130)
-           or v_sus.plan is distinct from (case  -- (130)
-                when coalesce((v_op.antes ->> 'conflicto')::boolean, false)  -- (130)
-                then v_op.antes ->> 'plan' else v_op.plan end)))  -- (130)
+           or v_sus.plan is distinct from v_op.plan))  -- (130)
      or exists (
        select 1 from public.registro_admin r
        where r.empresa_id = v_op.empresa_id
@@ -1498,6 +1642,7 @@ begin
     raise exception 'Después de ese pago hubo otros cambios en la cuenta. Deshacé primero esos.'
       using errcode = '22023';
   end if;
+  end if;  -- (130)
 
   if coalesce(p_solo_comprobar, false) then
     return jsonb_build_object('puede', true);
@@ -1505,6 +1650,14 @@ begin
 
   -- La suscripción vuelve a la foto.
   v_antes := coalesce(v_op.antes, '{}'::jsonb);
+  -- (130) …menos en un cambio que quedó en conflicto: no hay foto que reponer,
+  -- (130) ni de la suscripción ni de lo programado (reponerla pisaría lo que la
+  -- (130) cuenta pagó o programó después). Lo que se contesta y se anota es la
+  -- (130) cuenta de HOY, que queda como está.
+  if v_suelto then  -- (130)
+    v_antes := jsonb_build_object('plan', v_sus.plan, 'estado', v_sus.estado, 'periodo_fin', v_sus.periodo_fin);  -- (130)
+  end if;  -- (130)
+  if not v_suelto then  -- (130)
   if v_antes ? 'plan' then
     update public.suscripciones
     set plan              = v_antes ->> 'plan',
@@ -1532,6 +1685,7 @@ begin
         , plan_proximo = nullif(v_antes ->> 'plan_proximo', '')  -- (130)
     where empresa_id = v_op.empresa_id;
   end if;
+  end if;  -- (130)
 
   -- Revisión 07/10: revertir un cobro PAUSA el débito. La suscripción vuelve
   -- a la foto (vence mañana, o ya venció) y el débito había quedado al día:
@@ -1546,6 +1700,30 @@ begin
   -- (130) renovación tiene que salir sola, por el plan de antes.
   where empresa_id = v_op.empresa_id and debito_activo and v_op.tipo <> 'cambio';  -- (130)
   v_pausado := found;
+  -- (130) Un cambio de plan deja el débito COMO ESTABA antes de ese pago. Si
+  -- (130) estaba pausado (un rechazo, o una devolución anterior), ese pago lo
+  -- (130) destrabó (paso 9 de `bancard_confirmar`) y acá vuelve a quedar
+  -- (130) pausado, con el motivo que tenía: si no, la tarea le cobraba sola la
+  -- (130) renovación a quien tenía el cobro automático frenado. Solo si desde
+  -- (130) entonces nada más lo movió: sigue al día, es la misma tarjeta y no
+  -- (130) entró otro pago después (un pago destraba el débito a propósito).
+  -- (130) Las operaciones anteriores no traen la clave y siguen como antes.
+  if v_op.tipo = 'cambio' and (v_op.antes -> 'debito' ->> 'estado') = 'pausado' then  -- (130)
+    update public.bancard_cuentas c  -- (130)
+    set debito_estado = 'pausado',  -- (130)
+        intentos      = coalesce(nullif(v_op.antes -> 'debito' ->> 'intentos', '')::integer, 0),  -- (130)
+        ciclo_fin     = nullif(v_op.antes -> 'debito' ->> 'ciclo_fin', '')::date,  -- (130)
+        ultimo_error  = v_op.antes -> 'debito' ->> 'ultimo_error',  -- (130)
+        ultimo_codigo = v_op.antes -> 'debito' ->> 'ultimo_codigo',  -- (130)
+        updated_at    = now()  -- (130)
+    where c.empresa_id = v_op.empresa_id and c.debito_estado = 'al_dia'  -- (130)
+      and c.tarjeta_id is not distinct from nullif(v_op.antes -> 'debito' ->> 'tarjeta_id', '')::bigint  -- (130)
+      and not exists (  -- (130)
+        select 1 from public.bancard_operaciones o  -- (130)
+        where o.empresa_id = v_op.empresa_id and o.id <> v_op.id and o.estado = 'pagada'  -- (130)
+          and o.confirmada_at >= v_op.confirmada_at);  -- (130)
+    v_pausado := found;  -- (130)
+  end if;  -- (130)
   -- (130) ¿Quedó gente de más? Si en el medio entraron personas (pasó al Premium
   -- (130) de 6, invitó a 4 y se revierte al Básico), no se echa a nadie: se
   -- (130) cuenta y se dice, para que la administración lo vea.
@@ -1778,7 +1956,9 @@ grant execute on function public.bancard_tomar_cobro(text) to service_role;
 -- 12. LO QUE LEE LA PANTALLA
 --
 --     Copia exacta de la 125. Cambia: tres claves más. Las cinco de siempre
---     no cambian.
+--     no cambian, salvo `debito.fecha_cobro`, que va null cuando el cobro
+--     automático no va a salir porque el equipo no entra en el plan (el
+--     punto d de la decisión 4, arriba).
 -- ------------------------------------------------------------
 create or replace function public.bancard_estado(p_empresa uuid, p_entorno text)
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -1843,6 +2023,12 @@ begin
         case when v_cuenta.ultimo_intento = v_hoy then v_hoy + 1 else v_hoy end);
     end if;
   end if;
+  -- (130) DECISIÓN 4, lo que se promete: si el equipo de hoy no entra en el plan
+  -- (130) de la renovación, la tarea no va a cobrar (pausa el débito y le avisa a
+  -- (130) la administración). La pantalla no puede anunciar ese cobro: sin fecha.
+  if v_fecha is not null and public.bancard_renovacion_frenada(p_empresa) then  -- (130)
+    v_fecha := null;  -- (130)
+  end if;  -- (130)
 
   -- (130) La baja de plan programada: solo con el plan activo y hacia abajo.
   v_programado := nullif(public.bancard_plan_de_renovacion(p_empresa), v_sus.plan);  -- (130)
@@ -1951,10 +2137,14 @@ begin
     -- (130) Con un pago en curso la baja de plan no se toca, igual que al
     -- (130) programarla o deshacerla: ese pago puede ser la renovación por el
     -- (130) plan programado, y sin la baja quedaría «plata anotada, sin renovar».
+    -- (130) Cuenta también el formulario RECHAZADO de esa renovación que sigue
+    -- (130) abierto en Bancard (`bancard_rechazadas_abiertas`).
     if exists (  -- (130)
       select 1 from public.bancard_operaciones o  -- (130)
       where o.empresa_id = p_empresa and o.estado in ('creada', 'en_3ds', 'incierta')  -- (130)
-    ) then  -- (130)
+    ) or public.bancard_rechazadas_abiertas(p_empresa, null, (  -- (130)
+      select c.plan_proximo from public.bancard_cuentas c where c.empresa_id = p_empresa)) <> '[]'::jsonb  -- (130)
+    then  -- (130)
       raise exception 'Hay un pago en curso. Esperá a que se confirme y probá de nuevo.' using errcode = '22023';  -- (130)
     end if;  -- (130)
     update public.bancard_cuentas  -- (130)
@@ -2036,7 +2226,9 @@ revoke all on function public.bancard_baja_caduca() from public, anon, authentic
 --     Copia exacta de la 126. Cambia: dos claves más por fila,
 --     `plan_renovacion` y `precio_renovacion`. `plan` y `precio` siguen
 --     siendo los del plan que la cuenta tiene HOY (el aviso publicado dice
---     «tu plan X vence»), e `importe` ya era lo que de verdad se cobra.
+--     «tu plan X vence»), e `importe` ya era lo que de verdad se cobra. Y
+--     `debito` va null cuando el cobro automático no va a salir porque el
+--     equipo no entra en el plan (el punto d de la decisión 4, arriba).
 -- ------------------------------------------------------------
 create or replace function public.vencimientos_por_avisar()
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -2111,6 +2303,10 @@ begin
           -- Revisión 07/10: solo planes activos. A una prueba no se le
           -- cobra sola aunque tenga la tarjeta guardada (bancard_tomar_cobro).
           and s.estado = 'activa'
+          -- (130) Decisión 4: si el equipo no entra en el plan de la renovación,
+          -- (130) la tarea no va a cobrar. El aviso no promete ese cobro: sin
+          -- (130) «debito», le dice a la persona que pague (y ahí ve qué hacer).
+          and not public.bancard_renovacion_frenada(e.id)  -- (130)
       ),
       -- 126: si la administración le habilitó el pago con Bancard.
       'bancard', coalesce((

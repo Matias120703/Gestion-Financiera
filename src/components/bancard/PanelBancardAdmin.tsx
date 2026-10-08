@@ -70,7 +70,8 @@ interface OperacionAdmin {
   codigo: string | null;
   autorizacion: string | null;
   ticket: string | null;
-  antes: { plan?: string; estado?: string; periodo_fin?: string | null } | null;
+  /** La foto de antes del pago. `conflicto` (130): la plata se anotó y la cuenta no se tocó. */
+  antes: { plan?: string; estado?: string; periodo_fin?: string | null; conflicto?: boolean } | null;
   vence: string | null;
   ingreso_id: string | null;
   comision_id: string | null;
@@ -736,6 +737,10 @@ function HojaRevertir({ op, onCerrar, onHecho }: {
   const antes = op.antes ?? {};
   const vuelve = `${antes.estado === 'prueba' ? 'en prueba' : NOMBRE_PLAN[antes.plan ?? ''] ?? antes.plan ?? '—'}`
     + (antes.periodo_fin ? ` hasta el ${cuando(antes.periodo_fin)}` : '');
+  // Un cambio de plan que quedó en conflicto (130): la plata se anotó y el
+  // plan no se tocó. Revertirlo devuelve la plata y nada más, aunque la
+  // cuenta haya pagado otra cosa después (la base no repone ninguna foto).
+  const noTocoLaCuenta = op.tipo === 'cambio' && antes.conflicto === true;
 
   async function revertir() {
     setOcupado(true);
@@ -754,7 +759,9 @@ function HojaRevertir({ op, onCerrar, onHecho }: {
       const pausa = d.debito_pausado === true
         ? ' Su cobro automático quedó pausado: vuelve cuando la persona pague a mano o guarde otra tarjeta.'
         : '';
-      onHecho((d.bancard === 'sin_bancard' ? 'Marcado como anulado. La cuenta volvió a como estaba.' : 'Revertido en Bancard y en Orden.') + pausa);
+      onHecho((d.bancard === 'sin_bancard'
+        ? (noTocoLaCuenta ? 'Marcado como anulado. La cuenta no se tocó.' : 'Marcado como anulado. La cuenta volvió a como estaba.')
+        : 'Revertido en Bancard y en Orden.') + pausa);
     } catch {
       setError('No se pudo revertir.');
     } finally {
@@ -780,7 +787,9 @@ function HojaRevertir({ op, onCerrar, onHecho }: {
     >
       <div className="space-y-3 text-[13.5px] leading-relaxed text-tinta/70">
         <p>
-          La cuenta vuelve a <b>{vuelve}</b>.
+          {noTocoLaCuenta
+            ? <>Este pago <b>no cambió nada</b> en la cuenta: la cuenta queda como está.</>
+            : <>La cuenta vuelve a <b>{vuelve}</b>.</>}
           {op.ingreso_id ? ` Se anula el ingreso de ${gs(op.importe)} en tus finanzas.` : ''}
           {op.comision_id ? ' La comisión del socio se borra si todavía no se pagó.' : ''}
         </p>

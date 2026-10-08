@@ -820,7 +820,11 @@ console.log('\n── Cambiar de plan con días pagos (130, 07/10/2026) ──�
     [/\{enCurso \? \(\s+<p [^>]*>\{q\.esperaElPago\}<\/p>\s+\) : \(\s+<button type="button" className="boton-suave w-full" onClick=\{deshacer\}/.test(baja),
       /\{!programado \? children : enCurso \? \(\s+<p [^>]*>\{q\.esperaElPago\}<\/p>\s+\) : \(\s+<button type="button" className="boton-principal w-full" onClick=\{seguir\}/.test(baja),
       /\) : enCurso \? \(\s+<p [^>]*>\{q\.esperaElPago\}<\/p>\s+\) : \(\s+<button type="button" className="boton-suave w-full" onClick=\{\(\) => \{ setError\(''\); setAviso\(''\); setAbierta\(true\); \}\}/.test(baja),
-      plan.includes('const pagoEnCurso = !!estadoBancard?.viva;'), cuantas(plan, /enCurso=\{pagoEnCurso\}/g)],
+      // Revisión 08/10: decía `!!estadoBancard?.viva` (cualquier operación viva). Un
+      // formulario dejado a medias escondía los botones hasta 40 minutos, y era
+      // el único caso que la ruta sabe resolver sola. La regla ahora vive en
+      // src/lib/plan-pantalla.ts y se prueba más abajo.
+      plan.includes('const pagoEnCurso = hayQueEsperarElPago(estadoBancard?.viva);'), cuantas(plan, /enCurso=\{pagoEnCurso\}/g)],
     [true, true, true, true, 2]);
   ok('si el equipo de hoy no entra en el plan más bajo, en vez del botón va el porqué',
     /\) : noEntra \? \(\s+<p [^>]*>\{q\.equipoGrande\(nombre, h\.personas\(lugares\), miembros\)\}<\/p>/.test(baja) && baja.includes('const noEntra = miembros > lugares;'), true);
@@ -869,10 +873,14 @@ console.log('\n── Cambiar de plan con días pagos (130, 07/10/2026) ──�
   const sql124a126 = ['124_bancard_precio_y_tablas.sql', '125_bancard_pagos.sql', '126_bancard_reloj_y_avisos.sql']
     .map((n) => leer(`supabase/migrations/${n}`)).join('\n');
   const queLlama = [...new Set(flujo.match(/'bancard_[a-z_]+'/g) || [])].map((s) => s.slice(1, -1));
-  ok('de todo lo que el flujo le pide a la base, lo único que no existía en la 124-126 es bancard_programar_plan, y lo crea la 130 (que se aplica antes que este código)',
+  // Revisión 08/10: se suma `bancard_rechazadas_abiertas` (qué formularios
+  // rechazados hay que cerrar en Bancard antes de deshacer una baja). También
+  // nace en la 130.
+  ok('de todo lo que el flujo le pide a la base, lo único que no existía en la 124-126 son bancard_programar_plan y bancard_rechazadas_abiertas, y las crea la 130 (que se aplica antes que este código)',
     [queLlama.filter((n) => !sql124a126.includes(`function public.${n}(`)),
-      m130.includes('create or replace function public.bancard_programar_plan(p_empresa uuid, p_usuario uuid, p_plan text)')],
-    [['bancard_programar_plan'], true]);
+      m130.includes('create or replace function public.bancard_programar_plan(p_empresa uuid, p_usuario uuid, p_plan text)'),
+      m130.includes('create or replace function public.bancard_rechazadas_abiertas(p_empresa uuid, p_entorno text, p_plan text)')],
+    [['bancard_programar_plan', 'bancard_rechazadas_abiertas'], true, true]);
 
   // ---- /plan: dónde quedó el WhatsApp.
   const ramaDelCambio = plan.slice(plan.indexOf('if (cambiaPorBancard(plan) && planVigente !== null) {'), plan.indexOf('} else if (botonBancard) {'));
@@ -976,6 +984,147 @@ console.log('\n── Cambiar de plan con días pagos (130, 07/10/2026) ──�
         || (n !== 'BotonCambiarPlan' && !s.includes('useTextos()'));
     }), []);
   ok('ningún loading.tsx en toda la aplicación', archivos.filter((a) => /(^|\/)loading\.tsx$/.test(a)), []);
+
+  // ════ LO QUE ENCONTRÓ LA REVISIÓN DEL 08/10 ════
+  // Las reglas de qué se muestra viven en src/lib/plan-pantalla.ts (sin
+  // dependencias): acá se CORREN, y después se mira que la pantalla las use.
+  const P = require('../.compilado/plan-pantalla.js');
+  const reglas = sinComentarios(leer('src/lib/plan-pantalla.ts'));
+  ok('las reglas de la pantalla no importan nada (las compilan las pruebas y las usan el servidor y el navegador)', /^\s*import /m.test(reglas), false);
+
+  // ---- 1. Un formulario dejado a medias no esconde «Bajar…», «Deshacer» ni «Seguir con el…».
+  ok('hay que esperar un cobro con tarjeta en curso, un 3D Secure o un pago incierto; un formulario abierto y dejado, NO (lo suelta la ruta); sin pago, tampoco',
+    [P.hayQueEsperarElPago({ estado: 'creada', medio: 'formulario' }), P.hayQueEsperarElPago({ estado: 'creada', medio: 'token' }),
+      P.hayQueEsperarElPago({ estado: 'en_3ds', medio: 'token' }), P.hayQueEsperarElPago({ estado: 'incierta', medio: 'token' }),
+      P.hayQueEsperarElPago({ estado: 'incierta', medio: 'formulario' }), P.hayQueEsperarElPago(null), P.hayQueEsperarElPago(undefined)],
+    [false, true, true, true, true, false, false]);
+  ok('/plan decide con esa regla, y no con «hay cualquier operación viva»',
+    [plan.includes('const pagoEnCurso = hayQueEsperarElPago(estadoBancard?.viva);'), /pagoEnCurso = !!estadoBancard/.test(plan),
+      /import \{[^}]*hayQueEsperarElPago[^}]*\} from '@\/lib\/plan-pantalla';/.test(plan)],
+    [true, false, true]);
+  ok('y el texto de la espera ya no promete que ese pago «se va a confirmar»',
+    [/confirm/i.test(texto(bloque(es), 'esperaElPago')), /confirm/i.test(texto(bloque(pt), 'esperaElPago')),
+      texto(bloque(es), 'esperaElPago').includes('Cuando se resuelva'), texto(bloque(pt), 'esperaElPago').length > 20],
+    [false, false, true, true]);
+
+  // ---- 2. El «Listo: …» no vive más que el estado que anuncia.
+  {
+    const listo = { texto: 'Listo: desde la próxima renovación tu plan es Básico.', para: true, visto: false };
+    const antesDelRefresco = P.avisoQueQueda(listo, false);
+    const conElRefresco = P.avisoQueQueda(antesDelRefresco, true);
+    const igual = P.avisoQueQueda(conElRefresco, true);
+    const desdeLaOtra = P.avisoQueQueda(igual, false);
+    ok('recién programada, el «Listo» se ve aunque la pantalla todavía no cambió; cuando cambia, queda visto; y sigue mientras siga programada',
+      [antesDelRefresco === listo, conElRefresco.texto === listo.texto, conElRefresco.visto, igual === conElRefresco], [true, true, true, true]);
+    ok('si la baja se deshace desde la OTRA tarjeta («Seguir con el Pro»), ese «Listo» se borra: no queda al lado del botón «Bajar al Básico»', desdeLaOtra, null);
+    ok('  y no resucita si se vuelve a programar desde otro lado', P.avisoQueQueda(desdeLaOtra, true), null);
+    const sigue = { texto: 'Listo: seguís con el Pro.', para: false, visto: false };
+    ok('al revés igual: «Listo: seguís con el Pro» se borra cuando se vuelve a programar la baja',
+      [P.avisoQueQueda(P.avisoQueQueda(sigue, false), true), P.avisoQueQueda(sigue, true) === sigue, P.avisoQueQueda(null, true)], [null, true, null]);
+  }
+  const ganchoDelAviso = baja.slice(baja.indexOf('function useAvisoDeBaja('), baja.indexOf('function Aviso('));
+  ok('los dos pies guardan su «Listo» con esa regla, atado a «programado»: ya no es un texto suelto en un useState',
+    [cuantas(baja, /const \[aviso, setAviso\] = useAvisoDeBaja\(programado\);/g), /const \[aviso, setAviso\] = useState/.test(baja),
+      ganchoDelAviso.includes('const queda = avisoQueQueda(guardado, programado);'), ganchoDelAviso.includes("return [queda?.texto ?? '', setAviso];"),
+      ganchoDelAviso.includes('if (queda !== guardado) setGuardado(queda);')],
+    [2, false, true, true, true]);
+  ok('cada «Listo» dice qué estado anuncia: programar → programada; «Deshacer» y «Seguir con el…» → sin baja',
+    [baja.includes('setAviso(q.listo(nombre), true);'), cuantas(baja, /setAviso\(q\.deshecho\([^\n]*\), false\);/g), cuantas(baja, /setAviso\(q\.(listo|deshecho)\(/g)],
+    [true, 2, 3]);
+
+  // ---- 3. A la cuenta vencida se le sigue mostrando el plan que tenía; y si ningún plan alcanza, se le dice que escriba.
+  const TODOS = ['basico', 'pro', 'negocio'];
+  ok('el profe (su rubro ofrece solo el Básico) que tenía el Pro y venció: ve el Básico Y el Pro (antes: solo el Básico, que es para una persona)',
+    [P.planesALaVista(TODOS, ['basico'], null, 'pro'), P.planesALaVista(TODOS, ['basico'], null, null), P.planesALaVista(TODOS, ['basico'], 'pro', null),
+      P.planesALaVista(TODOS, ['basico', 'pro', 'negocio'], null, 'pro'), P.planesALaVista(TODOS, ['basico', 'pro'], null, 'negocio')],
+    [['basico', 'pro'], ['basico'], ['basico', 'pro'], ['basico', 'pro', 'negocio'], ['basico', 'pro', 'negocio']]);
+  const planVencido = plan.slice(plan.indexOf('const planVencido = '), plan.indexOf('const planesVisibles'));
+  ok('/plan: el plan «que tenía» es solo el de un negocio vencido que lo PAGÓ (una prueba vencida no cuenta), y entra en las tarjetas a la vista',
+    [/const planVencido = conCandado && sus\.estado === 'activa'\s+\? PLANES_PAGOS\.find\(\(p\) => p === sus\.plan\) \?\? null\s+: null;/.test(planVencido),
+      plan.includes('const planesVisibles: PlanPago[] = planesALaVista(PLANES_PAGOS, ficha.planes, planPagado, planVencido);'),
+      plan.includes("const conCandado = !esPersonal && !sus.en_prueba && ctx.planEfectivo === 'gratis';"),
+      plan.indexOf('const conCandado = ') < plan.indexOf('const planVencido = '), cuantas(plan, /const conCandado = /g)],
+    [true, true, true, true, 1]);
+  const lugares = (p) => ({ basico: 1, pro: 3, negocio: 15 }[p]);
+  ok('¿entra el equipo en algún plan a la vista? Cinco personas con Básico y Pro: no. Con el Premium a la vista, o siendo tres: sí',
+    [P.algunPlanAlcanza(['basico', 'pro'], lugares, 5), P.algunPlanAlcanza(['basico', 'pro', 'negocio'], lugares, 5),
+      P.algunPlanAlcanza(['basico', 'pro'], lugares, 3), P.algunPlanAlcanza(['basico'], lugares, 2), P.algunPlanAlcanza([], lugares, 1)],
+    [false, true, true, false, false]);
+  const avisoDelEquipo = plan.slice(plan.indexOf('const avisoDelEquipo = '), plan.indexOf('const personasDelPremium'));
+  ok('/plan: si no entra en ninguno, el texto no manda a «elegir un plan donde entren todos»: dice que escriba (otro para la cuenta vencida)',
+    [plan.includes('const hayPlanParaElEquipo = algunPlanAlcanza(planesVisibles, (p) => LIMITES_VISIBLES[p].miembros, equipoHoy);'),
+      /if \(!hayPlanParaElEquipo\) \{\s+return \(conCandado \? t\.bancard\.cambio\.equipoSinPlanVencida : t\.bancard\.cambio\.equipoSinPlan\)\(/.test(avisoDelEquipo),
+      avisoDelEquipo.indexOf('equipoSinPlan') < avisoDelEquipo.indexOf('equipoNoEntra')],
+    [true, true, true]);
+  ok('esos dos textos dicen «escribinos» y no «elegí un plan», en los dos idiomas',
+    [['equipoSinPlan', 'equipoSinPlanVencida'].map((k) => [/[Ee]scribinos/.test(texto(bloque(es), k)), /[Ee]legí un plan/.test(texto(bloque(es), k)),
+      /[Ff]ale com a gente/.test(texto(bloque(pt), k)), /[Ee]scolha um plano/.test(texto(bloque(pt), k))]),
+      /Achicá el equipo/.test(texto(bloque(es), 'equipoSinPlan')), /Achicá el equipo/.test(texto(bloque(es), 'equipoSinPlanVencida'))],
+    [[[true, false, true, false], [true, false, true, false]], true, false]);
+
+  // ---- 4. La baja programada se ve y se deshace aunque la cuenta ya no vea Bancard.
+  const sinBancard = plan.slice(plan.indexOf('const bajaSinBancard = '), plan.indexOf('const ahora = Date.now();'));
+  ok('/plan: sin Bancard, un negocio con plan pago igual lee si tiene una baja programada (solo eso, con su sesión)',
+    [sinBancard.includes("const bajaSinBancard = !entornoBancard && !esPersonal && sus.estado === 'activa' && !sus.en_prueba"),
+      sinBancard.includes("supabase.rpc('bancard_estado', { p_empresa: ctx.empresa.id, p_entorno: 'produccion' })"),
+      sinBancard.includes('(r.data as EstadoBancard | null)?.plan_proximo ?? null'), sinBancard.includes('.catch(() => null)'),
+      plan.includes('const planProximoLeido = estadoBancard?.plan_proximo ?? bajaSinBancard;'), cuantas(plan, /rpc\('bancard_estado'/g)],
+    [true, true, true, true, true, 2]);
+  const ramaSinBancard = plan.slice(plan.indexOf('} else if (esActual) {'), plan.indexOf('} else if (whatsapp) {'));
+  ok('y en la tarjeta del plan actual dice a qué plan pasa y desde cuándo, con «Seguir con el…» (que solo llama a la ruta con plan: null)',
+    [/pie = pagoVigente && !esPersonal && planProgramado !== null \? \(\s+<PieDelPlanActual/.test(ramaSinBancard),
+      ramaSinBancard.includes('detalle={t.bancard.cambio.programado(t.plan[planProgramado], fechaDeRenovacion)}'),
+      ramaSinBancard.includes('enCurso={false}'), /BotonPagarBancard|datosDelPago|HojaPagar/.test(ramaSinBancard),
+      /\{programado && detalle && \(\s+<p [^>]*>\{detalle\}<\/p>\s+\)\}/.test(baja)],
+    [true, true, true, false, true]);
+  ok('deshacer sin ver Bancard lo sigue dejando la regla del servidor (no llama a Bancard: va sin `soltar`)',
+    [flujo.includes("if (p.plan !== null && !p.veBancard) return { estado: 'no_disponible' };"), ruta.includes('} : null,')], [true, true]);
+
+  // ---- 5. Después de volver a cotizar, la hoja no anuncia el cobro automático del vencimiento que ya pasó.
+  const ZONA = 'America/Asuncion';
+  ok('la fecha del cobro automático vale si es del vencimiento que dice la cotización (el día anterior, o un reintento); la de un vencimiento anterior, no',
+    [P.debitoSigueVigente('2026-10-08', '2026-10-09T15:00:00-03:00', ZONA),   // vence mañana: el cobro es hoy
+      P.debitoSigueVigente('2026-10-08', '2026-11-09T15:00:00-03:00', ZONA),  // se renovó con la hoja abierta: ese cobro ya salió
+      P.debitoSigueVigente('2026-11-08', '2026-11-09T15:00:00-03:00', ZONA),  // la fecha nueva, con el vencimiento nuevo
+      P.debitoSigueVigente('2026-10-10', '2026-10-09T15:00:00-03:00', ZONA),  // un reintento, después del vencimiento
+      P.debitoSigueVigente('2026-10-07', '2026-10-09T15:00:00-03:00', ZONA),
+      P.debitoSigueVigente(null, '2026-10-09T15:00:00-03:00', ZONA), P.debitoSigueVigente('2026-10-08', 'no es una fecha', ZONA),
+      P.debitoSigueVigente('2026-10-08', '2026-10-09T15:00:00-03:00', 'Zona/Inventada')],
+    [true, false, true, true, false, false, false, false]);
+  ok('  el vencimiento se mira en la zona de la cuenta: 01:30 UTC del 10 es todavía el 9 en Asunción (el cobro es el 8)',
+    [P.debitoSigueVigente('2026-10-08', '2026-10-10T01:30:00Z', ZONA), P.debitoSigueVigente('2026-10-08', '2026-10-10T01:30:00Z', 'UTC')], [true, false]);
+  ok('  «el día anterior» es el primer día de cobro de la base (bancard_dias_de_cobro, 125)',
+    [P.DIAS_ANTES_DEL_PRIMER_COBRO, leer('supabase/migrations/125_bancard_pagos.sql').includes('select array[-1, 1, 4];')], [1, true]);
+  ok('la hoja de subir dice «el … se cobra solo de tu tarjeta» solo con esa condición, sobre la cotización que tiene a la vista',
+    [hoja.includes('{tarjeta && datos.fechaDelDebito && debitoSigueVigente(datos.fechaDelDebito, cot.vence_hasta, datos.zona) && ` ${q.debito('),
+      cuantas(hoja, /q\.debito\(/g), /\{tarjeta && datos\.fechaDelDebito && ` \$\{q\.debito\(/.test(hoja)],
+    [true, 1, false]);
+
+  // ---- 6. El formulario RECHAZADO que sigue abierto en Bancard (lo que corre está en bancard-flujo, grupo 35).
+  const cerrarAbiertas = flujo.slice(flujo.indexOf('async function cerrarRechazadasAbiertas('), flujo.indexOf('export type ReversaDePago'));
+  ok('al deshacer, si no hay ninguna operación viva, el servidor cierra en Bancard los formularios rechazados de la cuenta (los de su ambiente) y prueba una vez más',
+    [flujo.includes('if (viva === null && await cerrarRechazadasAbiertas(soltar.d, p.empresa)) {'),
+      cerrarAbiertas.includes("'bancard_rechazadas_abiertas', { p_empresa: empresa, p_entorno: d.entorno, p_plan: null }"),
+      cerrarAbiertas.includes('if (!(await cerrarRechazada(d, Number(id)))) todas = false;'), cerrarAbiertas.trimEnd().endsWith('return todas;\n}')],
+    [true, true, true, true]);
+  const abiertasEnLaBase = m130.slice(m130.indexOf('create or replace function public.bancard_rechazadas_abiertas('), m130.indexOf('revoke all on function public.bancard_rechazadas_abiertas('));
+  const reemplaza = leer('supabase/migrations/125_bancard_pagos.sql');
+  ok('«sigue abierta» es la misma condición con que el pago las cierra al abrir otro (`reemplaza`, 125): rechazada, de formulario, con process_id, de las últimas 24 horas',
+    ["o.estado = 'rechazada' and o.medio = 'formulario' and o.process_id is not null", "o.created_at > now() - interval '24 hours'"]
+      .map((c) => [abiertasEnLaBase.includes(c), reemplaza.includes(c)]),
+    [[true, true], [true, true]]);
+  ok('programar o deshacer la baja mira esa lista por el plan que estaba programado, y solo cuando lo programado cambia; la función es solo del servidor',
+    [programarEnLaBase.includes("if v_habia is not null and p_plan is distinct from v_habia\n     and public.bancard_rechazadas_abiertas(p_empresa, null, v_habia) <> '[]'::jsonb then"),
+      m130.includes('revoke all on function public.bancard_rechazadas_abiertas(uuid, text, text) from public, anon, authenticated;'),
+      m130.includes('grant execute on function public.bancard_rechazadas_abiertas(uuid, text, text) to service_role;')],
+    [true, true, true]);
+
+  // ---- 7. /admin: un cambio que quedó en conflicto no «vuelve» a ningún plan.
+  const panelAdmin = sinComentarios(leer('src/components/bancard/PanelBancardAdmin.tsx'));
+  ok('al revertir un cambio en conflicto, /admin dice que la cuenta queda como está (la base no repone ninguna foto)',
+    [panelAdmin.includes("const noTocoLaCuenta = op.tipo === 'cambio' && antes.conflicto === true;"),
+      /\{noTocoLaCuenta\s+\? <>Este pago <b>no cambió nada<\/b> en la cuenta: la cuenta queda como está\.<\/>\s+: <>La cuenta vuelve a <b>\{vuelve\}<\/b>\.<\/>\}/.test(panelAdmin)],
+    [true, true]);
 }
 
 console.log(`\n${corridas - fallos}/${corridas} comprobaciones de las fuentes de Bancard.`);

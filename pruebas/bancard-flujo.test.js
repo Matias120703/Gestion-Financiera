@@ -2660,6 +2660,55 @@ async function principal() {
       [sP3.plan, sP3.estado, sP3.fin !== finP3, (await opDe(tres.operacion)).revisar, avisos[0]?.conflicto, await planProximo(P3), (await estadoDe(P3)).plan_proximo],
       ['basico', 'activa', true, null, false, null, null]);
     await apagar(P3);
+
+    // ---- 8. UN FORMULARIO RECHAZADO SIGUE ABIERTO EN BANCARD (revisión 08/10).
+    // Con el Básico programado y a tres días, abre la renovación del Básico y
+    // el banco la rechaza. La operación queda 'rechazada' (no es «un pago en
+    // curso»), pero su formulario sigue pagable. Antes, «Seguir con el Pro»
+    // deshacía sin cerrarlo: pagado después (el QR ya escaneado, otro
+    // teléfono) entraba «sin renovar», y al otro día el débito cobraba el
+    // Pro. Gs. 110.000 + 190.000 por un mes.
+    const P4 = await cuentaCon('pro', 'baja4@cambio.test', 'Baja Cuatro', 3);
+    await guardarTarjeta(d, falso, P4, { marca: 'Visa', enmascarado: '4000********0016' });
+    await programar(P4, P4.uid, 'basico');
+    const pedidoBasico = { empresa: P4.empresaId, usuario: P4.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null };
+    const rz = await F.iniciarPago(d, pedidoBasico);
+    falso.rechazar(rz.operacion, '51', 'NO APROBADA-INSUF.DE FONDOS');
+    await F.recibirConfirmacion(d, cuerpo(falso, rz.operacion));
+    ok('a tres días, con el Básico programado: abre su renovación (Gs. 110.000) y el banco la rechaza; no queda ningún pago vivo',
+      [rz.estado, rz.importe, (await opDe(rz.operacion)).estado, (await estadoDe(P4)).viva], ['listo', 110000, 'rechazada', null]);
+    ok('la conciliación, enseguida, todavía no la cierra (espera diez minutos por si reintenta en el mismo formulario)',
+      [(await F.correrConciliacion(d, { hastaMs: Date.now() + 60_000 })).rechazadasCerradas, (await opDe(rz.operacion)).estado, falso.compras.get(rz.operacion).cerrada === true],
+      [0, 'rechazada', false]);
+    const trabada4 = await programar(P4, P4.uid, null, { soltar: false });
+    ok('sin con qué cerrarlo (Bancard apagado), «Seguir con el Pro» contesta «hay un pago en curso» y la baja sigue programada',
+      [trabada4.estado, trabada4.mensaje === EN_CURSO, await planProximo(P4)], ['error_base', true, 'basico']);
+    // Si Bancard no contesta la reversa, tampoco se deshace: queda para la conciliación.
+    falso.pedidos.length = 0;
+    falso.programar('/single_buy/rollback', 'red');
+    const sinRed = await programar(P4, P4.uid, null);
+    ok('con Bancard, pero la reversa no sale (se cortó): no se deshace; el formulario sigue abierto y la baja también',
+      [sinRed.estado, sinRed.mensaje === EN_CURSO, rutas(falso), (await opDe(rz.operacion)).estado, await planProximo(P4)],
+      ['error_base', true, ['/single_buy/rollback'], 'rechazada', 'basico']);
+    falso.pedidos.length = 0;
+    const suelta4 = await programar(P4, P4.uid, null);
+    ok('con Bancard: PRIMERO cierra ese formulario con la reversa, y recién ahí deshace (un solo reintento)',
+      [suelta4.estado, suelta4.planProximo, suelta4.importe, rutas(falso), (await opDe(rz.operacion)).estado, (await opDe(rz.operacion)).motivo, await planProximo(P4)],
+      ['listo', null, 190000, ['/single_buy/rollback'], 'vencida', 'reemplazada', null]);
+    ok('ese formulario quedó cerrado en Bancard: ya no se puede pagar; y de ese intento no hay plata anotada',
+      [falso.compras.get(rz.operacion).cerrada, (await ingresos(`Bancard ${rz.operacion}`)).length], [true, 0]);
+    ok('la renovación vuelve a ser UNA, la del Pro: sin nada programado, Gs. 190.000',
+      [(await estadoDe(P4)).plan_proximo, (await estadoDe(P4)).debito.importe, (await sus(P4)).plan], [null, 190000, 'pro']);
+    // Con dos rechazos abiertos se cierran los dos, y recién ahí se toca la baja.
+    await programar(P4, P4.uid, 'basico');
+    const rz2 = await F.iniciarPago(d, pedidoBasico);
+    falso.rechazar(rz2.operacion, '51', 'NO APROBADA-INSUF.DE FONDOS');
+    await F.recibirConfirmacion(d, cuerpo(falso, rz2.operacion));
+    falso.pedidos.length = 0;
+    const suelta5 = await programar(P4, P4.uid, null);
+    ok('otra vez lo mismo: rechazo y «Seguir con el Pro»; se cierra y se deshace',
+      [suelta5.estado, suelta5.planProximo, rollbacks(falso), (await opDe(rz2.operacion)).estado], ['listo', null, [rz2.operacion], 'vencida']);
+    await apagar(P4);
   }
 
   console.log(`\n${corridas - fallos}/${corridas} comprobaciones del pago ocasional con Bancard.`);

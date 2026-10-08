@@ -809,6 +809,14 @@ export const ERROR_PAGO_EN_CURSO = 'Hay un pago en curso. Esperá a que se confi
  * que todavía puede estar procesándose, o un 3D Secure esperando a la
  * persona, NO se sueltan: sigue contestando «hay un pago en curso».
  *
+ * LO MISMO CON UN FORMULARIO RECHAZADO (revisión 08/10): el banco rechazó la
+ * renovación por el plan programado y ese formulario sigue abierto en
+ * Bancard. Si se deshiciera la baja y después se pagara ahí, entraba «sin
+ * renovar» y el débito cobraba el plan alto: dos cobros. La base contesta
+ * también «hay un pago en curso»; acá se cierra en Bancard con la reversa
+ * (`cerrarRechazada`, lo que ya hace `iniciarPago` al abrir otro pago) y se
+ * prueba de nuevo. Si Bancard no contesta, queda para la conciliación.
+ *
  * `soltar.viva` devuelve el número de la operación sin terminar de la cuenta
  * (la ruta lo lee con la sesión de quien lo pide). Sin `soltar` no hay
  * reintento: deshacer con Bancard apagado sigue andando igual.
@@ -852,10 +860,33 @@ export async function programarCambioDePlan(
           && (await liberarViva(soltar.d, viva)) !== 'en_curso') {
         continue;
       }
+      // Sin ninguna viva, lo que frena es un formulario RECHAZADO que sigue
+      // abierto en Bancard: se cierra con la reversa y se prueba de nuevo.
+      if (viva === null && await cerrarRechazadasAbiertas(soltar.d, p.empresa)) {
+        continue;
+      }
     }
     return { estado: 'error_base', mensaje, codigo };
   }
   return { estado: 'error_base', mensaje: '', codigo: '' };
+}
+
+/**
+ * Cierra en Bancard los formularios rechazados de la cuenta que siguen
+ * abiertos (`bancard_rechazadas_abiertas`, 130: los de este ambiente). True
+ * solo si había alguno y TODOS quedaron cerrados: con uno que Bancard no
+ * cerró, la baja no se toca. De a tres por pedido, las más nuevas (como
+ * `reemplaza` al abrir un pago): cada reversa puede tardar, y hay alguien
+ * esperando del otro lado.
+ */
+async function cerrarRechazadasAbiertas(d: Deps, empresa: string): Promise<boolean> {
+  const r = await llamar<unknown>(d, 'bancard_rechazadas_abiertas', { p_empresa: empresa, p_entorno: d.entorno, p_plan: null });
+  if (r.ok === false || !Array.isArray(r.data) || r.data.length === 0) return false;
+  let todas = true;
+  for (const id of r.data.slice(-3)) {
+    if (!(await cerrarRechazada(d, Number(id)))) todas = false;
+  }
+  return todas;
 }
 
 // ---------------------------------------------------------------- revertir

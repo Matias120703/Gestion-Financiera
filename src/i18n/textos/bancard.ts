@@ -332,8 +332,12 @@ export const bancardEs = {
     /** El plan programado solo se paga a mano los últimos días: al pagar, cambia ahí mismo. */
     alPagarCambia: (plan: string) => `Al pagar, tu plan pasa a ${plan} en el momento.`,
     equipoBloqueado: 'Tenés un cambio de plan programado. Deshacelo para cambiar la cantidad de personas.',
-    /** Con un pago sin terminar no se programa ni se deshace: se espera. */
-    esperaElPago: 'Hay un pago en curso. Cuando se confirme vas a poder cambiarlo.',
+    /**
+     * Con un pago sin terminar no se programa ni se deshace: se espera. No
+     * promete que se va a confirmar: puede ser un cobro que el banco termina
+     * rechazando. Un formulario dejado a medias no llega acá (se suelta solo).
+     */
+    esperaElPago: 'Hay un pago sin terminar. Cuando se resuelva vas a poder cambiarlo.',
     noSePudo: 'No se pudo programar el cambio. Probá de nuevo.',
 
     // ---- El equipo tiene que entrar en el plan (se dice ANTES de llegar a pagar)
@@ -344,6 +348,12 @@ export const bancardEs = {
     /** Con la cuenta vencida no se puede entrar a achicar el equipo: primero se paga el plan donde entran. */
     equipoNoEntraVencida: (plan: string, tope: string, miembros: number) =>
       `El ${plan} es para ${tope} y hoy son ${miembros} en tu equipo. Elegí un plan donde entren todos; después podés achicar el equipo y bajar de plan.`,
+    /** El equipo no entra en NINGUNO de los planes que la cuenta ve: no hay «plan donde entren todos» que elegir. */
+    equipoSinPlan: (plan: string, tope: string, miembros: number) =>
+      `El ${plan} es para ${tope} y hoy son ${miembros} en tu equipo. Achicá el equipo, o escribinos y lo resolvemos.`,
+    /** Lo mismo con la cuenta vencida, que tampoco puede entrar a achicar el equipo. */
+    equipoSinPlanVencida: (plan: string, tope: string, miembros: number) =>
+      `El ${plan} es para ${tope} y hoy son ${miembros} en tu equipo. Escribinos y lo resolvemos.`,
   },
 
   /** Mientras Bancard está en pruebas. */
@@ -625,7 +635,7 @@ export const bancardPt: typeof bancardEs = {
       (importe ? `Pronto: você continua com o ${plan}. A renovação volta a ser de ${importe}.` : `Pronto: você continua com o ${plan}.`),
     alPagarCambia: (plan) => `Ao pagar, seu plano passa a ${plan} na hora.`,
     equipoBloqueado: 'Você tem uma mudança de plano programada. Desfaça para mudar a quantidade de pessoas.',
-    esperaElPago: 'Há um pagamento em andamento. Quando for confirmado você vai poder mudar.',
+    esperaElPago: 'Há um pagamento sem terminar. Quando ele se resolver você vai poder mudar.',
     noSePudo: 'Não deu pra programar a mudança. Tente de novo.',
 
     equipoGrande: (plan, tope, miembros) =>
@@ -634,6 +644,10 @@ export const bancardPt: typeof bancardEs = {
       `O ${plan} é para ${tope} e hoje são ${miembros} na sua equipe. Reduza a equipe ou escolha um plano em que caibam todos.`,
     equipoNoEntraVencida: (plan, tope, miembros) =>
       `O ${plan} é para ${tope} e hoje são ${miembros} na sua equipe. Escolha um plano em que caibam todos; depois você pode reduzir a equipe e baixar de plano.`,
+    equipoSinPlan: (plan, tope, miembros) =>
+      `O ${plan} é para ${tope} e hoje são ${miembros} na sua equipe. Reduza a equipe, ou fale com a gente e resolvemos.`,
+    equipoSinPlanVencida: (plan, tope, miembros) =>
+      `O ${plan} é para ${tope} e hoje são ${miembros} na sua equipe. Fale com a gente e resolvemos.`,
   },
 
   pruebas: {

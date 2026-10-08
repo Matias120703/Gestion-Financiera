@@ -9,6 +9,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { precio } from '@/lib/formato';
 import type { CotizacionDeCambio } from '@/lib/cotizacion';
+import { debitoSigueVigente } from '@/lib/plan-pantalla';
 import { SelectorPersonas } from './SelectorPersonas';
 import { FormularioBancard } from './FormularioBancard';
 import { ResultadoDelPago } from './EstadoDelPago';
@@ -391,7 +392,10 @@ export function HojaCambiarPlan({ datos, onCerrar }: { datos: DatosDelCambio; on
                   {conDescuento
                     ? q.desdeProximaConDescuento(gs(cot.renovacion), gs(cot.renovacion_hoy), anual, cot.descuento_fase === 'constancia')
                     : q.desdeProxima(gs(cot.renovacion), anual)}
-                  {tarjeta && datos.fechaDelDebito && ` ${q.debito(
+                  {/* La fecha del cobro automático la leyó la página al dibujarse. Si
+                      al volver a cotizar la cuenta ya se renovó, es la del
+                      vencimiento anterior (un cobro que ya salió): no se dice. */}
+                  {tarjeta && datos.fechaDelDebito && debitoSigueVigente(datos.fechaDelDebito, cot.vence_hasta, datos.zona) && ` ${q.debito(
                     diaDelCobro(datos.fechaDelDebito, locale),
                     tarjeta.marca && tarjeta.ultimos4 ? k.tuTarjeta(tarjeta.marca, tarjeta.ultimos4) : null,
                   )}`}

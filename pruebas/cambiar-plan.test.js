@@ -638,7 +638,8 @@ async function catalogo(db) {
   return new Map(filas.map((f) => [f.firma, f]));
 }
 
-const NUEVAS = ['bancard_plan_de_renovacion', 'bancard_programar_plan', 'cotizar_cambio', 'dias_para_adelantar_la_baja',
+const NUEVAS = ['bancard_plan_de_renovacion', 'bancard_programar_plan', 'bancard_rechazadas_abiertas', 'bancard_renovacion_frenada',
+  'cotizar_cambio', 'dias_para_adelantar_la_baja',
   'exigir_lugar_para_el_equipo', 'lugares_del_plan', 'nivel_de_plan', 'nombre_de_plan', 'pago_de_plan_exige_lugar',
   'prorrateo_de_plan'];
 /** Las que la 130 vuelve a definir, y de qué migración sale la versión anterior. */
@@ -717,7 +718,7 @@ async function principal() {
     if (!g || JSON.stringify(g) !== JSON.stringify(f)) cambiadas.push(firma);
   }
   ok(`de las ${medio.catalogoAntes.size} funciones que había, ninguna cambió de firma, de lo que devuelve, de permisos ni de search_path`, cambiadas, []);
-  ok('las funciones nuevas son estas diez, una firma cada una',
+  ok('las funciones nuevas son estas doce, una firma cada una',
     [...medio.catalogoDespues.values()].filter((f) => !medio.catalogoAntes.has(f.firma)).map((f) => f.nombre).sort(), NUEVAS);
   ok('y de las que se vuelven a definir sigue habiendo una sola de cada una (con dos, PostgREST no sabría cuál llamar)',
     RECOPIADAS.map((n) => [...medio.catalogoDespues.values()].filter((f) => f.nombre === n).length), RECOPIADAS.map(() => 1));
@@ -805,6 +806,26 @@ async function principal() {
     r.yaCreado = { aprobada: conf.aprobada, conflicto: conf.conflicto, revisar: conf.revisar,
       plan: (await T.sus(apretada)).plan, estado: (await T.sus(apretada)).estado, tope: await T.tope(apretada),
       miembros: await T.miembros(apretada), paraRevisar: (await T.opDe(o9.operacion)).revisar };
+
+    // d. Lo que se le ANUNCIA (revisión 08/10). Un Básico con tres personas
+    //    (activado por transferencia: la administración no mira el equipo),
+    //    con su tarjeta guardada, que vence mañana. Y uno igual, de una sola
+    //    persona, de control. Solo se llama lo que el código publicado llama.
+    const anuncio = async (nombre, gente) => {
+      const c = await T.nueva(nombre);
+      if (gente) await T.sumarGente(c, gente);
+      await cobrarAMano(c, 'basico', 110000);
+      await T.guardarTarjeta(c);
+      await T.db.query(`update public.suscripciones set periodo_fin = now() + interval '1 day' where empresa_id = $1`, [c.empresaId]);
+      const fila = (await T.S(T.SQL.avisos)).find((f) => f.empresa_id === c.empresaId);
+      const e = await T.estado(c);
+      // Fuera del camino de la tarea: las pruebas de más abajo esperan otras cuentas.
+      await T.apagar(c);
+      return { dias: fila.dias, importe: Number(fila.importe), debito: fila.debito && [fila.debito.marca, fila.debito.ultimos4],
+        estado: e.debito.estado, conFecha: e.debito.fecha_cobro !== null, proximoCobro: e.debito.importe };
+    };
+    r.anuncioDeTres = await anuncio('Kiosco de tres con Básico', 2);
+    r.anuncioDeUno = await anuncio('Kiosco de uno con Básico', 0);
     return r;
   };
   const d4sin = await decision4(sin);
@@ -825,6 +846,14 @@ async function principal() {
   ok('c. DESPUÉS: se activa IGUAL (la plata entró), y queda para que lo mire la administración', d4con.yaCreado,
     { aprobada: true, conflicto: false, revisar: PARA_REVISAR_EQUIPO, plan: 'basico', estado: 'activa', tope: 1, miembros: 3,
       paraRevisar: PARA_REVISAR_EQUIPO });
+  // d. La tarea no le va a cobrar (caso b): entonces nadie se lo puede anunciar.
+  ok('d. ANTES: al Básico de tres con tarjeta, el aviso de vencimiento y «Próximo cobro» le anunciaban el cobro automático',
+    d4sin.anuncioDeTres, { dias: 1, importe: 110000, debito: ['Visa', '0016'], estado: 'al_dia', conFecha: true, proximoCobro: 110000 });
+  ok('d. DESPUÉS: el aviso va sin «debito» (le dice que pague) y la pantalla sin fecha de cobro: no se promete lo que la tarea va a frenar',
+    d4con.anuncioDeTres, { dias: 1, importe: 110000, debito: null, estado: 'al_dia', conFecha: false, proximoCobro: 110000 });
+  ok('d. a la cuenta donde el equipo sí entra se le sigue anunciando, igual en las dos',
+    [d4sin.anuncioDeUno, d4con.anuncioDeUno],
+    [1, 2].map(() => ({ dias: 1, importe: 110000, debito: ['Visa', '0016'], estado: 'al_dia', conFecha: true, proximoCobro: 110000 })));
   await baseSin.close();
 
   // De acá en adelante, lo nuevo: sobre la base a la que se le aplicó la 130
@@ -1364,6 +1393,93 @@ async function principal() {
     ok('  y la cuenta queda igual que estaba', await T.sus(enConflicto), antesC);
     await T.apagar(enConflicto);
 
+    // ---- …y se puede devolver TAMBIÉN después de que la cuenta pagó otra cosa (revisión 08/10)
+    // Lo normal después de un conflicto: la persona quedó con el candado y
+    // paga un plan enseguida. Antes, desde ahí el conflicto ya no se podía
+    // devolver ni marcar: «Después de ese pago hubo otros cambios…».
+    const siguio = await T.activa('Conflicto y después paga', 'basico', { entorno: 'produccion', falta: '2 hours' });
+    const oc2 = await T.crear(siguio, 'produccion', 'cambio', 'formulario', 'negocio', null, 15);
+    await db.query(`update public.suscripciones set periodo_fin = now() - interval '10 minutes' where empresa_id = $1`, [siguio.empresaId]);
+    const rc2 = await T.confirmar(oc2.operacion, aprobada(oc2.operacion, oc2.importe));
+    const p15 = await T.pagar(siguio, 'produccion', 'negocio', 'mensual', 15);
+    await T.venceEn(siguio, '20 days');
+    await T.bajar(siguio, 10);
+    const antesS = [await T.sus(siguio), await T.programado(siguio), await T.cuenta(siguio)];
+    ok('Básico a 2 horas: cotiza el Premium de 15 por Gs. 26.667, paga vencido (conflicto), y después paga el Premium de 15 entero y programa bajar a 10',
+      [oc2.importe, rc2.conflicto, p15.importe, antesS[0].plan, antesS[0].tope_vendedores, antesS[1]], [26667, true, 910000, 'negocio', 14, [null, 10]]);
+    ok('el MISMO día, «solo comprobar» dice que el conflicto se puede revertir (antes: «hubo otros cambios en la cuenta»)',
+      j(await revertir(oc2.operacion, true)), { puede: true });
+    // Al otro día (lo que pasa si el débito renovó a la noche).
+    await db.query(`update public.bancard_operaciones set created_at = created_at - interval '1 day', confirmada_at = confirmada_at - interval '1 day' where empresa_id = $1`, [siguio.empresaId]);
+    await db.query(`update public.registro_admin set created_at = created_at - interval '1 day' where empresa_id = $1`, [siguio.empresaId]);
+    rechazado('al otro día Bancard ya no revierte: por el portal, como cualquier pago', await revertir(oc2.operacion), 'Ya pasó el día del pago');
+    const rs = j(await revertir(oc2.operacion, false, true));
+    ok('y marcado «ya lo anulé por el portal»: pasa, anula el ingreso, no pausa nada, y contesta la cuenta de HOY (no la foto de cuando quedó vencida)',
+      [rs.ok, rs.plan, rs.estado, rs.ingreso_anulado, rs.debito_pausado, rs.personas_de_mas, (await T.opDe(oc2.operacion)).estado],
+      [true, 'negocio', 'activa', true, false, 0, 'revertida']);
+    ok('la suscripción, lo programado DESPUÉS y el débito no se movieron: no se repone ninguna foto',
+      [await T.sus(siguio), await T.programado(siguio), await T.cuenta(siguio)], antesS);
+    ok('quedó anulado solo el ingreso del conflicto; el del Premium sigue, y su pago y su renglón también',
+      [await ingresosDe(oc2.operacion), await ingresosDe(p15.operacion), (await T.opDe(p15.operacion)).estado,
+        (await T.registroDe(siguio, 'cambiar_plan')).map((x) => x.detalle.deshecho ?? null)],
+      [[{ monto: 26667, estado: 'anulado' }], [{ monto: 910000, estado: 'activo' }], 'pagada', [null, null]]);
+    ok('y el renglón de la reversa dice a qué quedó la cuenta: como está',
+      (await T.registroDe(siguio, 'bancard_reversa')).map((x) => [x.detalle.operacion, x.detalle.importe, x.detalle.volvio_a_plan, x.detalle.sin_bancard, x.detalle.ingreso_anulado]),
+      [[oc2.operacion, 26667, 'negocio', true, true]]);
+    // Solo para un CAMBIO: un pago de plan en conflicto se revierte como siempre (lo publicado).
+    const dePlanC = await T.nueva('Pago de plan en conflicto, y renueva');
+    const viejoC = await T.crear(dePlanC, 'produccion', 'plan', 'formulario', 'basico', 'mensual', null);
+    await cerrar(viejoC.operacion);
+    await T.pagar(dePlanC, 'produccion', 'pro', 'mensual', null);
+    const rvC = await T.confirmar(viejoC.operacion, aprobada(viejoC.operacion, viejoC.importe));
+    await T.pagar(dePlanC, 'produccion', 'pro', 'mensual', null);
+    rechazado('un pago de PLAN que quedó en conflicto, con otro pago después, sigue sin revertirse: eso no cambió',
+      rvC.conflicto === true ? await revertir(viejoC.operacion, true) : { ok: true, valor: { rows: ['no quedó en conflicto'] } }, OTROS);
+
+    // ---- el débito queda COMO ESTABA: uno pausado no vuelve a cobrar solo (revisión 08/10)
+    const debitoDe = (c) => J(
+      `select debito_estado as estado, intentos, ciclo_fin::text as ciclo, ultimo_error as error, ultimo_codigo as codigo
+         from public.bancard_cuentas where empresa_id = $1`, [c.empresaId]);
+    // a. Pausado porque la administración le devolvió una renovación.
+    const frenado = await T.activa('Débito pausado, sube y se arrepiente', 'basico', { entorno: 'produccion', falta: '5 days' });
+    await T.guardarTarjeta(frenado);
+    const adelantada = await T.pagar(frenado, 'produccion', 'basico', 'mensual', null);
+    await revertir(adelantada.operacion);
+    const debitoAntes = await debitoDe(frenado);
+    const sf = await subir(frenado, 'pro', null, 'produccion');
+    ok('con el débito pausado («Pago revertido por la administración») sube al Pro: ese pago lo destraba, como cualquier pago',
+      [debitoAntes, sf.importe, (await debitoDe(frenado)).estado, (await T.opDe(sf.operacion)).antes.debito?.estado ?? null],
+      [{ estado: 'pausado', intentos: 0, ciclo: null, error: 'Pago revertido por la administración', codigo: null }, 13333, 'al_dia', 'pausado']);
+    const rf = j(await revertir(sf.operacion));
+    ok('le devuelven el cambio: el débito vuelve a quedar PAUSADO, con el motivo que tenía (antes quedaba al día)',
+      [rf.debito_pausado, await debitoDe(frenado), (await T.sus(frenado)).plan], [true, debitoAntes, 'basico']);
+    await T.venceEn(frenado, '1 day');
+    ok('  y el día anterior al vencimiento la tarea NO le cobra sola (antes: Gs. 110.000 de «Orden Basico»)', await T.tomar(), null);
+    await T.apagar(frenado);
+    // b. Pausado por un rechazo de la tarjeta: vuelve con sus intentos, su vencimiento y su código.
+    const rebotada = await T.activa('Tarjeta vencida, sube y se arrepiente', 'basico', { entorno: 'produccion', falta: '1 day' });
+    await T.guardarTarjeta(rebotada);
+    const intento = await T.tomar();
+    await T.confirmar(intento.operacion, rechazo(intento.operacion, intento.importe, '54', 'TARJETA VENCIDA'), 'charge');
+    const debitoRebotado = await debitoDe(rebotada);
+    const sr = await subir(rebotada, 'pro', null, 'produccion');
+    const rr = j(await revertir(sr.operacion));
+    ok('pausado por «TARJETA VENCIDA» (1 intento, código 54): sube, le devuelven, y queda exactamente como estaba',
+      [intento.empresa_id === rebotada.empresaId, debitoRebotado.estado, debitoRebotado.intentos, debitoRebotado.error, debitoRebotado.codigo,
+        rr.debito_pausado, JSON.stringify(await debitoDe(rebotada)) === JSON.stringify(debitoRebotado)],
+      [true, 'pausado', 1, 'TARJETA VENCIDA', '54', true, true]);
+    await T.apagar(rebotada);
+    // c. Si después del cambio guardó OTRA tarjeta, eso lo destrabó a propósito: no se vuelve a pausar.
+    const otraTarjeta = await T.activa('Pausado, sube, cambia la tarjeta y le devuelven', 'basico', { entorno: 'produccion', falta: '5 days' });
+    await T.guardarTarjeta(otraTarjeta);
+    await revertir((await T.pagar(otraTarjeta, 'produccion', 'basico', 'mensual', null)).operacion);
+    const so = await subir(otraTarjeta, 'pro', null, 'produccion');
+    await T.guardarTarjeta(otraTarjeta);
+    const ro = j(await revertir(so.operacion));
+    ok('pausado → sube → guarda otra tarjeta → le devuelven el cambio: el débito sigue al día (la tarjeta nueva lo destrabó)',
+      [ro.ok, ro.debito_pausado, (await debitoDe(otraTarjeta)).estado], [true, false, 'al_dia']);
+    await T.apagar(otraTarjeta);
+
     // ---- una reversa que no mueve la suscripción no rompe «una sola baja»
     // Premium de 8 con baja a 6 programada; un pago viejo de otro plan entra
     // y queda en conflicto (su foto guarda la baja a 6); la persona programa
@@ -1517,6 +1633,74 @@ async function principal() {
     await T.programar(c3, 'basico');
     await subir(c3, 'negocio', 4);
     ok('sube de plan pagando: la baja se borra', [await T.programado(c3), (await T.sus(c3)).plan, await T.renovacion(c3)], [[null, null], 'negocio', 250000]);
+
+    // ---- un formulario RECHAZADO sigue pagable en Bancard: también es «un pago en curso» (revisión 08/10)
+    // Con el Básico programado y a tres días, la persona abre la renovación
+    // del Básico y el banco la rechaza. La operación queda 'rechazada' (no
+    // viva), pero su formulario sigue abierto hasta que alguien lo cierra.
+    // Si ahí deshace la baja y después paga ese formulario, entraba como
+    // «pagó un plan distinto», sin renovar, y el débito cobraba el Pro.
+    const abiertas = async (c, entorno = null, plan = null) =>
+      S('select public.bancard_rechazadas_abiertas(p_empresa => $1, p_entorno => $2, p_plan => $3) j', [c.empresaId, entorno, plan]);
+    /** Abre el formulario de un pago de plan y el banco lo rechaza. */
+    const rechazada = async (c, plan, personas = null, { conFormulario = true } = {}) => {
+      const o = await T.crear(c, 'staging', 'plan', 'formulario', plan, 'mensual', personas);
+      if (!o || !o.operacion) throw new Error(`no se creó el pago de ${c.nombre}: ${JSON.stringify(o)}`);
+      if (conFormulario) await S('select public.bancard_guardar_proceso($1,$2) j', [o.operacion, `pf*${o.operacion}`]);
+      await T.confirmar(o.operacion, rechazo(o.operacion, o.importe));
+      return o;
+    };
+    const rech = await T.activa('Rechazo y quiere seguir', 'pro', { falta: '3 days' });
+    await T.programar(rech, 'basico');
+    const or1 = await rechazada(rech, 'basico');
+    ok('a tres días, con el Básico programado: abre la renovación del Básico (Gs. 110.000) y el banco la rechaza; ya no es un pago vivo, pero su formulario sigue abierto',
+      [or1.importe, (await T.opDe(or1.operacion)).estado, (await T.estado(rech, 'staging')).viva, await abiertas(rech), await abiertas(rech, 'staging', 'basico')],
+      [110000, 'rechazada', null, [or1.operacion], [or1.operacion]]);
+    ok('  la lista se puede pedir por plan y por ambiente: nada del Pro, nada en producción',
+      [await abiertas(rech, null, 'pro'), await abiertas(rech, 'produccion', null), await abiertas(proM)], [[], [], []]);
+    ok('«Seguir con el Pro» (deshacer) contesta que hay un pago en curso, y la baja sigue programada (antes: deshacía, y pagar ese formulario cobraba dos veces)',
+      [mensaje(await T.intentoProgramar(rech, null)), await T.programado(rech)], [EN_CURSO, ['basico', null]]);
+    ok('  volver a programar lo MISMO no borra nada: pasa', (await T.programar(rech, 'basico')).plan_proximo, 'basico');
+    // Lo que hace el servidor al reintentar (y la conciliación a los diez minutos): cerrarla con la reversa.
+    await cerrar(or1.operacion, 'reemplazada');
+    ok('cerrado ese formulario en Bancard, deshace', [await abiertas(rech), (await T.programar(rech, null)).plan_proximo, await T.programado(rech)], [[], null, [null, null]]);
+
+    // Por qué se frena: pagado tarde con la baja todavía programada, ese formulario renueva bien.
+    const tarde = await T.activa('Rechazo y paga tarde', 'pro', { falta: '3 days' });
+    await T.programar(tarde, 'basico');
+    const or2 = await rechazada(tarde, 'basico');
+    const rt2 = await T.confirmar(or2.operacion, aprobada(or2.operacion, or2.importe));
+    ok('si no deshizo, el mismo formulario pagado después del rechazo renueva al Básico, sin conflicto: por eso la baja no se toca mientras siga abierto',
+      [rt2.aprobada, rt2.conflicto, (await T.sus(tarde)).plan, await T.programado(tarde)], [true, false, 'basico', [null, null]]);
+
+    // Solo traba el formulario de ESE plan, abierto de verdad y de hoy.
+    const otro = await T.activa('Rechazo del plan actual', 'pro', { falta: '3 days' });
+    await T.programar(otro, 'basico');
+    const or3 = await rechazada(otro, 'pro');
+    ok('un rechazo de la renovación del plan ACTUAL (el Pro) no traba: pagado tarde renueva el Pro y listo',
+      [await abiertas(otro, null, 'basico'), await abiertas(otro), (await T.programar(otro, null)).plan_proximo], [[], [or3.operacion], null]);
+    const sinForm = await T.activa('Rechazo sin formulario', 'pro', { falta: '3 days' });
+    await T.programar(sinForm, 'basico');
+    await rechazada(sinForm, 'basico', null, { conFormulario: false });
+    ok('una rechazada que nunca llegó a tener formulario en Bancard no traba (no hay nada que se pueda pagar)',
+      [await abiertas(sinForm), (await T.programar(sinForm, null)).plan_proximo], [[], null]);
+    const vieja = await T.activa('Rechazo de ayer', 'pro', { falta: '3 days' });
+    await T.programar(vieja, 'basico');
+    const or5 = await rechazada(vieja, 'basico');
+    await db.query(`update public.bancard_operaciones set created_at = created_at - interval '25 hours' where id = $1`, [or5.operacion]);
+    ok('ni una de hace más de un día (la misma ventana que usa el pago para cerrarlas)',
+      [await abiertas(vieja), (await T.programar(vieja, null)).plan_proximo], [[], null]);
+
+    // REEMPLAZAR lo programado es lo mismo que deshacerlo; y la baja de personas, que borra la de plan, también.
+    const premiumR = await T.activa('Premium con el Pro programado y un rechazo', 'negocio', { personas: 8, falta: '3 days' });
+    await T.programar(premiumR, 'pro');
+    const or6 = await rechazada(premiumR, 'pro');
+    ok('Premium con el Pro programado y la renovación del Pro rechazada: programar el Básico en su lugar, no',
+      [mensaje(await T.intentoProgramar(premiumR, 'basico')), await T.programado(premiumR)], [EN_CURSO, ['pro', null]]);
+    ok('  ni bajar personas, que borraría esa baja de plan', [mensaje(await intentoS(SQL.bajar, [premiumR.empresaId, premiumR.uid, 6])), await T.programado(premiumR)],
+      [EN_CURSO, ['pro', null]]);
+    await cerrar(or6.operacion, 'reemplazada');
+    ok('  cerrado el formulario, las dos cosas se pueden', [(await T.bajar(premiumR, 6)).personas_proxima, await T.programado(premiumR)], [6, [null, 6]]);
   }
 
   // ═════════════════════════════════════════════════════════════════════
@@ -1694,6 +1878,50 @@ async function principal() {
     ok('  y de vuelta, frena', mensaje(await T.intentoCrear(tres, 'staging', 'plan', 'formulario', 'basico', 'mensual', null)), equipoNoEntra(3, 'Básico', 1));
     ok('el plan donde entran (Pro, tres lugares) se paga como siempre', (await T.pagar(tres, 'staging', 'pro', 'mensual', null)).importe, 190000);
 
+    // Lo que se le ANUNCIA a la persona le pregunta a esa misma función
+    // (revisión 08/10): si la tarea no va a cobrar, ni el aviso de
+    // vencimiento ni «Próximo cobro» pueden decir que sí.
+    const anunciada = await T.nueva('Tres con Básico y tarjeta');
+    await T.sumarGente(anunciada, 2);
+    await cobrarAMano(anunciada, 'basico', 110000);
+    await T.guardarTarjeta(anunciada, 'staging');
+    await T.venceEn(anunciada, '1 day');
+    /** [¿frenada?, ¿el aviso anuncia el débito?, ¿la pantalla da fecha de cobro?], sin abrir otra transacción. */
+    const anuncio = async () => {
+      await db.query(`select set_config('orden.uid', $1, true)`, [anunciada.uid]);
+      const fila = (await db.query(SQL.avisos)).rows[0].j.find((f) => f.empresa_id === anunciada.empresaId);
+      const e = (await db.query(SQL.estado, [anunciada.empresaId, 'staging'])).rows[0].j;
+      return [(await J('select public.bancard_renovacion_frenada($1) v', [anunciada.empresaId])).v, fila.debito !== null, e.debito.fecha_cobro !== null];
+    };
+    await db.exec('begin');
+    const conLaRegla = await anuncio();
+    await db.exec('rollback');
+    ok('un Básico de tres personas con tarjeta, que vence mañana: la renovación está frenada, y no se anuncia ningún cobro automático', conLaRegla, [true, false, false]);
+    ok('  a una cuenta donde el equipo entra no le cambia nada', (await J('select public.bancard_renovacion_frenada($1) v', [basM.empresaId])).v, false);
+    // La otra perilla que deja escrita la migración: que no frene el cobro automático.
+    await db.exec('begin');
+    await db.exec(`create or replace function public.pago_de_plan_exige_lugar(p_empresa uuid, p_plan text, p_personas integer, p_origen text)
+      returns void language plpgsql stable security definer set search_path = public as $f$
+      begin
+        if p_origen = 'automatico' then return; end if;
+        perform public.exigir_lugar_para_el_equipo(p_empresa, p_plan, p_personas);
+      end $f$`);
+    const soloAMano = await anuncio();
+    let aMano = '(pasó)';
+    try { await db.query(SQL.crear, [anunciada.empresaId, anunciada.uid, 'staging', 'plan', 'formulario', 'basico', 'mensual', null]); } catch (e) { aMano = e.message; }
+    await db.exec('rollback');
+    ok('si se decide que la regla no frene el cobro automático (una línea en esa función), el anuncio vuelve solo; pagar a mano sigue frenado',
+      [soloAMano, aMano], [[false, true, true], equipoNoEntra(3, 'Básico', 1)]);
+    await db.exec('begin');
+    await db.exec(`create or replace function public.pago_de_plan_exige_lugar(p_empresa uuid, p_plan text, p_personas integer, p_origen text)
+      returns void language plpgsql stable security definer set search_path = public as $f$ begin return; end $f$`);
+    const apagada = await anuncio();
+    await db.exec('rollback');
+    ok('y con la decisión 4 apagada del todo, también: no quedó repetida en otro lado', [apagada, await (async () => {
+      await db.exec('begin'); const v = await anuncio(); await db.exec('rollback'); return v;
+    })()], [[false, true, true], [true, false, false]]);
+    await T.apagar(anunciada);
+
     // «Ni dejando vencer»: el agujero.
     const vence = await T.activa('Premium que deja vencer', 'negocio', { personas: 6, gente: 3 });
     await T.venceEn(vence, '-2 days');
@@ -1775,8 +2003,10 @@ async function principal() {
     ok('cotizar_cambio: solo con sesión (adentro exige ser quien administra la cuenta)', de('cotizar_cambio'), [[false, true, false, true, true]]);
     ok('bancard_programar_plan: solo el servidor', de('bancard_programar_plan'), [[false, false, true, true, true]]);
     ok('las internas que leen datos: nadie de afuera, ni el servidor directo',
-      ['prorrateo_de_plan', 'bancard_plan_de_renovacion', 'exigir_lugar_para_el_equipo', 'pago_de_plan_exige_lugar'].map((n) => de(n)[0]),
-      [1, 2, 3, 4].map(() => [false, false, false, true, true]));
+      ['prorrateo_de_plan', 'bancard_plan_de_renovacion', 'exigir_lugar_para_el_equipo', 'pago_de_plan_exige_lugar', 'bancard_renovacion_frenada'].map((n) => de(n)[0]),
+      [1, 2, 3, 4, 5].map(() => [false, false, false, true, true]));
+    ok('bancard_rechazadas_abiertas (qué formularios rechazados hay que cerrar en Bancard): solo el servidor',
+      de('bancard_rechazadas_abiertas'), [[false, false, true, true, true]]);
     ok('las que solo devuelven un número o un nombre: tampoco',
       ['nivel_de_plan', 'nombre_de_plan', 'dias_para_adelantar_la_baja', 'lugares_del_plan'].map((n) => de(n)[0]),
       [1, 2, 3, 4].map(() => [false, false, false, false, true]));
@@ -1792,6 +2022,9 @@ async function principal() {
       ['dias_para_adelantar_la_baja', 'select public.dias_para_adelantar_la_baja()', []],
       ['lugares_del_plan', `select public.lugares_del_plan('pro', 4)`, []],
       ['bancard_crear_operacion (un cambio)', SQL.crear, [basM.empresaId, basM.uid, 'staging', 'cambio', 'formulario', 'pro', null, null]],
+      // Las dos de la revisión del 08/10 van al final: las listas de abajo se arman por posición.
+      ['bancard_renovacion_frenada', 'select public.bancard_renovacion_frenada($1)', [basM.empresaId]],
+      ['bancard_rechazadas_abiertas', 'select public.bancard_rechazadas_abiertas($1,$2,$3)', [basM.empresaId, null, null]],
     ];
     for (const [quien, rol, uid] of [['el dueño', 'authenticated', basM.uid], ['la administración con sesión', 'authenticated', jefe.uid], ['sin sesión', 'anon', null]]) {
       const pasaron = [];
@@ -1803,7 +2036,7 @@ async function principal() {
     }
     rechazado('sin sesión tampoco se cotiza un cambio', await H.intentarComo(db, 'anon', null, () => db.query(SQL.cotizarCambio, [basM.empresaId, 'pro', null])), 'permission denied');
     const delServidor = [];
-    for (const [nombre, sql, p] of [['cotizar_cambio', SQL.cotizarCambio, [basM.empresaId, 'pro', null]], ...llamadas.slice(0, 2), ...llamadas.slice(3, 9)]) {
+    for (const [nombre, sql, p] of [['cotizar_cambio', SQL.cotizarCambio, [basM.empresaId, 'pro', null]], ...llamadas.slice(0, 2), ...llamadas.slice(3, 9), llamadas[10]]) {
       const r = await intentoS(sql, p);
       if (r.ok || !/permission denied/i.test(r.error)) delServidor.push(nombre);
     }
@@ -1909,8 +2142,8 @@ async function principal() {
       return hallada;
     };
     const definidas = [...sql130.matchAll(/^create or replace function public[.](\w+)[(]/gm)].map((x) => x[1]);
-    ok('la 130 define veintidós funciones: las que ya existían son estas doce, en este orden', definidas.filter((n) => anterior(n)), RECOPIADAS);
-    ok('  y las otras diez son nuevas (ninguna pisa algo que ya existía)', definidas.filter((n) => !anterior(n)).sort(), NUEVAS);
+    ok('la 130 define veinticuatro funciones: las que ya existían son estas doce, en este orden', definidas.filter((n) => anterior(n)), RECOPIADAS);
+    ok('  y las otras doce son nuevas (ninguna pisa algo que ya existía)', definidas.filter((n) => !anterior(n)).sort(), NUEVAS);
 
     // Las líneas de la versión anterior que ya no están tal cual: cada una
     // se reemplazó por una línea marcada. Son estas, y ninguna más.

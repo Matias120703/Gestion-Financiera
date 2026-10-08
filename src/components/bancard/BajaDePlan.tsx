@@ -9,6 +9,7 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { precio } from '@/lib/formato';
 import type { Cotizacion } from '@/lib/cotizacion';
+import { avisoQueQueda, type AvisoDeBaja } from '@/lib/plan-pantalla';
 
 /**
  * BAJAR DE PLAN (07/10/2026): no se paga, se programa.
@@ -28,6 +29,11 @@ import type { Cotizacion } from '@/lib/cotizacion';
  * actual. Cada uno se dibuja SIEMPRE en su tarjeta, esté o no programada la
  * baja: así el «Listo: …» que queda después de programar o de deshacer no se
  * pierde cuando la pantalla se refresca con el estado nuevo.
+ *
+ * Ese «Listo» no vive más que el estado que anuncia (revisión 08/10): la
+ * baja se programa en una tarjeta y se deshace también desde la otra, y el
+ * «Listo: desde la próxima renovación tu plan es Básico» quedaba en verde
+ * con la baja ya deshecha. Ver `useAvisoDeBaja`.
  */
 
 type Bajable = 'basico' | 'pro';
@@ -70,6 +76,24 @@ function useProgramarPlan(empresaId: string) {
   }
 
   return { ocupado, error, setError, programar };
+}
+
+/**
+ * El «Listo: …» de un pie, atado al estado que anuncia. Se escribe con el
+ * valor de `programado` que ese aviso promete (true: quedó programada;
+ * false: se deshizo). Se muestra enseguida, y se borra solo cuando la
+ * pantalla, después de haber mostrado eso, pasa a mostrar otra cosa: la
+ * baja se cambió desde la otra tarjeta. La regla está en `avisoQueQueda`.
+ */
+function useAvisoDeBaja(programado: boolean): [string, (texto: string, para?: boolean) => void] {
+  const [guardado, setGuardado] = useState<AvisoDeBaja | null>(null);
+  // Lo que vale AHORA se decide al dibujar: un aviso viejo no llega a verse.
+  const queda = avisoQueQueda(guardado, programado);
+  useEffect(() => {
+    if (queda !== guardado) setGuardado(queda);
+  }, [queda, guardado]);
+  const setAviso = (texto: string, para = programado) => setGuardado(texto ? { texto, para, visto: false } : null);
+  return [queda?.texto ?? '', setAviso];
 }
 
 function Aviso({ texto }: { texto: string }) {
@@ -126,7 +150,7 @@ export function PieBajarDePlan({
   const locale = FICHA[useIdioma()].locale;
   const { ocupado, error, setError, programar } = useProgramarPlan(empresaId);
   const [abierta, setAbierta] = useState(false);
-  const [aviso, setAviso] = useState('');
+  const [aviso, setAviso] = useAvisoDeBaja(programado);
   const [cot, setCot] = useState<Cotizacion | null>(null);
   const [sinPrecio, setSinPrecio] = useState('');
 
@@ -157,13 +181,13 @@ export function PieBajarDePlan({
     const r = await programar(plan);
     if (!r) return;
     setAbierta(false);
-    setAviso(q.listo(nombre));
+    setAviso(q.listo(nombre), true);
   }
 
   async function deshacer() {
     const r = await programar(null);
     if (!r) return;
-    setAviso(q.deshecho(r.plan ? t.plan[r.plan] : nombreActual, r.importe !== null ? gs(r.importe) : null));
+    setAviso(q.deshecho(r.plan ? t.plan[r.plan] : nombreActual, r.importe !== null ? gs(r.importe) : null), false);
   }
 
   const noEntra = miembros > lugares;
@@ -247,9 +271,14 @@ export function PieBajarDePlan({
  * «Renovar» va «Seguir con el Pro», que la deshace (renovar a mano el plan
  * de hoy no es lo que la persona pidió, y con un pago en curso no se toca).
  * Sin nada programado dibuja lo de siempre, que llega en `children`.
+ *
+ * `detalle` es para la cuenta que YA NO VE BANCARD y tiene una baja
+ * programada (revisión 08/10): la tarjeta del plan más bajo vuelve al
+ * WhatsApp y no dice nada de la baja, así que acá va a qué plan pasa y desde
+ * cuándo, arriba del botón. Deshacer anda igual: la ruta lo permite siempre.
  */
 export function PieDelPlanActual({
-  empresaId, plan, programado, enCurso, children,
+  empresaId, plan, programado, enCurso, detalle = null, children,
 }: {
   empresaId: string;
   /** El plan que la cuenta tiene pago hoy. */
@@ -257,6 +286,8 @@ export function PieDelPlanActual({
   /** Hay una baja de plan programada para la próxima renovación. */
   programado: boolean;
   enCurso: boolean;
+  /** «Desde la renovación (5 de noviembre) tu plan pasa a Básico», cuando no lo dice otra tarjeta. */
+  detalle?: string | null;
   /** El pie de siempre: renovar con tarjeta o QR, y la transferencia. */
   children?: React.ReactNode;
 }) {
@@ -264,17 +295,20 @@ export function PieDelPlanActual({
   const q = t.bancard.cambio;
   const locale = FICHA[useIdioma()].locale;
   const { ocupado, error, programar } = useProgramarPlan(empresaId);
-  const [aviso, setAviso] = useState('');
+  const [aviso, setAviso] = useAvisoDeBaja(programado);
   const nombre = t.plan[plan];
 
   async function seguir() {
     const r = await programar(null);
     if (!r) return;
-    setAviso(q.deshecho(r.plan ? t.plan[r.plan] : nombre, r.importe !== null ? precio(r.importe, 'PYG', locale) : null));
+    setAviso(q.deshecho(r.plan ? t.plan[r.plan] : nombre, r.importe !== null ? precio(r.importe, 'PYG', locale) : null), false);
   }
 
   return (
     <div className="space-y-2">
+      {programado && detalle && (
+        <p className="rounded-xl bg-ambar-claro px-3 py-2 text-[13px] font-medium leading-relaxed text-ambar">{detalle}</p>
+      )}
       {!programado ? children : enCurso ? (
         <p className="text-[12.5px] leading-relaxed text-tinta/60">{q.esperaElPago}</p>
       ) : (

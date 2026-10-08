@@ -27,6 +27,7 @@ import { PieBajarDePlan, PieDelPlanActual } from '@/components/bancard/BajaDePla
 import type { DatosDelCambio } from '@/components/bancard/HojaCambiarPlan';
 import type { DatosDelPago } from '@/components/bancard/HojaPagar';
 import type { MomentoDelDebito } from '@/components/bancard/tipos';
+import { algunPlanAlcanza, hayQueEsperarElPago, planesALaVista } from '@/lib/plan-pantalla';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,7 +77,9 @@ export default async function PaginaPlan({
   // si esta cuenta ve la tarjeta del Premium, y si falla la tarjeta lo dice
   // sin importe en vez de caerse.
   const vePremium = ctx.empresa.tipo_cuenta !== 'personal'
-    && (ficha.planes.includes('negocio') || ctx.planEfectivo === 'negocio');
+    && (ficha.planes.includes('negocio') || ctx.planEfectivo === 'negocio'
+      // …o lo tenía y venció: su tarjeta sigue a la vista (ver `planVencido`).
+      || (ctx.suscripcion.plan === 'negocio' && ctx.suscripcion.estado === 'activa'));
   const [precios, referencia, porPersona] = await Promise.all([
     traerPrecios(moneda, ctx.empresa.tipo_cuenta),
     traerReferencia(ctx.empresa.tipo_cuenta),
@@ -111,13 +114,23 @@ export default async function PaginaPlan({
    * su rubro no ofrece —un profe que contrató Pro antes de esto—, esa
    * tarjeta sigue ahí, marcada como su plan actual. Durante la prueba no
    * cuenta: estar probando no es estar pagando (ver `esActual`, abajo).
+   *
+   * VENCIDA, TAMPOCO (revisión 08/10/2026). Con el plan vencido el «plan
+   * efectivo» es 'gratis' y la tarjeta del plan que tenía desaparecía si su
+   * rubro no lo ofrece: a un profe que tenía el Pro con dos personas le
+   * quedaba solo el Básico, que es para una, y ningún botón para pagar. La
+   * base le acepta renovar el plan que tenía: se muestra.
    */
   const planPagado = !sus.en_prueba
     ? PLANES_PAGOS.find((p) => p === ctx.planEfectivo) ?? null
     : null;
-  const planesVisibles: PlanPago[] = PLANES_PAGOS.filter(
-    (p) => ficha.planes.includes(p) || p === planPagado,
-  );
+  /** Con la cuenta vencida no se puede entrar a achicar el equipo (el candado solo deja ver esta pantalla). */
+  const conCandado = !esPersonal && !sus.en_prueba && ctx.planEfectivo === 'gratis';
+  /** El plan pago que tenía un negocio vencido (el de una prueba no cuenta: no lo pagó). */
+  const planVencido = conCandado && sus.estado === 'activa'
+    ? PLANES_PAGOS.find((p) => p === sus.plan) ?? null
+    : null;
+  const planesVisibles: PlanPago[] = planesALaVista(PLANES_PAGOS, ficha.planes, planPagado, planVencido);
 
   // Si es momento de ofrecerle recomendar Orden. Las reglas están en la
   // base (062); acá solo se pregunta, y si falla no se ofrece nada.
@@ -166,6 +179,20 @@ export default async function PaginaPlan({
           .catch(() => 1),
       ])
     : [null, 1];
+  /**
+   * LA BAJA PROGRAMADA SE VE AUNQUE LA CUENTA YA NO VEA BANCARD (revisión
+   * 08/10/2026). Si después de programar «Bajar al Básico» a la cuenta se le
+   * deshabilita Bancard (o se apaga para todos), la baja sigue escrita: el
+   * equipo queda topado en los lugares del plan más bajo y la renovación se
+   * cobra por ese plan. La pantalla no decía nada ni dejaba deshacerla,
+   * aunque la ruta sí. Se lee solo eso (`plan_proximo` no depende del
+   * ambiente: va uno fijo), y solo para un negocio con un plan pago.
+   */
+  const bajaSinBancard = !entornoBancard && !esPersonal && sus.estado === 'activa' && !sus.en_prueba
+    ? await Promise.resolve(supabase.rpc('bancard_estado', { p_empresa: ctx.empresa.id, p_entorno: 'produccion' }))
+        .then((r) => (r.error ? null : (r.data as EstadoBancard | null)?.plan_proximo ?? null))
+        .catch(() => null)
+    : null;
   const ahora = Date.now();
   const pagoVigente = sus.estado === 'activa' && !sus.en_prueba && !!sus.periodo_fin
     && new Date(sus.periodo_fin).getTime() > ahora && ctx.planEfectivo !== 'gratis';
@@ -203,8 +230,9 @@ export default async function PaginaPlan({
    * también con el plan ya vencido; las tarjetas la muestran solo mientras
    * el plan está pago y vigente.
    */
-  const planProgramadoEnLaBase = estadoBancard?.plan_proximo === 'basico' || estadoBancard?.plan_proximo === 'pro'
-    ? estadoBancard.plan_proximo
+  const planProximoLeido = estadoBancard?.plan_proximo ?? bajaSinBancard;
+  const planProgramadoEnLaBase = planProximoLeido === 'basico' || planProximoLeido === 'pro'
+    ? planProximoLeido
     : null;
   const planProgramado = pagoVigente ? planProgramadoEnLaBase : null;
   /**
@@ -213,8 +241,14 @@ export default async function PaginaPlan({
    * pierde días que ya pagó.
    */
   const programadoPagable = estadoBancard?.plan_proximo_pagable === true;
-  /** Un pago sin terminar: no se programa ni se deshace una baja hasta que se resuelva. */
-  const pagoEnCurso = !!estadoBancard?.viva;
+  /**
+   * Un pago sin terminar: no se programa ni se deshace una baja hasta que se
+   * resuelva. Menos un formulario que la persona abrió y dejó (revisión
+   * 08/10/2026): ese no lo confirma nadie, y con el botón escondido quedaba
+   * hasta 40 minutos sin poder bajar ni deshacer. Con el botón a la vista,
+   * la ruta lo suelta en Bancard antes de programar o deshacer.
+   */
+  const pagoEnCurso = hayQueEsperarElPago(estadoBancard?.viva);
   /** Cuántas personas tiene hoy el equipo. */
   const equipoHoy = typeof estadoBancard?.miembros === 'number' ? estadoBancard.miembros : miembros;
   /**
@@ -228,11 +262,20 @@ export default async function PaginaPlan({
    */
   const noEntraElEquipo = (plan: PlanPago) => !!entornoBancard && !esPersonal && plan !== 'negocio'
     && equipoHoy > LIMITES_VISIBLES[plan].miembros;
-  /** Con la cuenta vencida no se puede entrar a achicar el equipo (el candado solo deja ver esta pantalla). */
-  const conCandado = !esPersonal && !sus.en_prueba && ctx.planEfectivo === 'gratis';
-  const avisoDelEquipo = (plan: PlanPago) => (conCandado ? t.bancard.cambio.equipoNoEntraVencida : t.bancard.cambio.equipoNoEntra)(
-    t.plan[plan], t.bancard.hoja.personas(LIMITES_VISIBLES[plan].miembros), equipoHoy,
-  );
+  /**
+   * Si el equipo no entra en NINGUNO de los planes que la cuenta ve (un Pro
+   * al que la administración le dio más lugares, en un rubro sin Premium),
+   * «elegí un plan donde entren todos» pide algo que no existe: ahí el
+   * texto dice que escriba (revisión 08/10/2026).
+   */
+  const hayPlanParaElEquipo = algunPlanAlcanza(planesVisibles, (p) => LIMITES_VISIBLES[p].miembros, equipoHoy);
+  const avisoDelEquipo = (plan: PlanPago) => {
+    const tope = t.bancard.hoja.personas(LIMITES_VISIBLES[plan].miembros);
+    if (!hayPlanParaElEquipo) {
+      return (conCandado ? t.bancard.cambio.equipoSinPlanVencida : t.bancard.cambio.equipoSinPlan)(t.plan[plan], tope, equipoHoy);
+    }
+    return (conCandado ? t.bancard.cambio.equipoNoEntraVencida : t.bancard.cambio.equipoNoEntra)(t.plan[plan], tope, equipoHoy);
+  };
   /**
    * El Premium: con cuántas personas arranca el selector. Renovar un Premium
    * vigente que ya tiene cantidad es por esa cantidad (o la baja que
@@ -653,7 +696,18 @@ export default async function PaginaPlan({
               </PieDelPlanActual>
             ) : deSiempre;
           } else if (esActual) {
-            pie = null;
+            // Sin Bancard no hay nada que pagar acá. Pero una baja de plan que
+            // quedó programada de cuando la cuenta lo veía se dice y se
+            // deshace igual: la ruta deja deshacer siempre.
+            pie = pagoVigente && !esPersonal && planProgramado !== null ? (
+              <PieDelPlanActual
+                empresaId={ctx.empresa.id}
+                plan={plan}
+                programado
+                enCurso={false}
+                detalle={t.bancard.cambio.programado(t.plan[planProgramado], fechaDeRenovacion)}
+              />
+            ) : null;
           } else if (whatsapp) {
             // Premium se cotiza: el precio depende de cuántos vendedores,
             // así que se manda la pregunta y no un número.
