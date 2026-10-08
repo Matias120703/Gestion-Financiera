@@ -103,6 +103,88 @@ async function aplicarMigracion(db, prefijo) {
   return archivo;
 }
 
+/**
+ * LA «DECISIÓN 4» DE CAMBIAR DE PLAN, EN SUS DOS POSICIONES (130, 08/10/2026).
+ *
+ * La decisión 4 (no pagar por Bancard un plan con menos lugares que el
+ * equipo) va APAGADA a producción: el cuerpo de
+ * `public.pago_de_plan_exige_lugar` empieza con `return;`. Lo que frena,
+ * pausa, marca y calla anuncios queda escrito y dormido, y hay que probarlo
+ * igual.
+ *
+ * Esto lee la ÚLTIMA definición de esa función en las migraciones y arma sus
+ * dos textos sin escribir nada a mano: el que tiene la llave (`return;` como
+ * primera sentencia) y el mismo sin esa línea. Así «prendida» es, letra por
+ * letra, la función de la migración sin su primera sentencia: lo que va a
+ * traer la migración que la prenda.
+ *
+ *   const D4 = H.decision4();
+ *   D4.apagada              ¿la migración la deja apagada? (hoy: true)
+ *   await D4.prender(db)    la base de pruebas, con la decisión prendida
+ *   await D4.apagar(db)     y de vuelta apagada
+ *   await D4.enLaBase(db)   'apagada' | 'prendida', leyendo la función que quedó
+ */
+const LLAVE_DECISION_4 = 'pago_de_plan_exige_lugar';
+
+/**
+ * En el texto de una función plpgsql, el índice del renglón de su primera
+ * sentencia: el que sigue al `begin`, salteando comentarios y renglones
+ * vacíos. -1 si no lo encuentra.
+ */
+function primeraSentencia(lineas) {
+  let k = lineas.findIndex((l) => l.trim() === 'begin') + 1;
+  if (k === 0) return -1;
+  while (k < lineas.length && (lineas[k].trim() === '' || lineas[k].trim().startsWith('--'))) k++;
+  return k < lineas.length ? k : -1;
+}
+
+function decision4() {
+  const abre = `create or replace function public.${LLAVE_DECISION_4}(`;
+  const cierra = '$fn$;';
+  let hallada = null;
+  for (const f of migraciones()) {
+    // CRLF normalizado: en un worktree de Windows los fuentes llegan con \r\n.
+    const sql = fs.readFileSync(path.join(RAIZ, 'supabase', 'migrations', f), 'utf8').replace(/\r\n/g, '\n');
+    const i = sql.lastIndexOf(abre);
+    if (i < 0) continue;
+    const fin = sql.indexOf(cierra, i);
+    if (fin < 0) throw new Error(`${f}: no encuentro dónde termina ${LLAVE_DECISION_4}`);
+    hallada = { archivo: f, texto: sql.slice(i, fin + cierra.length) };
+  }
+  if (!hallada) throw new Error(`Ninguna migración define ${LLAVE_DECISION_4}`);
+
+  const lineas = hallada.texto.split('\n');
+  const k = primeraSentencia(lineas);
+  if (k < 0) throw new Error(`${hallada.archivo}: no encuentro la primera sentencia de ${LLAVE_DECISION_4}`);
+  const apagada = lineas[k].trim() === 'return;';
+  const textoApagada = apagada ? hallada.texto : [...lineas.slice(0, k), '  return;', ...lineas.slice(k)].join('\n');
+  const textoPrendida = apagada ? [...lineas.slice(0, k), ...lineas.slice(k + 1)].join('\n') : hallada.texto;
+
+  /** Cómo quedó la función en esa base: se lee su cuerpo del catálogo. */
+  const enLaBase = async (db) => {
+    const r = await db.query(
+      `select p.prosrc from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = $1`, [LLAVE_DECISION_4]);
+    if (r.rows.length !== 1) return `hay ${r.rows.length} funciones con ese nombre`;
+    const cuerpo = r.rows[0].prosrc.replace(/\r\n/g, '\n').split('\n');
+    const j = primeraSentencia(cuerpo);
+    if (j < 0) return 'no se entiende';
+    return cuerpo[j].trim() === 'return;' ? 'apagada' : 'prendida';
+  };
+
+  return {
+    nombre: LLAVE_DECISION_4,
+    archivo: hallada.archivo,
+    apagada,
+    textoApagada,
+    textoPrendida,
+    /** La sentencia con la que empieza el cuerpo cuando está prendida. */
+    primeraPrendida: (() => { const l = textoPrendida.split('\n'); return l[primeraSentencia(l)].trim(); })(),
+    prender: (db) => db.exec(textoPrendida),
+    apagar: (db) => db.exec(textoApagada),
+    enLaBase,
+  };
+}
+
 /** Crea un usuario de Supabase de mentira y devuelve su id. */
 async function crearUsuario(db, email) {
   const r = await db.query('insert into auth.users (email) values ($1) returning id', [email]);
@@ -260,7 +342,7 @@ async function itemsDe(db, movimientoId) {
 }
 
 module.exports = {
-  crearBase, aplicarMigracion, migraciones, crearUsuario, comoUsuario, comoServicio,
+  crearBase, aplicarMigracion, migraciones, decision4, crearUsuario, comoUsuario, comoServicio,
   enTransaccion, intentar, intentarComo, montarEmpresa, sumarMiembro, codigoDe,
   crearProducto, stockDe, movimiento, itemsDe,
 };

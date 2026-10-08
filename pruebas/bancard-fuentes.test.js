@@ -902,9 +902,13 @@ console.log('\n── Cambiar de plan con días pagos (130, 07/10/2026) ──�
   ok('a la hoja de subir no se le pasa ningún importe ni el período de la cuenta: los lee de la base',
     [datosDelCambio.length > 300, /importe|precio[A-Z(]|periodoDeLaCuenta|sus\.periodo/.test(datosDelCambio), datosDelCambio.includes('periodoElegido: periodo,')],
     [true, false, true]);
+  // 08/10: la comparación «equipo de hoy > lugares del plan» ya no está
+  // escrita en la página: vive en src/lib/plan-pantalla.ts, detrás de la
+  // llave de la decisión 4 (que va APAGADA). Más abajo se corre en sus dos
+  // posiciones, y se comprueba que la llave diga lo mismo que la de la base.
   ok('el equipo tiene que entrar en el plan que se paga: se dice en la tarjeta, antes de llegar a pagar (al subir, al pagar y al renovar)',
     [plan.includes("const noEntraElEquipo = (plan: PlanPago) => !!entornoBancard && !esPersonal && plan !== 'negocio'"),
-      plan.includes('&& equipoHoy > LIMITES_VISIBLES[plan].miembros;'),
+      plan.includes('&& equipoNoEntraEnElPlan(equipoHoy, LIMITES_VISIBLES[plan].miembros);'),
       /pie = noEntraElEquipo\(plan\) \? \(\s+<p [^>]*>\{avisoDelEquipo\(plan\)\}<\/p>\s+\) : cambio \? \(/.test(ramaDelCambio),
       /\{noEntraElEquipo\(plan\)\s+\? <p [^>]*>\{avisoDelEquipo\(plan\)\}<\/p>\s+: botonBancard\}/.test(plan),
       plan.includes('(conCandado ? t.bancard.cambio.equipoNoEntraVencida : t.bancard.cambio.equipoNoEntra)(')],
@@ -1125,6 +1129,79 @@ console.log('\n── Cambiar de plan con días pagos (130, 07/10/2026) ──�
     [panelAdmin.includes("const noTocoLaCuenta = op.tipo === 'cambio' && antes.conflicto === true;"),
       /\{noTocoLaCuenta\s+\? <>Este pago <b>no cambió nada<\/b> en la cuenta: la cuenta queda como está\.<\/>\s+: <>La cuenta vuelve a <b>\{vuelve\}<\/b>\.<\/>\}/.test(panelAdmin)],
     [true, true]);
+
+  // ════ LA DECISIÓN 4 VA APAGADA (Matías, 08/10/2026) ════
+  // «No se puede pagar por Bancard un plan con menos lugares que el equipo»:
+  // escrita, probada y apagada (quien probó con 2 o 3 personas y deja vencer
+  // no podría pagar el Básico con tarjeta, y vencido no tiene pantalla para
+  // sacar gente). Tiene DOS llaves que tienen que decir lo mismo:
+  //
+  //   · en la base, UNA línea: el `return;` con que empieza el cuerpo de
+  //     `pago_de_plan_exige_lugar` (la lee H.decision4() de las migraciones);
+  //   · en la pantalla, UNA constante: `PAGO_DE_PLAN_EXIGE_LUGAR`.
+  //
+  // Lo que corre contra la base, en las dos posiciones, está en
+  // cambiar-plan.test.js (grupos 0b, 0c, 13 y 13b) y en bancard-flujo (35).
+  const D4 = require('./ayuda-db.js').decision4();
+  const fuenteDeLasReglas = leer('src/lib/plan-pantalla.ts');
+  const constante = (/^export const PAGO_DE_PLAN_EXIGE_LUGAR: boolean = (true|false);$/m.exec(fuenteDeLasReglas) || [])[1] ?? null;
+  ok('LA LLAVE DE LA BASE Y LA DE LA PANTALLA DICEN LO MISMO: las dos apagadas o las dos prendidas',
+    [typeof P.PAGO_DE_PLAN_EXIGE_LUGAR, String(P.PAGO_DE_PLAN_EXIGE_LUGAR) === constante, P.PAGO_DE_PLAN_EXIGE_LUGAR === !D4.apagada],
+    ['boolean', true, true]);
+  ok('y hoy las dos están APAGADAS: la última migración que define esa función es la 130 y su cuerpo empieza con «return;»; la constante vale false',
+    [D4.archivo, D4.apagada, P.PAGO_DE_PLAN_EXIGE_LUGAR], ['130_cambiar_de_plan.sql', true, false]);
+  ok('prender la de la base es sacar esa única línea: lo que queda empieza exigiendo el lugar',
+    [D4.textoApagada.split('\n').length - D4.textoPrendida.split('\n').length, D4.primeraPrendida],
+    [1, 'perform public.exigir_lugar_para_el_equipo(p_empresa, p_plan, p_personas);']);
+  ok('la constante dice cuál es su par en la base y dónde está; y el comentario de la función de la base, cuál es su par en la pantalla',
+    [fuenteDeLasReglas.includes('`public.pago_de_plan_exige_lugar` (supabase/migrations/130_cambiar_de_plan.sql)'),
+      D4.textoApagada.includes('PAGO_DE_PLAN_EXIGE_LUGAR en true en src/lib/plan-pantalla.ts'), D4.textoApagada.includes('DECISIÓN 4 APAGADA (Matías, 08/10/2026)')],
+    [true, true, true]);
+  ok('la regla de la pantalla en sus dos posiciones: apagada (como va) a nadie se le dice que su equipo no entra; prendida, solo a quien tiene más gente que lugares',
+    [[P.equipoNoEntraEnElPlan(3, 1), P.equipoNoEntraEnElPlan(5, 3), P.equipoNoEntraEnElPlan(15, 1)],
+      [P.equipoNoEntraEnElPlan(3, 1, false), P.equipoNoEntraEnElPlan(5, 3, false)],
+      [P.equipoNoEntraEnElPlan(3, 1, true), P.equipoNoEntraEnElPlan(5, 3, true), P.equipoNoEntraEnElPlan(1, 1, true), P.equipoNoEntraEnElPlan(3, 3, true),
+        P.equipoNoEntraEnElPlan(2, 3, true)]],
+    [[false, false, false], [false, false], [true, true, false, false, false]]);
+  ok('/plan no decide por su cuenta: «no entra el equipo» sale SOLO de esa regla, y de ella cuelgan los tres lugares que esconden un botón de pagar',
+    [cuantas(plan, /equipoNoEntraEnElPlan\(/g), /equipoHoy > /.test(plan), /import \{[^}]*equipoNoEntraEnElPlan[^}]*\} from '@\/lib\/plan-pantalla';/.test(plan),
+      cuantas(plan, /noEntraElEquipo\(plan\)/g), cuantas(plan, /avisoDelEquipo\(plan\)/g), /PAGO_DE_PLAN_EXIGE_LUGAR/.test(plan)],
+    [1, false, true, 3, 2, false]);
+  ok('en las reglas, la constante se lee en un solo lugar: el valor por defecto de esa función',
+    [cuantas(reglas, /PAGO_DE_PLAN_EXIGE_LUGAR/g), reglas.includes('exige: boolean = PAGO_DE_PLAN_EXIGE_LUGAR'), reglas.includes('return exige && equipo > lugares;'),
+      archivos.filter((a) => sinComentarios(leer(a)).includes('PAGO_DE_PLAN_EXIGE_LUGAR'))],
+    [2, true, true, ['src/lib/plan-pantalla.ts']]);
+  ok('los cuatro textos de «tu equipo no entra» se conservan en los dos idiomas: se van a usar al prenderla',
+    ['equipoNoEntra', 'equipoNoEntraVencida', 'equipoSinPlan', 'equipoSinPlanVencida']
+      .map((k) => [texto(bloque(es), k).length > 40, texto(bloque(pt), k).length > 40]),
+    [1, 2, 3, 4].map(() => [true, true]));
+  ok('la BAJA de plan NO depende de esa llave: su «el equipo no entra» compara siempre, en la pantalla y en la base',
+    [baja.includes('const noEntra = miembros > lugares;'), /PAGO_DE_PLAN_EXIGE_LUGAR|equipoNoEntraEnElPlan/.test(baja),
+      programarEnLaBase.includes('perform public.exigir_lugar_para_el_equipo(p_empresa, p_plan, null);'), /pago_de_plan_/.test(programarEnLaBase)],
+    [true, false, true, false]);
+
+  // En la base, TODO lo que es decisión 4 le pregunta a la llave (o a su
+  // hermana, que le pregunta a ella): no quedó ninguna cuenta suelta.
+  const codigo130 = m130.replace(/^\s*--.*$/gm, '');
+  const hermana = codigo130.slice(codigo130.indexOf('create or replace function public.pago_de_plan_sin_lugar('),
+    codigo130.indexOf('revoke all on function public.nivel_de_plan('));
+  const frenada = codigo130.slice(codigo130.indexOf('create or replace function public.bancard_renovacion_frenada('),
+    codigo130.indexOf('revoke all on function public.bancard_renovacion_frenada('));
+  ok('los frenos (cotizar un cambio, crear un pago de plan o de cambio) llaman a la llave; lo que anota o anuncia, a su hermana, que le pregunta a la llave',
+    [cuantas(codigo130, /perform public\.pago_de_plan_exige_lugar\(/g), cuantas(hermana, /perform public\.pago_de_plan_exige_lugar\(p_empresa, p_plan, p_personas, p_origen\);/g),
+      cuantas(codigo130, /(return|if) public\.pago_de_plan_sin_lugar\(/g), cuantas(frenada, /return public\.pago_de_plan_sin_lugar\(/g),
+      cuantas(codigo130, /and (not )?public\.bancard_renovacion_frenada\(/g)],
+    [3, 1, 3, 1, 2]);
+  ok('las dos marcas «para revisar» de la decisión 4 se ponen solo si la llave dice que ese pago se frenaría',
+    [/if public\.pago_de_plan_sin_lugar\(v_op\.empresa_id, v_op\.plan, null, v_op\.origen\) then {2}-- \(130\)\n\s+v_revisar := coalesce\(v_revisar, 'Pagó un plan con menos lugares que las personas de su equipo'\);/.test(codigo130),
+      /if public\.pago_de_plan_sin_lugar\(v_op\.empresa_id, v_op\.plan, v_op\.personas, v_op\.origen\) then {2}-- \(130\)\n\s+v_revisar := coalesce\(v_revisar, 'Cambió a un plan con menos lugares que las personas de su equipo'\);/.test(codigo130),
+      cuantas(codigo130, /'Pagó un plan con menos lugares que las personas de su equipo'/g)],
+    [true, true, 1]);
+  ok('lo único que cuenta el equipo sin preguntarle a la llave es lo que NO es la decisión 4: la baja programada y el cambio al Premium (por cantidad de personas)',
+    [cuantas(codigo130, /perform public\.exigir_lugar_para_el_equipo\(/g), cuantas(codigo130, /(?<!function )public\.lugares_del_plan\(/g),
+      /if v_op\.plan = 'negocio' and v_tipo <> 'personal' then {2}-- \(130\)\n\s+v_tope := [^\n]+\n\s+select count\(\*\)::int into v_miembros [^\n]+\n\s+if v_miembros > public\.lugares_del_plan\(v_op\.plan, v_op\.personas\) then/.test(codigo130),
+      /v_lugares {2}integer := public\.lugares_del_plan\(p_plan, p_personas\);/.test(codigo130)],
+    [2, 2, true, true]);
 }
 
 console.log(`\n${corridas - fallos}/${corridas} comprobaciones de las fuentes de Bancard.`);

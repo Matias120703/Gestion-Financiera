@@ -48950,8 +48950,9 @@ comment on function public.anotar_correo_borrado(uuid, uuid, text, text, text) i
 --     renovación (`bancard_cuentas.plan_proximo`), igual que la baja de
 --     personas que ya existía.
 --
--- LAS CINCO DECISIONES (Matías todavía no las confirmó: cada una vive en un
--- solo lugar, marcado «DECISIÓN n» en el código de más abajo)
+-- LAS CINCO DECISIONES (Matías las confirmó el 08/10/2026: «sí a todo», con
+-- LA 4 APAGADA por ahora. Cada una vive en un solo lugar, marcado
+-- «DECISIÓN n» en el código de más abajo)
 --
 --   1. LA REGLA. Subir: se paga hoy la diferencia de lista por los días que
 --      faltan y la fecha de renovación NO cambia. Bajar: rige desde la
@@ -48964,7 +48965,8 @@ comment on function public.anotar_correo_borrado(uuid, uuid, text, text, text) i
 --      'cambio' de `bancard_confirmar` no pasa por `aplicar_suscripcion`.
 --   4. NO SE PUEDE PAGAR UN PLAN CON MENOS LUGARES QUE EL EQUIPO DE HOY, ni
 --      dejando vencer: vale para TODO pago de plan por Bancard, no solo para
---      el cambio. Una función, `pago_de_plan_exige_lugar`.
+--      el cambio. Una función, `pago_de_plan_exige_lugar`. QUEDA APAGADA:
+--      está escrita y probada, y hoy no frena a nadie (ver más abajo).
 --   5. LOS DÍAS DE PRUEBA QUE QUEDAN POR DELANTE NO SE COBRAN; los pagos se
 --      cobran todos (decidida por Claude, en contra del tope que proponía el
 --      diseño: el tope le regalaba hasta 21 días a quien renovaba antes de
@@ -48972,42 +48974,81 @@ comment on function public.anotar_correo_borrado(uuid, uuid, text, text, text) i
 --      períodos pagos por delante. Un bloque de `prorrateo_de_plan`.
 --
 -- SE APLICA ANTES QUE EL CÓDIGO, Y CON EL CÓDIGO PUBLICADO NO CAMBIA NADA
+-- PARA NADIE
 --
 -- Ninguna función cambia de firma ni pierde una clave. Todo lo nuevo se
 -- activa solo con `p_tipo = 'cambio'` o con `plan_proximo` escrito, y el
 -- código publicado no puede hacer ninguna de las dos cosas (rechaza un tipo
 -- que no conoce, y no existe la ruta que programa un plan). Con
 -- `plan_proximo` vacío, `bancard_plan_de_renovacion` devuelve el plan de la
--- cuenta y todo lo que la lee da lo de hoy.
+-- cuenta y todo lo que la lee da lo de hoy. La única excepción era la
+-- decisión 4, y va apagada: no queda ninguna.
 --
--- LA EXCEPCIÓN, A PROPÓSITO, ES LA DECISIÓN 4. Le cambia algo SOLO a una
--- cuenta cuyo equipo (las filas de `miembros`) es más grande que los lugares
--- del plan que se paga: Básico 1, Pro 3. El Premium no entra: ya se validaba
--- por cantidad de personas. A esa cuenta:
+-- LA DECISIÓN 4 ESTÁ APAGADA (Matías, 08/10/2026)
 --
---   a. Un pago de plan a mano (formulario, QR o la tarjeta guardada) que
---      antes creaba la operación, ahora contesta «Tu equipo tiene N personas
---      y el plan X admite hasta M. Achicá el equipo o elegí un plan donde
---      entren todos.» y no crea nada.
---   b. El cobro automático que antes salía, ahora no crea la operación: el
---      débito queda pausado con ese texto y la tarea le avisa a la
+-- Por ahora NO se frena el pago de un plan con menos lugares que el equipo.
+-- El motivo: el negocio que probó con 2 o 3 personas y deja vencer no podría
+-- pagar el Básico con tarjeta, y con la cuenta vencida no tiene pantalla
+-- para sacar gente del equipo (el candado solo le deja ver /plan). Se va a
+-- prender más adelante, junto con una pantalla para achicar el equipo.
+--
+-- LA LLAVE ES UNA LÍNEA: el `return;` con que empieza el cuerpo de
+-- `pago_de_plan_exige_lugar`. Todo lo que es decisión 4 le pregunta a esa
+-- función, o a su hermana `pago_de_plan_sin_lugar` (que contesta sí o no
+-- preguntándole a ella). Con la llave puesta nadie es frenado, ningún débito
+-- se pausa, ningún pago queda «para revisar» y ningún anuncio se calla por
+-- ese motivo.
+--
+-- PARA PRENDERLA, las dos cosas juntas:
+--
+--   · en la base: una migración nueva con el `create or replace` de
+--     `pago_de_plan_exige_lugar` SIN esa línea (lo demás, igual);
+--   · en la pantalla: `PAGO_DE_PLAN_EXIGE_LUGAR` en true, en
+--     src/lib/plan-pantalla.ts.
+--
+-- `pruebas/bancard-fuentes.test.js` comprueba que las dos digan lo mismo, y
+-- `pruebas/cambiar-plan.test.js` corre todo lo de abajo con la llave puesta
+-- y con la llave sacada.
+--
+-- LO QUE PASARÍA AL PRENDERLA. Le cambiaría algo SOLO a una cuenta cuyo
+-- equipo (las filas de `miembros`) es más grande que los lugares del plan
+-- que se paga: Básico 1, Pro 3. El Premium no entra: ya se validaba por
+-- cantidad de personas. A esa cuenta:
+--
+--   a. Un pago de plan a mano (formulario, QR o la tarjeta guardada), que
+--      hoy crea la operación, contestaría «Tu equipo tiene N personas y el
+--      plan X admite hasta M. Achicá el equipo o elegí un plan donde entren
+--      todos.» y no crearía nada. Lo mismo al cotizar y al pagar un cambio a
+--      un plan donde no entra.
+--   b. El cobro automático, que hoy sale, no crearía la operación: el débito
+--      quedaría pausado con ese texto y la tarea le avisaría a la
 --      administración (el camino de «no se pudo cotizar» que ya existía).
---   c. Un pago creado ANTES de aplicar esto (o con gente que entró entre
---      crear y confirmar) se activa igual que hoy, y además queda «para
+--   c. Un pago creado ANTES de prenderla (o con gente que entró entre crear
+--      y confirmar) se activaría igual que hoy, y además quedaría «para
 --      revisar»: 'Pagó un plan con menos lugares que las personas de su
---      equipo'.
---   d. Si además tiene una tarjeta guardada con el débito al día, deja de
+--      equipo' (en un cambio: 'Cambió a un plan con menos lugares…').
+--   d. Si además tiene una tarjeta guardada con el débito al día, dejaría de
 --      anunciarse el cobro que (b) no va a hacer: en su fila del aviso de
---      vencimiento `debito` va null (el aviso publicado dice entonces que
---      pague, en vez de «se cobra solo de tu tarjeta»), y en
---      `bancard_estado` `debito.fecha_cobro` va null (la pantalla publicada
---      no muestra «Próximo cobro»). La pregunta la contesta una función,
---      `bancard_renovacion_frenada`, que le pregunta a la misma decisión 4:
---      apagada la decisión, esto también se apaga.
+--      vencimiento `debito` iría null (el aviso dice entonces que pague, en
+--      vez de «se cobra solo de tu tarjeta»), y en `bancard_estado`
+--      `debito.fecha_cobro` iría null (la pantalla no muestra «Próximo
+--      cobro»). La pregunta la contesta `bancard_renovacion_frenada`.
+--
+-- LO QUE NO ES LA DECISIÓN 4, Y SIGUE PRENDIDO:
+--
+--   · Programar una BAJA de plan exige que el equipo de hoy entre en el plan
+--     más bajo (`exigir_lugar_para_el_equipo`, llamada directo desde
+--     `bancard_programar_plan`), y mientras está programada el equipo no
+--     pasa de esos lugares (`tope_de_miembros`).
+--   · El Premium se paga por cantidad de personas, nunca menos que el
+--     equipo (124). Y un cambio AL PREMIUM que se confirma con más gente que
+--     las personas pagadas queda «para revisar», como ya quedaba el pago de
+--     un Premium (125): el equipo se cuenta al confirmar.
 --
 -- Hoy esas cuentas son las que la administración activó a mano con más
--- gente que lugares (`cambiar_plan_cuenta` no mira el equipo). Antes de
--- aplicar conviene contarlas (solo lee):
+-- gente que lugares (`cambiar_plan_cuenta` no mira el equipo). Con la
+-- decisión apagada se les van a sumar las que prueben con 2 o 3 personas y
+-- paguen el Básico. Antes de PRENDERLA conviene contarlas (solo lee):
 --
 --   select e.nombre, s.plan, s.estado, s.periodo_fin, c.debito_activo,
 --          (select count(*) from miembros m where m.empresa_id = e.id) as equipo
@@ -49030,9 +49071,10 @@ comment on function public.anotar_correo_borrado(uuid, uuid, text, text, text) i
 --
 -- SI HAY QUE VOLVER ATRÁS
 --
---   · Apagar la decisión 4 sola: `create or replace` de
---     `pago_de_plan_exige_lugar` con `return;` como primera línea del cuerpo.
---     Se apagan con ella (a), (b) y (d).
+--   · La decisión 4 ya va apagada. Si un día se prende y hay que apagarla de
+--     nuevo: `create or replace` de `pago_de_plan_exige_lugar` con `return;`
+--     como primera sentencia del cuerpo, que es como queda acá. Se apagan
+--     con ella (a), (b), (c) y (d).
 --   · Volver al código anterior dejando la 130 aplicada: se puede, pero
 --     ANTES hay que avisar a las cuentas con `bancard_cuentas.plan_proximo`
 --     escrito y vaciarlo. La pantalla vieja no muestra esa baja ni deja
@@ -49057,7 +49099,8 @@ comment on function public.anotar_correo_borrado(uuid, uuid, text, text, text) i
 -- MENSAJES NUEVOS (con su portugués en src/lib/mensajes-base.ts)
 --
 --   · «Tu equipo tiene % personas y el plan % admite hasta %. Achicá el
---     equipo o elegí un plan donde entren todos.»
+--     equipo o elegí un plan donde entren todos.» Con la decisión 4 apagada
+--     lo dice solo la baja de plan que no se puede programar.
 --   · «Hay un pago en curso. Esperá a que se confirme y probá de nuevo.»
 --
 -- El de la guarda («Falta aplicar la 124, la 125 y la 126 antes que la
@@ -49196,7 +49239,8 @@ returns integer language sql immutable set search_path = public as $fn$
 $fn$;
 
 -- El equipo de hoy tiene que entrar en el plan. No se echa a nadie: se dice
--- qué hacer. La usan la baja programada (siempre) y el pago (decisión 4).
+-- qué hacer. La usan la baja programada (siempre: la llama directo) y el
+-- pago (decisión 4, hoy apagada: la llama por `pago_de_plan_exige_lugar`).
 create or replace function public.exigir_lugar_para_el_equipo(p_empresa uuid, p_plan text, p_personas integer)
 returns void language plpgsql stable security definer set search_path = public as $fn$
 declare
@@ -49211,18 +49255,31 @@ begin
   end if;
 end $fn$;
 
--- DECISIÓN 4 (un solo lugar). No se puede pagar por Bancard un plan con
--- menos lugares que el equipo que la cuenta tiene hoy. Cierra esto: un
--- Premium de 15 personas dejaba vencer, pagaba el Básico y seguía con las 15
--- adentro por Gs. 110.000 (el tope se mira solo cuando alguien ENTRA al
+-- DECISIÓN 4 (un solo lugar) · HOY APAGADA. No se puede pagar por Bancard un
+-- plan con menos lugares que el equipo que la cuenta tiene hoy. Cierra esto:
+-- un Premium de 15 personas dejaba vencer, pagaba el Básico y seguía con las
+-- 15 adentro por Gs. 110.000 (el tope se mira solo cuando alguien ENTRA al
 -- equipo). Vale para todo pago de plan: el de siempre, el cambio y el cobro
 -- automático.
 --
--- Para apagarla: que la primera línea del cuerpo sea `return;`. Para que no
--- frene el cobro automático: `if p_origen = 'automatico' then return; end if;`.
--- Lo que se le anuncia a la persona (el aviso de vencimiento y «Próximo
--- cobro») sale de preguntarle a esta misma función
--- (`bancard_renovacion_frenada`): cambia sola con cualquiera de las dos.
+-- LA LLAVE es el `return;` con que empieza el cuerpo: con esa línea la
+-- función no hace nada, y con ella se apaga TODO lo que es decisión 4,
+-- porque todo le pregunta a esta función:
+--
+--   · el freno al crear un pago de plan o de cambio
+--     (`bancard_crear_operacion_interna`), y con él el del cobro automático
+--     (`bancard_tomar_cobro` pausa el débito cuando esa creación falla);
+--   · el freno al cotizar un cambio (`cotizar_cambio`);
+--   · la marca «para revisar» al confirmar (`bancard_confirmar`) y lo que se
+--     le anuncia a la persona, el aviso de vencimiento y «Próximo cobro»
+--     (`bancard_renovacion_frenada`): las dos por la hermana de abajo,
+--     `pago_de_plan_sin_lugar`.
+--
+-- PARA PRENDERLA: sacar esa línea (una migración nueva con este mismo
+-- `create or replace`, sin el `return;`) y poner en true
+-- `PAGO_DE_PLAN_EXIGE_LUGAR` en src/lib/plan-pantalla.ts. Y si al prenderla
+-- se decide que no frene el cobro automático, en lugar del `return;` va
+-- `if p_origen = 'automatico' then return; end if;`.
 create or replace function public.pago_de_plan_exige_lugar(
   p_empresa  uuid,
   p_plan     text,
@@ -49231,7 +49288,37 @@ create or replace function public.pago_de_plan_exige_lugar(
 )
 returns void language plpgsql stable security definer set search_path = public as $fn$
 begin
+  -- DECISIÓN 4 APAGADA (Matías, 08/10/2026). Por ahora no se frena el pago de
+  -- un plan con menos lugares que el equipo: quien probó con 2 o 3 personas
+  -- y deja vencer no podría pagar el Básico con tarjeta, y con la cuenta
+  -- vencida no tiene pantalla para sacar gente del equipo. Se prende junto
+  -- con esa pantalla: sacando la línea de abajo, y con
+  -- PAGO_DE_PLAN_EXIGE_LUGAR en true en src/lib/plan-pantalla.ts.
+  return;
   perform public.exigir_lugar_para_el_equipo(p_empresa, p_plan, p_personas);
+end $fn$;
+
+-- LA MISMA PREGUNTA, CONTESTADA CON SÍ O NO: ¿ese pago de plan se frenaría
+-- por la decisión 4? Es para los lugares que no frenan nada y solo anotan o
+-- anuncian: la marca «para revisar» de un pago ya cobrado y lo que se le
+-- promete a la persona sobre su renovación.
+--
+-- NO repite la regla ni tiene llave propia: le pregunta a
+-- `pago_de_plan_exige_lugar`, con el mismo plan, las mismas personas y el
+-- mismo origen. Con la decisión apagada contesta siempre «no».
+create or replace function public.pago_de_plan_sin_lugar(
+  p_empresa  uuid,
+  p_plan     text,
+  p_personas integer,
+  p_origen   text
+)
+returns boolean language plpgsql stable security definer set search_path = public as $fn$
+begin
+  perform public.pago_de_plan_exige_lugar(p_empresa, p_plan, p_personas, p_origen);
+  return false;
+exception when invalid_parameter_value then
+  -- El errcode de «Tu equipo tiene … personas y el plan … admite hasta …».
+  return true;
 end $fn$;
 
 revoke all on function public.nivel_de_plan(text) from public, anon, authenticated, service_role;
@@ -49240,6 +49327,7 @@ revoke all on function public.dias_para_adelantar_la_baja() from public, anon, a
 revoke all on function public.lugares_del_plan(text, integer) from public, anon, authenticated, service_role;
 revoke all on function public.exigir_lugar_para_el_equipo(uuid, text, integer) from public, anon, authenticated, service_role;
 revoke all on function public.pago_de_plan_exige_lugar(uuid, text, integer, text) from public, anon, authenticated, service_role;
+revoke all on function public.pago_de_plan_sin_lugar(uuid, text, integer, text) from public, anon, authenticated, service_role;
 
 -- ------------------------------------------------------------
 -- 3. QUÉ PLAN SE COBRA EN LA PRÓXIMA RENOVACIÓN
@@ -49424,7 +49512,7 @@ revoke all on function public.prorrateo_de_plan(uuid, text, integer) from public
 
 -- Lo que pide la pantalla: lo mismo, con la guarda de sesión. Y con la
 -- decisión 4, para que la hoja no muestre un importe que después el pago no
--- va a aceptar.
+-- va a aceptar (hoy apagada: esa llamada no frena nada).
 create or replace function public.cotizar_cambio(
   p_empresa  uuid,
   p_plan     text,
@@ -49678,28 +49766,27 @@ revoke all on function public.bancard_importe_de_renovacion(uuid) from public, a
 
 -- ¿EL COBRO AUTOMÁTICO DE ESTA CUENTA SE VA A FRENAR POR LA DECISIÓN 4?
 --
--- Si el equipo de hoy no entra en el plan de la renovación, la tarea no crea
--- el cobro: pausa el débito y le avisa a la administración. Entonces nadie
--- puede anunciarle a la persona que «se cobra solo de tu tarjeta»: ni el
--- aviso de vencimiento, ni «Próximo cobro» en /plan. Los dos preguntan acá.
+-- Con la decisión 4 prendida, si el equipo de hoy no entra en el plan de la
+-- renovación la tarea no crea el cobro: pausa el débito y le avisa a la
+-- administración. Entonces nadie puede anunciarle a la persona que «se cobra
+-- solo de tu tarjeta»: ni el aviso de vencimiento, ni «Próximo cobro» en
+-- /plan. Los dos preguntan acá.
 --
--- NO repite la regla: le pregunta a `pago_de_plan_exige_lugar`, con el mismo
--- plan, las mismas personas y el mismo origen ('automatico') con que lo va a
--- llamar la tarea. Si la decisión 4 se apaga, o se decide que no frene el
--- cobro automático, esto contesta «no» solo. Cerrada a todos: la llaman
--- `bancard_estado` y `vencimientos_por_avisar`, que son definer.
+-- NO repite la regla: le pregunta a la decisión 4 (`pago_de_plan_sin_lugar`,
+-- que le pregunta a `pago_de_plan_exige_lugar`), con el mismo plan, las
+-- mismas personas y el mismo origen ('automatico') con que lo va a llamar la
+-- tarea. Con la decisión 4 apagada, como va hoy, o si al prenderla se decide
+-- que no frene el cobro automático, esto contesta «no» solo. Cerrada a
+-- todos: la llaman `bancard_estado` y `vencimientos_por_avisar`, que son
+-- definer.
 create or replace function public.bancard_renovacion_frenada(p_empresa uuid)
 returns boolean language plpgsql stable security definer set search_path = public as $fn$
 begin
-  perform public.pago_de_plan_exige_lugar(
+  return public.pago_de_plan_sin_lugar(
     p_empresa,
     public.bancard_plan_de_renovacion(p_empresa),
     public.bancard_personas_de_renovacion(p_empresa),
     'automatico');
-  return false;
-exception when invalid_parameter_value then
-  -- El errcode de «Tu equipo tiene … personas y el plan … admite hasta …».
-  return true;
 end $fn$;
 
 revoke all on function public.bancard_renovacion_frenada(uuid) from public, anon, authenticated, service_role;
@@ -49717,7 +49804,7 @@ revoke all on function public.bancard_renovacion_frenada(uuid) from public, anon
 --      · renovar a mano un Premium que tiene una baja de PLAN programada
 --        sigue siendo por la cantidad que tiene;
 --      · la decisión 4, justo antes de crear: no cambia el orden de ninguno
---        de los rechazos de antes.
+--        de los rechazos de antes (hoy apagada: esa llamada no frena nada).
 --
 --    `bancard_crear_operacion` (la de 8 argumentos, la que llama el
 --    servidor) no se toca: solo reenvía el tipo.
@@ -49895,7 +49982,8 @@ begin
 
   -- (130) DECISIÓN 4: el equipo de hoy tiene que entrar en el plan que se paga.
   -- (130) Va último, cuando todo lo demás ya dijo que sí: no cambia el orden de
-  -- (130) ningún rechazo de antes. Sumar personas no pasa por acá.
+  -- (130) ningún rechazo de antes. Sumar personas no pasa por acá. HOY ESTÁ
+  -- (130) APAGADA: la función de abajo empieza con `return;` y no frena nada.
   if p_tipo in ('plan', 'cambio') then  -- (130)
     perform public.pago_de_plan_exige_lugar(p_empresa, v_plan, p_personas, p_origen);  -- (130)
   end if;  -- (130)
@@ -49959,7 +50047,8 @@ revoke all on function public.bancard_crear_operacion_interna(uuid, uuid, text, 
 --      · la rama nueva que activa un 'cambio': cambia el plan y el tope, y
 --        NADA más (ni la fecha, ni el período, ni el importe guardado);
 --      · un pago de plan limpia también `plan_proximo`, y deja «para
---        revisar» si el equipo no entra en el plan que pagó;
+--        revisar» si el equipo no entra en el plan que pagó (es la decisión
+--        4: hoy apagada, no marca nada);
 --      · el renglón de un cambio es `bancard_cambio` (en staging,
 --        `bancard_prueba`, como todos), con `meses` 0;
 --      · la respuesta suma `plan_antes` (de qué plan viene un cambio).
@@ -50298,9 +50387,10 @@ begin
         -- (130) DECISIÓN 4, del lado de la confirmación. Al crear el pago ya se
         -- (130) comprobó que el equipo entra; si igual hay gente de más (un pago
         -- (130) creado antes de esa regla, o gente que entró en el medio), el
-        -- (130) plan se activa como siempre y lo mira una persona.
-        select count(*)::int into v_miembros from public.miembros m where m.empresa_id = v_op.empresa_id;  -- (130)
-        if v_miembros > public.lugares_del_plan(v_op.plan, null) then  -- (130)
+        -- (130) plan se activa como siempre y lo mira una persona. No se cuenta
+        -- (130) acá: se le pregunta a la decisión 4, la misma del freno. HOY ESTÁ
+        -- (130) APAGADA: contesta «no» y ningún pago queda marcado por esto.
+        if public.pago_de_plan_sin_lugar(v_op.empresa_id, v_op.plan, null, v_op.origen) then  -- (130)
           v_revisar := coalesce(v_revisar, 'Pagó un plan con menos lugares que las personas de su equipo');  -- (130)
         end if;  -- (130)
       end if;
@@ -50327,13 +50417,22 @@ begin
     -- (130) «Solo por lo pagado»: el Premium queda con las personas que eligió.
     if v_op.plan = 'negocio' and v_tipo <> 'personal' then  -- (130)
       v_tope := coalesce(v_op.personas, public.personas_incluidas_premium()) - 1;  -- (130)
+      -- (130) El equipo se cuenta al confirmar, no solo al crear (como arriba, en
+      -- (130) el pago de un Premium). NO es la decisión 4: la cantidad de personas
+      -- (130) del Premium ya se validaba al crear, y esto queda siempre prendido.
+      select count(*)::int into v_miembros from public.miembros m where m.empresa_id = v_op.empresa_id;  -- (130)
+      if v_miembros > public.lugares_del_plan(v_op.plan, v_op.personas) then  -- (130)
+        v_revisar := coalesce(v_revisar, 'Cambió a un plan con menos lugares que las personas de su equipo');  -- (130)
+      end if;  -- (130)
     else  -- (130)
       v_tope := null;  -- (130)
-    end if;  -- (130)
-    -- (130) El equipo se cuenta al confirmar, no solo al crear (como arriba).
-    select count(*)::int into v_miembros from public.miembros m where m.empresa_id = v_op.empresa_id;  -- (130)
-    if v_miembros > public.lugares_del_plan(v_op.plan, v_op.personas) then  -- (130)
-      v_revisar := coalesce(v_revisar, 'Cambió a un plan con menos lugares que las personas de su equipo');  -- (130)
+      -- (130) DECISIÓN 4, del lado de la confirmación (como arriba, en el pago de
+      -- (130) un plan): si el equipo no entra en el plan al que cambió, lo mira
+      -- (130) una persona. Se le pregunta a la decisión 4: HOY ESTÁ APAGADA,
+      -- (130) contesta «no» y ningún cambio queda marcado por esto.
+      if public.pago_de_plan_sin_lugar(v_op.empresa_id, v_op.plan, v_op.personas, v_op.origen) then  -- (130)
+        v_revisar := coalesce(v_revisar, 'Cambió a un plan con menos lugares que las personas de su equipo');  -- (130)
+      end if;  -- (130)
     end if;  -- (130)
     -- (130) DECISIÓN 3: NO pasa por `aplicar_suscripcion`. No nace ni se gasta
     -- (130) la comisión del socio (es una sola por negocio y sale con un pago
@@ -50889,9 +50988,9 @@ grant execute on function public.bancard_tomar_cobro(text) to service_role;
 -- 12. LO QUE LEE LA PANTALLA
 --
 --     Copia exacta de la 125. Cambia: tres claves más. Las cinco de siempre
---     no cambian, salvo `debito.fecha_cobro`, que va null cuando el cobro
---     automático no va a salir porque el equipo no entra en el plan (el
---     punto d de la decisión 4, arriba).
+--     no cambian. Con la decisión 4 prendida, `debito.fecha_cobro` iría null
+--     cuando el cobro automático no va a salir porque el equipo no entra en
+--     el plan (el punto d, arriba); apagada, como va hoy, tampoco cambia.
 -- ------------------------------------------------------------
 create or replace function public.bancard_estado(p_empresa uuid, p_entorno text)
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -50959,6 +51058,7 @@ begin
   -- (130) DECISIÓN 4, lo que se promete: si el equipo de hoy no entra en el plan
   -- (130) de la renovación, la tarea no va a cobrar (pausa el débito y le avisa a
   -- (130) la administración). La pantalla no puede anunciar ese cobro: sin fecha.
+  -- (130) HOY ESTÁ APAGADA: la pregunta contesta «no» y la fecha no se toca.
   if v_fecha is not null and public.bancard_renovacion_frenada(p_empresa) then  -- (130)
     v_fecha := null;  -- (130)
   end if;  -- (130)
@@ -51159,9 +51259,10 @@ revoke all on function public.bancard_baja_caduca() from public, anon, authentic
 --     Copia exacta de la 126. Cambia: dos claves más por fila,
 --     `plan_renovacion` y `precio_renovacion`. `plan` y `precio` siguen
 --     siendo los del plan que la cuenta tiene HOY (el aviso publicado dice
---     «tu plan X vence»), e `importe` ya era lo que de verdad se cobra. Y
---     `debito` va null cuando el cobro automático no va a salir porque el
---     equipo no entra en el plan (el punto d de la decisión 4, arriba).
+--     «tu plan X vence»), e `importe` ya era lo que de verdad se cobra. Con
+--     la decisión 4 prendida, `debito` iría null cuando el cobro automático
+--     no va a salir porque el equipo no entra en el plan (el punto d,
+--     arriba); apagada, como va hoy, `debito` es el de siempre.
 -- ------------------------------------------------------------
 create or replace function public.vencimientos_por_avisar()
 returns jsonb language plpgsql stable security definer set search_path = public as $fn$
@@ -51239,6 +51340,7 @@ begin
           -- (130) Decisión 4: si el equipo no entra en el plan de la renovación,
           -- (130) la tarea no va a cobrar. El aviso no promete ese cobro: sin
           -- (130) «debito», le dice a la persona que pague (y ahí ve qué hacer).
+          -- (130) HOY ESTÁ APAGADA: la pregunta contesta «no» y no saca nada.
           and not public.bancard_renovacion_frenada(e.id)  -- (130)
       ),
       -- 126: si la administración le habilitó el pago con Bancard.

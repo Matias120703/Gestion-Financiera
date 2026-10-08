@@ -11,8 +11,9 @@
  *      bases iguales hacen lo mismo que hace el código publicado (pagar un
  *      plan, sumar personas, confirmar, revertir, cobrar solo, avisar,
  *      topar el equipo); a una se le aplica la 130 EN EL MEDIO, con pagos a
- *      medio hacer. Las dos tienen que contar lo mismo, paso por paso. La
- *      única diferencia es la decisión 4, y se afirma una por una.
+ *      medio hacer. Las dos tienen que contar lo mismo, paso por paso, sin
+ *      ninguna excepción: la única que había era la decisión 4, y va
+ *      apagada (ver el punto 4).
  *   1. SUBIR SE COBRA BIEN, AL GUARANÍ: la tabla de ejemplos del diseño, los
  *      días de prueba que no se cobran, el freno, dos cambios seguidos.
  *   2. UN CAMBIO CAMBIA EL PLAN Y NADA MÁS: ni la fecha, ni el período, ni la
@@ -20,7 +21,18 @@
  *      se anota y el plan no se toca.
  *   3. BAJAR NO COBRA NADA y entra con la renovación: la que cobra la tarea
  *      y la que paga la persona, que no puede adelantarla más de tres días.
- *   4. NO SE PUEDE PAGAR UN PLAN DONDE EL EQUIPO NO ENTRA.
+ *   4. NO SE PUEDE PAGAR UN PLAN DONDE EL EQUIPO NO ENTRA: LA «DECISIÓN 4»,
+ *      QUE VA APAGADA (Matías, 08/10/2026: quien probó con 2 o 3 personas y
+ *      deja vencer no podría pagar el Básico con tarjeta, y vencido no tiene
+ *      pantalla para sacar gente). Se prueba en sus dos posiciones:
+ *        · APAGADA, como va a producción (grupos 0b y 13): nada se frena,
+ *          ningún débito se pausa, ningún pago queda «para revisar» y los
+ *          avisos prometen el cobro como antes de la 130;
+ *        · PRENDIDA (grupos 0c y 13b): a la base de pruebas se le pone la
+ *          MISMA función de la migración sin su `return;` (`H.decision4()`),
+ *          y todo lo que estas pruebas afirmaban cuando nació prendida sigue
+ *          valiendo. Así el código dormido queda cubierto.
+ *      El resto de los grupos corre con la base como va a producción.
  *   5. REVERTIR vuelve a la foto, también un cambio que quedó en conflicto.
  *   6. NADIE CON SESIÓN LLAMA A LO QUE ESCRIBE, con los permisos por defecto
  *      de Supabase puestos antes de aplicar.
@@ -108,6 +120,9 @@ const EN_CURSO = 'Hay un pago en curso. Esperá a que se confirme y probá de nu
 const equipoNoEntra = (personas, plan, lugares) =>
   `Tu equipo tiene ${personas} personas y el plan ${plan} admite hasta ${lugares}. Achicá el equipo o elegí un plan donde entren todos.`;
 const PARA_REVISAR_EQUIPO = 'Pagó un plan con menos lugares que las personas de su equipo';
+const PARA_REVISAR_CAMBIO = 'Cambió a un plan con menos lugares que las personas de su equipo';
+/** La llave de la decisión 4: la función de la migración, con y sin su `return;`. */
+const D4 = H.decision4();
 
 // ─────────────────────────────────────────────────────────────────────────
 // Las ayudas, sobre una base
@@ -496,7 +511,8 @@ async function guion(db, enElMedio) {
   await T.confirmar(o8.operacion, aprobada(o8.operacion, o8.importe));
 
   // 9 · Tres personas en la prueba y un pago del Básico YA CREADO (la decisión 4
-  //     no existía, o no existe): se confirma al final, fuera del guion.
+  //     no existía, y con la 130 va apagada): se confirma al final, fuera del
+  //     guion.
   const apretada = await montar('apretada', 'Tres en un Básico');
   await gente(apretada, 2);
   const o9 = await crear('básico de apretada', apretada, 'produccion', 'plan', 'formulario', 'basico', 'mensual', null);
@@ -638,10 +654,13 @@ async function catalogo(db) {
   return new Map(filas.map((f) => [f.firma, f]));
 }
 
+// 08/10: son trece. Se sumó `pago_de_plan_sin_lugar`, la hermana de la llave
+// de la decisión 4 que contesta sí o no (por ella preguntan la marca «para
+// revisar» y lo que se anuncia), para que TODO se apague con una sola línea.
 const NUEVAS = ['bancard_plan_de_renovacion', 'bancard_programar_plan', 'bancard_rechazadas_abiertas', 'bancard_renovacion_frenada',
   'cotizar_cambio', 'dias_para_adelantar_la_baja',
   'exigir_lugar_para_el_equipo', 'lugares_del_plan', 'nivel_de_plan', 'nombre_de_plan', 'pago_de_plan_exige_lugar',
-  'prorrateo_de_plan'];
+  'pago_de_plan_sin_lugar', 'prorrateo_de_plan'];
 /** Las que la 130 vuelve a definir, y de qué migración sale la versión anterior. */
 const RECOPIADAS = ['bancard_descripcion', 'bancard_personas_de_renovacion', 'bancard_importe_de_renovacion',
   'bancard_crear_operacion_interna', 'bancard_confirmar', 'bancard_revertir', 'bancard_tomar_cobro', 'bancard_estado',
@@ -718,7 +737,7 @@ async function principal() {
     if (!g || JSON.stringify(g) !== JSON.stringify(f)) cambiadas.push(firma);
   }
   ok(`de las ${medio.catalogoAntes.size} funciones que había, ninguna cambió de firma, de lo que devuelve, de permisos ni de search_path`, cambiadas, []);
-  ok('las funciones nuevas son estas doce, una firma cada una',
+  ok('las funciones nuevas son estas trece, una firma cada una',
     [...medio.catalogoDespues.values()].filter((f) => !medio.catalogoAntes.has(f.firma)).map((f) => f.nombre).sort(), NUEVAS);
   ok('y de las que se vuelven a definir sigue habiendo una sola de cada una (con dos, PostgREST no sabría cuál llamar)',
     RECOPIADAS.map((n) => [...medio.catalogoDespues.values()].filter((f) => f.nombre === n).length), RECOPIADAS.map(() => 1));
@@ -760,11 +779,19 @@ async function principal() {
       '.valor.personas_de_mas']);
 
   // ═════════════════════════════════════════════════════════════════════
-  grupo('0b · La decisión 4: lo único que cambia para el código publicado, caso por caso');
+  // LA DECISIÓN 4, CASO POR CASO, PARA EL CÓDIGO PUBLICADO
+  //
+  // Es lo único de la 130 que le podía cambiar algo a quien usa el código
+  // de hoy, y solo a una cuenta con más personas en el equipo que lugares
+  // tiene el plan que paga. Va APAGADA. Los mismos cuatro casos se corren
+  // tres veces:
+  //   · sobre la base SIN la 130 (lo de antes);
+  //   · sobre la base CON la 130, como va a producción (0b): lo mismo;
+  //   · sobre esa misma base con la decisión PRENDIDA (0c): lo que estas
+  //     pruebas afirmaban cuando la 130 la traía prendida.
+  // `yaCreado` es el pago del caso c: uno que nació antes y se confirma acá.
   // ═════════════════════════════════════════════════════════════════════
-  // Solo para una cuenta con más personas en el equipo que lugares tiene el
-  // plan que paga. Se prueba en las dos bases, con las mismas cuentas.
-  const decision4 = async (G) => {
+  const decision4 = async (G, yaCreado = { pedido: G.pedidoApretada, cuenta: G.cuentas.apretada }) => {
     const T = G.T;
     const jefe = G.jefe;
     const cobrarAMano = (c, plan, importe, vendedores = null) =>
@@ -797,12 +824,15 @@ async function principal() {
       : { pausada: tomado?.pausada === p3.empresaId, motivo: tomado?.motivo };
     r.debito = await T.J('select debito_estado as estado, ultimo_error as error from public.bancard_cuentas where empresa_id = $1', [p3.empresaId]);
     r.suscripcion = [(await T.sus(p3)).plan, (await T.sus(p3)).estado];
+    // Fuera del camino de la tarea: estos casos se corren más de una vez
+    // sobre la misma base, y las pruebas de más abajo esperan otras cuentas.
+    await T.apagar(p3);
 
     // c. Un pago que ya estaba creado (el Básico de «Tres en un Básico», del
     //    guion: nació antes de la 130) y se confirma después.
-    const o9 = G.pedidoApretada;
+    const o9 = yaCreado.pedido;
     const conf = await T.confirmar(o9.operacion, aprobada(o9.operacion, o9.importe));
-    const apretada = G.cuentas.apretada;
+    const apretada = yaCreado.cuenta;
     r.yaCreado = { aprobada: conf.aprobada, conflicto: conf.conflicto, revisar: conf.revisar,
       plan: (await T.sus(apretada)).plan, estado: (await T.sus(apretada)).estado, tope: await T.tope(apretada),
       miembros: await T.miembros(apretada), paraRevisar: (await T.opDe(o9.operacion)).revisar };
@@ -828,33 +858,78 @@ async function principal() {
     r.anuncioDeUno = await anuncio('Kiosco de uno con Básico', 0);
     return r;
   };
+  /** Lo que se anuncia cuando el cobro automático va a salir, y lo que se lee cuando un pago de plan se creó. */
+  const ANUNCIADO = { dias: 1, importe: 110000, debito: ['Visa', '0016'], estado: 'al_dia', conFecha: true, proximoCobro: 110000 };
+  const SIN_MARCA = { aprobada: true, conflicto: false, revisar: null, plan: 'basico', estado: 'activa', tope: 1, miembros: 3, paraRevisar: null };
+  /** Los cuatro casos, sin lo que cambia de una base a otra (el número de pedido, las fechas del desglose). */
+  const loQueCuenta = (d) => ({ ...d, aMano: typeof d.aMano === 'string' ? d.aMano : { importe: d.aMano.importe, descripcion: d.aMano.descripcion } });
+
+  // ═════════════════════════════════════════════════════════════════════
+  grupo('0b · La decisión 4 APAGADA, como va a producción: a la cuenta con más gente que lugares tampoco le cambia nada');
+  // ═════════════════════════════════════════════════════════════════════
+  ok('la 130 la trae apagada: `pago_de_plan_exige_lugar` empieza con «return;», y así quedó en la base al aplicarla',
+    [D4.archivo, D4.apagada, await D4.enLaBase(db)], [ARCHIVO_130, true, 'apagada']);
+  ok('  prenderla es sacar UNA línea: sin el «return;», lo primero que hace es exigir el lugar',
+    [D4.textoApagada.split('\n').length - D4.textoPrendida.split('\n').length,
+      D4.textoApagada.split('\n').filter((l) => !D4.textoPrendida.split('\n').includes(l)).map((l) => l.trim()), D4.primeraPrendida],
+    [1, ['return;'], 'perform public.exigir_lugar_para_el_equipo(p_empresa, p_plan, p_personas);']);
   const d4sin = await decision4(sin);
   const d4con = await decision4(con);
-  ok('a. ANTES: tres personas pagaban el Básico (de una) y se quedaban las tres', [d4sin.aMano.importe, d4sin.aManoPedidos], [110000, 1]);
-  ok('a. DESPUÉS: el pago se frena y dice qué hacer; no se crea nada', [d4con.aMano, d4con.aManoPedidos],
-    [equipoNoEntra(3, 'Básico', 1), 0]);
+  ok('a. NADA SE FRENA: tres personas en la prueba pagan el Básico (de una), antes y después de la 130',
+    [[d4sin.aMano.importe, d4sin.aManoPedidos], [d4con.aMano.importe, d4con.aManoPedidos]], [[110000, 1], [110000, 1]]);
   ok('a. el plan que les alcanza (Pro, tres lugares) se paga igual en las dos', [d4sin.elQueAlcanza, d4con.elQueAlcanza], [190000, 190000]);
   ok('a. y la cotización que muestra la pantalla publicada no cambia', [d4sin.cotizacion, d4con.cotizacion], [110000, 110000]);
-  ok('b. ANTES: la tarea le cobraba el Pro a un equipo de cinco',
-    [d4sin.automatico, d4sin.debito], [{ importe: 190000, descripcion: 'Orden Pro' }, { estado: 'al_dia', error: null }]);
-  ok('b. DESPUÉS: no se crea el cobro; el débito queda pausado con el motivo y la tarea le avisa a la administración',
-    [d4con.automatico, d4con.debito],
-    [{ pausada: true, motivo: equipoNoEntra(5, 'Pro', 3) }, { estado: 'pausado', error: equipoNoEntra(5, 'Pro', 3) }]);
+  ok('b. NADA SE PAUSA: la tarea le cobra el Pro a un equipo de cinco, antes y después; el débito sigue al día',
+    [[d4sin.automatico, d4sin.debito], [d4con.automatico, d4con.debito]],
+    [1, 2].map(() => [{ importe: 190000, descripcion: 'Orden Pro' }, { estado: 'al_dia', error: null }]));
   ok('b. en ninguna de las dos se le toca el plan', [d4sin.suscripcion, d4con.suscripcion], [['pro', 'activa'], ['pro', 'activa']]);
-  ok('c. ANTES: un Básico ya creado para un equipo de tres se activaba sin decir nada', d4sin.yaCreado,
-    { aprobada: true, conflicto: false, revisar: null, plan: 'basico', estado: 'activa', tope: 1, miembros: 3, paraRevisar: null });
-  ok('c. DESPUÉS: se activa IGUAL (la plata entró), y queda para que lo mire la administración', d4con.yaCreado,
-    { aprobada: true, conflicto: false, revisar: PARA_REVISAR_EQUIPO, plan: 'basico', estado: 'activa', tope: 1, miembros: 3,
-      paraRevisar: PARA_REVISAR_EQUIPO });
-  // d. La tarea no le va a cobrar (caso b): entonces nadie se lo puede anunciar.
-  ok('d. ANTES: al Básico de tres con tarjeta, el aviso de vencimiento y «Próximo cobro» le anunciaban el cobro automático',
-    d4sin.anuncioDeTres, { dias: 1, importe: 110000, debito: ['Visa', '0016'], estado: 'al_dia', conFecha: true, proximoCobro: 110000 });
-  ok('d. DESPUÉS: el aviso va sin «debito» (le dice que pague) y la pantalla sin fecha de cobro: no se promete lo que la tarea va a frenar',
-    d4con.anuncioDeTres, { dias: 1, importe: 110000, debito: null, estado: 'al_dia', conFecha: false, proximoCobro: 110000 });
-  ok('d. a la cuenta donde el equipo sí entra se le sigue anunciando, igual en las dos',
-    [d4sin.anuncioDeUno, d4con.anuncioDeUno],
-    [1, 2].map(() => ({ dias: 1, importe: 110000, debito: ['Visa', '0016'], estado: 'al_dia', conFecha: true, proximoCobro: 110000 })));
+  ok('c. NADA SE MARCA: un Básico ya creado para un equipo de tres se activa sin quedar «para revisar», antes y después',
+    [d4sin.yaCreado, d4con.yaCreado], [SIN_MARCA, SIN_MARCA]);
+  ok('d. LOS AVISOS PROMETEN EL COBRO COMO ANTES: al Básico de tres con tarjeta, el aviso de vencimiento y «Próximo cobro» le anuncian el cobro automático',
+    [d4sin.anuncioDeTres, d4con.anuncioDeTres], [ANUNCIADO, ANUNCIADO]);
+  ok('d. y a la cuenta donde el equipo sí entra, igual en las dos', [d4sin.anuncioDeUno, d4con.anuncioDeUno], [ANUNCIADO, ANUNCIADO]);
+  ok('los cuatro casos enteros: la base con la 130 contesta lo mismo que la base sin la 130', loQueCuenta(d4con), loQueCuenta(d4sin));
   await baseSin.close();
+
+  // ═════════════════════════════════════════════════════════════════════
+  grupo('0c · La decisión 4 PRENDIDA (la misma función de la 130, sin su «return;»): lo que cambiaría, caso por caso');
+  // ═════════════════════════════════════════════════════════════════════
+  {
+    // El caso c necesita un pago que nació con la decisión APAGADA y se
+    // confirma con ella prendida: es lo que va a pasar con los pagos a medio
+    // hacer el día que se prenda.
+    const otraApretada = await con.T.nueva('Otros tres en un Básico');
+    await con.T.sumarGente(otraApretada, 2);
+    const o9b = await con.T.crear(otraApretada, 'produccion', 'plan', 'formulario', 'basico', 'mensual', null);
+    ok('todavía apagada: el Básico de otro equipo de tres se crea, y queda a medio pagar', [o9b.importe, typeof o9b.operacion], [110000, 'number']);
+    await D4.prender(db);
+    ok('prendida en la base de pruebas', await D4.enLaBase(db), 'prendida');
+    const d4 = await decision4(con, { pedido: o9b, cuenta: otraApretada });
+    ok('a. ANTES: tres personas pagaban el Básico (de una) y se quedaban las tres', [d4sin.aMano.importe, d4sin.aManoPedidos], [110000, 1]);
+    ok('a. PRENDIDA: el pago se frena y dice qué hacer; no se crea nada', [d4.aMano, d4.aManoPedidos],
+      [equipoNoEntra(3, 'Básico', 1), 0]);
+    ok('a. el plan que les alcanza (Pro, tres lugares) se paga igual', [d4sin.elQueAlcanza, d4.elQueAlcanza], [190000, 190000]);
+    ok('a. y la cotización que muestra la pantalla publicada no cambia', [d4sin.cotizacion, d4.cotizacion], [110000, 110000]);
+    ok('b. ANTES: la tarea le cobraba el Pro a un equipo de cinco',
+      [d4sin.automatico, d4sin.debito], [{ importe: 190000, descripcion: 'Orden Pro' }, { estado: 'al_dia', error: null }]);
+    ok('b. PRENDIDA: no se crea el cobro; el débito queda pausado con el motivo y la tarea le avisa a la administración',
+      [d4.automatico, d4.debito],
+      [{ pausada: true, motivo: equipoNoEntra(5, 'Pro', 3) }, { estado: 'pausado', error: equipoNoEntra(5, 'Pro', 3) }]);
+    ok('b. en ninguna de las dos se le toca el plan', [d4sin.suscripcion, d4.suscripcion], [['pro', 'activa'], ['pro', 'activa']]);
+    ok('c. ANTES: un Básico ya creado para un equipo de tres se activaba sin decir nada', d4sin.yaCreado, SIN_MARCA);
+    ok('c. PRENDIDA: se activa IGUAL (la plata entró), y queda para que lo mire la administración', d4.yaCreado,
+      { aprobada: true, conflicto: false, revisar: PARA_REVISAR_EQUIPO, plan: 'basico', estado: 'activa', tope: 1, miembros: 3,
+        paraRevisar: PARA_REVISAR_EQUIPO });
+    // d. La tarea no le va a cobrar (caso b): entonces nadie se lo puede anunciar.
+    ok('d. ANTES: al Básico de tres con tarjeta, el aviso de vencimiento y «Próximo cobro» le anunciaban el cobro automático',
+      d4sin.anuncioDeTres, ANUNCIADO);
+    ok('d. PRENDIDA: el aviso va sin «debito» (le dice que pague) y la pantalla sin fecha de cobro: no se promete lo que la tarea va a frenar',
+      d4.anuncioDeTres, { dias: 1, importe: 110000, debito: null, estado: 'al_dia', conFecha: false, proximoCobro: 110000 });
+    ok('d. a la cuenta donde el equipo sí entra se le sigue anunciando, igual en las dos',
+      [d4sin.anuncioDeUno, d4.anuncioDeUno], [ANUNCIADO, ANUNCIADO]);
+    await D4.apagar(db);
+    ok('y de vuelta apagada, como la deja la 130: lo que sigue corre como va a producción', await D4.enLaBase(db), 'apagada');
+  }
 
   // De acá en adelante, lo nuevo: sobre la base a la que se le aplicó la 130
   // con datos adentro.
@@ -1855,9 +1930,92 @@ async function principal() {
   }
 
   // ═════════════════════════════════════════════════════════════════════
-  grupo('13 · No se puede pagar un plan donde el equipo no entra, ni dejando vencer');
+  grupo('13 · La decisión 4 APAGADA, como va a producción: se paga, se cobra solo, se anuncia y se confirma sin mirar el equipo');
   // ═════════════════════════════════════════════════════════════════════
   {
+    ok('la base está como la deja la 130: con la llave puesta', await D4.enLaBase(db), 'apagada');
+
+    // El caso por el que Matías la apagó: probó con tres personas (la prueba
+    // es Pro), dejó vencer, y quiere pagar el Básico con tarjeta. Vencido no
+    // tiene pantalla para sacar gente del equipo.
+    const tres = await T.nueva('Probó con tres y dejó vencer');
+    await T.sumarGente(tres, 2);
+    await T.venceEn(tres, '-2 days');
+    await T.pruebaEn(tres, null);
+    ok('  (la cuenta: vencida, sin plan, con tres personas)', [(await T.sus(tres)).estado, (await T.sus(tres)).efectivo, await T.miembros(tres)], ['prueba', 'gratis', 3]);
+    const ot = await T.pagar(tres, 'staging', 'basico', 'mensual', null);
+    ok('probó con tres personas, dejó vencer y paga el Básico (una): PASA. Se activa, no queda «para revisar» y no se echa a nadie',
+      [ot.importe, ot.r.aprobada, ot.r.conflicto, ot.r.revisar ?? null, (await T.opDe(ot.operacion)).revisar,
+        (await T.sus(tres)).plan, (await T.sus(tres)).estado, await T.miembros(tres)],
+      [110000, true, false, null, null, 'basico', 'activa', 3]);
+    ok('  el tope del Básico sigue siendo uno: los tres quedan, pero no entra nadie más', await T.tope(tres), 1);
+
+    // Lo que se le ANUNCIA y lo que cobra la tarea: un Básico de tres personas
+    // (activado por transferencia) con su tarjeta, que vence mañana.
+    const anunciada = await T.nueva('Tres con Básico y tarjeta, sin freno');
+    await T.sumarGente(anunciada, 2);
+    await cobrarAMano(anunciada, 'basico', 110000);
+    await T.guardarTarjeta(anunciada, 'staging');
+    await T.venceEn(anunciada, '1 day');
+    const fila = (await S(SQL.avisos)).find((f) => f.empresa_id === anunciada.empresaId);
+    const ea = await T.estado(anunciada, 'staging');
+    ok('un Básico de tres personas con tarjeta, que vence mañana: la renovación NO está frenada; el aviso anuncia el cobro automático y la pantalla da la fecha',
+      [(await J('select public.bancard_renovacion_frenada($1) v', [anunciada.empresaId])).v, fila.debito && [fila.debito.marca, fila.debito.ultimos4],
+        ea.debito.fecha_cobro !== null, ea.debito.importe],
+      [false, ['Visa', '0016'], true, 110000]);
+    const cobro = await T.tomar('staging');
+    ok('  y la tarea le cobra lo anunciado: crea el cobro del Básico, y el débito sigue al día (nada se pausa)',
+      [cobro?.empresa_id === anunciada.empresaId, cobro?.importe, cobro?.descripcion, (await T.cuenta(anunciada)).estado, (await T.cuenta(anunciada)).error],
+      [true, 110000, 'Orden Basico', 'al_dia', null]);
+    const rcobro = await T.confirmar(cobro.operacion, aprobada(cobro.operacion, cobro.importe), 'charge');
+    ok('  el cobro entra: renovado por un mes más, sin conflicto y sin marca',
+      [rcobro.aprobada, rcobro.conflicto, (await T.opDe(cobro.operacion)).revisar, (await T.sus(anunciada)).plan], [true, false, null, 'basico']);
+    await T.apagar(anunciada);
+
+    // Subir de plan con gente de más (una cuenta que armó la administración).
+    const armada = await T.nueva('Básico con cinco, sin freno');
+    await cobrarAMano(armada, 'negocio', 250000);
+    await T.sumarGente(armada, 4);
+    await cobrarAMano(armada, 'basico', 110000);
+    await T.pruebaEn(armada, null);
+    await T.venceEn(armada, '15 days');
+    ok('un Básico con cinco personas cotiza subir al Pro (tres lugares): la hoja da su importe, (190.000 − 110.000) × 15/30',
+      (await T.cotizarCambio(armada, 'pro')).importe, 40000);
+    rechazado('  al Premium de 4 sigue sin poder (el mensaje de siempre): eso es la cantidad de personas del Premium (124), no la decisión 4',
+      await T.intentoCotizarCambio(armada, 'negocio', 4), 'entre 5 y 15');
+    ok('  al Premium de 5, sí: (310.000 − 110.000) × 15/30', (await T.cotizarCambio(armada, 'negocio', 5)).importe, 100000);
+    const oa = await subir(armada, 'pro');
+    ok('  y lo paga: queda Pro con las cinco adentro, y ese cambio NO queda «para revisar»',
+      [oa.importe, oa.r.aprobada, oa.r.conflicto, oa.r.revisar ?? null, (await T.opDe(oa.operacion)).revisar, (await T.sus(armada)).plan, await T.miembros(armada)],
+      [40000, true, false, null, null, 'pro', 5]);
+    ok('  renovar el Pro que ahora tiene, también pasa',
+      (await T.crear(armada, 'staging', 'plan', 'formulario', 'pro', 'mensual', null)).importe, 190000);
+
+    // ---- LO QUE NO ES LA DECISIÓN 4 SIGUE PRENDIDO
+    const quiereBajar = await T.activa('Pro de dos que quiere bajar', 'pro', { gente: 1 });
+    rechazado('programar una BAJA sigue exigiendo que el equipo entre en el plan más bajo: un Pro de dos no baja al Básico',
+      await T.intentoProgramar(quiereBajar, 'basico'), equipoNoEntra(2, 'Básico', 1).slice(0, 60));
+    ok('  no quedó nada programado', await T.programado(quiereBajar), [null, null]);
+    // Gente que entra entre crear un cambio AL PREMIUM y confirmarlo: el
+    // equipo se cuenta al confirmar (como en el pago de un Premium, 125).
+    const colados = await T.activa('Entró gente en el medio, sin freno', 'basico');
+    const ocol = await T.crear(colados, 'staging', 'cambio', 'formulario', 'negocio', null, 4);
+    for (let i = 0; i < 4; i++) {
+      const uid = await H.crearUsuario(db, `colado${i}@cambio.test`);
+      await db.query(`insert into public.miembros (empresa_id, user_id, nombre, rol) values ($1, $2, 'Colado', 'vendedor')`, [colados.empresaId, uid]);
+    }
+    const rcol = await T.confirmar(ocol.operacion, aprobada(ocol.operacion, ocol.importe));
+    ok('un cambio al Premium de 4 que se confirma con cinco en el equipo queda «para revisar» igual: eso es la cantidad de personas del Premium, no la decisión 4',
+      [rcol.conflicto, rcol.revisar, (await T.sus(colados)).plan, (await T.sus(colados)).tope_vendedores, await T.miembros(colados)],
+      [false, PARA_REVISAR_CAMBIO, 'negocio', 3, 5]);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  grupo('13b · La decisión 4 PRENDIDA (la misma función, sin su «return;»): no se puede pagar un plan donde el equipo no entra, ni dejando vencer');
+  // ═════════════════════════════════════════════════════════════════════
+  {
+    await D4.prender(db);
+    ok('prendida en la base de pruebas: todo lo de este grupo es lo que se afirmaba cuando la 130 la traía prendida', await D4.enLaBase(db), 'prendida');
     const { traducirMensajeAPortugues } = require('../.compilado/mensajes-base.js');
     // El caso de todos los días: un negocio que probó con tres personas (la prueba es Pro).
     const tres = await T.nueva('Probó con tres');
@@ -1868,10 +2026,10 @@ async function principal() {
       'Sua equipe tem 3 pessoas e o plano Básico admite até 1. Reduza a equipe ou escolha um plano em que caibam todos.');
     ok('  y el otro mensaje nuevo', traducirMensajeAPortugues(EN_CURSO), 'Há um pagamento em andamento. Espere a confirmação e tente de novo.');
 
-    // La decisión vive en UNA función: se apaga ahí, y nada más.
+    // La decisión vive en UNA función: se apaga ahí, y nada más. Acá se apaga
+    // con el texto que trae la migración (el que va a producción).
     await db.exec('begin');
-    await db.exec(`create or replace function public.pago_de_plan_exige_lugar(p_empresa uuid, p_plan text, p_personas integer, p_origen text)
-      returns void language plpgsql stable security definer set search_path = public as $f$ begin return; end $f$`);
+    await db.exec(D4.textoApagada);
     const sinRegla = (await db.query(SQL.crear, [tres.empresaId, tres.uid, 'staging', 'plan', 'formulario', 'basico', 'mensual', null])).rows[0].j;
     await db.exec('rollback');
     ok('con esa única función apagada (en una transacción que se deshace), el mismo pago pasa: la decisión está en un solo lugar', sinRegla.importe, 110000);
@@ -1913,8 +2071,7 @@ async function principal() {
     ok('si se decide que la regla no frene el cobro automático (una línea en esa función), el anuncio vuelve solo; pagar a mano sigue frenado',
       [soloAMano, aMano], [[false, true, true], equipoNoEntra(3, 'Básico', 1)]);
     await db.exec('begin');
-    await db.exec(`create or replace function public.pago_de_plan_exige_lugar(p_empresa uuid, p_plan text, p_personas integer, p_origen text)
-      returns void language plpgsql stable security definer set search_path = public as $f$ begin return; end $f$`);
+    await db.exec(D4.textoApagada);
     const apagada = await anuncio();
     await db.exec('rollback');
     ok('y con la decisión 4 apagada del todo, también: no quedó repetida en otro lado', [apagada, await (async () => {
@@ -1958,6 +2115,36 @@ async function principal() {
     ok('si entre crear el cambio y confirmarlo el equipo creció por encima de lo pagado: se activa por lo pagado y lo mira una persona',
       [rc.conflicto, rc.revisar, (await T.sus(carrera)).plan, (await T.sus(carrera)).tope_vendedores, await T.miembros(carrera)],
       [false, 'Cambió a un plan con menos lugares que las personas de su equipo', 'negocio', 3, 5]);
+
+    // Lo mismo en un cambio AL PRO, que es la decisión 4 del lado de la
+    // confirmación (08/10: esa marca le pregunta a la misma llave). Al crear
+    // entraban; en el medio entró gente por encima de los tres lugares.
+    const carreraPro = await T.activa('Entró gente en el medio, hacia el Pro', 'basico');
+    const ocp = await T.crear(carreraPro, 'staging', 'cambio', 'formulario', 'pro', null, null);
+    for (let i = 0; i < 4; i++) {
+      const uid = await H.crearUsuario(db, `carrerapro${i}@cambio.test`);
+      await db.query(`insert into public.miembros (empresa_id, user_id, nombre, rol) values ($1, $2, 'Colado', 'vendedor')`, [carreraPro.empresaId, uid]);
+    }
+    const rcp = await T.confirmar(ocp.operacion, aprobada(ocp.operacion, ocp.importe));
+    ok('y en un cambio al Pro, igual: con cinco personas al confirmar, se activa el Pro y lo mira una persona',
+      [rcp.conflicto, rcp.revisar, (await T.opDe(ocp.operacion)).revisar, (await T.sus(carreraPro)).plan, await T.miembros(carreraPro)],
+      [false, PARA_REVISAR_CAMBIO, PARA_REVISAR_CAMBIO, 'pro', 5]);
+    // …y esa marca sale de la llave, no de una cuenta aparte: con la función
+    // como va a producción, el mismo cambio no queda marcado.
+    const sinMarca = await T.activa('Entró gente en el medio, hacia el Pro, apagada', 'basico');
+    const osm = await T.crear(sinMarca, 'staging', 'cambio', 'formulario', 'pro', null, null);
+    for (let i = 0; i < 4; i++) {
+      const uid = await H.crearUsuario(db, `sinmarca${i}@cambio.test`);
+      await db.query(`insert into public.miembros (empresa_id, user_id, nombre, rol) values ($1, $2, 'Colado', 'vendedor')`, [sinMarca.empresaId, uid]);
+    }
+    await db.exec('begin');
+    await db.exec(D4.textoApagada);
+    const rsm =(await db.query(SQL.confirmar, [osm.operacion, aprobada(osm.operacion, osm.importe), 'confirmacion'])).rows[0].j;
+    await db.exec('rollback');
+    ok('  con la llave puesta (en una transacción que se deshace), ese mismo cambio se activa sin marca', [rsm.aprobada, rsm.conflicto, rsm.revisar ?? null], [true, false, null]);
+
+    await D4.apagar(db);
+    ok('y de vuelta apagada, como la deja la 130: lo que sigue corre como va a producción', await D4.enLaBase(db), 'apagada');
   }
 
   // ═════════════════════════════════════════════════════════════════════
@@ -2003,8 +2190,8 @@ async function principal() {
     ok('cotizar_cambio: solo con sesión (adentro exige ser quien administra la cuenta)', de('cotizar_cambio'), [[false, true, false, true, true]]);
     ok('bancard_programar_plan: solo el servidor', de('bancard_programar_plan'), [[false, false, true, true, true]]);
     ok('las internas que leen datos: nadie de afuera, ni el servidor directo',
-      ['prorrateo_de_plan', 'bancard_plan_de_renovacion', 'exigir_lugar_para_el_equipo', 'pago_de_plan_exige_lugar', 'bancard_renovacion_frenada'].map((n) => de(n)[0]),
-      [1, 2, 3, 4, 5].map(() => [false, false, false, true, true]));
+      ['prorrateo_de_plan', 'bancard_plan_de_renovacion', 'exigir_lugar_para_el_equipo', 'pago_de_plan_exige_lugar', 'pago_de_plan_sin_lugar', 'bancard_renovacion_frenada'].map((n) => de(n)[0]),
+      [1, 2, 3, 4, 5, 6].map(() => [false, false, false, true, true]));
     ok('bancard_rechazadas_abiertas (qué formularios rechazados hay que cerrar en Bancard): solo el servidor',
       de('bancard_rechazadas_abiertas'), [[false, false, true, true, true]]);
     ok('las que solo devuelven un número o un nombre: tampoco',
@@ -2025,6 +2212,8 @@ async function principal() {
       // Las dos de la revisión del 08/10 van al final: las listas de abajo se arman por posición.
       ['bancard_renovacion_frenada', 'select public.bancard_renovacion_frenada($1)', [basM.empresaId]],
       ['bancard_rechazadas_abiertas', 'select public.bancard_rechazadas_abiertas($1,$2,$3)', [basM.empresaId, null, null]],
+      // La hermana de la llave de la decisión 4 (08/10): también al final.
+      ['pago_de_plan_sin_lugar', 'select public.pago_de_plan_sin_lugar($1,$2,$3,$4)', [basM.empresaId, 'pro', null, 'usuario']],
     ];
     for (const [quien, rol, uid] of [['el dueño', 'authenticated', basM.uid], ['la administración con sesión', 'authenticated', jefe.uid], ['sin sesión', 'anon', null]]) {
       const pasaron = [];
@@ -2036,7 +2225,7 @@ async function principal() {
     }
     rechazado('sin sesión tampoco se cotiza un cambio', await H.intentarComo(db, 'anon', null, () => db.query(SQL.cotizarCambio, [basM.empresaId, 'pro', null])), 'permission denied');
     const delServidor = [];
-    for (const [nombre, sql, p] of [['cotizar_cambio', SQL.cotizarCambio, [basM.empresaId, 'pro', null]], ...llamadas.slice(0, 2), ...llamadas.slice(3, 9), llamadas[10]]) {
+    for (const [nombre, sql, p] of [['cotizar_cambio', SQL.cotizarCambio, [basM.empresaId, 'pro', null]], ...llamadas.slice(0, 2), ...llamadas.slice(3, 9), llamadas[10], llamadas[12]]) {
       const r = await intentoS(sql, p);
       if (r.ok || !/permission denied/i.test(r.error)) delServidor.push(nombre);
     }
@@ -2142,8 +2331,8 @@ async function principal() {
       return hallada;
     };
     const definidas = [...sql130.matchAll(/^create or replace function public[.](\w+)[(]/gm)].map((x) => x[1]);
-    ok('la 130 define veinticuatro funciones: las que ya existían son estas doce, en este orden', definidas.filter((n) => anterior(n)), RECOPIADAS);
-    ok('  y las otras doce son nuevas (ninguna pisa algo que ya existía)', definidas.filter((n) => !anterior(n)).sort(), NUEVAS);
+    ok('la 130 define veinticinco funciones: las que ya existían son estas doce, en este orden', definidas.filter((n) => anterior(n)), RECOPIADAS);
+    ok('  y las otras trece son nuevas (ninguna pisa algo que ya existía)', definidas.filter((n) => !anterior(n)).sort(), NUEVAS);
 
     // Las líneas de la versión anterior que ya no están tal cual: cada una
     // se reemplazó por una línea marcada. Son estas, y ninguna más.

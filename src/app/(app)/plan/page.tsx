@@ -27,7 +27,7 @@ import { PieBajarDePlan, PieDelPlanActual } from '@/components/bancard/BajaDePla
 import type { DatosDelCambio } from '@/components/bancard/HojaCambiarPlan';
 import type { DatosDelPago } from '@/components/bancard/HojaPagar';
 import type { MomentoDelDebito } from '@/components/bancard/tipos';
-import { algunPlanAlcanza, hayQueEsperarElPago, planesALaVista } from '@/lib/plan-pantalla';
+import { algunPlanAlcanza, equipoNoEntraEnElPlan, hayQueEsperarElPago, planesALaVista } from '@/lib/plan-pantalla';
 
 export const dynamic = 'force-dynamic';
 
@@ -253,6 +253,11 @@ export default async function PaginaPlan({
   const equipoHoy = typeof estadoBancard?.miembros === 'number' ? estadoBancard.miembros : miembros;
   /**
    * EL EQUIPO TIENE QUE ENTRAR EN EL PLAN QUE SE PAGA (decisión 4, 130).
+   * HOY ESTÁ APAGADA (Matías, 08/10/2026): esto contesta siempre que no, y a
+   * nadie se le dice que su equipo no entra ni se le esconde un botón de
+   * pagar por eso. La llave es `PAGO_DE_PLAN_EXIGE_LUGAR`, en
+   * src/lib/plan-pantalla.ts, espejo de la de la base. Lo de abajo es lo que
+   * vale cuando se prenda:
    *
    * Por Bancard no se puede pagar un plan con menos lugares que el equipo de
    * hoy (ni dejando vencer): la base frena el pago y dice qué hacer. Acá se
@@ -261,7 +266,7 @@ export default async function PaginaPlan({
    * del equipo de hoy, así que siempre alcanza.
    */
   const noEntraElEquipo = (plan: PlanPago) => !!entornoBancard && !esPersonal && plan !== 'negocio'
-    && equipoHoy > LIMITES_VISIBLES[plan].miembros;
+    && equipoNoEntraEnElPlan(equipoHoy, LIMITES_VISIBLES[plan].miembros);
   /**
    * Si el equipo no entra en NINGUNO de los planes que la cuenta ve (un Pro
    * al que la administración le dio más lugares, en un rubro sin Premium),
@@ -643,8 +648,9 @@ export default async function PaginaPlan({
            *   2. CON BANCARD: el botón de pagar (también en el plan actual,
            *      para renovar) y, si hay WhatsApp, la transferencia en chico.
            *      Si el equipo de hoy no entra en ese plan, en vez del botón va
-           *      el porqué (decisión 4). En el plan actual con una baja
-           *      programada, «Seguir con el Pro» en vez de «Renovar».
+           *      el porqué (decisión 4: hoy apagada, va siempre el botón). En
+           *      el plan actual con una baja programada, «Seguir con el Pro»
+           *      en vez de «Renovar».
            *   3. SIN BANCARD: el WhatsApp de siempre, o el botón de la pasarela.
            */
           const botonBancard = pagoBancard(plan, esActual);

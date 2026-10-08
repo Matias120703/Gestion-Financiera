@@ -2556,17 +2556,43 @@ async function principal() {
       [rj.importe, (await opDe(rj.operacion)).estado, (await sus(B4)).plan, (await sus(B4)).tope_vendedores, (await ingresos(`Bancard ${rj.operacion}`)).length],
       [4667, 'rechazada', 'basico', null, 0]);
 
-    // ---- 5. EL EQUIPO TIENE QUE ENTRAR EN EL PLAN QUE SE PAGA (decisión 4).
+    // ---- 5. EL EQUIPO Y EL PLAN QUE SE PAGA (decisión 4): APAGADA, Y PRENDIDA.
+    // La decisión 4 (no pagar un plan con menos lugares que el equipo) va
+    // APAGADA a producción (Matías, 08/10/2026: quien probó con 2 o 3
+    // personas y deja vencer no podría pagar el Básico con tarjeta). Primero
+    // como va; después, con la MISMA función de la migración sin su
+    // `return;` (H.decision4()), lo que se afirmaba cuando nació prendida.
+    const D4 = H.decision4();
+    const E0 = await H.montarEmpresa(db, { email: 'equipo0@cambio.test', nombre: 'Equipo de Tres, sin freno' });
+    await H.sumarMiembro(db, E0.empresaId, 'e0b@cambio.test');
+    await H.sumarMiembro(db, E0.empresaId, 'e0c@cambio.test');
+    falso.pedidos.length = 0;
+    const e0 = await F.iniciarPago(d, { empresa: E0.empresaId, usuario: E0.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null });
+    const sb0 = falso.pedidos.find((p) => p.ruta === '/single_buy');
+    ok('APAGADA, como va a producción: en la prueba, con 3 en el equipo, pagar el Básico PASA; Bancard abre el formulario por Gs. 110.000',
+      [await D4.enLaBase(db), e0.estado, e0.importe, sb0?.cuerpo.operation.amount, sb0?.cuerpo.operation.description, await operacionesDe(E0)],
+      ['apagada', 'listo', 110000, '110000.00', 'Orden Basico', 1]);
+    falso.pagar(e0.operacion);
+    await F.recibirConfirmacion(d, cuerpo(falso, e0.operacion));
+    ok('  y pagado: queda en el Básico con los tres adentro, y el pago no queda «para revisar»',
+      [(await sus(E0)).plan, (await sus(E0)).estado, (await opDe(e0.operacion)).estado, (await opDe(e0.operacion)).revisar,
+        (await J('select count(*)::int n from public.miembros where empresa_id = $1', [E0.empresaId])).n],
+      ['basico', 'activa', 'pagada', null, 3]);
+
+    // PRENDIDA: lo de abajo, tal como estaba.
+    await D4.prender(db);
     const E1 = await H.montarEmpresa(db, { email: 'equipo@cambio.test', nombre: 'Equipo de Tres' });
     await H.sumarMiembro(db, E1.empresaId, 'e2@cambio.test');
     await H.sumarMiembro(db, E1.empresaId, 'e3@cambio.test');
     falso.pedidos.length = 0;
     const e1 = await F.iniciarPago(d, { empresa: E1.empresaId, usuario: E1.uid, tipo: 'plan', plan: 'basico', periodo: 'mensual', personas: null });
-    ok('en la prueba, con 3 en el equipo, pagar el Básico: lo frena la base y dice qué hacer; a Bancard no se le pide nada',
+    ok('PRENDIDA: en la prueba, con 3 en el equipo, pagar el Básico: lo frena la base y dice qué hacer; a Bancard no se le pide nada',
       [e1.estado, e1.mensaje, falso.pedidos.length, await operacionesDe(E1)],
       ['error_base', 'Tu equipo tiene 3 personas y el plan Básico admite hasta 1. Achicá el equipo o elegí un plan donde entren todos.', 0, 0]);
     ok('el Pro, donde entran los tres, sí',
       (await F.iniciarPago(d, { empresa: E1.empresaId, usuario: E1.uid, tipo: 'plan', plan: 'pro', periodo: 'mensual', personas: null })).estado, 'listo');
+    await D4.apagar(db);
+    ok('(la base queda otra vez como la deja la 130: lo que sigue corre como va a producción)', await D4.enLaBase(db), 'apagada');
 
     // ---- 6. BAJAR: SE PROGRAMA, NO SE COBRA, Y SE DESHACE.
     const P1 = await cuentaCon('pro', 'baja1@cambio.test', 'Baja Uno', 15);

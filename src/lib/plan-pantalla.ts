@@ -116,6 +116,47 @@ export function algunPlanAlcanza<P extends string>(planes: readonly P[], lugares
 }
 
 /**
+ * ¿SE EXIGE QUE EL EQUIPO DE HOY ENTRE EN EL PLAN QUE SE PAGA? HOY, NO.
+ *
+ * Es la «decisión 4» de cambiar de plan (migración 130): no pagar por
+ * Bancard un plan con menos lugares que el equipo. Matías la dejó APAGADA
+ * el 08/10/2026: quien probó con 2 o 3 personas y deja vencer no podría
+ * pagar el Básico con tarjeta, y con la cuenta vencida no tiene pantalla
+ * para sacar gente del equipo. Se va a prender junto con esa pantalla.
+ *
+ * ESPEJO DE LA BASE. La llave de la base es la función
+ * `public.pago_de_plan_exige_lugar` (supabase/migrations/130_cambiar_de_plan.sql):
+ * apagada, su cuerpo empieza con `return;`. Las dos se cambian JUNTAS:
+ *
+ *   · false acá  ⇔  la función de la base empieza con `return;`
+ *   · true acá   ⇔  una migración nueva la vuelve a definir sin esa línea
+ *
+ * Si se prende solo acá, la tarjeta dice «tu equipo no entra» y esconde un
+ * botón que la base sí dejaría usar; si se prende solo en la base, el botón
+ * se ofrece y termina en un error. pruebas/bancard-fuentes.test.js comprueba
+ * que las dos digan lo mismo.
+ *
+ * La BAJA de plan no depende de esto: programar un plan más bajo exige
+ * siempre que el equipo entre (BajaDePlan.tsx y `bancard_programar_plan`).
+ *
+ * Lleva el tipo `boolean` escrito a propósito: sin él TypeScript la toma
+ * como «siempre false» y da por muerto lo que cuelga de ella.
+ */
+export const PAGO_DE_PLAN_EXIGE_LUGAR: boolean = false;
+
+/**
+ * ¿HAY QUE DECIR «TU EQUIPO NO ENTRA EN ESTE PLAN» EN VEZ DEL BOTÓN DE PAGAR?
+ *
+ * Solo si la decisión de arriba está prendida y el equipo de hoy es más
+ * grande que los lugares del plan. Apagada, contesta siempre que no: a nadie
+ * se le dice que su equipo no entra ni se le esconde un botón de pagar por
+ * eso. `exige` existe para que las pruebas corran las dos posiciones.
+ */
+export function equipoNoEntraEnElPlan(equipo: number, lugares: number, exige: boolean = PAGO_DE_PLAN_EXIGE_LUGAR): boolean {
+  return exige && equipo > lugares;
+}
+
+/**
  * Cuántos días antes del vencimiento sale el primer cobro automático.
  * Espejo de `bancard_dias_de_cobro()` en la base (125), que empieza en -1.
  */

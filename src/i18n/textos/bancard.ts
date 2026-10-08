@@ -341,6 +341,11 @@ export const bancardEs = {
     noSePudo: 'No se pudo programar el cambio. Probá de nuevo.',
 
     // ---- El equipo tiene que entrar en el plan (se dice ANTES de llegar a pagar)
+    // `equipoGrande` es de la BAJA de plan y se usa siempre. Los otros cuatro
+    // son de la «decisión 4» (no pagar un plan donde el equipo no entra), que
+    // está APAGADA desde el 08/10/2026: hoy no se le muestran a nadie, y se
+    // conservan para cuando se prenda (PAGO_DE_PLAN_EXIGE_LUGAR, en
+    // src/lib/plan-pantalla.ts).
     equipoGrande: (plan: string, tope: string, miembros: number) =>
       `El ${plan} es para ${tope}. Hoy son ${miembros} en tu equipo: cuando sean menos vas a poder programar el cambio.`,
     equipoNoEntra: (plan: string, tope: string, miembros: number) =>
