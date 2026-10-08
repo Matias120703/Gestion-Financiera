@@ -337,9 +337,36 @@ const VUELTA = 'https://orden.com.py/plan/pago/1000001';
 
     // ---- una respuesta de charge que no dice nada: no se sabe qué pasó
     falso.programar('/charge', { json: { operation: { process_id: null, response: null } } });
-    ok('charge sin resultado y sin 3DS: forma desconocida (incierto, no se reintenta)',
+    ok('charge sin resultado y sin 3DS: forma desconocida (incierto, no se reintenta), con los nombres de lo que llegó',
       await llamar(() => bancard.cobrar({ operacion: 1000007, importe: 250000, descripcion: 'Orden Premium', alias: ALIAS, returnUrl: VUELTA })),
-      { ok: false, clave: 'forma_desconocida', http: 200, clase: 'no_json' });
+      { ok: false, clave: 'forma_desconocida', http: 200, clase: 'no_json', forma: 'operation{process_id,response}' });
+
+    // ---- 07/10/2026: el primer charge de verdad no trajo `operation`. El
+    //      resultado también se lee de `confirmation` (así contesta la
+    //      consulta de un pago, y así lo nombra el pedido de 3DS).
+    falso.programar('/charge', { json: { status: 'success', confirmation: {
+      token: 'f'.repeat(32), shop_process_id: '1000008', response: 'S', response_code: '00',
+      response_description: 'Transaccion aprobada', amount: '250000.00', currency: 'PYG',
+      authorization_number: '123456', ticket_number: '2119269064',
+    } } });
+    const cf = await llamar(() => bancard.cobrar({ operacion: 1000008, importe: 250000, descripcion: 'Orden Premium', alias: ALIAS, returnUrl: VUELTA }));
+    ok('charge que contesta en «confirmation»: «resuelto» y aprobado, igual que en «operation»',
+      [cf.ok, cf.tipo, B.esAprobada(cf.respuesta), B.importeDe(cf.respuesta.amount)], [true, 'resuelto', true, 250000]);
+
+    falso.programar('/charge', { json: { status: 'success', confirmation: { process_id: 'abc123', response: null } } });
+    const c3 = await llamar(() => bancard.cobrar({ operacion: 1000009, importe: 250000, descripcion: 'Orden Premium', alias: ALIAS, returnUrl: VUELTA }));
+    ok('y el 3D Secure también se lee de «confirmation»', [c3.ok, c3.tipo, c3.processId], [true, '3ds', 'abc123']);
+
+    // ---- una forma que no se conoce: quedan los NOMBRES, nunca un valor
+    falso.programar('/charge', { json: { status: 'success', resultado: {
+      token: 'SECRETO-DEL-TOKEN', card_token: 'ALIAS-SECRETO', card_masked_number: '5418********0014', 'raro<script>': 1,
+    }, lista: [1, 2], suelto: 'VALOR-SUELTO' } });
+    const fd = await llamar(() => bancard.cobrar({ operacion: 1000010, importe: 250000, descripcion: 'Orden Premium', alias: ALIAS, returnUrl: VUELTA }));
+    ok('forma desconocida: los nombres de los campos, limpios, de arriba y de un nivel adentro',
+      [fd.ok, fd.clave, fd.forma],
+      [false, 'forma_desconocida', 'status,resultado{token,card_token,card_masked_number,raroscript},lista[],suelto']);
+    ok('y ningún valor de lo que mandó Bancard (ni token, ni alias, ni número)',
+      ['SECRETO', 'ALIAS-SECRETO', '5418', 'VALOR-SUELTO'].filter((v) => JSON.stringify(fd).includes(v)), []);
 
     // ---- borrar la tarjeta
     const a4 = (await llamar(() => bancard.tarjetas(5001))).tarjetas[0].alias;

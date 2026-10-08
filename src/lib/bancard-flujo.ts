@@ -1263,7 +1263,12 @@ export async function cobrarOperacionTomada(
     operacion, tarjeta: cardId, tipo: 'charge', ok: r.ok,
     clave: r.ok === true ? (r.tipo === '3ds' ? '3ds' : null) : r.clave,
     http: r.ok === true ? 200 : r.http,
-    detalle: r.ok === true && r.tipo === 'resuelto' ? { operation: r.respuesta } : {},
+    // Si Bancard contestó algo que no se entendió, quedan los NOMBRES de los
+    // campos que mandó (`forma`): sin eso, de un «forma_desconocida» no se
+    // podía saber qué había llegado (07/10/2026).
+    detalle: r.ok === true && r.tipo === 'resuelto'
+      ? { operation: r.respuesta }
+      : r.ok === false && r.forma ? { forma: r.forma } : {},
   });
 
   if (r.ok === true) {
