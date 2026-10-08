@@ -123,7 +123,10 @@ const QUEDAN = ['ahorros', 'ajustes_cuenta', 'ajustes_orden', 'cargas_historial'
   // Bancard (124): el pago de la suscripción, la tarjeta guardada y el débito.
   // Es la plata que la cuenta le paga a Orden, no la del negocio: vaciar no
   // la toca (bancard_eventos no tiene empresa_id y tampoco se toca).
-  'bancard_cuentas', 'bancard_operaciones', 'bancard_pagadores', 'bancard_tarjetas'];
+  'bancard_cuentas', 'bancard_operaciones', 'bancard_pagadores', 'bancard_tarjetas',
+  // La billetera en otras monedas (131): a cuánto está el dólar lo escribió
+  // la persona, igual que sus cuentas. Vaciar no lo toca.
+  'cotizaciones_moneda'];
 
 // El insert de PantallaGastos.tsx (candado-vencido.test.js), con la campaña.
 const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria,
@@ -213,6 +216,8 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     C.banco = (await val(U, "select public.guardar_cuenta_dinero($1,'Banco','banco',0,'{transferencia}') id", [E])).id;
     await val(U, 'select public.transferir_entre_cuentas($1,$2,$3,$4)', [E, C.caja, C.banco, 1000]);
     await val(U, "select public.ajustar_saldo_cuenta($1,$2,$3,'')", [E, C.caja, 480000]);
+    // (131) La cotización del dólar que escribió para el «≈» de su billetera: queda al vaciar.
+    await val(U, "select public.guardar_cotizacion_moneda($1,'USD',7400)", [E]);
     await val(U, MOV, [E, 'gasto', 'Luz', 'Servicios', 150000, null]);
     C.producto = await H.crearProducto(db, E, U, { nombre: 'Shampoo', costo: 20000, precio: 35000, stock: 10 });
     C.venta = (await val(U, 'select public.registrar_venta($1,$2) id',

@@ -517,6 +517,20 @@ export const MENSAJES_PT: Record<string, string> = {
   // (Básico, Pro, Premium: se escriben igual en los dos idiomas) y cuántas admite.
   'Tu equipo tiene % personas y el plan % admite hasta %. Achicá el equipo o elegí un plan donde entren todos.': 'Sua equipe tem % pessoas e o plano % admite até %. Reduza a equipe ou escolha um plano em que caibam todos.',
   'Hay un pago en curso. Esperá a que se confirme y probá de nuevo.': 'Há um pagamento em andamento. Espere a confirmação e tente de novo.',
+  // 131 · la billetera en otras monedas
+  'La moneda de una cuenta no se cambia. Creá otra cuenta.': 'A moeda de uma conta não muda. Crie outra conta.',
+  'Son dos monedas: escribí cuánto salió y cuánto entró.': 'São duas moedas: escreva quanto saiu e quanto entrou.',
+  'Las dos cuentas están en la misma moneda: va un solo monto.': 'As duas contas estão na mesma moeda: é um valor só.',
+  'Revisá los montos: ese cambio no puede ser.': 'Confira os valores: esse câmbio não pode ser.',
+  // Los dos de pagar o cobrar con una cuenta en otra moneda: sin el importe
+  // de la cuenta (la base no convierte sola), y desde donde todavía no se
+  // puede (Fiado; Vender, Deudas y el resto reciben el de arriba).
+  'Esa cuenta está en otra moneda: falta cuánto entró o salió en ella.': 'Essa conta está em outra moeda: falta quanto entrou ou saiu nela.',
+  'Esa cuenta está en otra moneda. Elegí una en tu moneda principal.': 'Essa conta está em outra moeda. Escolha uma na sua moeda principal.',
+  'Solo quien administra puede usar una cuenta en otra moneda.': 'Só quem administra pode usar uma conta em outra moeda.',
+  'Tenés cuentas en otra moneda. Quitalas antes de cambiar tu moneda principal.': 'Você tem contas em outra moeda. Remova-as antes de trocar a sua moeda principal.',
+  'Esa es tu moneda: no necesita cotización.': 'Essa é a sua moeda: não precisa de cotação.',
+  'Esa transferencia no existe.': 'Essa transferência não existe.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */
