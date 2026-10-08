@@ -260,8 +260,8 @@ function textoDelCorte(b: BusquedaDeOlvidadas): string {
   const llego = b.hasta >= b.desde ? `Se llegó hasta el ${b.hasta}. ` : '';
   switch (b.cortado) {
     case 'tiempo': return `${llego}Se acabó el tiempo de esta búsqueda: tocá «Seguir desde el ${b.siguiente}» para el resto.`;
-    case 'bloqueo': return `${llego}Bancard bloqueó la búsqueda (contestó una página en vez de datos). Esperá unos minutos y tocá «Probar conexión» antes de seguir.`;
-    case 'red': return `${llego}No se pudo llegar a Bancard tres veces seguidas. Tocá «Probar conexión» y, si anda, seguí desde el ${b.siguiente}.`;
+    case 'bloqueo': return `${llego}Bancard bloqueó la búsqueda: contestó una página en vez de datos, y a la prueba de conexión también. Esperá unos minutos, tocá «Probar conexión» y, cuando diga «Bien», seguí desde el ${b.siguiente}.`;
+    case 'red': return `${llego}No se pudo llegar a Bancard tres veces seguidas, ni con la prueba de conexión. Tocá «Probar conexión» y, cuando diga «Bien», seguí desde el ${b.siguiente}.`;
     case 'claves': return 'Bancard rechazó la clave o la firma, así que la búsqueda se paró. Tocá «Probar conexión».';
     default: return '';
   }
@@ -287,6 +287,11 @@ function textoDeErrores(errores: BusquedaDeOlvidadas['errores']): string {
  * en la búsqueda y LO VUELVE A DECIDIR al borrar (pide la lista de nuevo y
  * mira la base en ese momento). Si en el medio una cuenta empezó a usar esa
  * tarjeta, contesta que no y acá se actualiza el renglón.
+ *
+ * Buscar y borrar van de a uno: mientras busca, «Borrar en Bancard» queda
+ * apagado (y mientras borra, no se busca). Una búsqueda que terminaba después
+ * de un borrado volvía a dibujar el renglón recién borrado, con su botón, y
+ * los dos pedidos salían a Bancard a la vez.
  *
  * En producción son tarjetas de clientes: la confirmación pide escribir
  * BORRAR. En pruebas alcanza con confirmar.
@@ -422,7 +427,7 @@ function TarjetasOlvidadas() {
               <span className="mb-1 block text-[12.5px] font-semibold">hasta</span>
               <input className="campo" inputMode="numeric" value={hasta} onChange={(e) => setHasta(soloNumeros(e.target.value))} />
             </label>
-            <button type="button" className="boton-suave min-h-[46px]" onClick={buscarDeCero} disabled={buscando}>
+            <button type="button" className="boton-suave min-h-[46px]" onClick={buscarDeCero} disabled={buscando || borrando}>
               {buscando ? 'Buscando…' : 'Buscar en Bancard'}
             </button>
           </div>
@@ -459,7 +464,7 @@ function TarjetasOlvidadas() {
               )}
               {busqueda.siguiente !== null && (
                 <button
-                  type="button" className="boton-suave px-3 py-1.5 text-[12.5px]" disabled={buscando}
+                  type="button" className="boton-suave px-3 py-1.5 text-[12.5px]" disabled={buscando || borrando}
                   onClick={() => { if (busqueda.siguiente !== null) void buscar(busqueda.siguiente, busqueda.pedidoHasta, busqueda); }}
                 >
                   {buscando ? 'Buscando…' : `Seguir desde el ${busqueda.siguiente}`}
@@ -481,7 +486,7 @@ function TarjetasOlvidadas() {
                         </div>
                         {t.sePuedeBorrar && (
                           <button
-                            type="button" className="boton-suave shrink-0 px-3 py-1.5 text-[12.5px] text-rojo" disabled={borrando}
+                            type="button" className="boton-suave shrink-0 px-3 py-1.5 text-[12.5px] text-rojo" disabled={borrando || buscando}
                             onClick={() => { setErrorBorrar(''); setPorBorrar(t); }}
                           >
                             Borrar en Bancard

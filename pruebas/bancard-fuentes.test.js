@@ -583,6 +583,32 @@ console.log('\n── Tarjetas olvidadas en Bancard (07/10) ──────�
   ok('la regla es una sola y la usan las dos: nunca una activa ni una pendiente',
     [flujoFuente.includes("return e === 'sin_cuenta' || e === 'fallida' || e === 'quitada' || e === 'por_quitar';"),
       cuantas(cuerpoBuscar, /sePuedeOlvidar\(/g), cuantas(cuerpoBorrar, /sePuedeOlvidar\(/g)], [true, 1, 1]);
+  // Revisión del 07/10: la búsqueda no puede quedar trabada en un pagador por
+  // el que Bancard contesta algo raro. Parar por «bloqueo» o por «red» cuelga
+  // de que la pregunta de «Probar conexión» tampoco pase; y un JSON sin la
+  // lista no es una página.
+  const dondePregunta = cuerpoBuscar.indexOf('await probarConexion(d,');
+  ok('buscarOlvidadas: antes de parar por bloqueo o por red hace la pregunta de «Probar conexión», y un JSON sin la lista no para la búsqueda',
+    [cuerpoBuscar.includes("const pagina = lista.clase === 'no_json' && lista.clave !== 'forma_desconocida';"),
+      dondePregunta > 0, cuantas(cuerpoBuscar, /probarConexion\(/g),
+      dondePregunta < cuerpoBuscar.indexOf("cortar('bloqueo'"), dondePregunta < cuerpoBuscar.indexOf("cortar('red'"),
+      cuantas(cuerpoBuscar, /cortar\('bloqueo'/g), cuantas(cuerpoBuscar, /cortar\('red'/g),
+      /if \(prueba\.resultado !== 'bien'\) \{[\s\S]*?cortar\('bloqueo', u\);[\s\S]*?cortar\('red', u - \(CORTES_SEGUIDOS - 1\)\);\s+break;\s+\}/.test(cuerpoBuscar)],
+    [true, true, 1, true, true, 1, 1, true]);
+  // Y la conciliación (arreglo B): la pendiente vieja de una cuenta que guardó
+  // otra NO se borra con `borrarEnBancard` (termina en 'hecho', que a una
+  // activa la quita y le apaga el débito): lista, la base otra vez, y recién
+  // ahí el borrado.
+  const cuerpoDescartar = flujoFuente.slice(flujoFuente.indexOf('async function descartarPendienteVieja('), flujoFuente.indexOf('export async function correrConciliacion('));
+  const pasosDescartar = ['await listarTarjetas(d, p.userId,', "if (estadoEnOrden(await tarjetaInterna(d, p.tarjeta), p.userId, d.entorno) !== 'pendiente') return;",
+    'd.bancard.borrarTarjeta(p.userId, t.alias,', "'bancard_tarjeta_fallida'"].map((p) => cuerpoDescartar.indexOf(p));
+  const cuerpoConciliar = flujoFuente.slice(flujoFuente.indexOf('export async function correrConciliacion('), flujoFuente.indexOf('export type EstadoEnOrden'));
+  const lasPendientes = cuerpoConciliar.slice(cuerpoConciliar.indexOf('r.data.tarjetas_pendientes'), cuerpoConciliar.indexOf('r.data.tarjetas_por_quitar'));
+  ok('la conciliación, con la pendiente vieja: lista → la base OTRA VEZ (solo si sigue pendiente) → el borrado → fallida; sin `borrarEnBancard` ni el paso «hecho»',
+    [pasosDescartar.every((i) => i > 0), pasosDescartar.every((i, n) => n === 0 || i > pasosDescartar[n - 1]), cuantas(cuerpoDescartar, /borrarTarjeta\(/g),
+      /borrarEnBancard\(|'bancard_quitar_tarjeta'/.test(cuerpoDescartar),
+      lasPendientes.length > 300, lasPendientes.includes('await descartarPendienteVieja(d, { tarjeta, userId: Number(p.user_id) });'), /borrarEnBancard\(/.test(lasPendientes)],
+    [true, true, 1, false, true, true, false]);
   // Sin migración: todo lo que el flujo le pide a la base ya está en las
   // migraciones de Bancard (124 a 126). Una función nueva acá fallaría en
   // producción hasta aplicar su migración.
@@ -607,6 +633,13 @@ console.log('\n── Tarjetas olvidadas en Bancard (07/10) ──────�
     [/\{t\.sePuedeBorrar && \(\s+<button/.test(tramo), /<Confirmar\s/.test(tramo), /<ConfirmarBorrado\s/.test(tramo),
       /onClick=\{borrar\}/.test(tramo), cuantas(tramo, /onSi=\{borrar\}/g)],
     [true, true, true, false, 1]);
+  // Revisión del 07/10: tocar «Borrar en Bancard» mientras corría «Seguir
+  // desde el N» borraba la tarjeta y, al terminar la búsqueda, el renglón
+  // volvía a aparecer como olvidada (y los dos pedidos salían a la vez).
+  ok('buscar y borrar van de a uno: mientras busca, el botón de borrar del renglón queda apagado; y mientras borra, los dos de buscar',
+    [/\{t\.sePuedeBorrar && \(\s+<button\s+type="button" className="[^"]*" disabled=\{borrando \|\| buscando\}/.test(tramo),
+      cuantas(tramo, /disabled=\{buscando \|\| borrando\}/g), cuantas(tramo, /disabled=\{(buscando|borrando)\}/g)],
+    [true, 2, 0]);
   ok('en producción la confirmación es más fuerte: hay que escribir BORRAR; y si no se sabe el ambiente, se trata como producción',
     [tramo.includes("const PALABRA_PARA_BORRAR = 'BORRAR';"), tramo.includes('disabled={ocupado || !escrita}'),
       tramo.includes('const escrita = palabra.trim().toUpperCase() === PALABRA_PARA_BORRAR;'), tramo.includes("enProduccion={busqueda?.entorno !== 'staging'}"),

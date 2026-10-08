@@ -1431,6 +1431,54 @@ export interface ResumenConciliacion {
 const DIAS_DE_EVENTOS = 90;
 
 /**
+ * UNA PENDIENTE VIEJA DE UNA CUENTA QUE DESPUÉS GUARDÓ OTRA (07/10/2026): se
+ * borra en Bancard, si llegó a quedar, y se da por fallida. Si Bancard no
+ * contesta no cambia nada: sigue pendiente y la próxima vuelta insiste.
+ *
+ * NO pasa por `borrarEnBancard`. Ese termina con el paso 'hecho', que a una
+ * ACTIVA la da por quitada y le apaga el débito; y entre que la conciliación
+ * la leyó pendiente y el borrado pasa un pedido entero a Bancard (la lista).
+ * Si en ese rato la persona la verifica (recarga la vuelta, o termina un
+ * formulario que tenía abierto), ya es la tarjeta de su cuenta: borrarla la
+ * dejaba sin ninguna y con el débito apagado (revisión del 07/10). Por eso:
+ *
+ *   1. la lista (de ahí sale el alias de la tarjeta);
+ *   2. la base OTRA VEZ, pegada al borrado: se sigue solo si la tarjeta
+ *      sigue pendiente (la misma regla de la herramienta, `estadoEnOrden`);
+ *   3. el borrado en Bancard;
+ *   4. `bancard_tarjeta_fallida`, que solo toca una pendiente.
+ *
+ * Lo que NO se puede cerrar sin una función nueva en la base (una que tome la
+ * fila con candado): entre 2 y 3 pasan milisegundos. Si justo ahí alguien la
+ * verificó, en Bancard ya está borrada: se la mira una vez más para que Orden
+ * no quede diciendo que tiene una tarjeta que Bancard no tiene, y queda en el
+ * registro del servidor.
+ */
+async function descartarPendienteVieja(d: Deps, p: { tarjeta: number; userId: number }): Promise<void> {
+  const lista = await listarTarjetas(d, p.userId, { tarjeta: p.tarjeta });
+  if (lista.ok === false) return;
+
+  const t = lista.tarjetas.find((x) => x.cardId === p.tarjeta);
+  let borrada = false;
+  if (t) {
+    if (estadoEnOrden(await tarjetaInterna(d, p.tarjeta), p.userId, d.entorno) !== 'pendiente') return;
+    const b = await d.bancard.borrarTarjeta(p.userId, t.alias, { esperaMs: ESPERA_CORTA_MS * 2 });
+    await anotar(d, { tarjeta: p.tarjeta, tipo: 'delete_card', ok: b.ok, clave: claveDe(b), http: b.ok === true ? 200 : b.http });
+    if (b.ok === false && b.clave !== 'CardNotFoundError') {
+      anotarEnRegistro(d, `borrar tarjeta sin éxito · tarjeta ${p.tarjeta} · ${b.clave}`);
+      return;
+    }
+    borrada = b.ok;
+  }
+
+  const f = await llamar(d, 'bancard_tarjeta_fallida', { p_tarjeta: p.tarjeta, p_motivo: 'La cuenta guardó otra tarjeta después' });
+  if (borrada && f.ok === true && esObjeto(f.data) && f.data.ok === false) {
+    anotarEnRegistro(d, `tarjeta ${p.tarjeta} · cambió mientras la conciliación la borraba en Bancard`);
+    await verificarTarjeta(d, { tarjeta: p.tarjeta });
+  }
+}
+
+/**
  * LO QUE QUEDÓ A MEDIAS (cada 10 minutos, `orden-conciliar-bancard`).
  *
  * El manual: si no llega la confirmación en 10 minutos, consultar; si no se
@@ -1491,7 +1539,7 @@ export async function correrConciliacion(d: Deps, limites: { hastaMs: number }):
   // números de tarjeta suben con cada intento, así que una activa con número
   // MAYOR es posterior: la pendiente vieja se borra en Bancard (si es que
   // llegó a quedar) y se da por fallida; si Bancard no contesta, sigue
-  // pendiente y la próxima vuelta insiste.
+  // pendiente y la próxima vuelta insiste (`descartarPendienteVieja`).
   const pendientes = Array.isArray(r.data.tarjetas_pendientes) ? r.data.tarjetas_pendientes : [];
   for (const p of pendientes) {
     if (!hayTiempo()) break;
@@ -1501,8 +1549,7 @@ export async function correrConciliacion(d: Deps, limites: { hastaMs: number }):
     const activa = await llamar(d, 'bancard_datos_de_tarjeta', { p_empresa: p.empresa_id, p_entorno: d.entorno });
     if (activa.ok === false) continue;   // no se sabe qué tarjeta usa la cuenta: no se toca nada
     if (esObjeto(activa.data) && Number(activa.data.tarjeta_id) > tarjeta) {
-      const borrada = await borrarEnBancard(d, { tarjeta, userId: Number(p.user_id) });
-      if (borrada) await llamar(d, 'bancard_tarjeta_fallida', { p_tarjeta: tarjeta, p_motivo: 'La cuenta guardó otra tarjeta después' });
+      await descartarPendienteVieja(d, { tarjeta, userId: Number(p.user_id) });
       resumen.tarjetasVerificadas += 1;
       continue;
     }
@@ -1630,10 +1677,12 @@ export interface BusquedaDeOlvidadas {
   /**
    * Por qué se paró antes de terminar: se acabó el tiempo, Bancard contestó
    * una página en vez de datos (su protección), no se pudo llegar tres veces
-   * seguidas, o rechazó la clave o la firma. Null si no se paró.
+   * seguidas, o rechazó la clave o la firma. Null si no se paró. Por
+   * `bloqueo` y por `red` se para solo si la pregunta de «Probar conexión»
+   * tampoco pasó: si pasó, el problema es de esos números y se sigue.
    */
   cortado: null | 'tiempo' | 'bloqueo' | 'red' | 'claves';
-  /** Pedidos hechos a Bancard. */
+  /** Pagadores por los que se le preguntó a Bancard. */
   consultados: number;
   /** Los pagadores de `desde` a `hasta` por los que Bancard no contestó una lista. */
   errores: { userId: number; clave: string }[];
@@ -1652,8 +1701,20 @@ export interface BusquedaDeOlvidadas {
  * por el que Bancard contesta otro error (puede que así conteste por un
  * número que nunca vio) queda en `errores` y la búsqueda sigue.
  *
+ * QUÉ ES UN BLOQUEO (revisión del 07/10/2026). No se sabe qué contesta
+ * Bancard por un número que nunca vio: puede ser una lista vacía, un error
+ * con su clave, un JSON sin la lista o una página que no es JSON. Si la
+ * búsqueda se paraba con la primera página, y esa página era la respuesta de
+ * Bancard para ESE número, «Seguir desde el N» volvía a chocar con el mismo
+ * N para siempre, mientras «Probar conexión» decía que estaba todo bien. Por
+ * eso, antes de parar por una página (o por tres cortes de red seguidos) se
+ * hace esa misma pregunta de «Probar conexión»: si tampoco pasa, es Bancard
+ * (su protección, o está caído) y se para; si pasa, es ese número: queda en
+ * `errores` y se sigue con el que viene. Un JSON sin la lista no para nunca.
+ *
  * Cada pedido queda en `bancard_eventos` (tipo `users_cards`, con el pagador
- * y `origen: 'olvidadas'`); de las tarjetas, solo cuántas y sus números.
+ * y `origen: 'olvidadas'`; la pregunta de conexión, tipo `conexion`); de las
+ * tarjetas, solo cuántas y sus números.
  */
 export async function buscarOlvidadas(
   d: Deps,
@@ -1696,12 +1757,24 @@ export async function buscarOlvidadas(
 
     if (lista.ok === false) {
       r.errores.push({ userId: u, clave: lista.clave.slice(0, 80) });
-      if (lista.clase === 'no_json') { cortar('bloqueo', u); break; }
       if (lista.clave === 'InvalidTokenError' || lista.clave === 'InvalidPublicKeyError') { cortar('claves', u); break; }
-      if (lista.clase === 'red' || lista.clase === 'timeout') {
-        cortesSeguidos += 1;
-        if (cortesSeguidos >= CORTES_SEGUIDOS) { cortar('red', u - (CORTES_SEGUIDOS - 1)); break; }
-      } else {
+
+      // Una página en vez de datos, o tres veces seguidas sin poder llegar:
+      // ¿es Bancard entero, o son estos números? Se le hace la pregunta de
+      // «Probar conexión», y se para solo si esa tampoco pasa. Un JSON sin la
+      // lista (`forma_desconocida`) no es ninguna de las dos cosas: Bancard
+      // contestó datos, así que ese pagador queda anotado y se sigue.
+      const pagina = lista.clase === 'no_json' && lista.clave !== 'forma_desconocida';
+      const sinLlegar = lista.clase === 'red' || lista.clase === 'timeout';
+      cortesSeguidos = sinLlegar ? cortesSeguidos + 1 : 0;
+      if (pagina || cortesSeguidos >= CORTES_SEGUIDOS) {
+        const prueba = await probarConexion(d, { esperaMs: espera, detalle: { user_id: u, origen: 'olvidadas' } });
+        if (prueba.resultado === 'claves') { cortar('claves', u); break; }
+        if (prueba.resultado !== 'bien') {
+          if (pagina) cortar('bloqueo', u);
+          else cortar('red', u - (CORTES_SEGUIDOS - 1));
+          break;
+        }
         cortesSeguidos = 0;
       }
       continue;
@@ -1808,11 +1881,21 @@ export type PruebaDeConexion = 'bien' | 'claves' | 'bloqueo' | 'red';
  * y la firma sirvió. Una página en vez de datos es el bloqueo de su
  * protección (Cloudflare); claves equivocadas dan InvalidTokenError o
  * InvalidPublicKeyError. No se anota como consulta de ninguna operación.
+ *
+ * La usa también la búsqueda de tarjetas olvidadas, para saber si lo raro
+ * que contestó Bancard por un pagador es de Bancard entero o de ese número:
+ * ahí pasa su propia espera y, para el registro, de dónde viene (`detalle`).
  */
-export async function probarConexion(d: Deps): Promise<{ resultado: PruebaDeConexion; http: number; clave: string }> {
-  const r = await d.bancard.consultar(1, { esperaMs: 10_000 });
+export async function probarConexion(
+  d: Deps,
+  opciones: { esperaMs?: number; detalle?: Record<string, unknown> } = {},
+): Promise<{ resultado: PruebaDeConexion; http: number; clave: string }> {
+  const r = await d.bancard.consultar(1, { esperaMs: opciones.esperaMs ?? 10_000 });
   if (r.ok === true) return { resultado: 'bien', http: 200, clave: 'ok' };
-  await anotar(d, { tipo: 'conexion', ok: ['BuyNotFoundError', 'PaymentNotFoundError'].includes(r.clave), clave: r.clave, http: r.http });
+  await anotar(d, {
+    tipo: 'conexion', ok: ['BuyNotFoundError', 'PaymentNotFoundError'].includes(r.clave), clave: r.clave, http: r.http,
+    ...(opciones.detalle ? { detalle: opciones.detalle } : {}),
+  });
   if (r.clave === 'BuyNotFoundError' || r.clave === 'PaymentNotFoundError') return { resultado: 'bien', http: r.http, clave: r.clave };
   if (r.clase === 'no_json') return { resultado: 'bloqueo', http: r.http, clave: r.clave };
   if (r.clase === 'red' || r.clase === 'timeout') return { resultado: 'red', http: r.http, clave: r.clave };

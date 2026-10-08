@@ -1901,7 +1901,7 @@ async function principal() {
   grupo('33 · Menos tarjetas olvidadas: la segunda pregunta, y la conciliación que no cambia la tarjeta (07/10)');
   // ═══════════════════════════════════════════════════════════
   {
-    const { d, falso } = armar('produccion');
+    const { d, falso, registro } = armar('produccion');
 
     // (A) El formulario dijo «éxito» y Bancard tarda un instante en listarla.
     const S = await H.montarEmpresa(db, { email: 'segunda@negocio.test', nombre: 'Segunda Mirada' });
@@ -2012,6 +2012,59 @@ async function principal() {
     await conciliarTarjetas(d);
     ok('un catastro abandonado con otra tarjeta guardada después: fallida sin pedirle ningún borrado a Bancard',
       [await estadoDe(m1.tarjeta), await estadoDe(m2), Number((await cuentaDe(M)).tarjeta_id), borrados(falso)], ['fallida', 'activa', m2, 0]);
+
+    // (B, la carrera · revisión del 07/10) Mientras la conciliación le pide
+    // la lista a Bancard para borrar la pendiente vieja, la persona la
+    // VERIFICA (recarga la vuelta, o termina un formulario que tenía abierto):
+    // ya es la tarjeta de su cuenta, y la otra se borró en Bancard como
+    // siempre. Antes la conciliación seguía con lo que había decidido: la
+    // borraba en Bancard y la daba por quitada, y la cuenta quedaba sin
+    // ninguna tarjeta y con el débito apagado.
+    const visa = { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' };
+    const master = { marca: 'MasterCard', enmascarado: '5400********0014', vencimiento: '08/30' };
+    /** Una cuenta con una pendiente vieja cargada en Bancard y otra, posterior, activa. */
+    async function conPendienteVieja(email, nombre) {
+      const c = await H.montarEmpresa(db, { email, nombre });
+      const vieja = await pedirCatastro(d, c);
+      falso.completarCatastro(vieja.processId, visa);
+      const elegida = await guardarTarjeta(d, falso, c, master);
+      await envejecer(vieja.tarjeta);
+      return { c, vieja: vieja.tarjeta, elegida, pagador: Number((await pagadorDe(c)).id) };
+    }
+    /** El mismo servidor, con algo que pasa «en el medio» de UN pedido a Bancard de ese pagador. */
+    const cruzar = (cual, pagador, enElMedio) => {
+      let cruzado = false;
+      return { ...d, bancard: { ...d.bancard, [cual]: async (...a) => {
+        if (cual === 'borrarTarjeta' && a[0] === pagador && !cruzado) { cruzado = true; await enElMedio(); }
+        const r = await d.bancard[cual](...a);
+        if (cual === 'tarjetas' && a[0] === pagador && !cruzado) { cruzado = true; await enElMedio(); }
+        return r;
+      } } };
+    };
+
+    const R = await conPendienteVieja('carrera@negocio.test', 'Carrera SA');
+    let vR = null;
+    falso.pedidos.length = 0;
+    registro.length = 0;
+    res = await conciliarTarjetas(cruzar('tarjetas', R.pagador, async () => { vR = await F.verificarTarjeta(d, { tarjeta: R.vieja, empresa: R.c.empresaId }); }));
+    ok('la persona verifica la pendiente vieja mientras la conciliación pide su lista: se vuelve a mirar la base antes de borrar, y NO se borra',
+      [vR.guardada, await estadoDe(R.vieja), await estadoDe(R.elegida), enBancard(falso, R.pagador), Number((await cuentaDe(R.c)).tarjeta_id), (await cuentaDe(R.c)).debito_activo],
+      [true, 'activa', 'quitada', [R.vieja], R.vieja, true]);
+    ok('el único borrado que salió a Bancard es el de la tarjeta que la persona reemplazó (el de la verificación); la conciliación no mandó ninguno',
+      [borrados(falso), res.tarjetasGuardadas, registro.filter((t) => t.includes(`tarjeta ${R.vieja}`))], [1, 0, []]);
+
+    // Lo que queda sin cerrar (hace falta una función de la base que tome la
+    // fila con candado): que la verifique en los milisegundos entre esa
+    // mirada y el borrado. Ahí en Bancard ya quedó borrada; por lo menos
+    // Orden no sigue diciendo que la cuenta tiene una tarjeta que Bancard no
+    // tiene, y queda en el registro del servidor.
+    const Z = await conPendienteVieja('rendija@negocio.test', 'Rendija SA');
+    registro.length = 0;
+    await conciliarTarjetas(cruzar('borrarTarjeta', Z.pagador, async () => { await F.verificarTarjeta(d, { tarjeta: Z.vieja, empresa: Z.c.empresaId }); }));
+    ok('la rendija que queda (entre la última mirada y el borrado): Orden no se queda con una tarjeta que Bancard ya no tiene, y lo deja en el registro',
+      [await estadoDe(Z.vieja), enBancard(falso, Z.pagador), (await cuentaDe(Z.c)).tarjeta_id, (await cuentaDe(Z.c)).debito_activo,
+        registro.filter((t) => t.includes(`tarjeta ${Z.vieja} · cambió mientras la conciliación la borraba en Bancard`)).length],
+      ['quitada', [], null, false, 1]);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2208,19 +2261,74 @@ async function principal() {
     ok('si Bancard contesta un error por un pagador (quizá no lo conoce): queda anotado con su clave y la búsqueda sigue',
       [c.cortado, c.consultados, c.errores, resumen(c).length], [null, 4, [{ userId: X, clave: 'UserNotFoundError' }], 1]);
 
+    // CAMBIARON A PROPÓSITO (revisión del 07/10): antes de parar por red o
+    // por bloqueo, la búsqueda hace la pregunta de «Probar conexión». Se para
+    // solo si esa tampoco pasa; por eso acá Bancard falla también ahí, y hay
+    // un pedido más (el de la conexión, que no cuenta como pagador mirado).
+    const CONEXION = '/single_buy/confirmations';
+    const PAGINA = { status: 403, texto: '<html><body>Attention Required</body></html>' };
+    const conexiones = (f) => rutas(f).filter((r) => r === CONEXION).length;
     falso.programar(LISTA, 'atender');
     falso.programar(LISTA, 'red', 3);
+    falso.programar(CONEXION, 'red');
     falso.pedidos.length = 0;
     c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
-    ok('tres cortes de red seguidos: se para ahí (no se insiste contra Bancard) y dice desde dónde seguir',
-      [c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, falso.pedidos.length],
-      [X, X, X + 1, 'red', 4, [], 4]);
+    ok('tres cortes de red seguidos, y la prueba de conexión tampoco llega: se para ahí (no se insiste contra Bancard) y dice desde dónde seguir',
+      [c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, falso.pedidos.length, conexiones(falso)],
+      [X, X, X + 1, 'red', 4, [], 5, 1]);
     falso.programar(LISTA, 'atender', 3);
-    falso.programar(LISTA, { status: 403, texto: '<html><body>Attention Required</body></html>' });
+    falso.programar(LISTA, PAGINA);
+    falso.programar(CONEXION, PAGINA);
     falso.pedidos.length = 0;
     c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
-    ok('una página en vez de datos (el bloqueo de su protección): se para al primero',
-      [c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, falso.pedidos.length], [X + 2, X + 3, 'bloqueo', 4, [], 4]);
+    ok('una página en vez de datos, y a la prueba de conexión también (el bloqueo de su protección): se para al primero',
+      [c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, falso.pedidos.length, conexiones(falso)], [X + 2, X + 3, 'bloqueo', 4, [], 5, 1]);
+    falso.programar(LISTA, PAGINA);
+    falso.programar(CONEXION, 'red');
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
+    ok('una página y la prueba de conexión no llega: también se para (no se sabe si es Bancard entero)',
+      [c.hasta, c.siguiente, c.cortado, c.consultados], [X - 1, X, 'bloqueo', 1]);
+
+    // ---- UN PAGADOR POR EL QUE BANCARD CONTESTA RARO SIEMPRE (revisión del 07/10)
+    // No se sabe qué contesta el Bancard de verdad por un número que nunca
+    // vio. Si es algo que no es ni una lista ni un error con su clave, la
+    // búsqueda se paraba ahí por «bloqueo» y «Seguir desde el N» volvía a
+    // chocar con el mismo N para siempre, mientras «Probar conexión» decía
+    // «Bien»: la tarjeta olvidada de más adelante no aparecía nunca.
+    /** Por esos pagadores Bancard contesta `respuesta` (las próximas `veces` listas); por los demás, lo de siempre. */
+    const siempre = (raros, respuesta, veces) => falso.programar(
+      LISTA, (pedido) => (raros.some((u) => pedido.ruta === `/users/${u}/cards`) ? respuesta : 'atender'), veces);
+    const laOlvidada = [[X + 3, 900001, 'Visa', '0016', 'sin_cuenta', true]];
+
+    siempre([X + 1], { json: { status: 'success' } }, 6);
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 5 }, HASTA());
+    ok('un JSON sin la lista por un pagador: no es un bloqueo. Queda anotado, la búsqueda llega al final y encuentra la tarjeta (sin preguntar nada más)',
+      [c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, resumen(c), falso.pedidos.length],
+      [X + 5, null, null, 6, [{ userId: X + 1, clave: 'forma_desconocida' }], laOlvidada, 6]);
+
+    const conexionesAntes = (await eventosDeOlvidadas('conexion')).length;
+    siempre([X, X + 1, X + 2, X + 4], { status: 404, texto: '' }, 6);
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 5 }, HASTA());
+    ok('una página por cuatro números que Bancard no conoce (tres seguidos, desde el primero) y la prueba de conexión pasa: no es un bloqueo, y la búsqueda llega al final',
+      [c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, c.errores.map((e) => [e.userId, e.clave]), resumen(c), conexiones(falso), falso.pedidos.length],
+      [X, X + 5, null, null, 6, [[X, 'no_json'], [X + 1, 'no_json'], [X + 2, 'no_json'], [X + 4, 'no_json']], laOlvidada, 4, 10]);
+    ok('cada pregunta de conexión quedó anotada con el pagador por el que se hizo',
+      (await eventosDeOlvidadas('conexion')).slice(conexionesAntes).map((e) => [e.tarjeta_id, e.ok, e.clave, Object.entries(e.detalle).sort()]),
+      [X, X + 1, X + 2, X + 4].map((u) => [null, true, 'BuyNotFoundError', [['origen', 'olvidadas'], ['user_id', u]]]));
+
+    siempre([X, X + 1, X + 2], 'red', 6);
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 5 }, HASTA());
+    ok('tres cortes seguidos pero la prueba de conexión pasa: son esos números; quedan anotados y se sigue',
+      [c.hasta, c.siguiente, c.cortado, c.consultados, c.errores.map((e) => [e.userId, e.clave]), resumen(c), conexiones(falso)],
+      [X + 5, null, null, 6, [[X, 'red'], [X + 1, 'red'], [X + 2, 'red']], laOlvidada, 1]);
+    falso.programar(LISTA, PAGINA);
+    falso.programar(CONEXION, { json: { status: 'error', messages: [{ key: 'InvalidTokenError', level: 'error', dsc: 'Invalid token' }] } });
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
+    ok('una página, y la prueba de conexión dice que la firma no sirve: se para por las claves',
+      [c.hasta, c.siguiente, c.cortado, c.consultados], [X - 1, X, 'claves', 1]);
     falso.programar(LISTA, { json: { status: 'error', messages: [{ key: 'InvalidTokenError', level: 'error', dsc: 'Invalid token' }] } });
     falso.pedidos.length = 0;
     c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
