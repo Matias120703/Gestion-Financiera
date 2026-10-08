@@ -390,6 +390,16 @@ guaraníes). Se prende con tres variables (`BANCARD_ENTORNO`, `BANCARD_CLAVE_PUB
   hizo sobre un pago que quedó activo deja «para revisar» y avisa a la administración; la
   baja de personas va por el servidor (`/api/pagos/bancard/personas`) y caduca con
   cualquier renovación hecha fuera de Bancard.
+- **Tarjetas olvidadas en Bancard** (07/10): Bancard no deja guardar dos veces la misma
+  tarjeta, y si se borra una cuenta desde /admin su tarjeta queda guardada allá a nombre
+  de un pagador que Orden ya no conoce. En /admin → Bancard se buscan por número de
+  pagador (`/api/admin/bancard/olvidadas`, hasta 40 por pedido, en fila) y se borran de a
+  una. Qué se puede borrar lo decide el servidor al momento de borrar (`borrarOlvidada`):
+  nunca una tarjeta activa ni un catastro en curso. Además, un «éxito» del formulario de
+  catastro gana una segunda pregunta a Bancard antes de dar la tarjeta por no guardada, y
+  la conciliación ya no activa un catastro viejo por encima de una tarjeta guardada
+  después. Pendiente: que borrar una cuenta vacíe antes su pagador en Bancard (hace falta
+  una función nueva en la base).
 - Las pruebas corren contra un Bancard de mentira (`pruebas/bancard-falso.js`) con claves
   inventadas: `npm run probar:bancard`.
 

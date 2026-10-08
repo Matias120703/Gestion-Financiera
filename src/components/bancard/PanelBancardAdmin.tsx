@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
-import { Hoja, MensajeError, PieHoja } from '@/components/Hoja';
+import { Confirmar, Hoja, MensajeError, PieHoja } from '@/components/Hoja';
 
 /**
  * BANCARD EN EL PANEL DE LA ADMINISTRACIÓN (español fijo, como todo /admin).
@@ -14,6 +14,9 @@ import { Hoja, MensajeError, PieHoja } from '@/components/Hoja';
  *   · La tarjeta general: entorno, si las claves están cargadas (nunca su
  *     valor), si está abierto a todos, «Probar conexión», y los pagos para
  *     revisar y los últimos.
+ *   · «Tarjetas olvidadas en Bancard»: las que quedaron guardadas en Bancard
+ *     a nombre de una cuenta que ya no existe (o que Orden dio por no
+ *     guardadas). Se buscan por número de pagador y se borran de a una.
  *   · En la ficha de cada cuenta: «Puede pagar con Bancard» (la cuenta de
  *     prueba que se le da al certificador), y sus pagos, con la autorización
  *     y el ticket (acá sí: lo ve solo la administración), «Consultar a
@@ -173,6 +176,8 @@ export function TarjetaBancardAdmin({ config }: { config: ConfigBancardAdmin }) 
       {prueba && <p className="mt-3 rounded-xl bg-arena px-3 py-2 text-[13px]">{prueba}</p>}
       <MensajeError texto={error} />
 
+      {config.configurado && <TarjetasOlvidadas />}
+
       {paraRevisar.length > 0 && (
         <div className="mt-4">
           <p className="titulo-seccion mb-2 text-ambar">Para revisar</p>
@@ -188,6 +193,386 @@ export function TarjetaBancardAdmin({ config }: { config: ConfigBancardAdmin }) 
         )}
       </div>
     </section>
+  );
+}
+
+// ------------------------------------------------ las tarjetas olvidadas
+
+/** Qué sabe Orden de una tarjeta que Bancard tiene guardada (lo decide el servidor). */
+type EstadoEnOrden =
+  | 'sin_cuenta' | 'fallida' | 'quitada' | 'por_quitar'
+  | 'pendiente' | 'activa'
+  | 'otro_entorno' | 'no_coincide' | 'sin_dato';
+
+interface TarjetaOlvidada {
+  /** El número con el que Orden le presentó la cuenta a Bancard. */
+  userId: number;
+  /** El número que Orden le puso a la tarjeta. */
+  cardId: number;
+  marca: string | null;
+  ultimos4: string | null;
+  orden: EstadoEnOrden;
+  sePuedeBorrar: boolean;
+}
+
+interface BusquedaDeOlvidadas {
+  entorno: 'staging' | 'produccion';
+  desde: number;
+  hasta: number;
+  siguiente: number | null;
+  cortado: null | 'tiempo' | 'bloqueo' | 'red' | 'claves';
+  consultados: number;
+  errores: { userId: number; clave: string }[];
+  tarjetas: TarjetaOlvidada[];
+  /** Hasta dónde se pidió buscar: «Seguir desde el N» termina ese pedido. */
+  pedidoHasta: number;
+}
+
+const AMBAR = 'text-ambar';
+const GRIS = 'text-tinta/55';
+const QUE_SABE_ORDEN: Record<EstadoEnOrden, { texto: string; clase: string }> = {
+  sin_cuenta: { texto: 'Olvidada: la cuenta ya no existe', clase: AMBAR },
+  fallida: { texto: 'Olvidada: Orden la dio por no guardada', clase: AMBAR },
+  quitada: { texto: 'Olvidada: Orden ya la había quitado', clase: AMBAR },
+  por_quitar: { texto: 'Olvidada: la quitaron y faltaba borrarla en Bancard', clase: AMBAR },
+  pendiente: { texto: 'Se está guardando: Orden la confirma sola en menos de una hora. No se toca', clase: GRIS },
+  activa: { texto: 'En uso por una cuenta: no se toca', clase: 'text-verde-fuerte' },
+  otro_entorno: { texto: 'Es del otro ambiente de Bancard: no se toca', clase: GRIS },
+  no_coincide: { texto: 'Orden la tiene con otro pagador: no se toca', clase: GRIS },
+  sin_dato: { texto: 'No se pudo comprobar en Orden: no se toca', clase: GRIS },
+};
+
+/** Por qué el servidor no la borró (volvió a mirar en el momento y cambió algo). */
+const POR_QUE_NO_SE_BORRO: Record<string, string> = {
+  activa: 'No se borró: ahora esa tarjeta la está usando una cuenta.',
+  pendiente: 'No se borró: se está guardando en este momento.',
+  otro_entorno: 'No se borró: es del otro ambiente de Bancard.',
+  no_coincide: 'No se borró: Orden la tiene con otro pagador.',
+  base: 'No se borró: no se pudo comprobar en Orden. Probá de nuevo.',
+};
+
+const nombreDeTarjeta = (t: TarjetaOlvidada) => (t.ultimos4
+  ? `${t.marca ?? 'Tarjeta'} •••• ${t.ultimos4}`
+  : t.marca ?? 'Tarjeta');
+const tantas = (n: number, una: string, varias: string) => (n === 1 ? `1 ${una}` : `${n} ${varias}`);
+
+function textoDelCorte(b: BusquedaDeOlvidadas): string {
+  const llego = b.hasta >= b.desde ? `Se llegó hasta el ${b.hasta}. ` : '';
+  switch (b.cortado) {
+    case 'tiempo': return `${llego}Se acabó el tiempo de esta búsqueda: tocá «Seguir desde el ${b.siguiente}» para el resto.`;
+    case 'bloqueo': return `${llego}Bancard bloqueó la búsqueda (contestó una página en vez de datos). Esperá unos minutos y tocá «Probar conexión» antes de seguir.`;
+    case 'red': return `${llego}No se pudo llegar a Bancard tres veces seguidas. Tocá «Probar conexión» y, si anda, seguí desde el ${b.siguiente}.`;
+    case 'claves': return 'Bancard rechazó la clave o la firma, así que la búsqueda se paró. Tocá «Probar conexión».';
+    default: return '';
+  }
+}
+
+function textoDeErrores(errores: BusquedaDeOlvidadas['errores']): string {
+  const lista = errores.slice(0, 8).map((e) => `${e.userId} (${e.clave})`).join(', ');
+  const resto = errores.length > 8 ? ` y ${errores.length - 8} más` : '';
+  return `Bancard no devolvió la lista de ${tantas(errores.length, 'pagador', 'pagadores')}: ${lista}${resto}. `
+    + 'Buscá de nuevo; si se repite con el mismo texto, puede ser que Bancard no conozca esos números.';
+}
+
+/**
+ * «TARJETAS OLVIDADAS EN BANCARD».
+ *
+ * Bancard no deja guardar dos veces la misma tarjeta. Si una cuenta se borra
+ * (o un guardado queda a medias), la tarjeta sigue guardada allá a nombre de
+ * un número de pagador que Orden ya no tiene anotado, y la persona recibe
+ * «ya ha sido catastrada» cada vez que prueba. Acá se le pregunta a Bancard,
+ * pagador por pagador, qué tarjetas tiene, y se borran las que Orden no usa.
+ *
+ * La pantalla solo muestra y pide: qué se puede borrar lo dice el servidor
+ * en la búsqueda y LO VUELVE A DECIDIR al borrar (pide la lista de nuevo y
+ * mira la base en ese momento). Si en el medio una cuenta empezó a usar esa
+ * tarjeta, contesta que no y acá se actualiza el renglón.
+ *
+ * En producción son tarjetas de clientes: la confirmación pide escribir
+ * BORRAR. En pruebas alcanza con confirmar.
+ */
+function TarjetasOlvidadas() {
+  const [abierta, setAbierta] = useState(false);
+  const [desde, setDesde] = useState('5001');
+  const [hasta, setHasta] = useState('5030');
+  const [buscando, setBuscando] = useState(false);
+  const [busqueda, setBusqueda] = useState<BusquedaDeOlvidadas | null>(null);
+  const [error, setError] = useState('');
+  const [aviso, setAviso] = useState<{ texto: string; bien: boolean } | null>(null);
+  const [porBorrar, setPorBorrar] = useState<TarjetaOlvidada | null>(null);
+  const [borrando, setBorrando] = useState(false);
+  const [errorBorrar, setErrorBorrar] = useState('');
+
+  /** `anterior`: lo ya encontrado, cuando se sigue una búsqueda que quedó por la mitad. */
+  async function buscar(a: number, b: number, anterior: BusquedaDeOlvidadas | null) {
+    setBuscando(true);
+    setError('');
+    setAviso(null);
+    try {
+      const r = await fetch('/api/admin/bancard/olvidadas', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ desde: a, hasta: b }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || d?.ok !== true || !Array.isArray(d.tarjetas) || !Array.isArray(d.errores)) {
+        setError(typeof d?.error === 'string' ? d.error : 'No se pudo buscar.');
+        return;
+      }
+      const nueva = d as Omit<BusquedaDeOlvidadas, 'pedidoHasta'>;
+      setBusqueda(anterior ? {
+        ...nueva,
+        desde: anterior.desde,
+        hasta: Math.max(anterior.hasta, nueva.hasta),
+        consultados: anterior.consultados + nueva.consultados,
+        errores: [...anterior.errores, ...nueva.errores],
+        tarjetas: [...anterior.tarjetas, ...nueva.tarjetas],
+        pedidoHasta: b,
+      } : { ...nueva, pedidoHasta: b });
+    } catch {
+      setError('No se pudo buscar.');
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  function buscarDeCero() {
+    const a = Number(desde);
+    const b = Number(hasta);
+    if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a < 1 || b < a) {
+      setError('Escribí dos números de pagador. El primero no puede ser mayor que el segundo.');
+      return;
+    }
+    void buscar(a, b, null);
+  }
+
+  /** El renglón de esa tarjeta: se saca (`null`) o queda con lo que el servidor acaba de ver. */
+  function actualizar(t: TarjetaOlvidada, orden: EstadoEnOrden | null) {
+    setBusqueda((b) => (b ? {
+      ...b,
+      tarjetas: b.tarjetas
+        .filter((x) => orden !== null || x.userId !== t.userId || x.cardId !== t.cardId)
+        .map((x) => (orden !== null && x.userId === t.userId && x.cardId === t.cardId ? { ...x, orden, sePuedeBorrar: false } : x)),
+    } : b));
+  }
+
+  async function borrar() {
+    if (!porBorrar) return;
+    const t = porBorrar;
+    setBorrando(true);
+    setErrorBorrar('');
+    try {
+      const r = await fetch('/api/admin/bancard/olvidadas', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: t.userId, cardId: t.cardId }),
+      });
+      const d = await r.json().catch(() => null);
+      const quien = `${nombreDeTarjeta(t)} (pagador ${t.userId})`;
+      if (r.ok && d?.ok === true) {
+        actualizar(t, null);
+        setAviso({
+          bien: true,
+          texto: d.resultado === 'ya_no_estaba'
+            ? `${quien}: Bancard ya no la tenía.`
+            : `${quien}: borrada en Bancard. Ya se puede probar guardarla de nuevo.`,
+        });
+        setPorBorrar(null);
+        return;
+      }
+      if ((r.status === 409 || r.status === 503) && typeof d?.motivo === 'string' && POR_QUE_NO_SE_BORRO[d.motivo]) {
+        if (d.motivo !== 'base') actualizar(t, d.motivo as EstadoEnOrden);
+        setAviso({ bien: false, texto: `${quien}. ${POR_QUE_NO_SE_BORRO[d.motivo]}` });
+        setPorBorrar(null);
+        return;
+      }
+      setErrorBorrar(r.status === 502
+        ? `Bancard no contestó (${typeof d?.clave === 'string' && d.clave ? d.clave : 'sin respuesta'}). No se borró nada: probá de nuevo.`
+        : typeof d?.error === 'string' ? d.error : 'No se pudo borrar.');
+    } catch {
+      setErrorBorrar('No se pudo borrar. Probá de nuevo.');
+    } finally {
+      setBorrando(false);
+    }
+  }
+
+  const tarjetas = busqueda?.tarjetas ?? [];
+  const olvidadas = tarjetas.filter((t) => t.sePuedeBorrar).length;
+  const soloNumeros = (v: string) => v.replace(/[^0-9]/g, '').slice(0, 8);
+
+  return (
+    <div className="mt-4 rounded-xl border border-borde p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-56">
+          <p className="titulo-seccion">Tarjetas olvidadas en Bancard</p>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-tinta/55">
+            Cuando se borra una cuenta, su tarjeta queda guardada en Bancard y nadie puede volver a guardarla.
+            Acá se buscan y se borran. Las que una cuenta está usando no se tocan.
+          </p>
+        </div>
+        <button type="button" className="boton-suave shrink-0 px-3 py-1.5 text-[12.5px]" aria-expanded={abierta} onClick={() => setAbierta((v) => !v)}>
+          {abierta ? 'Cerrar' : 'Abrir'}
+        </button>
+      </div>
+
+      {abierta && (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block w-32">
+              <span className="mb-1 block text-[12.5px] font-semibold">Pagador desde</span>
+              <input className="campo" inputMode="numeric" value={desde} onChange={(e) => setDesde(soloNumeros(e.target.value))} />
+            </label>
+            <label className="block w-32">
+              <span className="mb-1 block text-[12.5px] font-semibold">hasta</span>
+              <input className="campo" inputMode="numeric" value={hasta} onChange={(e) => setHasta(soloNumeros(e.target.value))} />
+            </label>
+            <button type="button" className="boton-suave min-h-[46px]" onClick={buscarDeCero} disabled={buscando}>
+              {buscando ? 'Buscando…' : 'Buscar en Bancard'}
+            </button>
+          </div>
+          <p className="text-[12px] leading-relaxed text-tinta/50">
+            El pagador es el número con el que Orden le presenta cada cuenta a Bancard. Arrancan en 5001 y suben uno
+            por cada intento de guardar una tarjeta. Se miran hasta 40 por vez. «Tarjeta N.º» es el número que Orden
+            le puso a esa tarjeta, no el de la tarjeta.
+          </p>
+          <MensajeError texto={error} />
+          {aviso && (
+            <p role="status" className={`rounded-xl px-3 py-2 text-[13px] font-semibold ${aviso.bien ? 'bg-verde-claro text-verde-fuerte' : 'bg-ambar-claro text-ambar'}`}>
+              {aviso.texto}
+            </p>
+          )}
+
+          {busqueda && (
+            <div className="space-y-2">
+              {busqueda.entorno === 'produccion' && (
+                <p className="text-[12.5px] font-semibold text-ambar">Producción: son tarjetas de clientes de verdad.</p>
+              )}
+              {busqueda.hasta >= busqueda.desde && (
+                <p className="text-[13px] font-semibold">
+                  {`Pagadores ${busqueda.desde} a ${busqueda.hasta}: `}
+                  {tarjetas.length === 0
+                    ? (busqueda.errores.length > 0 ? 'en los que Bancard contestó no hay ninguna tarjeta guardada.' : 'Bancard no tiene ninguna tarjeta guardada.')
+                    : `${tantas(tarjetas.length, 'tarjeta guardada', 'tarjetas guardadas')} en Bancard, ${olvidadas === 0 ? 'ninguna olvidada' : tantas(olvidadas, 'olvidada', 'olvidadas')}.`}
+                </p>
+              )}
+              {busqueda.errores.length > 0 && (
+                <p className="rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] leading-relaxed text-ambar">{textoDeErrores(busqueda.errores)}</p>
+              )}
+              {busqueda.cortado && (
+                <p className="rounded-xl bg-ambar-claro px-3 py-2 text-[12.5px] leading-relaxed text-ambar">{textoDelCorte(busqueda)}</p>
+              )}
+              {busqueda.siguiente !== null && (
+                <button
+                  type="button" className="boton-suave px-3 py-1.5 text-[12.5px]" disabled={buscando}
+                  onClick={() => { if (busqueda.siguiente !== null) void buscar(busqueda.siguiente, busqueda.pedidoHasta, busqueda); }}
+                >
+                  {buscando ? 'Buscando…' : `Seguir desde el ${busqueda.siguiente}`}
+                </button>
+              )}
+
+              {tarjetas.length > 0 && (
+                <ul className="divide-y divide-borde rounded-xl border border-borde">
+                  {tarjetas.map((t) => {
+                    const sabe = QUE_SABE_ORDEN[t.orden] ?? QUE_SABE_ORDEN.sin_dato;
+                    return (
+                      <li key={`${t.userId}-${t.cardId}`} className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3 text-[12.5px]">
+                        <div className="min-w-0 flex-1 basis-52">
+                          <p>
+                            <span className="text-[13.5px] font-bold">{nombreDeTarjeta(t)}</span>
+                            <span className="text-tinta/55"> · pagador {t.userId} · tarjeta N.º {t.cardId}</span>
+                          </p>
+                          <p className={`mt-0.5 font-semibold ${sabe.clase}`}>{sabe.texto}</p>
+                        </div>
+                        {t.sePuedeBorrar && (
+                          <button
+                            type="button" className="boton-suave shrink-0 px-3 py-1.5 text-[12.5px] text-rojo" disabled={borrando}
+                            onClick={() => { setErrorBorrar(''); setPorBorrar(t); }}
+                          >
+                            Borrar en Bancard
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {porBorrar && (
+        <ConfirmarBorrado
+          tarjeta={porBorrar}
+          enProduccion={busqueda?.entorno !== 'staging'}
+          ocupado={borrando}
+          error={errorBorrar}
+          onSi={borrar}
+          onNo={() => { if (!borrando) setPorBorrar(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** La palabra que hay que escribir para borrar una tarjeta en producción. */
+const PALABRA_PARA_BORRAR = 'BORRAR';
+
+/**
+ * La pregunta antes de borrar. En pruebas, la confirmación de siempre. En
+ * producción (o si no se sabe el ambiente) el botón rojo queda apagado hasta
+ * que se escribe BORRAR: es la tarjeta de un cliente y no se deshace.
+ */
+function ConfirmarBorrado({ tarjeta, enProduccion, ocupado, error, onSi, onNo }: {
+  tarjeta: TarjetaOlvidada;
+  enProduccion: boolean;
+  ocupado: boolean;
+  error: string;
+  onSi: () => void;
+  onNo: () => void;
+}) {
+  const [palabra, setPalabra] = useState('');
+  const titulo = '¿Borrar esta tarjeta en Bancard?';
+  const detalle = `${nombreDeTarjeta(tarjeta)}, pagador ${tarjeta.userId}. Bancard deja de tenerla guardada, para que se pueda guardar de nuevo en cualquier cuenta. No se deshace.`;
+
+  if (!enProduccion) {
+    return (
+      <Confirmar
+        titulo={titulo} detalle={detalle} si="Borrar en Bancard" peligro
+        ocupado={ocupado} error={error} onSi={onSi} onNo={onNo}
+      />
+    );
+  }
+
+  const escrita = palabra.trim().toUpperCase() === PALABRA_PARA_BORRAR;
+  return (
+    <Hoja
+      titulo={titulo}
+      subtitulo="Producción: es la tarjeta de un cliente de verdad"
+      onCerrar={onNo}
+      bloqueada={ocupado}
+      cerrarConVelo={false}
+      tamano="chico"
+      pie={(
+        <PieHoja columnas={2}>
+          <button type="button" className="boton-suave min-h-[48px]" onClick={onNo} disabled={ocupado}>Cancelar</button>
+          <button type="button" className="boton-peligro min-h-[48px]" onClick={onSi} disabled={ocupado || !escrita}>
+            {ocupado ? 'Borrando…' : 'Borrar en Bancard'}
+          </button>
+        </PieHoja>
+      )}
+    >
+      <div className="space-y-3 text-[13.5px] leading-relaxed text-tinta/70">
+        <p>{detalle}</p>
+        <p className="rounded-xl bg-ambar-claro px-3 py-2.5 text-ambar">
+          Borrala solo si la cuenta ya no existe o si la persona te pidió liberar su tarjeta.
+        </p>
+        <label className="block">
+          <span className="mb-1 block text-[12.5px] font-semibold">Para confirmar, escribí {PALABRA_PARA_BORRAR}</span>
+          <input
+            className="campo" value={palabra} maxLength={12} autoComplete="off" autoCapitalize="characters" spellCheck={false}
+            onChange={(e) => setPalabra(e.target.value)}
+          />
+        </label>
+        <MensajeError texto={error} />
+      </div>
+    </Hoja>
   );
 }
 

@@ -93,6 +93,13 @@ const ESPERA_CORTA_MS = 8_000;
 /** El tope de la confirmación: Bancard corta a los 30 segundos. */
 const TOPE_CONFIRMACION_MS = 25_000;
 
+/**
+ * Cuánto se espera antes de volver a pedirle a Bancard la lista de tarjetas
+ * cuando el formulario dijo que la guardó y la lista vino sin ella
+ * (`verificarTarjeta`).
+ */
+const PAUSA_ANTES_DE_REPREGUNTAR_MS = 2_000;
+
 /** Lo mínimo de una operación que lee el servidor (`bancard_operacion_interna`). */
 interface OperacionInterna {
   operacion: number;
@@ -826,10 +833,17 @@ interface TarjetaInterna {
   estado: string;
 }
 
+/**
+ * `null` = Orden no tiene esa tarjeta (la función contestó vacío); `undefined`
+ * = no se sabe (la base no contestó, o contestó algo que no es una tarjeta).
+ * La diferencia importa: con `null` la herramienta de las tarjetas olvidadas
+ * deja borrar en Bancard, así que solo un vacío de verdad cuenta como «no hay».
+ */
 async function tarjetaInterna(d: Deps, tarjeta: number): Promise<TarjetaInterna | null | undefined> {
   const r = await llamar(d, 'bancard_tarjeta_interna', { p_tarjeta: tarjeta });
   if (r.ok === false) return undefined;
-  if (!esObjeto(r.data)) return null;
+  if (r.data === null || r.data === undefined) return null;
+  if (!esObjeto(r.data)) return undefined;
   return {
     tarjeta: Number(r.data.tarjeta_id),
     userId: Number(r.data.user_id),
@@ -959,6 +973,8 @@ export type VerificacionDeTarjeta =
   | { guardada: true; tarjeta: number; marca: string | null; ultimos4: string | null; ya: boolean }
   /**
    * 'no_esta'       Bancard no la tiene: el catastro no terminó (queda `fallida`).
+   * 'sin_confirmar' el formulario dijo que la guardó y Bancard todavía no la
+   *                 lista: sigue `pendiente` y la conciliación la vuelve a mirar.
    * 'bancard'       Bancard no contestó: no se sabe todavía (la conciliación vuelve).
    * 'base'          la base no contestó.
    * 'ajena'         no es de esa cuenta.
@@ -978,15 +994,27 @@ export type VerificacionDeTarjeta =
  * `empresa`, si viene, tiene que ser la dueña de la tarjeta.
  *
  * `formulario`, si viene, es lo que avisó el iframe de catastro (o la
- * dirección de vuelta), tal como lo mandó el navegador. SOLO SE ANOTA: un
- * evento `catastro_formulario` con el estado en `clave` y la descripción en
- * el detalle, para que de un catastro rechazado adentro del iframe quede por
- * qué. Se anota antes de preguntarle a Bancard y no se vuelve a mirar: un
- * «add_new_card_success» inventado no guarda ninguna tarjeta.
+ * dirección de vuelta), tal como lo mandó el navegador. SE ANOTA: un evento
+ * `catastro_formulario` con el estado en `clave` y la descripción en el
+ * detalle, para que de un catastro rechazado adentro del iframe quede por
+ * qué. Se anota antes de preguntarle a Bancard, y NO GUARDA NADA: un
+ * «add_new_card_success» inventado no activa ninguna tarjeta.
+ *
+ * LO ÚNICO QUE GANA UN «ÉXITO» DEL FORMULARIO ES UNA SEGUNDA PREGUNTA
+ * (07/10/2026). Antes, si la lista venía sin la tarjeta, quedaba `fallida`
+ * para siempre con una sola mirada: si Bancard tardó un instante en mostrarla,
+ * la tarjeta quedaba guardada allá sin que Orden lo supiera, y a la persona
+ * que probaba de nuevo Bancard le decía «ya ha sido catastrada». Ahora, si el
+ * formulario dijo «éxito» y la lista vino sin ella, se espera `pausaMs` y se
+ * pregunta UNA vez más. Si sigue sin estar, no se la da por fallida: queda
+ * `pendiente` ('sin_confirmar') y la conciliación la mira a los 30 minutos,
+ * que es quien decide. Un «éxito» inventado cuesta un pedido más a Bancard y
+ * media hora de `pendiente`; activar sigue colgando solo de que Bancard la
+ * liste.
  */
 export async function verificarTarjeta(
   d: Deps,
-  p: { tarjeta: number; empresa?: string | null; formulario?: DichoPorElFormulario | null },
+  p: { tarjeta: number; empresa?: string | null; formulario?: DichoPorElFormulario | null; pausaMs?: number },
 ): Promise<VerificacionDeTarjeta> {
   const info = await tarjetaInterna(d, p.tarjeta);
   if (info === undefined) return { guardada: false, motivo: 'base' };
@@ -1009,13 +1037,32 @@ export async function verificarTarjeta(
     });
   }
 
+  // Solo para una que todavía está a medio guardar, y solo para volver a preguntar.
+  const segundaMirada = info.estado === 'pendiente' && dicho?.mensaje === CATASTRO_CON_EXITO;
+
+  const empezo = Date.now();
   const lista = await listarTarjetas(d, info.userId, { tarjeta: p.tarjeta });
   if (lista.ok === false) {
     if (info.estado === 'activa') return { guardada: true, tarjeta: p.tarjeta, marca: null, ultimos4: null, ya: true };
     return { guardada: false, motivo: 'bancard', clave: lista.clave };
   }
 
-  const t = lista.tarjetas.find((x) => x.cardId === p.tarjeta);
+  /** La lista con la que se decide: la primera o, si hubo que repreguntar, la segunda (con sus alias). */
+  let vistas = lista.tarjetas;
+  let t = vistas.find((x) => x.cardId === p.tarjeta);
+  if (!t && segundaMirada) {
+    // Si la primera lista ya tardó mucho no se suma otra espera (la ruta
+    // tiene 30 segundos): queda para la conciliación igual.
+    if (Date.now() - empezo < ESPERA_CORTA_MS) {
+      await new Promise<void>((seguir) => { setTimeout(seguir, Math.max(0, p.pausaMs ?? PAUSA_ANTES_DE_REPREGUNTAR_MS)); });
+      const otra = await listarTarjetas(d, info.userId, { tarjeta: p.tarjeta, esperaMs: ESPERA_CORTA_MS });
+      if (otra.ok === true) {
+        vistas = otra.tarjetas;
+        t = vistas.find((x) => x.cardId === p.tarjeta);
+      }
+    }
+    if (!t) return { guardada: false, motivo: 'sin_confirmar' };
+  }
   if (!t) {
     if (info.estado === 'activa') {
       // Una activa que Bancard ya no tiene: se da por quitada, con su débito.
@@ -1041,7 +1088,7 @@ export async function verificarTarjeta(
   const anterior = a.data.anterior;
   if (typeof anterior === 'number' || (typeof anterior === 'string' && anterior)) {
     const vieja = Number(anterior);
-    const aliasVieja = lista.tarjetas.find((x) => x.cardId === vieja)?.alias ?? null;
+    const aliasVieja = vistas.find((x) => x.cardId === vieja)?.alias ?? null;
     if (aliasVieja) await borrarEnBancard(d, { tarjeta: vieja, userId: info.userId, alias: aliasVieja });
     else await llamar(d, 'bancard_quitar_tarjeta', { p_tarjeta: vieja, p_usuario: null, p_paso: 'hecho' });
   }
@@ -1437,11 +1484,30 @@ export async function correrConciliacion(d: Deps, limites: { hastaMs: number }):
 
   // Tarjetas a medio guardar (más de 30 minutos sin verificar): se le
   // pregunta a Bancard si quedó. Si no, `fallida`.
+  //
+  // SALVO QUE LA CUENTA YA HAYA GUARDADO OTRA DESPUÉS (07/10/2026). Activar
+  // la vieja le cambiaba la tarjeta a la cuenta sin que nadie lo pidiera: la
+  // que la persona eligió pasaba a `por_quitar` y se borraba en Bancard. Los
+  // números de tarjeta suben con cada intento, así que una activa con número
+  // MAYOR es posterior: la pendiente vieja se borra en Bancard (si es que
+  // llegó a quedar) y se da por fallida; si Bancard no contesta, sigue
+  // pendiente y la próxima vuelta insiste.
   const pendientes = Array.isArray(r.data.tarjetas_pendientes) ? r.data.tarjetas_pendientes : [];
   for (const p of pendientes) {
     if (!hayTiempo()) break;
     if (!esObjeto(p)) continue;
-    const v = await verificarTarjeta(d, { tarjeta: Number(p.tarjeta_id) });
+    const tarjeta = Number(p.tarjeta_id);
+
+    const activa = await llamar(d, 'bancard_datos_de_tarjeta', { p_empresa: p.empresa_id, p_entorno: d.entorno });
+    if (activa.ok === false) continue;   // no se sabe qué tarjeta usa la cuenta: no se toca nada
+    if (esObjeto(activa.data) && Number(activa.data.tarjeta_id) > tarjeta) {
+      const borrada = await borrarEnBancard(d, { tarjeta, userId: Number(p.user_id) });
+      if (borrada) await llamar(d, 'bancard_tarjeta_fallida', { p_tarjeta: tarjeta, p_motivo: 'La cuenta guardó otra tarjeta después' });
+      resumen.tarjetasVerificadas += 1;
+      continue;
+    }
+
+    const v = await verificarTarjeta(d, { tarjeta });
     resumen.tarjetasVerificadas += 1;
     if (v.guardada) resumen.tarjetasGuardadas += 1;
   }
@@ -1456,6 +1522,280 @@ export async function correrConciliacion(d: Deps, limites: { hastaMs: number }):
   }
 
   return resumen;
+}
+
+// ------------------------------------------------ las tarjetas olvidadas
+
+/**
+ * LAS TARJETAS QUE BANCARD TIENE GUARDADAS Y ORDEN YA NO (/admin → Bancard →
+ * «Tarjetas olvidadas en Bancard», 07/10/2026).
+ *
+ * Bancard no deja guardar dos veces la misma tarjeta en el comercio («La
+ * tarjeta ya ha sido catastrada en este comercio.»). Y hay caminos por los
+ * que una tarjeta queda guardada allá sin que Orden la tenga: se borra la
+ * cuenta desde /admin (la base se lleva en cascada el pagador y sus tarjetas,
+ * y a Bancard nadie le avisa), o un catastro que Orden dio por fallido y
+ * Bancard sí registró. Esa tarjeta no se puede volver a guardar en ninguna
+ * cuenta hasta que alguien la borre en Bancard, y para borrarla hay que saber
+ * a nombre de qué pagador quedó, que es justo lo que Orden perdió.
+ *
+ * Por eso se BUSCA por números de pagador (los pone Orden, del 5001 en
+ * adelante, uno por cada intento de guardar una tarjeta) y se BORRA de a una.
+ *
+ * QUÉ SE PUEDE BORRAR lo dice una sola regla, `estadoEnOrden`, y la aplica el
+ * servidor AL MOMENTO DE BORRAR, con una lista recién pedida a Bancard y una
+ * mirada nueva a la base: lo que mostró la búsqueda (o lo que mande el
+ * navegador) no decide nada.
+ *
+ *   · Se borra: la que Orden no conoce (`sin_cuenta`: su cuenta se borró) y
+ *     las que Orden ya dio por terminadas (`fallida`, `quitada`, `por_quitar`).
+ *   · NUNCA: una `activa` (la está usando una cuenta) ni una `pendiente` (un
+ *     catastro en curso; tenga la edad que tenga: la conciliación la resuelve
+ *     sola en menos de 40 minutos, y si Bancard la lista es una tarjeta que la
+ *     persona sí guardó: lo correcto es activarla, no borrarla).
+ *   · Tampoco: si es del otro ambiente de Bancard, si Orden la tiene a nombre
+ *     de otro pagador, o si la base no contestó.
+ *
+ * Lo que no se puede cerrar sin una función nueva en la base: entre la última
+ * mirada y el pedido de borrado pasan milisegundos sin candado. Con una
+ * `fallida`, si justo ahí la persona termina un formulario que tenía abierto
+ * hace más de media hora, se le borra y tiene que cargarla de nuevo.
+ *
+ * De cada tarjeta salen de acá la marca y los últimos cuatro, nada más: el
+ * alias, el número enmascarado y el vencimiento no se devuelven ni se anotan.
+ */
+export type EstadoEnOrden =
+  | 'sin_cuenta' | 'fallida' | 'quitada' | 'por_quitar'     // se puede borrar en Bancard
+  | 'pendiente' | 'activa'                                  // nunca
+  | 'otro_entorno' | 'no_coincide' | 'sin_dato';            // nunca: no se pudo comprobar
+
+/** Los únicos estados con los que una tarjeta se borra en Bancard. */
+export type EstadoOlvidable = 'sin_cuenta' | 'fallida' | 'quitada' | 'por_quitar';
+
+/**
+ * Qué sabe Orden de una tarjeta que Bancard lista bajo `userId`. Pura.
+ * `info` es lo que leyó `tarjetaInterna`: `undefined` si la base no contestó,
+ * `null` si no hay fila.
+ */
+export function estadoEnOrden(
+  info: { userId: number; entorno: string; estado: string } | null | undefined,
+  userId: number,
+  entorno: EntornoBancard,
+): EstadoEnOrden {
+  if (info === undefined) return 'sin_dato';
+  if (info === null) return 'sin_cuenta';
+  if (info.entorno !== entorno) return 'otro_entorno';
+  if (info.userId !== userId) return 'no_coincide';
+  switch (info.estado) {
+    case 'activa':
+    case 'pendiente':
+    case 'fallida':
+    case 'quitada':
+    case 'por_quitar':
+      return info.estado;
+    default:
+      return 'sin_dato';
+  }
+}
+
+/** ¿Se puede borrar en Bancard una tarjeta con ese estado? Pura. */
+export function sePuedeOlvidar(e: EstadoEnOrden): e is EstadoOlvidable {
+  return e === 'sin_cuenta' || e === 'fallida' || e === 'quitada' || e === 'por_quitar';
+}
+
+/** Cuántos pagadores se miran, como mucho, en un pedido de búsqueda. */
+export const TOPE_DE_BUSQUEDA = 40;
+
+/** Cuánto se espera a Bancard por cada pagador de la búsqueda. */
+const ESPERA_DE_BUSQUEDA_MS = 6_000;
+
+/** Cuántos cortes de red seguidos hacen parar la búsqueda. */
+const CORTES_SEGUIDOS = 3;
+
+export interface TarjetaEnBancard {
+  userId: number;
+  cardId: number;
+  marca: string | null;
+  ultimos4: string | null;
+  orden: EstadoEnOrden;
+  sePuedeBorrar: boolean;
+}
+
+export interface BusquedaDeOlvidadas {
+  desde: number;
+  /** El último pagador que de verdad se miró (uno menos que `desde` si no se llegó a mirar ninguno). */
+  hasta: number;
+  /** Desde dónde seguir, si quedó algo de lo pedido sin mirar; null si se terminó. */
+  siguiente: number | null;
+  /**
+   * Por qué se paró antes de terminar: se acabó el tiempo, Bancard contestó
+   * una página en vez de datos (su protección), no se pudo llegar tres veces
+   * seguidas, o rechazó la clave o la firma. Null si no se paró.
+   */
+  cortado: null | 'tiempo' | 'bloqueo' | 'red' | 'claves';
+  /** Pedidos hechos a Bancard. */
+  consultados: number;
+  /** Los pagadores de `desde` a `hasta` por los que Bancard no contestó una lista. */
+  errores: { userId: number; clave: string }[];
+  tarjetas: TarjetaEnBancard[];
+}
+
+/**
+ * BUSCAR: le pide a Bancard las tarjetas de cada pagador del rango, de a uno
+ * y en fila (nada en paralelo: es la IP de Orden contra su protección), y de
+ * cada tarjeta dice qué sabe Orden.
+ *
+ * El rango se recorta a `TOPE_DE_BUSQUEDA` números. Se para ANTES de un
+ * pedido si no queda tiempo, al primer bloqueo, a los tres cortes de red
+ * seguidos o si Bancard rechaza las claves (no tiene sentido insistir 40
+ * veces); en todos los casos `siguiente` dice desde dónde seguir. Un pagador
+ * por el que Bancard contesta otro error (puede que así conteste por un
+ * número que nunca vio) queda en `errores` y la búsqueda sigue.
+ *
+ * Cada pedido queda en `bancard_eventos` (tipo `users_cards`, con el pagador
+ * y `origen: 'olvidadas'`); de las tarjetas, solo cuántas y sus números.
+ */
+export async function buscarOlvidadas(
+  d: Deps,
+  p: { desde: number; hasta: number },
+  limites: { hastaMs: number; esperaMs?: number },
+): Promise<BusquedaDeOlvidadas> {
+  const desde = p.desde;
+  const tope = Math.min(p.hasta, desde + TOPE_DE_BUSQUEDA - 1);
+  const espera = limites.esperaMs ?? ESPERA_DE_BUSQUEDA_MS;
+  const r: BusquedaDeOlvidadas = {
+    desde, hasta: tope, siguiente: p.hasta > tope ? tope + 1 : null, cortado: null,
+    consultados: 0, errores: [], tarjetas: [],
+  };
+  /** Se para acá: de `n` en adelante no se miró (o no se pudo mirar) nada. */
+  const cortar = (motivo: NonNullable<BusquedaDeOlvidadas['cortado']>, n: number) => {
+    r.cortado = motivo;
+    r.siguiente = n;
+    r.hasta = n - 1;
+    r.errores = r.errores.filter((e) => e.userId < n);
+    r.tarjetas = r.tarjetas.filter((t) => t.userId < n);
+  };
+
+  let cortesSeguidos = 0;
+  for (let u = desde; u <= tope; u++) {
+    if (Date.now() + espera + 2_000 > limites.hastaMs) { cortar('tiempo', u); break; }
+
+    let lista: Resultado<{ tarjetas: TarjetaBancard[] }>;
+    try {
+      lista = await d.bancard.tarjetas(u, { esperaMs: espera });
+    } catch {
+      lista = { ok: false, clave: 'pedido_invalido', http: 0, clase: 'bancard' };
+    }
+    r.consultados += 1;
+    await anotar(d, {
+      tipo: 'users_cards', ok: lista.ok, clave: lista.ok === true ? null : lista.clave, http: lista.ok === true ? 200 : lista.http,
+      detalle: lista.ok === true
+        ? { cuantas: lista.tarjetas.length, ids: lista.tarjetas.map((t) => t.cardId).join(','), user_id: u, origen: 'olvidadas' }
+        : { user_id: u, origen: 'olvidadas' },
+    });
+
+    if (lista.ok === false) {
+      r.errores.push({ userId: u, clave: lista.clave.slice(0, 80) });
+      if (lista.clase === 'no_json') { cortar('bloqueo', u); break; }
+      if (lista.clave === 'InvalidTokenError' || lista.clave === 'InvalidPublicKeyError') { cortar('claves', u); break; }
+      if (lista.clase === 'red' || lista.clase === 'timeout') {
+        cortesSeguidos += 1;
+        if (cortesSeguidos >= CORTES_SEGUIDOS) { cortar('red', u - (CORTES_SEGUIDOS - 1)); break; }
+      } else {
+        cortesSeguidos = 0;
+      }
+      continue;
+    }
+    cortesSeguidos = 0;
+
+    for (const t of lista.tarjetas) {
+      const orden = estadoEnOrden(await tarjetaInterna(d, t.cardId), u, d.entorno);
+      r.tarjetas.push({
+        userId: u,
+        cardId: t.cardId,
+        marca: t.marca.trim().slice(0, 30) || null,
+        ultimos4: ultimos4(t.enmascarado),
+        orden,
+        sePuedeBorrar: sePuedeOlvidar(orden),
+      });
+    }
+  }
+  return r;
+}
+
+export type BorradoDeOlvidada =
+  /** `ya_no_estaba`: Bancard no la lista (o la borró otro en el medio): no había nada que borrar. */
+  | { ok: true; resultado: 'borrada' | 'ya_no_estaba' }
+  /**
+   * 'activa' / 'pendiente'          Orden la tiene en uso o a medio guardar: no se borra.
+   * 'otro_entorno' / 'no_coincide'  no es de este ambiente, o Orden la tiene con otro pagador.
+   * 'base'                          la base no contestó: no se pudo comprobar.
+   * 'bancard'                       Bancard no contestó la lista o el borrado (con su `clave`).
+   */
+  | { ok: false; motivo: 'activa' | 'pendiente' | 'otro_entorno' | 'no_coincide' | 'base' | 'bancard'; clave?: string };
+
+/**
+ * BORRAR UNA TARJETA OLVIDADA EN BANCARD. Todo lo que decide, se decide acá
+ * y ahora; del pedido solo se usan los dos números.
+ *
+ *   1. La lista de ese pagador, recién pedida. Si Bancard no contesta, nada.
+ *   2. Si la tarjeta no está en ESA lista, no hay nada que borrar (así, un
+ *      número de tarjeta de otro pagador no borra nada: se borra con el alias
+ *      que Bancard dio para esa tarjeta bajo ese pagador, y con ningún otro).
+ *   3. Qué sabe Orden de ella, leído ahora. Si no es de las que se olvidan,
+ *      NO se le manda ningún borrado a Bancard.
+ *   4. El borrado, con el alias de esa lista (que no sale de esta función).
+ *   5. Si Orden la tenía `por_quitar`, queda `quitada`.
+ *
+ * Quedan anotados la lista y el borrado (`delete_card`, con el pagador, por
+ * qué se la dio por olvidada y quién lo pidió).
+ */
+export async function borrarOlvidada(
+  d: Deps,
+  p: { userId: number; cardId: number; actor?: string | null },
+): Promise<BorradoDeOlvidada> {
+  const { userId, cardId } = p;
+
+  let lista: Resultado<{ tarjetas: TarjetaBancard[] }>;
+  try {
+    lista = await d.bancard.tarjetas(userId, { esperaMs: 10_000 });
+  } catch {
+    lista = { ok: false, clave: 'pedido_invalido', http: 0, clase: 'bancard' };
+  }
+  await anotar(d, {
+    tarjeta: cardId, tipo: 'users_cards', ok: lista.ok, clave: lista.ok === true ? null : lista.clave, http: lista.ok === true ? 200 : lista.http,
+    detalle: lista.ok === true
+      ? { cuantas: lista.tarjetas.length, ids: lista.tarjetas.map((t) => t.cardId).join(','), user_id: userId, origen: 'olvidadas' }
+      : { user_id: userId, origen: 'olvidadas' },
+  });
+  if (lista.ok === false) return { ok: false, motivo: 'bancard', clave: lista.clave.slice(0, 80) };
+
+  const t = lista.tarjetas.find((x) => x.cardId === cardId);
+  if (!t) return { ok: true, resultado: 'ya_no_estaba' };
+
+  const estado = estadoEnOrden(await tarjetaInterna(d, cardId), userId, d.entorno);
+  if (!sePuedeOlvidar(estado)) return { ok: false, motivo: estado === 'sin_dato' ? 'base' : estado };
+
+  let b: Resultado<Record<never, never>>;
+  try {
+    b = await d.bancard.borrarTarjeta(userId, t.alias, { esperaMs: 10_000 });
+  } catch {
+    b = { ok: false, clave: 'pedido_invalido', http: 0, clase: 'bancard' };
+  }
+  await anotar(d, {
+    tarjeta: cardId, tipo: 'delete_card', ok: b.ok, clave: claveDe(b), http: b.ok === true ? 200 : b.http,
+    detalle: { user_id: userId, origen: 'olvidadas', motivo: estado, ...(p.actor ? { actor: p.actor } : {}) },
+  });
+  if (b.ok === false && b.clave !== 'CardNotFoundError') {
+    anotarEnRegistro(d, `borrar tarjeta olvidada sin éxito · tarjeta ${cardId} · ${b.clave}`);
+    return { ok: false, motivo: 'bancard', clave: b.clave.slice(0, 80) };
+  }
+
+  // La que Orden tenía «por quitar» ya está borrada: se cierra también acá.
+  if (estado === 'por_quitar') {
+    await llamar(d, 'bancard_quitar_tarjeta', { p_tarjeta: cardId, p_usuario: null, p_paso: 'hecho' });
+  }
+  return { ok: true, resultado: b.ok === true ? 'borrada' : 'ya_no_estaba' };
 }
 
 // ------------------------------------------------------- probar conexión

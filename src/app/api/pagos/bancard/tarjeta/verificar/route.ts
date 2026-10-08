@@ -69,7 +69,9 @@ export async function POST(request: Request) {
   if (r.motivo === 'ajena' || r.motivo === 'desconocida') {
     return NextResponse.json({ error: t.bancard.resultado.noExiste }, { status: 404 });
   }
-  // 'no_esta' (Bancard no la tiene), 'bancard' (no contestó), su estado… Con
-  // lo que dijo el formulario, para que la pantalla lo muestre.
+  // 'no_esta' (Bancard no la tiene), 'sin_confirmar' (el formulario dijo que
+  // la guardó y Bancard todavía no la lista: la pantalla dice que se vuelve a
+  // mirar sola), 'bancard' (no contestó), su estado… Con lo que dijo el
+  // formulario, para que la pantalla lo muestre.
   return NextResponse.json({ guardada: false, motivo: r.motivo, formulario }, { headers: { 'Cache-Control': 'no-store' } });
 }

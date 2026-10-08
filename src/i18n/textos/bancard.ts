@@ -196,6 +196,16 @@ export const bancardEs = {
     bancardRespondio: (respuesta: string) => `Bancard respondió: ${respuesta}`,
     /** Solo en el ambiente de prueba: ahí Bancard acepta una única cédula. */
     ayudaDePruebas: 'En pruebas, la tarjeta se guarda solo con una tarjeta de prueba de Bancard y la cédula 9661000.',
+    /**
+     * Bancard contestó que esa tarjeta ya está guardada en el comercio (no deja
+     * guardarla dos veces, esté en la cuenta que esté): qué puede hacer la
+     * persona. Va debajo de «Bancard respondió: …» (07/10/2026).
+     */
+    yaCatastrada: 'Bancard ya tiene guardada esa tarjeta. Si la cargaste hoy, esperá un rato: puede aparecer acá sola. Si no aparece, probá con otra tarjeta o escribinos y la liberamos.',
+    /** Lo mismo, solo en el ambiente de prueba: quien prueba es la administración. */
+    yaCatastradaPruebas: 'En pruebas la liberás vos: Administración → Bancard → «Tarjetas olvidadas en Bancard».',
+    /** El formulario dijo que la guardó y Bancard todavía no la lista: la vuelve a mirar la conciliación. */
+    sinConfirmar: 'Bancard recibió tu tarjeta, pero todavía no nos la confirma. La volvemos a mirar solos en menos de una hora: no la cargues de nuevo.',
     probarDeNuevo: 'Probar de nuevo',
     pagarConGuardada: (marca: string, ultimos4: string) => `Pagar con mi ${marca} •••• ${ultimos4}`,
     guardarYPagar: 'Guardar mi tarjeta y que se cobre sola cada mes',
@@ -428,6 +438,9 @@ export const bancardPt: typeof bancardEs = {
     noSeGuardoDetalle: (detalle) => `Não deu pra salvar o cartão. ${detalle}`,
     bancardRespondio: (respuesta) => `A Bancard respondeu: ${respuesta}`,
     ayudaDePruebas: 'Em testes, o cartão só é salvo com um cartão de teste da Bancard e a cédula (documento) 9661000.',
+    yaCatastrada: 'A Bancard já tem esse cartão salvo. Se você cadastrou hoje, espere um pouco: ele pode aparecer aqui sozinho. Se não aparecer, tente com outro cartão ou fale com a gente que liberamos.',
+    yaCatastradaPruebas: 'Em testes é você quem libera: Administração → Bancard → «Tarjetas olvidadas en Bancard».',
+    sinConfirmar: 'A Bancard recebeu seu cartão, mas ainda não confirmou pra gente. Conferimos de novo sozinhos em menos de uma hora: não cadastre outra vez.',
     probarDeNuevo: 'Tentar de novo',
     pagarConGuardada: (marca, ultimos4) => `Pagar com meu ${marca} •••• ${ultimos4}`,
     guardarYPagar: 'Salvar meu cartão e cobrar sozinho todo mês',

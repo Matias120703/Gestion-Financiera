@@ -392,7 +392,8 @@ function aceptado(nombre, resultado) {
       [true, false]);
     ok('el resto del pago con Bancard sigue con sesión',
       ['/api/pagos/bancard/pago', '/api/pagos/bancard/estado', '/api/pagos/bancard/cobrar', '/api/pagos/bancard/tarjeta',
-        '/api/admin/bancard/revertir', '/api/admin/bancard/consultar', '/api/admin/bancard/probar', '/plan/pago/1000001']
+        '/api/admin/bancard/revertir', '/api/admin/bancard/consultar', '/api/admin/bancard/probar', '/api/admin/bancard/olvidadas',
+        '/plan/pago/1000001']
         .filter((r) => esPublica(r)), []);
   }
 

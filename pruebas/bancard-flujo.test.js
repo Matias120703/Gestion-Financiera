@@ -1738,17 +1738,27 @@ async function principal() {
       ]);
 
     // El navegador miente: manda «éxito» y Bancard no tiene la tarjeta.
+    //
+    // CAMBIÓ A PROPÓSITO el 07/10 (tarjetas olvidadas): antes esto quedaba
+    // `fallida` con UNA mirada a Bancard. Si Bancard tardaba un instante en
+    // mostrar la tarjeta, quedaba guardada allá sin que Orden lo supiera, y
+    // nadie la volvía a mirar. Ahora un «éxito» del formulario gana una
+    // segunda pregunta y, si sigue sin estar, la tarjeta queda `pendiente`
+    // ('sin_confirmar') para que la conciliación decida a los 30 minutos. Lo
+    // que esta prueba cuida sigue igual: NO se guarda y no hay tarjeta para
+    // el débito.
     const r2 = await pedir();
     falso.pedidos.length = 0;
     const v2 = await F.verificarTarjeta(d, {
-      tarjeta: r2.tarjeta, empresa: K.empresaId, formulario: { mensaje: 'add_new_card_success', detalle: '' },
+      tarjeta: r2.tarjeta, empresa: K.empresaId, formulario: { mensaje: 'add_new_card_success', detalle: '' }, pausaMs: 0,
     });
-    ok('un «add_new_card_success» que manda el navegador NO alcanza: no se guarda, queda fallida y sin tarjeta para el débito',
-      [v2.guardada, v2.motivo, (await tarjetaDe(r2.tarjeta)).estado, (await cuentaDe(K)).tarjeta_id], [false, 'no_esta', 'fallida', null]);
-    ok('se le preguntó igual a Bancard (un users_cards), y quedó anotado lo que dijo cada uno',
+    ok('un «add_new_card_success» que manda el navegador NO alcanza: no se guarda y no hay tarjeta para el débito (queda pendiente, sin confirmar)',
+      [v2.guardada, v2.motivo, (await tarjetaDe(r2.tarjeta)).estado, (await cuentaDe(K)).tarjeta_id], [false, 'sin_confirmar', 'pendiente', null]);
+    ok('se le preguntó a Bancard dos veces (dos users_cards), y quedó anotado lo que dijo cada uno',
       [rutas(falso).map(simple), (await eventosDeTarjeta(r2.tarjeta)).slice(1)],
-      [['users_cards'], [
+      [['users_cards', 'users_cards'], [
         ['catastro_formulario', true, 'add_new_card_success', null, []],
+        ['users_cards', true, null, 200, [['cuantas', 0], ['ids', '']]],
         ['users_cards', true, null, 200, [['cuantas', 0], ['ids', '']]],
       ]]);
 
@@ -1848,6 +1858,406 @@ async function principal() {
         Fm.textoDeLoQueDijo(null), Fm.textoDeLoQueDijo(undefined)],
       ['Cédula inválida', 'add_new_card_fail', '', '']);
     ok('el estado que cuenta como «éxito» del catastro es el del manual', Fm.CATASTRO_CON_EXITO, 'add_new_card_success');
+
+    // «Ya ha sido catastrada»: solo para mostrarle a la persona qué hacer.
+    ok('reconoce la respuesta de Bancard «ya ha sido catastrada» (y nada más)',
+      [Fm.tarjetaYaCatastrada({ mensaje: 'add_new_card_fail', detalle: 'La tarjeta ya ha sido catastrada en este comercio.' }),
+        Fm.tarjetaYaCatastrada({ mensaje: 'La tarjeta ya fue catastrada', detalle: '' }),
+        Fm.tarjetaYaCatastrada({ mensaje: 'add_new_card_fail', detalle: 'Los datos ingresados no son correctos' }),
+        Fm.tarjetaYaCatastrada({ mensaje: 'add_new_card_fail', detalle: 'Ya casi. La tarjeta no pudo ser catastrada.' }),
+        Fm.tarjetaYaCatastrada({ mensaje: 'add_new_card_success', detalle: '' }), Fm.tarjetaYaCatastrada(null), Fm.tarjetaYaCatastrada(undefined)],
+      [true, true, false, false, false, false, false]);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // LAS TARJETAS QUE QUEDAN EN BANCARD SIN QUE ORDEN LAS VEA (07/10/2026)
+  // ═══════════════════════════════════════════════════════════
+  //
+  // Matías guardó la tarjeta de prueba en cuentas que después borró desde
+  // /admin. La tarjeta quedó en Bancard a nombre de un pagador que Orden ya no
+  // conoce, y Bancard no deja guardarla de nuevo («La tarjeta ya ha sido
+  // catastrada en este comercio.»). Dos cosas:
+  //
+  //   · que queden menos tarjetas así (grupo 33): un «éxito» del formulario
+  //     gana una segunda pregunta a Bancard, y la conciliación ya no le cambia
+  //     la tarjeta a una cuenta que guardó otra después;
+  //   · y poder encontrarlas y borrarlas (grupo 34), sin borrar NUNCA una que
+  //     una cuenta está usando ni la de un catastro en curso.
+  const LISTA = /^\/users\/[0-9]+\/cards$/;
+  const EXITO = { mensaje: 'add_new_card_success', detalle: '' };
+  const envejecer = (id) => db.query(`update public.bancard_tarjetas set created_at = now() - interval '31 minutes' where id = $1`, [id]);
+  const listas = (falso) => falso.pedidos.filter((p) => p.method === 'POST' && LISTA.test(p.ruta)).length;
+  const borrados = (falso) => falso.pedidos.filter((p) => p.method === 'DELETE').length;
+  const enBancard = (falso, userId) => falso.tarjetasDe(userId).map((t) => t.cardId);
+  const estadoDe = async (id) => (await tarjetaDe(id))?.estado ?? null;
+  const conciliarTarjetas = (d) => F.correrConciliacion(d, { hastaMs: Date.now() + 60_000 });
+  async function pedirCatastro(d, c) {
+    const r = await F.iniciarCatastro(d, { empresa: c.empresaId, usuario: c.uid, telefono: '0981123456', consentimiento });
+    if (r.estado !== 'listo') throw new Error(`no se pudo pedir el catastro: ${JSON.stringify(r)}`);
+    return r;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('33 · Menos tarjetas olvidadas: la segunda pregunta, y la conciliación que no cambia la tarjeta (07/10)');
+  // ═══════════════════════════════════════════════════════════
+  {
+    const { d, falso } = armar('produccion');
+
+    // (A) El formulario dijo «éxito» y Bancard tarda un instante en listarla.
+    const S = await H.montarEmpresa(db, { email: 'segunda@negocio.test', nombre: 'Segunda Mirada' });
+    const s1 = await pedirCatastro(d, S);
+    falso.completarCatastro(s1.processId, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    falso.programar(LISTA, { json: { status: 'success', cards: [] } });     // la primera lista todavía viene vacía
+    falso.pedidos.length = 0;
+    const v1 = await F.verificarTarjeta(d, { tarjeta: s1.tarjeta, empresa: S.empresaId, formulario: EXITO, pausaMs: 0 });
+    ok('éxito del formulario, la primera lista vacía y la segunda la trae: guardada (dos preguntas a Bancard)',
+      [v1.guardada, v1.ultimos4, await estadoDe(s1.tarjeta), Number((await cuentaDe(S)).tarjeta_id), listas(falso)],
+      [true, '0016', 'activa', s1.tarjeta, 2]);
+
+    const T = await H.montarEmpresa(db, { email: 'sinconfirmar@negocio.test', nombre: 'Sin Confirmar' });
+    const t1 = await pedirCatastro(d, T);
+    const uT = Number((await pagadorDe(T)).id);
+    falso.pedidos.length = 0;
+    const v2 = await F.verificarTarjeta(d, { tarjeta: t1.tarjeta, empresa: T.empresaId, formulario: EXITO, pausaMs: 0 });
+    ok('éxito y Bancard sigue sin listarla: no se guarda, pero tampoco queda fallida para siempre (pendiente, «sin confirmar»)',
+      [v2.guardada, v2.motivo, await estadoDe(t1.tarjeta), (await cuentaDe(T)).tarjeta_id, listas(falso)],
+      [false, 'sin_confirmar', 'pendiente', null, 2]);
+    await conciliarTarjetas(d);
+    ok('recién pedida, la conciliación no la toca', await estadoDe(t1.tarjeta), 'pendiente');
+    falso.completarCatastro(t1.processId, { marca: 'MasterCard', enmascarado: '5400********0014', vencimiento: '08/30' });
+    await envejecer(t1.tarjeta);
+    let res = await conciliarTarjetas(d);
+    ok('Bancard la muestra más tarde: a los 31 minutos la conciliación la encuentra y la activa',
+      [res.tarjetasGuardadas, await estadoDe(t1.tarjeta), Number((await cuentaDe(T)).tarjeta_id), enBancard(falso, uT)],
+      [1, 'activa', t1.tarjeta, [t1.tarjeta]]);
+
+    // Un «éxito» inventado no guarda nada: cuesta una pregunta más y media hora de «pendiente».
+    const U = await H.montarEmpresa(db, { email: 'inventado@negocio.test', nombre: 'Éxito Inventado' });
+    const u1 = await pedirCatastro(d, U);
+    falso.programar(LISTA, 'atender');
+    falso.programar(LISTA, 'red');                                           // la segunda pregunta ni llega
+    const v3 = await F.verificarTarjeta(d, { tarjeta: u1.tarjeta, empresa: U.empresaId, formulario: EXITO, pausaMs: 0 });
+    ok('si la segunda pregunta no llega a Bancard, igual queda pendiente (no se inventa un «no»)',
+      [v3.guardada, v3.motivo, await estadoDe(u1.tarjeta)], [false, 'sin_confirmar', 'pendiente']);
+    await envejecer(u1.tarjeta);
+    res = await conciliarTarjetas(d);
+    ok('y si Bancard nunca la tuvo, a los 31 minutos la conciliación la da por fallida (sin tarjeta para el débito)',
+      [res.tarjetasGuardadas, await estadoDe(u1.tarjeta), (await cuentaDe(U)).tarjeta_id], [0, 'fallida', null]);
+
+    // Sin «éxito» todo sigue como antes: una sola pregunta y fallida.
+    const u2 = await pedirCatastro(d, U);
+    falso.pedidos.length = 0;
+    const v4 = await F.verificarTarjeta(d, {
+      tarjeta: u2.tarjeta, empresa: U.empresaId, formulario: { mensaje: 'add_new_card_fail', detalle: 'La tarjeta ya ha sido catastrada en este comercio.' },
+    });
+    ok('el formulario dijo «falló» y la lista vino vacía: fallida con una sola pregunta, como siempre',
+      [v4.guardada, v4.motivo, await estadoDe(u2.tarjeta), listas(falso)], [false, 'no_esta', 'fallida', 1]);
+    const u3 = await pedirCatastro(d, U);
+    falso.pedidos.length = 0;
+    const v5 = await F.verificarTarjeta(d, { tarjeta: u3.tarjeta, empresa: U.empresaId });
+    ok('sin formulario (la conciliación): lo mismo', [v5.motivo, await estadoDe(u3.tarjeta), listas(falso)], ['no_esta', 'fallida', 1]);
+    falso.pedidos.length = 0;
+    const v6 = await F.verificarTarjeta(d, { tarjeta: u2.tarjeta, empresa: U.empresaId, formulario: EXITO, pausaMs: 0 });
+    ok('un «éxito» sobre una que ya estaba fallida no la revive ni gana otra pregunta',
+      [v6.guardada, v6.motivo, await estadoDe(u2.tarjeta), listas(falso)], [false, 'no_esta', 'fallida', 1]);
+
+    // (B) La cuenta dejó un catastro a medias (cerró la hoja con la tarjeta
+    // ya cargada en Bancard) y después guardó OTRA. Antes, a los 30 minutos
+    // la conciliación activaba la vieja y borraba en Bancard la que la
+    // persona había elegido.
+    const N = await H.montarEmpresa(db, { email: 'cambio@negocio.test', nombre: 'Cambio Solo' });
+    const n1 = await pedirCatastro(d, N);
+    const uN = Number((await pagadorDe(N)).id);
+    falso.completarCatastro(n1.processId, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    const n2 = await pedirCatastro(d, N);
+    falso.completarCatastro(n2.processId, { marca: 'MasterCard', enmascarado: '5400********0014', vencimiento: '08/30' });
+    const vn = await F.verificarTarjeta(d, { tarjeta: n2.tarjeta, empresa: N.empresaId });
+    ok('la cuenta dejó una a medias y guardó otra: la segunda es la activa, y Bancard tiene las dos',
+      [vn.guardada, await estadoDe(n1.tarjeta), await estadoDe(n2.tarjeta), enBancard(falso, uN)],
+      [true, 'pendiente', 'activa', [n1.tarjeta, n2.tarjeta]]);
+    await envejecer(n1.tarjeta);
+
+    falso.programar(`/users/${uN}/cards`, 'red');
+    falso.pedidos.length = 0;
+    res = await conciliarTarjetas(d);
+    ok('si Bancard no contesta, no se toca nada: la vieja sigue pendiente y la elegida, activa',
+      [await estadoDe(n1.tarjeta), await estadoDe(n2.tarjeta), borrados(falso)], ['pendiente', 'activa', 0]);
+
+    falso.pedidos.length = 0;
+    res = await conciliarTarjetas(d);
+    const delN = falso.pedidos.find((p) => p.method === 'DELETE');
+    ok('a la vuelta siguiente: la vieja se borra en Bancard y queda fallida; la que la persona eligió sigue activa y es la del débito',
+      [await estadoDe(n1.tarjeta), (await tarjetaDe(n1.tarjeta)).motivo, await estadoDe(n2.tarjeta), Number((await cuentaDe(N)).tarjeta_id),
+        (await cuentaDe(N)).debito_activo, enBancard(falso, uN), borrados(falso),
+        delN.cuerpo.operation.token === md5(CLAVE + 'delete_card' + uN + delN.cuerpo.operation.alias_token)],
+      ['fallida', 'La cuenta guardó otra tarjeta después', 'activa', n2.tarjeta, true, [n2.tarjeta], 1, true]);
+    ok('y cuenta como verificada, no como guardada', [res.tarjetasVerificadas >= 1, res.tarjetasGuardadas], [true, 0]);
+
+    // Al revés sigue como siempre: la pendiente es POSTERIOR a la activa y
+    // Bancard la tiene → es la tarjeta nueva de la persona, y se activa.
+    const n3 = await pedirCatastro(d, N);
+    falso.completarCatastro(n3.processId, { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' });
+    await envejecer(n3.tarjeta);
+    res = await conciliarTarjetas(d);
+    ok('una pendiente posterior a la activa que Bancard sí tiene: se activa y la anterior se quita, como siempre',
+      [res.tarjetasGuardadas, await estadoDe(n3.tarjeta), await estadoDe(n2.tarjeta), Number((await cuentaDe(N)).tarjeta_id), enBancard(falso, uN)],
+      [1, 'activa', 'quitada', n3.tarjeta, [n3.tarjeta]]);
+
+    // Un catastro abandonado (Bancard nunca lo tuvo) con otra tarjeta guardada después: fallida, sin borrar nada.
+    const M = await H.montarEmpresa(db, { email: 'abandono@negocio.test', nombre: 'Abandono SA' });
+    const m1 = await pedirCatastro(d, M);
+    const m2 = await guardarTarjeta(d, falso, M, { marca: 'Visa', enmascarado: '4000********0016' });
+    await envejecer(m1.tarjeta);
+    falso.pedidos.length = 0;
+    await conciliarTarjetas(d);
+    ok('un catastro abandonado con otra tarjeta guardada después: fallida sin pedirle ningún borrado a Bancard',
+      [await estadoDe(m1.tarjeta), await estadoDe(m2), Number((await cuentaDe(M)).tarjeta_id), borrados(falso)], ['fallida', 'activa', m2, 0]);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  grupo('34 · Tarjetas olvidadas en Bancard: buscar por pagador y borrar solo lo que Orden no usa (07/10)');
+  // ═══════════════════════════════════════════════════════════
+  {
+    const { d, falso, registro } = armar('produccion');
+    const HASTA = () => ({ hastaMs: Date.now() + 40_000 });
+    /** Los alias que entrega el Bancard de mentira: no pueden salir de la función ni quedar anotados. */
+    const aliasDados = [];
+    const tarjetasDeVerdad = d.bancard.tarjetas;
+    d.bancard.tarjetas = async (...a) => {
+      const r = await tarjetasDeVerdad(...a);
+      if (r.ok) aliasDados.push(...r.tarjetas.map((t) => t.alias));
+      return r;
+    };
+    const cuenta = (email, nombre) => H.montarEmpresa(db, { email, nombre });
+    const pagador = async (c) => Number((await pagadorDe(c)).id);
+    const visa = { marca: 'Visa', enmascarado: '4000********0016', vencimiento: '12/30' };
+    const master = { marca: 'MasterCard', enmascarado: '5400********0014', vencimiento: '08/30' };
+    const resumen = (b) => b.tarjetas.map((t) => [t.userId, t.cardId, t.marca, t.ultimos4, t.orden, t.sePuedeBorrar]);
+    /** Los eventos que dejó la herramienta, sin fechas ni números de fila. */
+    const eventosDeOlvidadas = async (tipo) => (await db.query(
+      `select tarjeta_id, tipo, ok, clave, http, detalle from public.bancard_eventos
+        where detalle ->> 'origen' = 'olvidadas' and ($1::text is null or tipo = $1) order by id`, [tipo ?? null])).rows
+      .map((e) => ({ ...e, tarjeta_id: e.tarjeta_id === null ? null : Number(e.tarjeta_id) }));
+
+    // Cinco cuentas, una tarjeta cada una en Bancard.
+    const OA = await cuenta('olvidada-a@negocio.test', 'Olvidada A');   // guardó su tarjeta y después se borró la cuenta
+    const OB = await cuenta('olvidada-b@negocio.test', 'Olvidada B');   // la tiene activa
+    const OC = await cuenta('olvidada-c@negocio.test', 'Olvidada C');   // catastro en curso (Bancard la tiene, Orden no verificó)
+    const OD = await cuenta('olvidada-d@negocio.test', 'Olvidada D');   // Orden la dio por fallida y Bancard la tiene
+    const OE = await cuenta('olvidada-e@negocio.test', 'Olvidada E');   // otra fallida que Bancard tiene
+
+    const a1 = await guardarTarjeta(d, falso, OA, visa);
+    const uA = await pagador(OA);
+    const b1 = await guardarTarjeta(d, falso, OB, master);
+    const uB = await pagador(OB);
+    const c1 = (await pedirCatastro(d, OC)).tarjeta;
+    const uC = await pagador(OC);
+    falso.registrarTarjeta(uC, c1, visa);
+    const d1 = (await pedirCatastro(d, OD)).tarjeta;
+    const uD = await pagador(OD);
+    await F.verificarTarjeta(d, { tarjeta: d1, empresa: OD.empresaId });
+    falso.registrarTarjeta(uD, d1, visa);
+    const e1 = (await pedirCatastro(d, OE)).tarjeta;
+    const uE = await pagador(OE);
+    await F.verificarTarjeta(d, { tarjeta: e1, empresa: OE.empresaId });
+    falso.registrarTarjeta(uE, e1, master);
+
+    await H.comoUsuario(db, jefe.uid, () => db.query('select public.borrar_cuenta($1, $2)', [OA.empresaId, 'Olvidada A']));
+    ok('borrar la cuenta desde /admin se lleva la tarjeta y el pagador de Orden; en Bancard la tarjeta sigue guardada',
+      [(await J('select count(*)::int n from public.bancard_tarjetas where id = $1', [a1])).n,
+        (await J('select count(*)::int n from public.bancard_pagadores where id = $1', [uA])).n, enBancard(falso, uA)],
+      [0, 0, [a1]]);
+    ok('las otras cuatro: activa, pendiente, fallida y fallida',
+      [await estadoDe(b1), await estadoDe(c1), await estadoDe(d1), await estadoDe(e1)], ['activa', 'pendiente', 'fallida', 'fallida']);
+
+    // ---- BUSCAR
+    const desde = Math.min(uA, uB, uC, uD, uE);
+    const hasta = Math.max(uA, uB, uC, uD, uE) + 2;                     // dos números que no son de nadie
+    const rango = Array.from({ length: hasta - desde + 1 }, (_, i) => desde + i);
+    falso.pedidos.length = 0;
+    const b = await F.buscarOlvidadas(d, { desde, hasta }, HASTA());
+    ok('buscar: cada tarjeta que Bancard tiene, con qué sabe Orden de ella. Se ofrece borrar la de la cuenta borrada y las fallidas; la activa y la del catastro en curso, no',
+      resumen(b),
+      [[uA, a1, 'Visa', '0016', 'sin_cuenta', true], [uB, b1, 'MasterCard', '0014', 'activa', false], [uC, c1, 'Visa', '0016', 'pendiente', false],
+        [uD, d1, 'Visa', '0016', 'fallida', true], [uE, e1, 'MasterCard', '0014', 'fallida', true]]);
+    ok('se le preguntó a Bancard por cada pagador del rango, de a uno y en orden; los que no tienen tarjetas no aparecen; nada se borró',
+      [b.desde, b.hasta, b.siguiente, b.cortado, b.consultados, b.errores, rutas(falso), borrados(falso)],
+      [desde, hasta, null, null, rango.length, [], rango.map((u) => `/users/${u}/cards`), 0]);
+    ok('de cada tarjeta salen seis datos y ninguno más',
+      Object.keys(b.tarjetas[0]).sort(), ['cardId', 'marca', 'orden', 'sePuedeBorrar', 'ultimos4', 'userId']);
+    const porPagador = new Map([[uA, [a1]], [uB, [b1]], [uC, [c1]], [uD, [d1]], [uE, [e1]]]);
+    ok('cada pedido quedó anotado como users_cards con el pagador, cuántas vinieron y sus números (sin operación ni tarjeta)',
+      (await eventosDeOlvidadas('users_cards')).map((e) => [e.tarjeta_id, e.ok, e.http, Object.entries(e.detalle).sort()]),
+      rango.map((u) => [null, true, 200, [['cuantas', (porPagador.get(u) ?? []).length], ['ids', (porPagador.get(u) ?? []).join(',')], ['origen', 'olvidadas'], ['user_id', u]]]));
+    const textoDeBuscar = JSON.stringify(b);
+    ok('la respuesta de buscar no lleva ningún alias, ni el número enmascarado, ni el vencimiento, ni la clave',
+      [aliasDados.length >= 5, aliasDados.some((a) => textoDeBuscar.includes(a)), /alias/i.test(textoDeBuscar), textoDeBuscar.includes('4000****'),
+        textoDeBuscar.includes('5400****'), textoDeBuscar.includes('12/30'), textoDeBuscar.includes('08/30'), textoDeBuscar.includes(CLAVE)],
+      [true, false, false, false, false, false, false, false]);
+
+    // ---- BORRAR la de la cuenta que ya no existe
+    falso.pedidos.length = 0;
+    const borradaA = await F.borrarOlvidada(d, { userId: uA, cardId: a1, actor: jefe.uid });
+    const delA = falso.pedidos.find((p) => p.method === 'DELETE');
+    ok('la tarjeta de la cuenta borrada se borra en Bancard: lista recién pedida y UN borrado con el md5 del manual',
+      [borradaA, rutas(falso), falso.pedidos.map((p) => p.method), enBancard(falso, uA),
+        delA.cuerpo.operation.token === md5(CLAVE + 'delete_card' + uA + delA.cuerpo.operation.alias_token)],
+      [{ ok: true, resultado: 'borrada' }, [`/users/${uA}/cards`, `/users/${uA}/cards`], ['POST', 'DELETE'], [], true]);
+    ok('queda anotado el borrado con el número de la tarjeta (aunque su fila ya no exista), el pagador, el motivo y quién lo pidió',
+      (await eventosDeOlvidadas('delete_card')).map((e) => [e.tarjeta_id, e.ok, e.clave, e.http, Object.entries(e.detalle).sort()]),
+      [[a1, true, 'ok', 200, [['actor', jefe.uid], ['motivo', 'sin_cuenta'], ['origen', 'olvidadas'], ['user_id', uA]]]]);
+    falso.pedidos.length = 0;
+    ok('pedirlo otra vez: Bancard ya no la tiene, y no se manda ningún borrado',
+      [await F.borrarOlvidada(d, { userId: uA, cardId: a1, actor: jefe.uid }), borrados(falso)], [{ ok: true, resultado: 'ya_no_estaba' }, 0]);
+
+    // ---- EL SERVIDOR SE NIEGA aunque se lo pidan (la pantalla no decide)
+    falso.pedidos.length = 0;
+    ok('la tarjeta ACTIVA de una cuenta no se borra aunque llegue el pedido: «activa», y a Bancard no se le pide ningún borrado',
+      [await F.borrarOlvidada(d, { userId: uB, cardId: b1, actor: jefe.uid }), borrados(falso), await estadoDe(b1), Number((await cuentaDe(OB)).tarjeta_id),
+        (await cuentaDe(OB)).debito_activo, enBancard(falso, uB)],
+      [{ ok: false, motivo: 'activa' }, 0, 'activa', b1, true, [b1]]);
+    falso.pedidos.length = 0;
+    ok('la de un catastro EN CURSO tampoco: «pendiente», sin borrado, y sigue en Bancard para que Orden la confirme',
+      [await F.borrarOlvidada(d, { userId: uC, cardId: c1, actor: jefe.uid }), borrados(falso), await estadoDe(c1), enBancard(falso, uC)],
+      [{ ok: false, motivo: 'pendiente' }, 0, 'pendiente', [c1]]);
+    falso.pedidos.length = 0;
+    ok('el navegador miente (el pagador de una cuenta con la tarjeta activa de otra): esa tarjeta no está en esa lista, y no se borra nada',
+      [await F.borrarOlvidada(d, { userId: uD, cardId: b1, actor: jefe.uid }), borrados(falso), enBancard(falso, uB), enBancard(falso, uD), await estadoDe(b1)],
+      [{ ok: true, resultado: 'ya_no_estaba' }, 0, [b1], [d1], 'activa']);
+    {
+      // Bancard lista la tarjeta bajo un pagador que no es el que Orden tiene anotado para ella.
+      const otro = armar('produccion');
+      otro.falso.registrarTarjeta(uE, b1, master);
+      ok('una tarjeta que Bancard lista bajo OTRO pagador que el de Orden: no se ofrece ni se borra («no_coincide»)',
+        [resumen(await F.buscarOlvidadas(otro.d, { desde: uE, hasta: uE }, HASTA())),
+          await F.borrarOlvidada(otro.d, { userId: uE, cardId: b1 }), borrados(otro.falso), enBancard(otro.falso, uE)],
+        [[[uE, b1, 'MasterCard', '0014', 'no_coincide', false]], { ok: false, motivo: 'no_coincide' }, 0, [b1]]);
+      // Y una tarjeta de producción vista desde un servidor en pruebas.
+      const pruebas = armar('staging');
+      pruebas.falso.registrarTarjeta(uB, b1, master);
+      ok('una tarjeta que Orden tiene en el otro ambiente de Bancard: tampoco («otro_entorno»)',
+        [resumen(await F.buscarOlvidadas(pruebas.d, { desde: uB, hasta: uB }, HASTA())),
+          await F.borrarOlvidada(pruebas.d, { userId: uB, cardId: b1 }), borrados(pruebas.falso)],
+        [[[uB, b1, 'MasterCard', '0014', 'otro_entorno', false]], { ok: false, motivo: 'otro_entorno' }, 0]);
+    }
+
+    // ---- CAMBIA ENTRE BUSCAR Y BORRAR: la búsqueda la mostró «fallida»; después la persona la termina de guardar.
+    const vD = await F.verificarTarjeta(d, { tarjeta: d1, empresa: OD.empresaId });
+    falso.pedidos.length = 0;
+    ok('se la vio fallida, la cuenta la terminó de guardar y recién ahí llega el pedido de borrar: se decide con lo de AHORA, y no se borra',
+      [vD.guardada, await F.borrarOlvidada(d, { userId: uD, cardId: d1, actor: jefe.uid }), borrados(falso), await estadoDe(d1), enBancard(falso, uD)],
+      [true, { ok: false, motivo: 'activa' }, 0, 'activa', [d1]]);
+
+    // ---- LA BASE NO CONTESTA: no se sabe si alguien la usa → no se borra
+    const con = (respuesta) => ({ ...d, bd: { rpc: (n, a) => (n === 'bancard_tarjeta_interna' ? Promise.resolve(respuesta) : d.bd.rpc(n, a)) } });
+    const sinBase = con({ data: null, error: { message: 'la base no contesta', code: '' } });
+    const baseRara = con({ data: 'cualquier cosa', error: null });
+    falso.pedidos.length = 0;
+    ok('si la base no contesta (o contesta algo que no es una tarjeta), no se ofrece borrar y el servidor se niega («base»), sin ningún borrado',
+      [resumen(await F.buscarOlvidadas(sinBase, { desde: uE, hasta: uE }, HASTA())), await F.borrarOlvidada(sinBase, { userId: uE, cardId: e1 }),
+        resumen(await F.buscarOlvidadas(baseRara, { desde: uE, hasta: uE }, HASTA())), await F.borrarOlvidada(baseRara, { userId: uE, cardId: e1 }),
+        borrados(falso), enBancard(falso, uE)],
+      [[[uE, e1, 'MasterCard', '0014', 'sin_dato', false]], { ok: false, motivo: 'base' },
+        [[uE, e1, 'MasterCard', '0014', 'sin_dato', false]], { ok: false, motivo: 'base' }, 0, [e1]]);
+
+    // ---- BANCARD NO CONTESTA al borrar
+    falso.programar(`/users/${uE}/cards`, 'red');
+    falso.pedidos.length = 0;
+    ok('Bancard no contesta la lista: «bancard», y no se intenta ningún borrado a ciegas',
+      [await F.borrarOlvidada(d, { userId: uE, cardId: e1, actor: jefe.uid }), borrados(falso)], [{ ok: false, motivo: 'bancard', clave: 'red' }, 0]);
+    falso.programar(`/users/${uE}/cards`, (pedido) => (pedido.method === 'DELETE' ? 'red' : 'atender'), 2);
+    ok('Bancard no contesta el borrado: «bancard», la tarjeta sigue allá y queda anotado que no salió',
+      [await F.borrarOlvidada(d, { userId: uE, cardId: e1, actor: jefe.uid }), enBancard(falso, uE),
+        (await eventosDeOlvidadas('delete_card')).filter((e) => e.tarjeta_id === e1).map((e) => [e.ok, e.clave, e.detalle.motivo])],
+      [{ ok: false, motivo: 'bancard', clave: 'red' }, [e1], [[false, 'red', 'fallida']]]);
+    falso.programar(`/users/${uE}/cards`, (pedido) => (pedido.method === 'DELETE'
+      ? { json: { status: 'error', messages: [{ key: 'CardNotFoundError', level: 'error', dsc: 'Card not found' }] } } : 'atender'), 2);
+    ok('Bancard contesta que esa tarjeta ya no existe: se toma como «ya no estaba»',
+      await F.borrarOlvidada(d, { userId: uE, cardId: e1, actor: jefe.uid }), { ok: true, resultado: 'ya_no_estaba' });
+    ok('y al fin: una fallida que Bancard tiene se borra, y en Orden sigue fallida',
+      [await F.borrarOlvidada(d, { userId: uE, cardId: e1, actor: jefe.uid }), enBancard(falso, uE), await estadoDe(e1)],
+      [{ ok: true, resultado: 'borrada' }, [], 'fallida']);
+
+    // ---- LA QUE ESTABA «POR QUITAR» (la persona la quitó con Bancard caído)
+    const OQ = await cuenta('olvidada-q@negocio.test', 'Olvidada Q');
+    const q1 = await guardarTarjeta(d, falso, OQ, visa);
+    const uQ = await pagador(OQ);
+    falso.programar(`/users/${uQ}/cards`, 'red');
+    await F.quitarTarjeta(d, { empresa: OQ.empresaId, usuario: OQ.uid });
+    ok('una tarjeta quitada con Bancard caído: se ofrece borrar, se borra, y en Orden queda quitada',
+      [await estadoDe(q1), resumen(await F.buscarOlvidadas(d, { desde: uQ, hasta: uQ }, HASTA())),
+        await F.borrarOlvidada(d, { userId: uQ, cardId: q1, actor: jefe.uid }), await estadoDe(q1), enBancard(falso, uQ)],
+      ['por_quitar', [[uQ, q1, 'Visa', '0016', 'por_quitar', true]], { ok: true, resultado: 'borrada' }, 'quitada', []]);
+
+    // ---- LOS CORTES DE LA BÚSQUEDA
+    const X = 7001;                                                      // pagadores que no son de nadie
+    falso.registrarTarjeta(X + 3, 900001, visa);                         // una tarjeta que Orden no conoce
+    falso.programar(LISTA, 'atender', 2);
+    falso.programar(LISTA, 'red');                                       // el tercero se corta; los demás contestan
+    let c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 5 }, HASTA());
+    ok('Bancard no contesta por UN pagador a mitad del rango: se informa cuál no se pudo mirar y la búsqueda sigue',
+      [c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, resumen(c)],
+      [X, X + 5, null, null, 6, [{ userId: X + 2, clave: 'red' }], [[X + 3, 900001, 'Visa', '0016', 'sin_cuenta', true]]]);
+    falso.programar(LISTA, 'atender');
+    falso.programar(LISTA, 'colgar');
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 2 }, { hastaMs: Date.now() + 40_000, esperaMs: 40 });
+    ok('lo mismo si Bancard se cuelga por uno: se corta la espera, se anota «timeout» y se sigue',
+      [c.cortado, c.consultados, c.errores], [null, 3, [{ userId: X + 1, clave: 'timeout' }]]);
+    falso.programar(LISTA, { json: { status: 'error', messages: [{ key: 'UserNotFoundError', level: 'error', dsc: 'User not found' }] } });
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 3 }, HASTA());
+    ok('si Bancard contesta un error por un pagador (quizá no lo conoce): queda anotado con su clave y la búsqueda sigue',
+      [c.cortado, c.consultados, c.errores, resumen(c).length], [null, 4, [{ userId: X, clave: 'UserNotFoundError' }], 1]);
+
+    falso.programar(LISTA, 'atender');
+    falso.programar(LISTA, 'red', 3);
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
+    ok('tres cortes de red seguidos: se para ahí (no se insiste contra Bancard) y dice desde dónde seguir',
+      [c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, falso.pedidos.length],
+      [X, X, X + 1, 'red', 4, [], 4]);
+    falso.programar(LISTA, 'atender', 3);
+    falso.programar(LISTA, { status: 403, texto: '<html><body>Attention Required</body></html>' });
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
+    ok('una página en vez de datos (el bloqueo de su protección): se para al primero',
+      [c.hasta, c.siguiente, c.cortado, c.consultados, c.errores, falso.pedidos.length], [X + 2, X + 3, 'bloqueo', 4, [], 4]);
+    falso.programar(LISTA, { json: { status: 'error', messages: [{ key: 'InvalidTokenError', level: 'error', dsc: 'Invalid token' }] } });
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, HASTA());
+    ok('Bancard rechaza la firma: no se insiste cuarenta veces', [c.hasta, c.siguiente, c.cortado, c.consultados, falso.pedidos.length], [X - 1, X, 'claves', 1, 1]);
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 9 }, { hastaMs: Date.now() - 1 });
+    ok('sin tiempo: no se le pide nada a Bancard y se dice desde dónde seguir',
+      [c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, c.tarjetas, falso.pedidos.length], [X, X - 1, X, 'tiempo', 0, [], 0]);
+    falso.pedidos.length = 0;
+    c = await F.buscarOlvidadas(d, { desde: X, hasta: X + 999 }, HASTA());
+    ok('un rango de mil: se miran 40 (el tope) y dice desde dónde seguir',
+      [F.TOPE_DE_BUSQUEDA, c.desde, c.hasta, c.siguiente, c.cortado, c.consultados, falso.pedidos.length, resumen(c).length],
+      [40, X, X + 39, X + 40, null, 40, 40, 1]);
+    ok('una tarjeta que Orden no conoce (su cuenta ya no existe) se borra también',
+      [await F.borrarOlvidada(d, { userId: X + 3, cardId: 900001, actor: jefe.uid }), enBancard(falso, X + 3)], [{ ok: true, resultado: 'borrada' }, []]);
+
+    // ---- LA REGLA, SOLA
+    const fila = (estado, mas = {}) => ({ userId: 5001, entorno: 'produccion', estado, ...mas });
+    const salidas = [
+      F.estadoEnOrden(undefined, 5001, 'produccion'), F.estadoEnOrden(null, 5001, 'produccion'),
+      F.estadoEnOrden(fila('fallida', { entorno: 'staging' }), 5001, 'produccion'), F.estadoEnOrden(fila('fallida', { userId: 5002 }), 5001, 'produccion'),
+      ...['activa', 'pendiente', 'fallida', 'quitada', 'por_quitar', 'algo_nuevo'].map((e) => F.estadoEnOrden(fila(e), 5001, 'produccion')),
+    ];
+    ok('estadoEnOrden: la base no contestó, no hay fila, otro ambiente, otro pagador, y después el estado de la fila (uno que no se conoce no se toca)',
+      salidas, ['sin_dato', 'sin_cuenta', 'otro_entorno', 'no_coincide', 'activa', 'pendiente', 'fallida', 'quitada', 'por_quitar', 'sin_dato']);
+    ok('se olvidan cuatro estados y ningún otro',
+      ['sin_cuenta', 'fallida', 'quitada', 'por_quitar', 'pendiente', 'activa', 'otro_entorno', 'no_coincide', 'sin_dato'].filter((e) => F.sePuedeOlvidar(e)),
+      ['sin_cuenta', 'fallida', 'quitada', 'por_quitar']);
+
+    // ---- NADA DE LA TARJETA NI DE LAS CLAVES en lo anotado
+    const anotado = JSON.stringify((await eventosDeOlvidadas(null)).map((e) => ({ ...e, detalle: { ...e.detalle, actor: undefined } }))) + registro.join('\n');
+    ok('en los eventos de la herramienta y en el registro del servidor: ni un alias, ni el enmascarado, ni el vencimiento, ni la marca, ni los últimos cuatro, ni la clave',
+      [aliasDados.length >= 10, aliasDados.some((a) => anotado.includes(a)), /alias/i.test(anotado), anotado.includes('4000****'), anotado.includes('5400****'),
+        anotado.includes('12/30'), anotado.includes('08/30'), /Visa|MasterCard/.test(anotado), /0016|0014/.test(anotado), anotado.includes(CLAVE)],
+      [true, false, false, false, false, false, false, false, false, false]);
+    ok('los únicos datos sueltos que anota son estos',
+      [...new Set((await eventosDeOlvidadas(null)).flatMap((e) => Object.keys(e.detalle)))].sort(), ['actor', 'cuantas', 'ids', 'motivo', 'origen', 'user_id']);
   }
 
   console.log(`\n${corridas - fallos}/${corridas} comprobaciones del pago ocasional con Bancard.`);
