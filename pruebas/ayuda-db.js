@@ -60,6 +60,23 @@ grant select, insert, update, delete on all tables in schema public to authentic
 grant select on all tables in schema public to anon;
 `;
 
+/**
+ * LOS PRIVILEGIOS POR DEFECTO DE SUPABASE, PUESTOS DESDE ANTES DE LA 001.
+ *
+ * En producción todo lo que se crea en `public` nace abierto a anon,
+ * authenticated y service_role, y eso es así desde antes de la primera
+ * migración: cada una revoca lo que no quiere. Una base de pruebas armada
+ * sin esto es MÁS cerrada que producción, y una comprobación del tipo «la
+ * llave de servicio no ejecuta tal función» puede salir verde acá y no ser
+ * cierta allá (pasó con la 131). Con `crearBase({ comoSupabase: true })` la
+ * base queda armada como la de verdad.
+ */
+const PRIVILEGIOS_SUPABASE = `
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+`;
+
 function leerSql(rutaRelativa) {
   let sql = fs.readFileSync(path.join(RAIZ, rutaRelativa), 'utf8');
   // pgcrypto no existe en PGlite; gen_random_uuid() ya viene en el núcleo de PG 13+.
@@ -77,10 +94,13 @@ function migraciones() {
  * Levanta la base aplicando las migraciones.
  * `hasta` permite parar en una versión anterior para probar el salto
  * (por ejemplo, montar una instalación vieja y después migrarla).
+ * `comoSupabase` pone los privilegios por defecto de Supabase antes de la
+ * primera migración (ver PRIVILEGIOS_SUPABASE). Sin él, la base de siempre.
  */
-async function crearBase({ hasta = null } = {}) {
+async function crearBase({ hasta = null, comoSupabase = false } = {}) {
   const db = await new PGlite();
   await db.exec(PREPARACION);
+  if (comoSupabase) await db.exec(PRIVILEGIOS_SUPABASE);
 
   const lista = migraciones();
   const corte = hasta ? lista.findIndex((f) => f.startsWith(hasta)) : lista.length - 1;

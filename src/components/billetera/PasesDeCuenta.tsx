@@ -79,12 +79,17 @@ export function PasesDeCuenta({
                   {p.otra_moneda !== p.moneda && ` (${plata(Number(p.otro_monto), p.otra_moneda)})`}
                 </span>
               </span>
-              <button
-                type="button" disabled={ocupado} onClick={() => alDeshacer(p.par)}
-                className="boton-texto min-h-[40px] shrink-0 px-1 text-[12.5px] disabled:opacity-50"
-              >
-                {m.deshacer}
-              </button>
+              {/* Con la otra cuenta ya quitada (archivada) no hay «Deshacer»:
+                  la plata volvería a una cuenta que no se ve, y la base lo
+                  rechaza. El pase se sigue mostrando: es parte del saldo. */}
+              {p.otra_activa !== false && (
+                <button
+                  type="button" disabled={ocupado} onClick={() => alDeshacer(p.par)}
+                  className="boton-texto min-h-[40px] shrink-0 px-1 text-[12.5px] disabled:opacity-50"
+                >
+                  {m.deshacer}
+                </button>
+              )}
             </li>
           );
         })}

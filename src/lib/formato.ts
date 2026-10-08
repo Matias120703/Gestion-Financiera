@@ -51,6 +51,11 @@ export function simboloDe(moneda: string): string {
  * centavos caían en la parte entera: quien tecleaba 15,99 veía 1.599. Si el
  * cursor estaba después de la coma, tiene que seguir después de ella.
  *
+ * Y «después de la coma» es después de la coma aunque adelante haya
+ * aparecido un cero que nadie tecleó: quien empieza por la coma (o por «0,»,
+ * que el campo vacía) ve «0,», y contando dígitos el cursor quedaba ANTES de
+ * ese cero: 0,99 se leía 990.
+ *
  * En una moneda sin decimales (`trasLaComa` nunca es true) da lo de siempre.
  */
 export function cursorTrasFormatear(nuevo: string, digitosAntes: number, trasLaComa: boolean, coma: string): number {
@@ -60,8 +65,43 @@ export function cursorTrasFormatear(nuevo: string, digitosAntes: number, trasLaC
     if (nuevo[i] >= '0' && nuevo[i] <= '9') vistos++;
     i++;
   }
-  if (trasLaComa && nuevo[i] === coma) i++;
+  if (trasLaComa) {
+    const c = nuevo.indexOf(coma);
+    if (c >= 0 && i <= c) i = c + 1;
+  }
   return i;
+}
+
+/**
+ * EL PUNTO QUE ERA DE MILES (CampoMonto, 08/10/2026).
+ *
+ * En una moneda con centavos, un punto TECLEADO se lee como la coma: el
+ * iPhone con la región en inglés solo trae punto. Pero quien escribe diez mil
+ * dólares como se escriben, «10.000», también teclea un punto, y ese no es
+ * una coma: es el de miles. Leído como coma quedaba «10,00», y una cuenta de
+ * US$ 10.000 nacía con US$ 10.
+ *
+ * Se distinguen por lo que viene después. Los centavos son dos; un grupo de
+ * miles tiene siempre tres. Si después de ese punto llega un TERCER dígito,
+ * el punto era de miles: «10.000» es diez mil, «1.234.567» un millón y pico,
+ * y «15.99» sigue siendo 15,99.
+ *
+ * Vale solo para la coma que nació de un punto tecleado (una coma tecleada
+ * es una coma: su tercer decimal se descarta, como siempre), solo cuando lo
+ * que se acaba de teclear es un dígito, y solo en monedas de dos decimales:
+ * con uno (la humedad) o con cuatro (una cotización) un dígito de más no
+ * dice que sean miles. En guaraníes no hay coma y esto no corre nunca.
+ *
+ * `limpio` son los dígitos y, a lo sumo, la coma. Devuelve true si esa coma
+ * hay que sacarla.
+ */
+export function puntoEraDeMiles(
+  limpio: string, coma: string, decimales: number, comaDePunto: boolean, tecla: string | null,
+): boolean {
+  if (!comaDePunto || decimales !== 2) return false;
+  if (tecla === null || tecla.length !== 1 || tecla < '0' || tecla > '9') return false;
+  const partes = limpio.split(coma);
+  return partes.length === 2 && partes[1].length > decimales;
 }
 
 /**

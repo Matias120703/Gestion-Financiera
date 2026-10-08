@@ -609,6 +609,12 @@ export interface PaseDeCuenta {
   otra_moneda: string;
   /** Con signo, en la moneda de la otra cuenta. */
   otro_monto: number;
+  /**
+   * ¿La otra cuenta sigue en la billetera? Con la otra archivada el pase se
+   * muestra pero no se puede deshacer: la plata iría o vendría de una cuenta
+   * que nadie ve, y la base lo rechaza.
+   */
+  otra_activa?: boolean;
 }
 
 /**

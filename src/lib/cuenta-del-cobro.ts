@@ -75,11 +75,18 @@ export function cuentasEnOtraMoneda(cuentas: CuentaParaElegir[], metodo: string)
  * La cuenta en otra moneda que la persona TOCÓ, si sirve para esa forma de
  * pago; si no, null. Una cuenta en otra moneda nunca queda marcada sola:
  * vale únicamente si la tocaron.
+ *
+ * LO QUE ENTRA FIADO NO VA A NINGUNA CUENTA, TAMPOCO A ESTAS. En Gastos se
+ * podía tocar la de dólares con «Salió plata» y «Crédito» (la tarjeta) y
+ * pasar a «Entró plata»: los chips desaparecían (lo fiado no pregunta
+ * cuenta) pero la tocada seguía valiendo, y un ingreso que todavía nadie
+ * pagó entraba en la cuenta en dólares. Por eso mira el sentido, igual que
+ * `cuentaDelCobro`.
  */
 export function cuentaTocada(
-  cuentas: CuentaParaElegir[], elegida: string | null, metodo = 'otro',
+  cuentas: CuentaParaElegir[], elegida: string | null, metodo = 'otro', sentido: SentidoPlata = 'entra',
 ): CuentaParaElegir | null {
-  if (!elegida) return null;
+  if (!elegida || esFiado(metodo, sentido)) return null;
   return cuentasEnOtraMoneda(cuentas, metodo).find((c) => c.id === elegida) ?? null;
 }
 

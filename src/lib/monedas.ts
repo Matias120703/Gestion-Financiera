@@ -285,3 +285,25 @@ export function cotizacionVieja(desde: string | null | undefined, ahora: number 
   const t = Date.parse(desde);
   return Number.isFinite(t) && ahora - t > 30 * 86400000;
 }
+
+/**
+ * ¿HAY QUE GUARDAR ESTA COTIZACIÓN? (la hoja «¿A cuánto está el dólar?»)
+ *
+ * Solo lo que tiene un número y cambió: un campo vacío no borra nada, y
+ * volver a guardar lo mismo no hace falta.
+ *
+ * SALVO QUE LA GUARDADA YA SEA VIEJA. Con más de 30 días la fecha se ve en
+ * ámbar, y si el dólar sigue igual la persona tiene que poder decir «sí,
+ * sigue a 7.400»: se manda el mismo número y la base le pone la fecha de hoy.
+ * Sin esto había que guardar otro número y después el bueno.
+ *
+ * `valor` y `guardada.valor` van en la dirección de la base.
+ */
+export function cotizacionPorGuardar(
+  valor: number, guardada: { valor: number; desde?: string | null } | null | undefined, ahora: number = Date.now(),
+): boolean {
+  const v = Number(valor);
+  if (!(v > 0)) return false;
+  if (!guardada) return true;
+  return v !== Number(guardada.valor) || cotizacionVieja(guardada.desde, ahora);
+}

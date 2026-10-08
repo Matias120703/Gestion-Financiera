@@ -6,8 +6,10 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { dinero, fechaLegible, simboloDe } from '@/lib/formato';
 import {
-  aPropia, cotizacionAGuardar, cotizacionEscrita, decimalesDelCambio, diaDeLaCotizacion, esParDolar, parDe,
+  aPropia, cotizacionAGuardar, cotizacionEscrita, cotizacionPorGuardar, decimalesDelCambio, diaDeLaCotizacion,
+  esParDolar, parDe,
 } from '@/lib/monedas';
+import { avisoDolar } from '@/lib/agricultura';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { useZona } from '@/lib/zona';
 import type { Billetera } from '@/lib/tipos';
@@ -65,10 +67,12 @@ export function HojaCotizacion({
       : m.cuantosVale(t.gastosCampana.moneda.nombres[chica] ?? chica, uno);
   };
 
-  // Solo lo que cambió y tiene un número: un campo vacío no borra nada.
+  // Solo lo que cambió y tiene un número: un campo vacío no borra nada. Y la
+  // de siempre cuando ya es vieja (fecha en ámbar): guardar el mismo número
+  // la confirma con la fecha de hoy (ver `cotizacionPorGuardar`).
   const aGuardar = totales
     .map((tot) => ({ moneda: tot.moneda, valor: cotizacionAGuardar(escritas[tot.moneda] ?? 0, moneda, tot.moneda) }))
-    .filter((c) => c.valor > 0 && c.valor !== Number(guardada(c.moneda)?.valor ?? 0));
+    .filter((c) => cotizacionPorGuardar(c.valor, guardada(c.moneda)));
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -113,6 +117,12 @@ export function HojaCotizacion({
           const { chica } = parDe(moneda, tot.moneda);
           const previa = guardada(tot.moneda);
           const fecha = previa ? fechaLegible(diaDeLaCotizacion(previa.desde, zona), false, locale) : '';
+          // «El dólar a 74» o «a 74.000» es un cero de menos o de más, y
+          // después propone importes diez veces mal en Gastos. Para la
+          // pareja guaraní/dólar se conoce lo habitual: se AVISA, con el
+          // texto de «Pagué en dólares» (100), y no se frena: la cotización
+          // es de la persona. De las demás parejas no hay un rango que usar.
+          const dolarRaro = esParDolar(moneda, tot.moneda) && escrita > 0 && avisoDolar(escrita) !== 'ok';
           return (
             <div key={tot.moneda}>
               <label className="block">
@@ -133,6 +143,11 @@ export function HojaCotizacion({
                     dinero(tot.total, tot.moneda, true, locale),
                     dinero(aPropia(tot.total, cotizacionAGuardar(escrita, moneda, tot.moneda), moneda), moneda, true, locale),
                   )}
+                </p>
+              )}
+              {dolarRaro && (
+                <p className="mt-2 rounded-lg bg-ambar-claro px-3 py-2 text-[12.5px] font-medium text-ambar">
+                  {t.gastosCampana.moneda.dolarRaro}
                 </p>
               )}
               {fecha && <p className="mt-1 text-[12px] text-tinta/45">{m.cargadoEl(fecha)}</p>}

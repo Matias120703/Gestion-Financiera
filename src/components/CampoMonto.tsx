@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useLocale } from '@/i18n/cliente';
-import { cursorTrasFormatear } from '@/lib/formato';
+import { cursorTrasFormatear, puntoEraDeMiles } from '@/lib/formato';
 
 /**
  * UN CAMPO DE PLATA QUE SE LEE MIENTRAS SE ESCRIBE.
@@ -50,8 +50,13 @@ export function CampoMonto({
   const locale = useLocale();
   const campo = useRef<HTMLInputElement>(null);
   const informado = useRef(valor);
+  /** ¿La coma que hay en el campo nació de un punto tecleado? (ver `puntoEraDeMiles`) */
+  const comaDePunto = useRef(false);
 
-  const agrupador = new Intl.NumberFormat(locale);
+  // Hasta tres decimales es lo que Intl muestra solo, y es lo de siempre. Un
+  // campo que admite cuatro (una cotización: 5,4321) los muestra todos: con
+  // tres se abría en «5,432» y al tocarlo se guardaba sin el cuarto.
+  const agrupador = new Intl.NumberFormat(locale, { maximumFractionDigits: Math.max(3, decimales) });
   // El separador decimal de este idioma, para aceptarlo tal cual se teclea.
   const coma = new Intl.NumberFormat(locale).formatToParts(1.1)
     .find((p) => p.type === 'decimal')?.value ?? ',';
@@ -67,6 +72,9 @@ export function CampoMonto({
     const el = e.target;
     let crudo = el.value;
     const cursor = el.selectionStart ?? crudo.length;
+    const nativo = (e.nativeEvent ?? {}) as InputEvent;
+    /** Lo que se acaba de teclear; null si se borró o se pegó. */
+    const tecla = typeof nativo.data === 'string' ? nativo.data : null;
 
     // En el iPhone, el teclado decimal trae el separador de la Región del
     // teléfono y no el del idioma de la app: con el teléfono en inglés solo
@@ -74,15 +82,23 @@ export function CampoMonto({
     // todavía no hay decimal, ese punto (solo ese, no los de miles que ya
     // estaban) es la coma.
     if (decimales > 0 && coma !== '.' && !crudo.includes(coma) && cursor > 0
-        && crudo[cursor - 1] === '.' && (e.nativeEvent as InputEvent).data === '.') {
+        && crudo[cursor - 1] === '.' && tecla === '.') {
       crudo = crudo.slice(0, cursor - 1) + coma + crudo.slice(cursor);
+      comaDePunto.current = true;
+    } else if (tecla === null && !String(nativo.inputType ?? '').startsWith('delete')) {
+      // Pegado, arrastrado o deshecho: la coma que haya no se tecleó como punto.
+      comaDePunto.current = false;
     }
     const digitosAntes = soloDigitos(crudo.slice(0, cursor));
 
     // Se queda con los dígitos y, si la moneda los admite, un solo decimal.
-    const limpio = decimales > 0
+    let limpio = decimales > 0
       ? crudo.replace(new RegExp(`[^\\d${coma === '.' ? '\\.' : coma}]`, 'g'), '')
       : crudo.replace(/\D/g, '');
+    // «10.000» tecleado con el punto: llegó el tercer dígito, así que ese
+    // punto no era la coma sino el de miles. Diez mil, no diez.
+    if (puntoEraDeMiles(limpio, coma, decimales, comaDePunto.current, tecla)) limpio = limpio.replace(coma, '');
+    if (!limpio.includes(coma)) comaDePunto.current = false;
 
     const partes = limpio.split(coma);
     const entero = partes[0] ?? '';
@@ -113,6 +129,7 @@ export function CampoMonto({
   useEffect(() => {
     if (valor === informado.current) return;
     informado.current = valor;
+    comaDePunto.current = false;
     const el = campo.current;
     if (el) el.value = mostrar(valor);
     // `mostrar` se rearma en cada render y meterlo acá haría que el efecto

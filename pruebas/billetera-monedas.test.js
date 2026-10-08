@@ -43,6 +43,8 @@ const ARCHIVO_131 = MIGRACIONES.find((f) => f.startsWith('131'));
 /** Lo que hay antes de la 131: lo que está publicado. */
 const ANTERIORES = MIGRACIONES.filter((f) => f < '131');
 const ULTIMA_ANTERIOR = ANTERIORES[ANTERIORES.length - 1].slice(0, 3);
+/** El SQL que saca la 131 de la base. Fuera de migrations a propósito: lo que hay ahí va a parar a schema.sql. */
+const ARCHIVO_ATRAS = 'supabase/vuelta-atras/131_vuelta_atras.sql';
 
 let fallos = 0;
 let corridas = 0;
@@ -111,6 +113,7 @@ const CAMBIO_IMPOSIBLE = 'Revisá los montos: ese cambio no puede ser.';
 const QUITALAS = 'Tenés cuentas en otra moneda. Quitalas antes de cambiar tu moneda principal.';
 const ES_TU_MONEDA = 'Esa es tu moneda: no necesita cotización.';
 const NO_EXISTE_PASE = 'Esa transferencia no existe.';
+const CUENTA_QUITADA = 'Una de las dos cuentas ya no está en tu billetera: ese pase no se puede deshacer.';
 // Los de siempre.
 const NO_CONOCEMOS = 'No conocemos esa moneda.';
 const NO_EXISTE = 'Esa cuenta no existe.';
@@ -386,6 +389,77 @@ function cambiosDe(antes, despues) {
   const muere = [...antes.keys()].filter((k) => !despues.has(k)).sort();
   const cambia = [...antes.keys()].filter((k) => despues.has(k) && antes.get(k) !== despues.get(k)).sort();
   return { nace, muere, cambia };
+}
+
+/**
+ * El catálogo ENTERO de `public`, para decir que dos bases son la misma
+ * objeto por objeto (la vuelta atrás): cada función con su texto y su lista
+ * de permisos tal cual está guardada, y cada tabla, columna, restricción,
+ * disparador, política, índice y comentario.
+ *
+ * El texto de las funciones va sin retornos de carro: en un worktree de
+ * Windows un archivo puede llegar con CRLF y otro con LF, y eso no es una
+ * diferencia. El número de orden de las columnas no se mira: quitar una
+ * columna y volver a crearla la deja con otro número y nada más.
+ */
+async function catalogoEntero(db) {
+  const mapa = async (sql) => new Map((await db.query(sql)).rows.map((r) => [r.k, r.v]));
+  return {
+    funciones: await mapa(
+      `select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as k,
+              jsonb_build_object('argumentos', pg_get_function_arguments(p.oid), 'devuelve', pg_get_function_result(p.oid),
+                'volatil', p.provolatile, 'definer', p.prosecdef, 'config', coalesce(p.proconfig::text, ''),
+                'lenguaje', p.prolang::regproc::text, 'estricta', p.proisstrict,
+                'permisos', (select coalesce(array_agg(a::text order by a::text), '{}') from unnest(p.proacl) a),
+                'sin_permisos_propios', p.proacl is null,
+                'cuerpo', replace(p.prosrc, chr(13), ''))::text as v
+         from pg_proc p where p.pronamespace = 'public'::regnamespace`),
+    tablas: await mapa(
+      `select c.relname as k,
+              jsonb_build_object('clase', c.relkind, 'rls', c.relrowsecurity, 'forzada', c.relforcerowsecurity,
+                'permisos', (select coalesce(array_agg(a::text order by a::text), '{}') from unnest(c.relacl) a))::text as v
+         from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v', 'm', 'S')`),
+    columnas: await mapa(
+      `select c.relname || '.' || a.attname as k,
+              jsonb_build_object('tipo', format_type(a.atttypid, a.atttypmod), 'obligatoria', a.attnotnull,
+                'por_defecto', pg_get_expr(d.adbin, d.adrelid),
+                'permisos', (select coalesce(array_agg(x::text order by x::text), '{}') from unnest(a.attacl) x))::text as v
+         from pg_attribute a join pg_class c on c.oid = a.attrelid
+         left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+        where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v') and a.attnum > 0 and not a.attisdropped`),
+    restricciones: await mapa(
+      `select c.relname || '.' || k.conname as k, pg_get_constraintdef(k.oid) || ' · validada=' || k.convalidated as v
+         from pg_constraint k join pg_class c on c.oid = k.conrelid where c.relnamespace = 'public'::regnamespace`),
+    disparadores: await mapa(
+      `select c.relname || '.' || t.tgname as k, pg_get_triggerdef(t.oid) || ' · ' || t.tgenabled::text as v
+         from pg_trigger t join pg_class c on c.oid = t.tgrelid
+        where c.relnamespace = 'public'::regnamespace and not t.tgisinternal`),
+    politicas: await mapa(
+      `select tablename || '.' || policyname as k,
+              coalesce(cmd, '') || ' · ' || coalesce(roles::text, '') || ' · ' || coalesce(qual, '') || ' · ' || coalesce(with_check, '') as v
+         from pg_policies where schemaname = 'public'`),
+    indices: await mapa(
+      `select tablename || '.' || indexname as k, indexdef as v from pg_indexes where schemaname = 'public'`),
+    comentarios: await mapa(
+      `select c.relname || '.' || a.attname as k, col_description(c.oid, a.attnum) as v
+         from pg_attribute a join pg_class c on c.oid = a.attrelid
+        where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
+          and col_description(c.oid, a.attnum) is not null`),
+  };
+}
+
+/** Las diferencias entre dos catálogos enteros, dichas una por una, y cuántos objetos se miraron. */
+function diferenciasDeCatalogo(antes, despues) {
+  const distintos = [];
+  let objetos = 0;
+  for (const clase of Object.keys(antes)) {
+    objetos += antes[clase].size;
+    const d = cambiosDe(antes[clase], despues[clase]);
+    for (const k of d.nace) distintos.push(`${clase}: sobra ${k}`);
+    for (const k of d.muere) distintos.push(`${clase}: falta ${k}`);
+    for (const k of d.cambia) distintos.push(`${clase}: cambió ${k}`);
+  }
+  return { objetos, distintos };
 }
 
 /** `despues`, pero solo con las claves que tenía `antes` (a cualquier profundidad). */
@@ -1371,7 +1445,8 @@ async function principal() {
         [paseDolares.par, hoy, -250.56, 'USD', 'Binance', 'USD', 250.56],
         [pase2.par, hoy, -1000, 'USD', 'Itaú', 'PYG', 7600000],
         [pase1.par, hoy, 1000, 'USD', 'Itaú', 'PYG', -7400000]]);
-    ok('  con estas claves', Object.keys(lista[0]).sort(), ['fecha', 'moneda', 'monto', 'nota', 'otra_cuenta', 'otra_moneda', 'otro_monto', 'par']);
+    ok('  con estas claves', Object.keys(lista[0]).sort(), ['fecha', 'moneda', 'monto', 'nota', 'otra_activa', 'otra_cuenta', 'otra_moneda', 'otro_monto', 'par']);
+    ok('  y mientras la otra cuenta siga en la billetera, `otra_activa` dice que sí', lista.map((x) => x.otra_activa), [true, true, true]);
     const cuantos = async (limite) => (await J(N.uid, 'select public.transferencias_de_cuenta($1,$2,$3) j', [N.empresaId, atlas, limite])).length;
     ok('  el límite: 1, 0 (da uno), 999 (da todos, hasta 50) y null (10)', [await cuantos(1), await cuantos(0), await cuantos(999), await cuantos(null)], [1, 1, 3, 3]);
     const delItau = await J(N.uid, 'select public.transferencias_de_cuenta($1,$2) j', [N.empresaId, itau]);
@@ -1468,6 +1543,35 @@ async function principal() {
       ['Binance', 'color,cotizacion,id,metodos,moneda,nombre,otra,tipo', 'USD', true, null]]);
   rechazado('un vendedor no las ve, con bandera o sin ella',
     await intento(vendedor, 'select public.cuentas_para_elegir(p_empresa => $1, p_otras_monedas => true) j', [N.empresaId]), 'Solo el dueño de la cuenta puede ver esto.');
+  {
+    // EL ATAJO DEL DISPARADOR. Anular, cambiar el lote o completar la
+    // descripción no tocan la cuenta ni lo que se movió en ella: no se vuelve
+    // a validar nada. Si ese atajo se perdiera en una copia futura de la
+    // función, el peón que le pone la campaña a un gasto que el dueño pagó
+    // con la cuenta en dólares leería «Solo quien administra…»: asignar_a_lote
+    // pide ser del equipo, no administrar. (El dueño que anula pasa igual con
+    // el atajo o sin él: por eso esto se prueba con quien NO administra.)
+    const E = await H.montarEmpresa(db, { email: 'dueno@estancia.test', nombre: 'Estancia La Paz', rubro: 'ganaderia' });
+    const peon = await H.sumarMiembro(db, E.empresaId, 'peon@estancia.test', 'vendedor');
+    const dolaresE = await cuenta(E, 'Banco en dólares', 'banco', 10000, [], 'USD');
+    const corral = (await val(E.uid, `select public.guardar_lote($1,'Novillos corral 3','cabezas',40) id`, [E.empresaId])).id;
+    r = await cargar(E, dolaresE, 740000, 100, { metodo: 'transferencia', descripcion: 'Vacunas' });
+    const vacunas = r.ok ? r.valor.rows[0].id : null;
+    ok('(el dueño paga las vacunas con la cuenta en dólares: Gs. 740.000 por US$ 100)',
+      [r.ok ? (await fila(vacunas)).monto_cuenta : r.error, await saldo(dolaresE)], [100, 9900]);
+    rechazado('quien no administra no carga un gasto con esa cuenta', await cargar(E, dolaresE, 74000, 10, { uid: peon }), SOLO_ADMIN);
+    const enCampana = () => uno(
+      `select lote_id, cuenta_id, monto::float as monto, monto_cuenta::float as monto_cuenta, estado::text as estado
+         from public.movimientos where id = $1`, [vacunas]);
+    aceptado('pero sí le pone la campaña al que cargó el dueño: eso no toca la cuenta ni los montos, y no se vuelve a validar nada',
+      await intento(peon, 'select public.asignar_a_lote($1,$2)', [vacunas, corral]));
+    ok('  el gasto quedó en su campaña, con su importe en dólares intacto, y la cuenta no se movió',
+      [await enCampana(), await saldo(dolaresE)],
+      [{ lote_id: corral, cuenta_id: dolaresE, monto: 740000, monto_cuenta: 100, estado: 'activo' }, 9900]);
+    aceptado('  y también se la saca', await intento(peon, 'select public.asignar_a_lote($1,null)', [vacunas]));
+    ok('  igual: ni el importe ni el saldo', [await enCampana(), await saldo(dolaresE)],
+      [{ lote_id: null, cuenta_id: dolaresE, monto: 740000, monto_cuenta: 100, estado: 'activo' }, 9900]);
+  }
 
   // ═════════════════════════════════════════════════════════════════════
   grupo('5 · Lo que todavía no se puede con una cuenta en otra moneda: se rechaza entero y no queda nada a medias');
@@ -1581,10 +1685,92 @@ async function principal() {
       [q.archivada, antes, b.totales_otras, b.cuentas_otras.map((c) => c.nombre), await saldo(wise)],
       [true, [{ moneda: 'USD', total: 10934, cuentas: 3 }], [{ moneda: 'USD', total: 10350, cuentas: 2 }], ['Atlas dólares', 'Binance'], 584]);
     rechazado('pasarle plata a la archivada', await transferir(N, atlas, wise, 10), NO_EXISTE);
-    r = await cargar(N, wise, 20000, 2.7);
-    ok('un gasto con la archivada (una lista vieja) cae por su forma de pago, como con cualquier archivada (118), sin importe de cuenta',
-      [await fila(r.valor.rows[0].id), await saldo(wise)], [{ cuenta_id: itau, monto: 20000, monto_cuenta: null, estado: 'activo', metodo: 'tarjeta' }, 584]);
     ok('ni aparece para elegir', (await paraElegir(N, true)).map((c) => c.nombre), ['Efectivo', 'Itaú', 'Atlas dólares', 'Binance']);
+
+    // UN GASTO MANDADO CON SU IMPORTE EN DÓLARES PARA UNA CUENTA QUE YA NO
+    // ESTÁ. Gastos quedó abierto en otro teléfono, con la lista de antes:
+    // manda la Wise y «US$ 2,70». La regla de la 118 descarta la archivada y
+    // lo mandaría por su forma de pago: saldrían Gs. 20.000 del Itaú con la
+    // pantalla diciendo «Salen US$ 2,70 de Wise». Se rechaza entero.
+    const itauAntes = await saldo(itau);
+    {
+      const antesDe = await todaLaBase();
+      rechazado('un gasto con su importe en dólares para la cuenta archivada (una lista vieja): no sale de otra cuenta, se rechaza',
+        await cargar(N, wise, 20000, 2.7), NO_EXISTE);
+      rechazado('  también si esa forma de pago no la recibe ninguna cuenta (quedaría suelto)', await cargar(N, wise, 20000, 2.7, { metodo: 'otro' }), NO_EXISTE);
+      rechazado('  o si es un ingreso', await cargar(N, wise, 20000, 2.7, { tipo: 'ingreso', metodo: 'transferencia' }), NO_EXISTE);
+      rechazado('con el importe para una cuenta de OTRO negocio', await cargar(N, cajaU, 20000, 2.7), NO_EXISTE);
+      rechazado('  o para una que no existe (se borró)', await cargar(N, UUID_QUE_NO_EXISTE, 20000, 2.7), NO_EXISTE);
+      ok('nada de eso tocó la base: ni el Itaú, ni la Wise, ni una fila', [tocadas(antesDe, await todaLaBase()), await saldo(itau), await saldo(wise)], [[], itauAntes, 584]);
+    }
+    // El código publicado no manda `monto_cuenta` (para él no existe): con
+    // la misma cuenta archivada sigue valiendo la regla de la 118, tal cual.
+    r = await intento(N.uid, MOV, [N.empresaId, 'gasto', 'Lista vieja', 'Servicios', 20000, 'tarjeta', wise]);
+    ok('el mismo gasto SIN importe de cuenta (lo que manda el código publicado) cae por su forma de pago, como con cualquier archivada (118)',
+      [r.ok ? await fila(r.valor.rows[0].id) : r.error, (await saldo(itau)) - itauAntes, await saldo(wise)],
+      [{ cuenta_id: itau, monto: 20000, monto_cuenta: null, estado: 'activo', metodo: 'tarjeta' }, -20000, 584]);
+    r = await intento(N.uid, MOV, [N.empresaId, 'gasto', 'Cuenta ajena', 'Servicios', 1000, 'tarjeta', cajaU]);
+    ok('  y con la cuenta de otro negocio, igual que siempre: se descarta', r.ok ? (await fila(r.valor.rows[0].id)).cuenta_id : r.error, itau);
+    r = await cargar(N, itau, 1000, 0.14);
+    ok('  con una cuenta propia que sí está, el importe de más se guarda en null, como antes',
+      r.ok ? await fila(r.valor.rows[0].id) : r.error, { cuenta_id: itau, monto: 1000, monto_cuenta: null, estado: 'activo', metodo: 'tarjeta' });
+  }
+  {
+    // DESHACER UN PASE CUANDO UNA DE SUS DOS CUENTAS YA SE QUITÓ. Una
+    // archivada no se ve, no se reactiva y no acepta pases: borrar el pase
+    // le devolvería (o le sacaría) plata a una cuenta que nadie ve, y lo
+    // que está a la vista ganaría o perdería ese importe sin contraparte.
+    const D = await H.montarEmpresa(db, { email: 'pases@archivados.test', nombre: 'Pases Archivados' });
+    const itauD = await cuenta(D, 'Itaú', 'banco', 20000000, ['transferencia', 'tarjeta']);
+    const atlasD = await cuenta(D, 'Atlas dólares', 'banco', 10000, [], 'USD');
+    const quitar = async (id) => (await J(D.uid, 'select public.quitar_cuenta_dinero(p_empresa => $1, p_id => $2) j', [D.empresaId, id])).archivada;
+    const aLaVista = async () => { const b = await T.billetera(D); return [b.total, b.totales_otras.map((t) => [t.moneda, t.total])]; };
+    const pasesDe = async (id) => (await J(D.uid, 'select public.transferencias_de_cuenta($1,$2) j', [D.empresaId, id]))
+      .map((x) => [x.otra_cuenta, x.monto, x.otro_monto, x.otra_activa]);
+
+    // (a) Se quitó la cuenta DE LA QUE SALIÓ. «Caja vieja» (Gs. 9.000.000)
+    //     compró US$ 1.000 y después se quitó. Deshacer hacía desaparecer
+    //     esos US$ 1.000 de la vista y devolvía Gs. 7.400.000 a la archivada.
+    const cajaVieja = await cuenta(D, 'Caja vieja', 'efectivo', 9000000, []);
+    const compra = await pase(D, cajaVieja, atlasD, 7400000, 1000);
+    ok('(quitar la caja que compró los dólares: queda archivada, con lo que tenía)', [await quitar(cajaVieja), await saldo(cajaVieja)], [true, 1600000]);
+    ok('el pase se sigue viendo en la cuenta en dólares, y dice que la otra ya no está',
+      await pasesDe(atlasD), [['Caja vieja', 1000, -7400000, false]]);
+    let antesDe = await todaLaBase();
+    let vista = await aLaVista();
+    rechazado('deshacer un pase cuya cuenta de origen está archivada', await deshacer(D, compra.par), CUENTA_QUITADA);
+    ok('  no se deshizo nada: las dos filas siguen, ningún saldo cambió y lo que se ve es lo mismo (Gs. 20.000.000 y US$ 11.000)',
+      [tocadas(antesDe, await todaLaBase()), await n('select count(*) n from public.ajustes_cuenta where par = $1', [compra.par]),
+        await saldo(atlasD), await saldo(cajaVieja), await aLaVista(), vista],
+      [[], 2, 11000, 1600000, vista, [20000000, [['USD', 11000]]]]);
+
+    // (b) Se quitó la cuenta A LA QUE ENTRÓ. Se vendieron US$ 1.000 a una
+    //     caja de paso, la caja los depositó en el Itaú y, en cero, se quitó.
+    //     Deshacer hacía aparecer US$ 1.000 que ya se habían cambiado y
+    //     depositado, y dejaba la archivada en -7.400.000.
+    const cajaDePaso = await cuenta(D, 'Caja de paso', 'efectivo', 0, []);
+    const venta = await pase(D, atlasD, cajaDePaso, 1000, 7400000);
+    const deposito = await pase(D, cajaDePaso, itauD, 7400000);
+    ok('(quitar la caja de paso, ya en cero: tiene historia, queda archivada)', [await quitar(cajaDePaso), await saldo(cajaDePaso)], [true, 0]);
+    antesDe = await todaLaBase();
+    vista = await aLaVista();
+    rechazado('deshacer un pase cuya cuenta de destino está archivada', await deshacer(D, venta.par), CUENTA_QUITADA);
+    rechazado('  y el otro pase de esa caja, entre dos cuentas propias', await deshacer(D, deposito.par), CUENTA_QUITADA);
+    ok('  no se deshizo nada: lo que se ve sigue siendo Gs. 27.400.000 y US$ 10.000, y la archivada sigue en cero',
+      [tocadas(antesDe, await todaLaBase()), await saldo(atlasD), await saldo(itauD), await saldo(cajaDePaso), await aLaVista(), vista],
+      [[], 10000, 27400000, 0, vista, [27400000, [['USD', 10000]]]]);
+    ok('  desde el Itaú también se ve que la otra cuenta de ese pase ya no está', await pasesDe(itauD), [['Caja de paso', 7400000, -7400000, false]]);
+
+    // (c) Entre dos cuentas que siguen en la billetera, se deshace como siempre.
+    const otraCompra = await pase(D, itauD, atlasD, 740000, 100);
+    ok('un pase entre dos cuentas activas dice `otra_activa: true`…',
+      (await pasesDe(atlasD)).filter(([nombre]) => nombre === 'Itaú'), [['Itaú', 100, -740000, true]]);
+    aceptado('  …y se deshace', await deshacer(D, otraCompra.par));
+    ok('  la plata volvió a las dos', [await saldo(itauD), await saldo(atlasD)], [27400000, 10000]);
+
+    // (d) El vencido lee primero su candado, también con una archivada en el pase.
+    await T.vencer(D.empresaId);
+    rechazado('vencido, con una cuenta archivada en el pase: habla el candado, no esto', await deshacer(D, compra.par), CANDADO);
   }
   {
     // Empezar de cero (115).
@@ -1661,6 +1847,10 @@ async function principal() {
     const dolaresF = await cuenta(F, 'Dólares', 'banco', 500, [], 'USD');
     const paseF = await pase(F, cajaF, dolaresF, 74000, 10);
     await cotizar(F, 'USD', 7400);
+    // Y una cuenta en dólares que quitó cuando todavía estaba en la prueba.
+    const viejaF = await cuenta(F, 'Dólares viejos', 'banco', 50, [], 'USD');
+    await ajustar(F, viejaF, 60);
+    await val(F.uid, 'select public.quitar_cuenta_dinero($1,$2) j', [F.empresaId, viejaF]);
     await T.vencer(F.empresaId);
     ok('(la personal quedó en Gratis)', (await uno('select public.es_gratis_personal($1) g', [F.empresaId])).g, true);
     const antes = await todaLaBase();
@@ -1678,6 +1868,10 @@ async function principal() {
     r = await intento(F.uid, MOV, [F.empresaId, 'gasto', 'Sin importe', 'Comida', 1000, 'transferencia', dolaresF]);
     ok('  y sin importe, igual: nadie recibe la transferencia, queda sin cuenta',
       r.ok ? await fila(r.valor.rows[0].id) : r.error, { cuenta_id: null, monto: 1000, monto_cuenta: null, estado: 'activo', metodo: 'transferencia' });
+    r = await cargar(F, viejaF, 5000, 0.7, { metodo: 'efectivo' });
+    ok('  y con una cuenta en dólares ya archivada en el pedido, lo mismo: en Gratis nadie elige cuenta, cae por su forma de pago',
+      [r.ok ? await fila(r.valor.rows[0].id) : r.error, await saldo(viejaF), (await uno('select activa from public.cuentas_dinero where id = $1', [viejaF])).activa],
+      [{ cuenta_id: cajaF, monto: 5000, monto_cuenta: null, estado: 'activo', metodo: 'efectivo' }, 60, false]);
     ok('Gratis: las cuentas en otra moneda quedan como las dejó', (await T.billetera(F)).totales_otras, [{ moneda: 'USD', total: 510, cuentas: 1 }]);
   }
   {
@@ -1914,47 +2108,138 @@ async function principal() {
   await db.close();
 
   // ═════════════════════════════════════════════════════════════════════
-  grupo('12 · Permisos, con los privilegios por defecto de Supabase puestos antes de aplicar');
+  grupo('12 · Permisos, en una base armada como producción (los privilegios por defecto de Supabase desde antes de la 001)');
   // ═════════════════════════════════════════════════════════════════════
+  // La gemela B recibió esos privilegios recién antes de la 131: sus
+  // funciones de siempre habían nacido cerradas, y mirar ahí «la llave de
+  // servicio no ejecuta ninguna de las trece» daba verde sin ser cierto en
+  // producción, donde están puestos desde antes de la primera migración. Esta
+  // base se arma como la de verdad y dice lo que va a pasar al aplicar: qué
+  // cambia de permisos, y qué queda exactamente como está hoy.
+  const PR = await H.crearBase({ hasta: ULTIMA_ANTERIOR, comoSupabase: true });
+  const TODAS = [...RECOPIADAS.map(([nombre]) => nombre), ...NUEVAS];
+  /** Quién ejecuta cada una: A sin sesión · S con sesión · V la llave de servicio · P cualquiera (PUBLIC). */
+  const quienEjecuta = async (base) => Object.fromEntries((await base.query(
+    `select p.proname as nombre,
+            case when has_function_privilege('anon', p.oid, 'execute') then 'A' else '-' end
+         || case when has_function_privilege('authenticated', p.oid, 'execute') then 'S' else '-' end
+         || case when has_function_privilege('service_role', p.oid, 'execute') then 'V' else '-' end
+         || case when exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                              where a.grantee = 0 and a.privilege_type = 'EXECUTE') then 'P' else '-' end as quien
+       from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = any($1) order by 1`, [TODAS])).rows.map((x) => [x.nombre, x.quien]));
+  // Un negocio que trabaja con el código publicado, antes de la 131.
+  const Y = await H.montarEmpresa(PR, { email: 'duenia@produccion.test', nombre: 'Como Producción' });
+  /** Lo que hace el código publicado, sobre la base que sea: crear una cuenta, cargar algo, pasar plata. */
+  const publicado = (base) => {
+    const TT = herramientas(base);
+    return {
+      cuenta: async (nombre, tipo, saldoInicial, metodos) => (await TT.val(Y.uid,
+        `select public.guardar_cuenta_dinero(p_empresa => $1, p_nombre => $2, p_tipo => $3, p_saldo_inicial => $4,
+           p_metodos => $5, p_id => null, p_color => null) id`, [Y.empresaId, nombre, tipo, saldoInicial, metodos])).id,
+      cargar: (tipo, descripcion, monto, metodo) => TT.intento(Y.uid, MOV, [Y.empresaId, tipo, descripcion, 'Servicios', monto, metodo, null]),
+      pasar: (desde, hacia, monto) => TT.intento(Y.uid,
+        `select public.transferir_entre_cuentas(p_empresa => $1, p_desde => $2, p_hacia => $3, p_monto => $4, p_nota => '') j`, [Y.empresaId, desde, hacia, monto]),
+      /** Lo que lee: la billetera (sin las claves que suma la 131), las cuentas para elegir y cada saldo. */
+      lee: async () => {
+        const b = await TT.J(Y.uid, 'select public.billetera($1) j', [Y.empresaId]);
+        for (const k of CLAVES_NUEVAS.billetera) delete b[k];
+        return JSON.stringify(canon([b, await TT.J(Y.uid, 'select public.cuentas_para_elegir(p_empresa => $1) j', [Y.empresaId]),
+          await TT.filas('select nombre, public.saldo_cuenta_dinero(id)::text as saldo from public.cuentas_dinero where empresa_id = $1 order by orden', [Y.empresaId])]));
+      },
+    };
+  };
+  const cajaY = await publicado(PR).cuenta('Efectivo', 'efectivo', 500000, ['efectivo']);
+  const bancoY = await publicado(PR).cuenta('Banco', 'banco', 12000000, ['transferencia', 'tarjeta']);
+  aceptado('(un negocio trabaja con el código publicado antes de la 131: dos cuentas, un gasto…)', await publicado(PR).cargar('gasto', 'Luz', 350000, 'transferencia'));
+  aceptado('(…y un pase)', await publicado(PR).pasar(bancoY, cajaY, 250000));
+  const quien130 = await quienEjecuta(PR);
+  const entero130 = await catalogoEntero(PR);
+  await H.aplicarMigracion(PR, '131');
+  const quien131 = await quienEjecuta(PR);
+  const entero131 = await catalogoEntero(PR);
+  // Una copia con la 131 recién puesta y sin ninguna cuenta en otra moneda: para la vuelta atrás (grupo 14).
+  const VA = await PR.clone();
   {
-    const TODAS = [...RECOPIADAS.map(([nombre]) => nombre), ...NUEVAS];
-    const deLas13 = [...catalogoDespues.funciones].filter(([firma]) => TODAS.includes(firma.split('(')[0])).map(([firma, v]) => [firma, JSON.parse(v)]);
-    ok('son trece, y hay una sola función por nombre (PostgREST no duda a cuál llamar)',
-      [deLas13.length, new Set(deLas13.map(([firma]) => firma.split('(')[0])).size], [13, 13]);
-    ok('ninguna queda abierta a quien no inició sesión', deLas13.filter(([, v]) => v.anon).map(([firma]) => firma), []);
-    ok('ni a la llave de servicio: la billetera es de la sesión, y por dentro pregunta quién es', deLas13.filter(([, v]) => v.servicio).map(([firma]) => firma), []);
-    ok('con sesión se llaman estas nueve, y solo estas', deLas13.filter(([, v]) => v.sesion).map(([firma]) => firma.split('(')[0]).sort(),
+    ok('antes de la 131, como está hoy producción: las nueve cerradas a quien no inició sesión, y la llave de servicio las ejecuta todas (A sin sesión · S con sesión · V llave de servicio · P cualquiera)',
+      quien130, {
+        ajustar_saldo_cuenta: '-SV-', anotar_en_su_cuenta: '--V-', billetera: '-SV-', cuentas_para_elegir: '-SV-', guardar_cuenta_dinero: '-SV-',
+        moneda_no_se_reetiqueta: '--V-', resumen_personal: '-SV-', saldo_cuenta_dinero: '--V-', transferir_entre_cuentas: '-SV-',
+      });
+    ok('después de la 131: las trece, una por una',
+      quien131, {
+        ajustar_saldo_cuenta: '-SV-', anotar_en_su_cuenta: '--V-', billetera: '-SV-', cuentas_para_elegir: '-S--', deshacer_transferencia: '-S--',
+        guardar_cotizacion_moneda: '-S--', guardar_cuenta_dinero: '-S--', moneda_ajustes_cuenta: '----', moneda_no_se_reetiqueta: '--V-',
+        resumen_personal: '-SV-', saldo_cuenta_dinero: '--V-', transferencias_de_cuenta: '-S--', transferir_entre_cuentas: '-S--',
+      });
+    ok('lo ÚNICO que cambia de permisos en lo que ya existía: las tres que se borran y se crean pierden la llave de servicio. Las otras seis quedan exactamente como están hoy',
+      Object.keys(quien130).filter((k) => quien130[k] !== quien131[k]).map((k) => `${k}: ${quien130[k]} → ${quien131[k]}`),
+      ['cuentas_para_elegir: -SV- → -S--', 'guardar_cuenta_dinero: -SV- → -S--', 'transferir_entre_cuentas: -SV- → -S--']);
+    ok('ninguna de las trece queda abierta a quien no inició sesión, ni a cualquiera',
+      Object.entries(quien131).filter(([, v]) => v[0] !== '-' || v[3] !== '-').map(([k]) => k), []);
+    ok('con sesión se llaman estas nueve, y solo estas', Object.entries(quien131).filter(([, v]) => v[1] === 'S').map(([k]) => k).sort(),
       ['ajustar_saldo_cuenta', 'billetera', 'cuentas_para_elegir', 'deshacer_transferencia', 'guardar_cotizacion_moneda', 'guardar_cuenta_dinero',
         'resumen_personal', 'transferencias_de_cuenta', 'transferir_entre_cuentas']);
-    ok('las otras cuatro (el saldo y los tres disparadores) no las llama nadie a mano', deLas13.filter(([, v]) => !v.sesion).map(([firma]) => firma).sort(),
-      ['anotar_en_su_cuenta()', 'moneda_ajustes_cuenta()', 'moneda_no_se_reetiqueta()', 'saldo_cuenta_dinero(uuid)']);
+    ok('las otras cuatro (el saldo y los tres disparadores) no están abiertas a la sesión', Object.entries(quien131).filter(([, v]) => v[1] !== 'S').map(([k]) => k).sort(),
+      ['anotar_en_su_cuenta', 'moneda_ajustes_cuenta', 'moneda_no_se_reetiqueta', 'saldo_cuenta_dinero']);
+    ok('la llave de servicio conserva las seis que ya ejecuta hoy, y no gana ninguna: la 131 no le abre nada a nadie',
+      Object.entries(quien131).filter(([, v]) => v[2] === 'V').map(([k]) => k).sort(),
+      ['ajustar_saldo_cuenta', 'anotar_en_su_cuenta', 'billetera', 'moneda_no_se_reetiqueta', 'resumen_personal', 'saldo_cuenta_dinero']);
+    const deLas13 = [...(await catalogoDe(PR)).funciones].filter(([firma]) => TODAS.includes(firma.split('(')[0])).map(([firma, v]) => [firma, JSON.parse(v)]);
+    ok('son trece, y hay una sola función por nombre (PostgREST no duda a cuál llamar)',
+      [deLas13.length, new Set(deLas13.map(([firma]) => firma.split('(')[0])).size], [13, 13]);
     ok('todas son security definer con search_path fijo', deLas13.filter(([, v]) => !v.definer || v.config !== '{search_path=public}').map(([firma]) => firma), []);
     ok('las que solo leen no escriben (stable): el saldo, la billetera, las cuentas para elegir, el resumen y los pases',
       deLas13.filter(([, v]) => v.volatil === 's').map(([firma]) => firma.split('(')[0]).sort(),
       ['billetera', 'cuentas_para_elegir', 'resumen_personal', 'saldo_cuenta_dinero', 'transferencias_de_cuenta']);
+
     // Y de verdad: con el rol de quien no inició sesión y con el del servidor.
-    const X = await H.montarEmpresa(B, { email: 'permisos@gemelas.test', nombre: 'Negocio Permisos' });
-    for (const rol of ['anon', 'service_role']) {
-      const como = (sql, args) => H.intentarComo(B, rol, null, () => B.query(sql, args));
-      rechazado(`${rol}: la billetera`, await como('select public.billetera($1)', [X.empresaId]), 'permission denied');
-      rechazado(`${rol}: crear una cuenta en dólares`,
+    const X = await H.montarEmpresa(PR, { email: 'permisos@produccion.test', nombre: 'Negocio Permisos' });
+    const comoRol = (rol) => (sql, args) => H.intentarComo(PR, rol, null, () => PR.query(sql, args));
+    {
+      const como = comoRol('anon');
+      rechazado('sin sesión: la billetera', await como('select public.billetera($1)', [X.empresaId]), 'permission denied');
+      rechazado('sin sesión: crear una cuenta en dólares',
         await como(`select public.guardar_cuenta_dinero(p_empresa => $1, p_nombre => 'X', p_moneda => 'USD')`, [X.empresaId]), 'permission denied');
-      rechazado(`${rol}: guardar una cotización`, await como(`select public.guardar_cotizacion_moneda($1,'USD',7400)`, [X.empresaId]), 'permission denied');
-      rechazado(`${rol}: deshacer un pase`, await como('select public.deshacer_transferencia($1,$2)', [X.empresaId, X.empresaId]), 'permission denied');
-      rechazado(`${rol}: el saldo de una cuenta`, await como('select public.saldo_cuenta_dinero($1)', [X.empresaId]), 'permission denied');
+      rechazado('sin sesión: guardar una cotización', await como(`select public.guardar_cotizacion_moneda($1,'USD',7400)`, [X.empresaId]), 'permission denied');
+      rechazado('sin sesión: deshacer un pase', await como('select public.deshacer_transferencia($1,$2)', [X.empresaId, X.empresaId]), 'permission denied');
+      rechazado('sin sesión: los pases de una cuenta', await como('select public.transferencias_de_cuenta($1,$2)', [Y.empresaId, cajaY]), 'permission denied');
+      rechazado('sin sesión: el saldo de una cuenta', await como('select public.saldo_cuenta_dinero($1)', [cajaY]), 'permission denied');
+    }
+    {
+      const como = comoRol('service_role');
+      rechazado('la llave de servicio: crear una cuenta en dólares (la perdió)',
+        await como(`select public.guardar_cuenta_dinero(p_empresa => $1, p_nombre => 'X', p_moneda => 'USD')`, [X.empresaId]), 'permission denied');
+      rechazado('la llave de servicio: pasar plata (la perdió)',
+        await como('select public.transferir_entre_cuentas($1,$2,$3,$4)', [Y.empresaId, bancoY, cajaY, 1000]), 'permission denied');
+      rechazado('la llave de servicio: las cuentas para elegir (la perdió)', await como('select public.cuentas_para_elegir($1)', [Y.empresaId]), 'permission denied');
+      rechazado('la llave de servicio: guardar una cotización (nueva: nunca la tuvo)', await como(`select public.guardar_cotizacion_moneda($1,'USD',7400)`, [X.empresaId]), 'permission denied');
+      rechazado('la llave de servicio: deshacer un pase (nueva)', await como('select public.deshacer_transferencia($1,$2)', [X.empresaId, X.empresaId]), 'permission denied');
+      rechazado('la llave de servicio: los pases de una cuenta (nueva)', await como('select public.transferencias_de_cuenta($1,$2)', [Y.empresaId, cajaY]), 'permission denied');
+      // Las que conserva, como hoy: las ejecuta, y por dentro le contestan que no es quien dice.
+      rechazado('la llave de servicio: la billetera la ejecuta, como hoy, y por dentro le contesta que no',
+        await como('select public.billetera($1)', [Y.empresaId]), 'Solo el dueño de la cuenta puede ver esto.');
+      rechazado('  ajustar un saldo: igual', await como('select public.ajustar_saldo_cuenta($1,$2,$3)', [Y.empresaId, cajaY, 1]), 'Solo el dueño de la cuenta puede tocar esto.');
+      const rp = await como('select public.resumen_personal($1)', [Y.empresaId]);
+      ok('  el resumen personal: igual (lo rechaza la función, no el permiso)', [rp.ok, String(rp.error).includes('permission denied')], [false, false]);
+      const s = await como('select public.saldo_cuenta_dinero($1)::float as s', [cajaY]);
+      ok('  el saldo de una cuenta lo lee, como hoy: la 131 no se lo abre ni se lo cierra', s.ok ? s.valor.rows[0].s : s.error, 750000);
+      ok('  y nada de eso movió un saldo', await herramientas(PR).saldo(cajaY), 750000);
     }
     for (const rol of ['anon', 'authenticated']) {
       rechazado(`${rol}: leer la tabla de cotizaciones directo`,
-        await H.intentarComo(B, rol, X.uid, () => B.query('select * from public.cotizaciones_moneda')), 'permission denied');
+        await H.intentarComo(PR, rol, X.uid, () => PR.query('select * from public.cotizaciones_moneda')), 'permission denied');
       rechazado(`${rol}: escribirla directo`,
-        await H.intentarComo(B, rol, X.uid, () => B.query(`insert into public.cotizaciones_moneda (empresa_id, moneda, valor) values ($1,'USD',1)`, [X.empresaId])), 'permission denied');
+        await H.intentarComo(PR, rol, X.uid, () => PR.query(`insert into public.cotizaciones_moneda (empresa_id, moneda, valor) values ($1,'USD',1)`, [X.empresaId])), 'permission denied');
       rechazado(`${rol}: ponerle moneda a una cuenta directo`,
-        await H.intentarComo(B, rol, X.uid, () => B.query(`update public.cuentas_dinero set moneda = 'USD'`)), 'permission denied');
+        await H.intentarComo(PR, rol, X.uid, () => PR.query(`update public.cuentas_dinero set moneda = 'USD'`)), 'permission denied');
     }
     aceptado('con sesión, el dueño sí crea su cuenta en dólares (por la función)',
-      await H.intentar(B, X.uid, () => B.query(`select public.guardar_cuenta_dinero(p_empresa => $1, p_nombre => 'Dólares', p_moneda => 'USD')`, [X.empresaId])));
+      await H.intentar(PR, X.uid, () => PR.query(`select public.guardar_cuenta_dinero(p_empresa => $1, p_nombre => 'Dólares', p_moneda => 'USD')`, [X.empresaId])));
     aceptado('  y lee `monto_cuenta` de sus movimientos',
-      await H.intentar(B, X.uid, () => B.query('select id, monto, monto_cuenta from public.movimientos where empresa_id = $1', [X.empresaId])));
+      await H.intentar(PR, X.uid, () => PR.query('select id, monto, monto_cuenta from public.movimientos where empresa_id = $1', [X.empresaId])));
+  }
+  await PR.close();
+  {
     ok('cada disparador nuevo está una sola vez, después de aplicarla tres veces',
       (await B.query(`select c.relname || '.' || t.tgname as d, count(*)::int as n from pg_trigger t join pg_class c on c.oid = t.tgrelid
                        where t.tgname in ('moneda_ajustes_cuenta', 'cuenta_activa_cotizaciones_moneda', 'anotar_en_su_cuenta', 'moneda_no_se_reetiqueta')
@@ -1976,7 +2261,7 @@ async function principal() {
     ok('la 131 no tiene ni una barra invertida (el MCP las duplica al aplicar)', sql131.split(BARRA).length - 1, 0);
     ok('ni abre o cierra una transacción por su cuenta', /^\s*(begin|commit|rollback)\s*;/im.test(sql131), false);
     ok('cada mensaje nuevo tiene su portugués en mensajes-base.ts',
-      [FALTA_IMPORTE, ELEGI_PROPIA, SOLO_ADMIN, NO_SE_CAMBIA, DOS_MONEDAS, UN_SOLO_MONTO, CAMBIO_IMPOSIBLE, QUITALAS, ES_TU_MONEDA, NO_EXISTE_PASE]
+      [FALTA_IMPORTE, ELEGI_PROPIA, SOLO_ADMIN, NO_SE_CAMBIA, DOS_MONEDAS, UN_SOLO_MONTO, CAMBIO_IMPOSIBLE, QUITALAS, ES_TU_MONEDA, NO_EXISTE_PASE, CUENTA_QUITADA]
         .filter((m) => !sql131.includes(`'${m}'`) || !leer('src/lib/mensajes-base.ts').includes(`'${m}': '`)), []);
 
     const MARCA = '(131)';
@@ -2064,7 +2349,167 @@ async function principal() {
         return enLaBase.get(nombre) !== dentro;
       }), []);
     await fresca.close();
+
+    // ---- el archivo de vuelta atrás (se corre de verdad en el grupo 14) ----
+    const atras = leer(ARCHIVO_ATRAS);
+    ok('la 131 dice cómo se vuelve atrás, con qué archivo, y desde cuándo la base ya no se vuelve atrás',
+      [sql131.includes('-- SI HAY QUE VOLVER ATRÁS'), sql131.includes(ARCHIVO_ATRAS), sql131.includes('EL PUNTO DE NO RETORNO')], [true, true, true]);
+    ok('la vuelta atrás no vive en supabase/migrations (todo .sql de ahí va a parar a schema.sql), y no tiene ni una barra invertida',
+      [MIGRACIONES.filter((f) => /atras/i.test(f)), leer('supabase/schema.sql').includes('VUELTA ATRÁS DE LA 131'), atras.split(BARRA).length - 1], [[], false, 0]);
+    ok('  ni abre o cierra una transacción por su cuenta: se manda entera, de una vez', /^\s*(begin|commit|rollback)\s*;/im.test(atras), false);
+    ok('devuelve las nueve funciones que la 131 vuelve a definir, y ninguna más',
+      [...atras.matchAll(/^create or replace function public[.](\w+)[(]/gm)].map((x) => x[1]), RECOPIADAS.map(([nombre]) => nombre));
+    ok('  cada una es, letra por letra, su última definición anterior a la 131',
+      RECOPIADAS.filter(([nombre]) => cuerpo(atras, nombre) !== anterior(nombre).texto).map(([nombre]) => nombre), []);
+    // El orden no es opcional. Con la columna quitada y el disparador de la
+    // 131 todavía puesto, ningún movimiento de nadie se puede cargar (el
+    // grupo 14 lo muestra).
+    const ORDEN = [
+      'do $guarda$',
+      'drop trigger if exists moneda_ajustes_cuenta on public.ajustes_cuenta;',
+      'drop function if exists public.moneda_ajustes_cuenta();',
+      'drop function if exists public.guardar_cotizacion_moneda(uuid, text, numeric);',
+      'drop function if exists public.deshacer_transferencia(uuid, uuid);',
+      'drop function if exists public.transferencias_de_cuenta(uuid, uuid, integer);',
+      'drop function if exists public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid, text, text);',
+      'drop function if exists public.transferir_entre_cuentas(uuid, uuid, uuid, numeric, text, numeric);',
+      'drop function if exists public.cuentas_para_elegir(uuid, boolean);',
+      ...RECOPIADAS.map(([nombre]) => `\ncreate or replace function public.${nombre}(`),
+      '\nalter table public.movimientos drop column if exists monto_cuenta;',
+      '\nalter table public.cuentas_dinero drop constraint if exists cuentas_dinero_otra_moneda_sin_formas;',
+      '\nalter table public.cuentas_dinero drop constraint if exists cuentas_dinero_moneda_conocida;',
+      '\nalter table public.cuentas_dinero drop column if exists moneda;',
+      '\ndrop table if exists public.cotizaciones_moneda;',
+    ];
+    const lugares = ORDEN.map((texto) => atras.indexOf(texto));
+    ok('el orden: la guarda; afuera lo nuevo; las nueve funciones; y RECIÉN DESPUÉS las columnas, las restricciones y la tabla',
+      [ORDEN.filter((_, i) => lugares[i] < 0), lugares.every((lugar, i) => i === 0 || lugar > lugares[i - 1]),
+        atras.indexOf('\nalter table public.movimientos drop column if exists monto_cuenta;') > atras.lastIndexOf('$fn$;')],
+      [[], true, true]);
+    ok('  y la guarda mira las cuentas (también las archivadas) y los movimientos, antes de tocar nada',
+      [atras.includes("execute 'select count(*) from public.cuentas_dinero where moneda is not null' into v_cuentas;"),
+        atras.includes("execute 'select count(*) from public.movimientos where monto_cuenta is not null' into v_movimientos;"),
+        atras.indexOf('raise exception') < atras.indexOf('drop trigger if exists')], [true, true, true]);
   }
+
+  // ═════════════════════════════════════════════════════════════════════
+  grupo('14 · La vuelta atrás, en la base armada como producción: la 131 y después el archivo dejan la base de la 130');
+  // ═════════════════════════════════════════════════════════════════════
+  {
+    const sqlAtras = leer(ARCHIVO_ATRAS);
+    const correr = async (base, sql) => { try { await base.exec(sql); return null; } catch (e) { return e.message ?? String(e); } };
+    /** Todas las tablas, fila por fila, sin las dos columnas y la tabla que la vuelta atrás quita. */
+    const QUITADAS = { movimientos: ['monto_cuenta'], cuentas_dinero: ['moneda'] };
+    const datosDe = async (base) => {
+      const m = new Map();
+      const tablas = (await base.query(
+        `select table_name as t from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE' order by 1`)).rows.map((x) => x.t);
+      for (const t of tablas.filter((x) => x !== 'cotizaciones_moneda')) {
+        const fila = (await base.query(
+          `select count(*)::int as n, coalesce(md5(string_agg(f, '|' order by f)), '') as h
+             from (select (to_jsonb(x) - $1::text[])::text as f from public."${t}" x) s`, [QUITADAS[t] ?? []])).rows[0];
+        m.set(t, `${fila.n}:${fila.h}`);
+      }
+      return m;
+    };
+    const P131 = publicado(VA);
+    const TV = herramientas(VA);
+
+    // ---- A. Sin ninguna cuenta en otra moneda: se vuelve atrás entero.
+    aceptado('con la 131 puesta, el código publicado sigue trabajando: un ingreso', await P131.cargar('ingreso', 'Alquiler', 900000, 'efectivo'));
+    aceptado('  y un pase', await P131.pasar(bancoY, cajaY, 100000));
+    const lee131 = await P131.lee();
+    const datos131 = await datosDe(VA);
+    ok('(antes de volver atrás no hay nada en otra moneda: ni cuentas, ni importes de cuenta, ni cotizaciones)',
+      [await TV.n('select count(*) n from public.cuentas_dinero where moneda is not null'),
+        await TV.n('select count(*) n from public.movimientos where monto_cuenta is not null'), await TV.n('select count(*) n from public.cotizaciones_moneda')], [0, 0, 0]);
+    // Por qué el orden del archivo no es opcional: una vuelta atrás a medias.
+    {
+      const aMedias = await VA.clone();
+      await aMedias.exec('alter table public.movimientos drop column monto_cuenta');
+      rechazado('una vuelta atrás a medias (quitar la columna y dejar el disparador de la 131) frena TODOS los movimientos: por eso el archivo devuelve primero las funciones',
+        await H.intentar(aMedias, Y.uid, () => aMedias.query(MOV, [Y.empresaId, 'gasto', 'Pan', 'Servicios', 5000, 'efectivo', null])), 'has no field "monto_cuenta"');
+      await aMedias.close();
+    }
+    ok('la vuelta atrás corre sin error', await correr(VA, sqlAtras), null);
+    const enteroAtras = await catalogoEntero(VA);
+    {
+      const d = diferenciasDeCatalogo(entero130, enteroAtras);
+      ok(`el catálogo quedó como el de la ${ULTIMA_ANTERIOR}: cada función con su texto y sus permisos, cada tabla, columna, restricción, disparador, política, índice y comentario`,
+        [d.distintos, d.objetos > 2000], [[], true]);
+      console.log(`  · ${d.objetos} objetos comparados, ${d.distintos.length} diferencias`);
+      const contra131 = diferenciasDeCatalogo(entero131, enteroAtras);
+      ok('  (y no es que la comparación no vea nada: contra el de la 131 hay diferencias, y son las que la 131 había traído)',
+        [contra131.distintos.length > 25, contra131.distintos.filter((x) => /^funciones: (falta|sobra) /.test(x)).sort()], [true, [
+          'funciones: falta cuentas_para_elegir(p_empresa uuid, p_otras_monedas boolean)',
+          'funciones: falta deshacer_transferencia(p_empresa uuid, p_par uuid)',
+          'funciones: falta guardar_cotizacion_moneda(p_empresa uuid, p_moneda text, p_valor numeric)',
+          'funciones: falta guardar_cuenta_dinero(p_empresa uuid, p_nombre text, p_tipo text, p_saldo_inicial numeric, p_metodos text[], p_id uuid, p_color text, p_moneda text)',
+          'funciones: falta moneda_ajustes_cuenta()',
+          'funciones: falta transferencias_de_cuenta(p_empresa uuid, p_cuenta uuid, p_limite integer)',
+          'funciones: falta transferir_entre_cuentas(p_empresa uuid, p_desde uuid, p_hacia uuid, p_monto numeric, p_nota text, p_monto_hacia numeric)',
+          'funciones: sobra cuentas_para_elegir(p_empresa uuid)',
+          'funciones: sobra guardar_cuenta_dinero(p_empresa uuid, p_nombre text, p_tipo text, p_saldo_inicial numeric, p_metodos text[], p_id uuid, p_color text)',
+          'funciones: sobra transferir_entre_cuentas(p_empresa uuid, p_desde uuid, p_hacia uuid, p_monto numeric, p_nota text)',
+        ]]);
+    }
+    ok('las tres que la 131 había dejado solo para la sesión vuelven a quedar como hoy: para la sesión y para la llave de servicio',
+      await quienEjecuta(VA), quien130);
+    ok('lo que lee el código publicado es lo mismo que leía con la 131 puesta, carácter por carácter', (await publicado(VA).lee()) === lee131, true);
+    {
+      const d = cambiosDe(datos131, await datosDe(VA));
+      ok(`ni una fila de ninguna de las ${datos131.size} tablas cambió (se fueron dos columnas vacías y una tabla vacía)`, [d.nace, d.muere, d.cambia], [[], [], []]);
+    }
+    ok('se fueron las dos columnas, las dos restricciones y la tabla',
+      [await TV.n(`select count(*) n from information_schema.columns where table_schema = 'public'
+                    and ((table_name = 'movimientos' and column_name = 'monto_cuenta') or (table_name = 'cuentas_dinero' and column_name = 'moneda'))`),
+        await TV.n(`select count(*) n from pg_constraint where conname in ('cuentas_dinero_moneda_conocida', 'cuentas_dinero_otra_moneda_sin_formas')`),
+        (await TV.uno(`select to_regclass('public.cotizaciones_moneda') is null as se_fue`)).se_fue], [0, 0, true]);
+    aceptado('después de volver atrás el código publicado sigue trabajando: un gasto', await publicado(VA).cargar('gasto', 'Después de volver', 1000, 'efectivo'));
+    aceptado('  un pase', await publicado(VA).pasar(cajaY, bancoY, 5000));
+    ok('  y una cuenta nueva', typeof (await publicado(VA).cuenta('Otra', 'banco', 0, [])), 'string');
+    ok('corrida otra vez, no falla (ya no hay nada que mirar ni que quitar)', await correr(VA, sqlAtras), null);
+    ok('  y el catálogo sigue siendo el de antes de la 131', diferenciasDeCatalogo(entero130, await catalogoEntero(VA)).distintos, []);
+
+    // ---- B. La 131 se vuelve a aplicar encima.
+    ok('la 131 se puede volver a aplicar encima', await correr(VA, sql131), null);
+    ok('  y deja lo mismo que la primera vez', diferenciasDeCatalogo(entero131, await catalogoEntero(VA)).distintos, []);
+
+    // ---- C. EL PUNTO DE NO RETORNO: con una cuenta en otra moneda, se niega.
+    const dolaresY = (await TV.val(Y.uid,
+      `select public.guardar_cuenta_dinero(p_empresa => $1, p_nombre => 'Banco en dólares', p_tipo => 'banco', p_saldo_inicial => 10000, p_moneda => 'USD') id`, [Y.empresaId])).id;
+    await TV.val(Y.uid, `select public.transferir_entre_cuentas(p_empresa => $1, p_desde => $2, p_hacia => $3, p_monto => 7400000, p_nota => '', p_monto_hacia => 1000) j`,
+      [Y.empresaId, bancoY, dolaresY]);
+    await TV.val(Y.uid, MOV_CUENTA, [Y.empresaId, 'gasto', 'Hosting', 'Servicios', 116727, 'tarjeta', dolaresY, 15.99]);
+    await TV.val(Y.uid, `select public.guardar_cotizacion_moneda($1,'USD',7400) j`, [Y.empresaId]);
+    ok('(el dueño crea su cuenta en dólares: US$ 10.000, compra 1.000 más y paga un hosting de 15,99)', await TV.saldo(dolaresY), 10984.01);
+    const NO_SE_VUELVE = 'La base ya no se vuelve atrás; lo que se vuelve atrás es el código.';
+    const seNiega = async (nombre, cuantas) => {
+      const catalogoAntes = await catalogoEntero(VA);
+      const datosAntes = await datosDe(VA);
+      const error = await correr(VA, sqlAtras);
+      ok(nombre, [String(error).includes(cuantas), String(error).includes(NO_SE_VUELVE)], [true, true]);
+      ok('  y no tocó nada: ni el catálogo ni una fila', [diferenciasDeCatalogo(catalogoAntes, await catalogoEntero(VA)).distintos, cambiosDe(datosAntes, await datosDe(VA)).cambia], [[], []]);
+    };
+    await seNiega('con una cuenta en dólares y un gasto pagado con ella, la vuelta atrás SE NIEGA y dice por qué', 'Hay 1 cuentas en otra moneda y 1 movimientos con su importe de cuenta');
+    ok('  la cuenta en dólares sigue con sus dólares, aparte del total', [await TV.saldo(dolaresY), (await TV.billetera(Y)).totales_otras], [10984.01, [{ moneda: 'USD', total: 10984.01, cuentas: 1 }]]);
+    // Sin esa guarda, la misma vuelta atrás no da error y mezcla las monedas.
+    {
+      const sinGuarda = await VA.clone();
+      const totalCon131 = (await herramientas(sinGuarda).billetera(Y)).total;
+      ok('sin la guarda no daría error…', await correr(sinGuarda, sqlAtras.slice(sqlAtras.indexOf('drop trigger if exists moneda_ajustes_cuenta'))), null);
+      const b = await herramientas(sinGuarda).billetera(Y);
+      ok('  …y la billetera sumaría dólares y guaraníes como si fueran lo mismo: «Banco en dólares» en -105.727 (10.000 + 1.000 - 116.727), adentro del total',
+        [b.cuentas.filter((c) => c.nombre === 'Banco en dólares').map((c) => c.saldo), b.total - totalCon131], [[-105727], -105727]);
+      await sinGuarda.close();
+    }
+    await TV.val(Y.uid, 'select public.quitar_cuenta_dinero($1,$2) j', [Y.empresaId, dolaresY]);
+    await seNiega('con esa cuenta ya quitada (archivada, con su saldo y sus pases), también se niega', 'Hay 1 cuentas en otra moneda y 1 movimientos con su importe de cuenta');
+    // La otra mitad de la guarda, sola: un importe de cuenta escrito y ninguna cuenta con moneda (no pasa por la app; se arma a mano).
+    await VA.exec(`update public.cuentas_dinero set moneda = null where moneda is not null`);
+    await seNiega('y alcanza con un solo movimiento que tenga escrito su importe de cuenta', 'Hay 0 cuentas en otra moneda y 1 movimientos con su importe de cuenta');
+  }
+  await VA.close();
 
   console.log(`\n${'═'.repeat(62)}`);
   console.log(fallos === 0

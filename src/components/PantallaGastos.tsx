@@ -272,9 +272,10 @@ export function PantallaGastos({
     moneda del negocio, como todos (`montoFinal`); de la cuenta salió OTRO
     importe, en su moneda, y ese lo dice la persona. Orden no convierte solo:
     con una cotización guardada lo propone, y sin ese importe no se guarda.
-    Una deuda a cosecha no sale de ninguna cuenta.
+    Una deuda a cosecha no sale de ninguna cuenta. Y lo que ENTRA a crédito
+    es fiado: no va a ninguna, tampoco a la que quedó tocada de antes.
   */
-  const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo);
+  const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo, tipo === 'gasto' ? 'sale' : 'entra');
   const monedaDeLaOtra = otraTocada?.moneda ?? moneda;
   const cotizacionDeLaOtra = otraTocada && Number(otraTocada.cotizacion) > 0 ? Number(otraTocada.cotizacion) : null;
   /** «Pagué en dólares» (100) y la cuenta es en dólares: lo de arriba ES lo que salió de ella. */

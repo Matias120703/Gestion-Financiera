@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { dinero, fechaLegible } from '@/lib/formato';
 import {
-  cotizacionEscrita, cotizacionVieja, diaDeLaCotizacion, textoDelCambio, totalAprox,
+  cotizacionEscrita, cotizacionVieja, diaDeLaCotizacion, parDe, textoDelCambio, totalAprox,
 } from '@/lib/monedas';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { useZona } from '@/lib/zona';
@@ -59,6 +59,11 @@ export function TotalesDePlata({
   const junto = totalAprox(
     [{ moneda, total: billetera.total }, ...totales], moneda, billetera.cotizaciones,
   );
+  // La invitación nombra la misma moneda que la hoja que abre: la GRANDE de
+  // la pareja («el dólar»), no la que falta. Un negocio en dólares con una
+  // caja en guaraníes leía «poné a cuánto está el guaraní» y al tocarlo la
+  // hoja preguntaba «¿A cuánto está el dólar?».
+  const monedaQueSePregunta = junto.faltan.length > 0 ? nombreUno(parDe(moneda, junto.faltan[0]).grande) : '';
   const cambios = totales.flatMap((tot) => {
     const guardada = billetera.cotizaciones.find((k) => k.moneda === tot.moneda);
     if (!guardada || !(guardada.valor > 0)) return [];
@@ -93,11 +98,11 @@ export function TotalesDePlata({
         </p>
       ) : alCotizar ? (
         <button type="button" onClick={alCotizar} className="boton-texto mt-1.5 min-h-[36px] text-left text-[13px] leading-snug">
-          {m.ponerCotizacion(nombreUno(junto.faltan[0]))}
+          {m.ponerCotizacion(monedaQueSePregunta)}
         </button>
       ) : (
         <Link href="/billetera" className="boton-texto mt-1.5 inline-flex min-h-[36px] items-center text-[13px] leading-snug">
-          {m.ponerCotizacion(nombreUno(junto.faltan[0]))}
+          {m.ponerCotizacion(monedaQueSePregunta)}
         </Link>
       )}
 

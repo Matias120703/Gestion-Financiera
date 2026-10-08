@@ -4189,7 +4189,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
     [(gasCodigo.match(/soltarOtra\(\);/g) || []).length >= 4, gasCodigo.includes('{!conCampanas && !masOpciones && bloqueMontoCuenta(true)}')],
     [true, true]);
   ok('131 · una deuda a cosecha no sale de ninguna cuenta, tampoco de una en otra moneda',
-    gasCodigo.includes('const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo);'), true);
+    gasCodigo.includes("const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo, tipo === 'gasto' ? 'sale' : 'entra');"), true);
   const pagGastos = leer('src/app/(app)/gastos/page.tsx');
   ok('131 · la página de Gastos pide la lista ampliada y la parte en dos',
     [pagGastos.includes('ctx.esAdmin && !ctx.gratisPersonal ? traerCuentasParaElegir(ctx.empresa.id, true) : Promise.resolve([])'),
@@ -4304,7 +4304,7 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const hoja = sinComentarios(leer('src/components/billetera/HojaCotizacion.tsx'));
   ok('131 · la cotización la escribe la persona y se guarda dada vuelta si hace falta; un campo vacío no borra nada',
     [hoja.includes("rpc('guardar_cotizacion_moneda'"), hoja.includes('cotizacionAGuardar(escritas[tot.moneda] ?? 0, moneda, tot.moneda)'),
-      hoja.includes('.filter((c) => c.valor > 0 && c.valor !=='), /fetch\(|https?:/.test(hoja)],
+      hoja.includes('.filter((c) => cotizacionPorGuardar(c.valor, guardada(c.moneda)));'), /fetch\(|https?:/.test(hoja)],
     [true, true, true, false]);
   const lib = sinComentarios(leer('src/lib/billetera.ts'));
   ok('131 · contra una base sin la 131 la billetera es la de siempre: lo nuevo se lee con «si falta, vacío»',
@@ -4404,6 +4404,246 @@ ok('un rubro desconocido no rompe: cae en comercio',
     [monedasEs.billetera.aproxTotal('X').startsWith('≈ X'), monedasPt.billetera.aproxTotal('X').startsWith('≈ X'),
       monedasEs.billetera.aprox('A', 'B'), monedasPt.billetera.aprox('A', 'B')],
     [true, true, 'A ≈ B', 'A ≈ B']);
+}
+
+// --- La billetera en otras monedas (131): lo que encontró la revisión (08/10/2026) ---
+//
+// Cada grupo es un hallazgo confirmado, con el caso que lo mostraba. Lo de
+// la base (deshacer un pase con una cuenta archivada, el gasto mandado con
+// una cuenta que ya no está, la vuelta atrás, los permisos) está en
+// billetera-monedas.test.js.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const ts = require('typescript');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+  const formato = require('../.compilado/formato.js');
+  const M = require('../.compilado/monedas.js');
+
+  // ---- EL CAMPO DE PLATA DE VERDAD, TECLA POR TECLA ----
+  // CampoMonto.tsx tal como está, compilado acá. Lo único de mentira es el
+  // <input> (value, selectionStart, setSelectionRange) y React (useRef,
+  // useEffect, jsx): las cuentas las hace el archivo real con el formato real.
+  const campoDe = (locale) => {
+    const js = ts.transpileModule(fs.readFileSync('src/components/CampoMonto.tsx', 'utf8'), {
+      fileName: 'CampoMonto.tsx',
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+    }).outputText;
+    const requerir = (id) => {
+      if (id === 'react') return { useRef: (v) => ({ current: v }), useEffect: () => {} };
+      if (id === 'react/jsx-runtime') return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
+      if (id === '@/i18n/cliente') return { useLocale: () => locale };
+      if (id === '@/lib/formato') return formato;
+      throw new Error(`CampoMonto importa algo que esta prueba no conoce: ${id}`);
+    };
+    const m = { exports: {} };
+    new Function('require', 'module', 'exports', 'requestAnimationFrame', js)(requerir, m, m.exports, (fn) => fn());
+    return m.exports.CampoMonto;
+  };
+  /** Monta el campo. Al teclear, cada carácter es una tecla y «<» borra hacia atrás. Devuelve [lo que se ve, el número]. */
+  const montarCampo = ({ decimales = 0, valor = 0, locale = 'es-PY' } = {}) => {
+    const estado = { valor };
+    const elemento = campoDe(locale)({ valor, decimales, alCambiar: (n) => { estado.valor = n; } });
+    const el = { value: elemento.props.defaultValue ?? '', selectionStart: 0, setSelectionRange(i) { this.selectionStart = i; } };
+    el.selectionStart = el.value.length;
+    const cambio = (data, inputType) => elemento.props.onChange({ target: el, nativeEvent: { data, inputType } });
+    const tecla = (c) => {
+      const p = el.selectionStart;
+      if (c === '<') {
+        if (p === 0) return;
+        el.value = el.value.slice(0, p - 1) + el.value.slice(p);
+        el.selectionStart = p - 1;
+        cambio(null, 'deleteContentBackward');
+      } else {
+        el.value = el.value.slice(0, p) + c + el.value.slice(p);
+        el.selectionStart = p + 1;
+        cambio(c, 'insertText');
+      }
+    };
+    const campo = {
+      abierto: el.value,
+      teclear(teclas) { for (const c of teclas) tecla(c); return [el.value, estado.valor]; },
+      pegar(texto) { el.value = texto; el.selectionStart = texto.length; cambio(null, 'insertFromPaste'); return [el.value, estado.valor]; },
+      cursorEn(i) { el.selectionStart = i; return campo; },
+      cursor: () => el.selectionStart,
+    };
+    return campo;
+  };
+  const teclado = (teclas, opciones) => montarCampo(opciones).teclear(teclas);
+  const DOS = { decimales: 2 };
+
+  // Matías tiene diez mil dólares. Quien los escribe como se escriben,
+  // «10.000», teclea un punto; el campo lo leía como la coma y la cuenta
+  // nacía con US$ 10,00. En lo publicado ese mismo gesto daba 10.000.
+  ok('131 · revisión · «10.000» tecleado con el punto en una moneda con centavos es diez mil, no diez',
+    [teclado('10.000', DOS), teclado('1.234.567', DOS), teclado('2.500', DOS), teclado('10.000,50', DOS), teclado('10.000.5', DOS)],
+    [['10.000', 10000], ['1.234.567', 1234567], ['2.500', 2500], ['10.000,50', 10000.5], ['10.000,5', 10000.5]]);
+  ok('131 · revisión · y los centavos se siguen escribiendo, con coma o con punto (el iPhone con la región en inglés)',
+    [teclado('15,99', DOS), teclado('15.99', DOS), teclado('10.00', DOS), teclado('0.5', DOS), teclado('1.5', DOS), teclado('1.500,75', DOS)],
+    [['15,99', 15.99], ['15,99', 15.99], ['10,00', 10], ['0,5', 0.5], ['1,5', 1.5], ['1.500,75', 1500.75]]);
+  ok('131 · revisión · una coma TECLEADA es una coma: su tercer decimal se descarta, como siempre',
+    [teclado('15,999', DOS), teclado('10,000', DOS)], [['15,99', 15.99], ['10,00', 10]]);
+  ok('131 · revisión · borrar y seguir: mientras la coma sea la del punto, el tercer dígito lo vuelve de miles; borrada, lo nuevo vale por lo que es',
+    [teclado('10.00<00', DOS), teclado('10.5<<,123', DOS), teclado('10.000<<<<', DOS)],
+    [['10.000', 10000], ['10,12', 10.12], ['1', 1]]);
+  // Apareció al escribir estas pruebas: menos de un dólar. El campo vacía el
+  // cero suelto y, al llegar la coma, muestra «0,»; el cursor quedaba ANTES
+  // de ese cero y los centavos caían adelante (0,99 se leía 990).
+  ok('131 · revisión · menos de uno: «0,99», «0.99», «,5» y «.5» se leen como centavos',
+    [teclado('0,99', DOS), teclado('0.99', DOS), teclado(',5', DOS), teclado('.5', DOS), teclado('0,05', DOS), teclado('0.1875', { decimales: 4 })],
+    [['0,99', 0.99], ['0,99', 0.99], ['0,5', 0.5], ['0,5', 0.5], ['0,05', 0.05], ['0,1875', 0.1875]]);
+  ok('131 · revisión · el cursor, después de la coma aunque adelante haya aparecido un cero',
+    [formato.cursorTrasFormatear('0,', 0, true, ','), formato.cursorTrasFormatear('0,9', 2, true, ','), formato.cursorTrasFormatear('0,', 0, false, ',')],
+    [2, 3, 0]);
+  {
+    const pegado = montarCampo(DOS);
+    pegado.teclear('10.5');
+    ok('131 · revisión · lo pegado no es una tecla: «10.000» pegado es diez mil, y una coma pegada es una coma',
+      [montarCampo(DOS).pegar('10.000'), pegado.pegar('12,34'), pegado.teclear('5')],
+      [['10.000', 10000], ['12,34', 12.34], ['12,34', 12.34]]);
+  }
+  ok('131 · revisión · en portugués, igual',
+    [teclado('10.000', { decimales: 2, locale: 'pt-BR' }), teclado('15,99', { decimales: 2, locale: 'pt-BR' }), teclado('15.99', { decimales: 2, locale: 'pt-BR' })],
+    [['10.000', 10000], ['15,99', 15.99], ['15,99', 15.99]]);
+  // Tres dígitos después del punto son un grupo de miles solo donde los
+  // centavos son dos. La humedad (un decimal), las toneladas (tres) y una
+  // cotización (cuatro) quedan como estaban.
+  ok('131 · revisión · con uno, tres o cuatro decimales el punto sigue siendo la coma',
+    [teclado('14.5', { decimales: 1 }), teclado('14.55', { decimales: 1 }), teclado('1.234', { decimales: 3 }), teclado('12.3456', { decimales: 3 }),
+      teclado('5.4321', { decimales: 4 }), teclado('10.000', { decimales: 4 })],
+    [['14,5', 14.5], ['14,5', 14.5], ['1,234', 1.234], ['12,345', 12.345], ['5,4321', 5.4321], ['10,000', 10]]);
+  {
+    // En guaraníes (sin decimales) no hay coma: el campo de casi todos. Estos
+    // son los resultados del campo publicado, tecla por tecla.
+    const medio = montarCampo();
+    medio.teclear('1500000');
+    ok('131 · revisión · sin decimales (guaraníes) el campo hace lo de siempre',
+      [teclado('10.000'), teclado('1.234.567'), teclado('1500000'), teclado('15,99'), teclado('15.99'), teclado('7.400<<5'), teclado('12<3'),
+        medio.cursorEn(2).teclear('9'), medio.cursor(), montarCampo().pegar('1.500.000')],
+      [['10.000', 10000], ['1.234.567', 1234567], ['1.500.000', 1500000], ['1.599', 1599], ['1.599', 1599], ['745', 745], ['13', 13],
+        ['19.500.000', 19500000], 2, ['1.500.000', 1500000]]);
+  }
+  ok('131 · revisión · la regla, sola: el tercer dígito después de un punto tecleado, y nada más',
+    [formato.puntoEraDeMiles('10,000', ',', 2, true, '0'), formato.puntoEraDeMiles('1234,567', ',', 2, true, '7'),
+      formato.puntoEraDeMiles('10,00', ',', 2, true, '0'), formato.puntoEraDeMiles('10,000', ',', 2, false, '0'),
+      formato.puntoEraDeMiles('10,000', ',', 2, true, null), formato.puntoEraDeMiles('10,000', ',', 2, true, '.'),
+      formato.puntoEraDeMiles('10000', ',', 2, true, '0'), formato.puntoEraDeMiles('10,000', ',', 0, true, '0'),
+      formato.puntoEraDeMiles('10,00', ',', 1, true, '0'), formato.puntoEraDeMiles('10,0000', ',', 3, true, '0'),
+      formato.puntoEraDeMiles('10,00000', ',', 4, true, '0')],
+    [true, true, false, false, false, false, false, false, false, false, false]);
+
+  // Un negocio en reales con el dólar a 5,4321: la hoja abría el campo en
+  // «5,432» y, al tocarlo, se guardaba sin el cuarto decimal.
+  ok('131 · revisión · una cotización con cuatro decimales se abre con los cuatro, y tocar el campo no le saca el último',
+    [montarCampo({ decimales: 4, valor: 5.4321 }).abierto, montarCampo({ decimales: 4, valor: 5.4321 }).teclear('9'),
+      montarCampo({ decimales: 4, valor: 0.1875 }).abierto, montarCampo({ decimales: 4, valor: 1234.5678 }).abierto],
+    ['5,4321', ['5,4321', 5.4321], '0,1875', '1.234,5678']);
+  ok('131 · revisión · los campos de siempre se abren como siempre (hasta tres decimales ya se mostraban)',
+    [montarCampo({ valor: 7400 }).abierto, montarCampo({ valor: 1500000 }).abierto, montarCampo({ decimales: 2, valor: 1234.5 }).abierto,
+      montarCampo({ decimales: 2, valor: 15.99 }).abierto, montarCampo({ decimales: 3, valor: 12.345 }).abierto, montarCampo({ valor: 0 }).abierto],
+    ['7.400', '1.500.000', '1.234,5', '15,99', '12,345', '']);
+
+  // ---- Gastos: lo que entra fiado no va a ninguna cuenta, tampoco a la de dólares que quedó tocada ----
+  const { cuentaTocada } = require('../.compilado/cuenta-del-cobro.js');
+  const dolares = { id: 'dolares', nombre: 'Atlas dólares', tipo: 'banco', metodos: [], moneda: 'USD', otra: true, cotizacion: 7400 };
+  const otras = [dolares, { id: 'enmano', nombre: 'Reales en mano', tipo: 'efectivo', metodos: [], moneda: 'BRL', otra: true, cotizacion: null }];
+  ok('131 · revisión · un ingreso «a crédito» (fiado) no entra en la cuenta en dólares que quedó tocada del gasto',
+    [cuentaTocada(otras, 'dolares', 'credito', 'entra'), cuentaTocada(otras, 'dolares', 'credito')],
+    [null, null]);
+  ok('131 · revisión · un gasto con «Crédito» (la tarjeta) sí sale de ella, y lo que entra por tarjeta o transferencia también puede entrar',
+    [cuentaTocada(otras, 'dolares', 'credito', 'sale')?.id, cuentaTocada(otras, 'dolares', 'tarjeta', 'entra')?.id,
+      cuentaTocada(otras, 'dolares', 'transferencia', 'sale')?.id, cuentaTocada(otras, 'enmano', 'efectivo', 'entra')?.id],
+    ['dolares', 'dolares', 'dolares', 'enmano']);
+  const gas = sinComentarios(leer('src/components/PantallaGastos.tsx'));
+  ok('131 · revisión · Gastos le dice a esa regla si la plata sale o entra, y todo lo demás cuelga de ella',
+    [gas.includes("const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo, tipo === 'gasto' ? 'sale' : 'entra');"),
+      gas.includes('...(otraTocada ? { cuenta_id: otraTocada.id, monto_cuenta: importeCuenta } : {}),'),
+      gas.includes('const bloqueMontoCuenta = (conNombre: boolean) => (!otraTocada ? null :')],
+    [true, true, true]);
+
+  // ---- la hoja de la cotización ----
+  const hoja = sinComentarios(leer('src/components/billetera/HojaCotizacion.tsx'));
+  const hoyMs = Date.parse('2026-10-08T12:00:00Z');
+  const hace = (dias) => new Date(hoyMs - dias * 86400000).toISOString();
+  ok('131 · revisión · una cotización vieja (fecha en ámbar) se puede confirmar con el mismo número; una reciente no hace falta',
+    [M.cotizacionPorGuardar(7400, { valor: 7400, desde: hace(45) }, hoyMs), M.cotizacionPorGuardar(7400, { valor: 7400, desde: hace(5) }, hoyMs),
+      M.cotizacionPorGuardar(0.0001351351, { valor: 0.0001351351, desde: hace(45) }, hoyMs)],
+    [true, false, true]);
+  ok('131 · revisión · lo demás, como antes: lo que cambió se guarda, lo nuevo también, y un campo vacío no borra nada',
+    [M.cotizacionPorGuardar(7450, { valor: 7400, desde: hace(5) }, hoyMs), M.cotizacionPorGuardar(7400, null, hoyMs),
+      M.cotizacionPorGuardar(7400, { valor: 7400, desde: '' }, hoyMs), M.cotizacionPorGuardar(0, { valor: 7400, desde: hace(45) }, hoyMs),
+      M.cotizacionPorGuardar(0, null, hoyMs)],
+    [true, true, false, false, false]);
+  ok('131 · revisión · la hoja usa esa regla, y el botón depende solo de que haya algo que guardar',
+    [hoja.includes('.filter((c) => cotizacionPorGuardar(c.valor, guardada(c.moneda)));'),
+      hoja.includes('disabled={guardando || aGuardar.length === 0}')],
+    [true, true]);
+  // «El dólar a 74»: se guardaba sin aviso y Gastos proponía US$ 1.577 por un
+  // gasto de Gs. 116.727. Para guaraní/dólar se conoce lo habitual: se avisa.
+  const { avisoDolar } = require('../.compilado/agricultura.js');
+  const gcTextos = leer('src/i18n/textos/gastos-campana.ts');
+  ok('131 · revisión · «el dólar a 74» o «a 74.000» no es lo habitual; 7.400 sí',
+    [avisoDolar(74) !== 'ok', avisoDolar(74000) !== 'ok', avisoDolar(740) !== 'ok', avisoDolar(7400), avisoDolar(6950)],
+    [true, true, true, 'ok', 'ok']);
+  ok('131 · revisión · la hoja lo avisa en ámbar, solo para la pareja guaraní/dólar, con el texto que ya existe en es y pt, y sin frenar',
+    [hoja.includes("const dolarRaro = esParDolar(moneda, tot.moneda) && escrita > 0 && avisoDolar(escrita) !== 'ok';"),
+      /\{dolarRaro && \(\s*<p className="[^"]*\btext-ambar\b[^"]*">\s*\{t\.gastosCampana\.moneda\.dolarRaro\}/.test(hoja),
+      (gcTextos.match(/\n    dolarRaro: '/g) || []).length, /disabled=\{[^}]*dolarRaro/.test(hoja), /dolarRaro\) (return|\{ setError)/.test(hoja)],
+    [true, true, 2, false, false]);
+
+  // ---- la invitación nombra la misma moneda que la hoja que abre ----
+  const tdp = sinComentarios(leer('src/components/billetera/TotalesDePlata.tsx'));
+  ok('131 · revisión · «Poné a cuánto está el…» nombra la moneda GRANDE de la pareja, como la hoja, y no la que falta',
+    [tdp.includes("const monedaQueSePregunta = junto.faltan.length > 0 ? nombreUno(parDe(moneda, junto.faltan[0]).grande) : '';"),
+      (tdp.match(/m\.ponerCotizacion\(monedaQueSePregunta\)/g) || []).length, tdp.includes('nombreUno(junto.faltan[0])'),
+      hoja.includes('const { grande, chica } = parDe(moneda, otra);') && hoja.includes('const uno = t.gastosCampana.moneda.uno[grande] ?? grande;')],
+    [true, 2, false, true]);
+  ok('131 · revisión · negocio en dólares con caja en guaraníes: «el dólar» (no «el guaraní»); y las otras cuatro parejas',
+    [['USD', 'PYG'], ['PYG', 'USD'], ['BRL', 'PYG'], ['USD', 'BRL'], ['BRL', 'USD']].map(([propia, falta]) => M.parDe(propia, falta).grande),
+    ['USD', 'USD', 'BRL', 'USD', 'USD']);
+
+  // ---- un pase con la otra cuenta ya quitada no ofrece «Deshacer» ----
+  const pases = sinComentarios(leer('src/components/billetera/PasesDeCuenta.tsx'));
+  ok('131 · revisión · «Últimos pases» no ofrece deshacer un pase cuya otra cuenta ya no está en la billetera (la base lo rechaza)',
+    [/\{p\.otra_activa !== false && \(\s*<button\s+type="button" disabled=\{ocupado\} onClick=\{\(\) => alDeshacer\(p\.par\)\}/.test(pases),
+      (pases.match(/alDeshacer\(p\.par\)/g) || []).length, leer('src/lib/tipos.ts').includes('  otra_activa?: boolean;')],
+    [true, 1, true]);
+
+  // ---- lo que las pruebas piden de .compilado/ lo arma tsconfig.calculos.json ----
+  // main y esta rama sumaron archivos en la MISMA línea de esa lista: al
+  // traer main, git frena ahí. Resolverlo quedándose con una sola punta deja
+  // sin compilar lo de la otra, y con un .compilado/ de una corrida anterior
+  // la prueba que lo pide pasa igual en la máquina de quien fusiona. Esto
+  // mira la lista, no la carpeta.
+  const tsconfig = JSON.parse(leer('pruebas/tsconfig.calculos.json'));
+  /** Los módulos de src/lib que esa compilación deja en .compilado/: los nombrados, los de reportes/ y todo lo que importan. */
+  const queCompila = (archivos) => {
+    const vistos = new Set();
+    const cola = [...archivos.map((f) => path.posix.normalize(path.posix.join('pruebas', f))),
+      ...fs.readdirSync('src/lib/reportes').filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts')).map((f) => `src/lib/reportes/${f}`)];
+    while (cola.length > 0) {
+      const f = cola.pop();
+      if (vistos.has(f) || !fs.existsSync(f)) continue;
+      vistos.add(f);
+      for (const m of leer(f).matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
+        const base = path.posix.normalize(path.posix.join(path.posix.dirname(f), m[1]));
+        for (const candidato of [`${base}.ts`, `${base}/index.ts`]) if (fs.existsSync(candidato)) cola.push(candidato);
+      }
+    }
+    return new Set([...vistos].map((f) => f.replace(/^src\/lib\//, '').replace(/\.ts$/, '')));
+  };
+  const pedidos = new Set();
+  for (const f of fs.readdirSync('pruebas').filter((x) => x.endsWith('.js'))) {
+    for (const m of leer(`pruebas/${f}`).matchAll(/require\('\.\.\/\.compilado\/([^']+)\.js'\)/g)) pedidos.add(m[1]);
+  }
+  const sinCompilar = (archivos) => { const c = queCompila(archivos); return [...pedidos].filter((k) => !c.has(k)).sort(); };
+  ok('131 · revisión · todo lo que las pruebas piden de .compilado/ está en la lista de tsconfig.calculos.json (o lo importa algo de la lista)',
+    [pedidos.size > 40, tsconfig.include, sinCompilar(tsconfig.files)], [true, ['../src/lib/reportes/*.ts'], []]);
+  ok('131 · revisión · y si al fusionar se pierde una punta de esa línea, esto lo dice aunque .compilado/ haya quedado de antes',
+    [sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/monedas.ts'))), sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/plan-pantalla.ts')))],
+    [['monedas'], ['plan-pantalla']]);
 }
 
 // Las comprobaciones que esperan algo (una función async) se anotan en

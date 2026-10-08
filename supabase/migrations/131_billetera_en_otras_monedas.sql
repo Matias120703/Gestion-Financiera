@@ -82,6 +82,38 @@
 --   volverían a crear las firmas viejas al lado de las nuevas, o pisarían
 --   estas funciones con su versión anterior. (Volver a aplicar esta misma
 --   después lo arregla.)
+--
+-- SI HAY QUE VOLVER ATRÁS
+--
+--   · VOLVER AL CÓDIGO ANTERIOR DEJANDO LA 131 APLICADA: se puede siempre,
+--     y es la única vuelta atrás que queda cuando ya hay cuentas en otra
+--     moneda. El código de antes sigue viendo números verdaderos: no
+--     recibe esas cuentas, no las suma y no las ofrece.
+--   · SACAR LA 131 DE LA BASE: con supabase/vuelta-atras/131_vuelta_atras.sql
+--     (fuera de migrations a propósito: lo que hay ahí va a parar a
+--     schema.sql). Conviene volver antes al código anterior. Ese archivo
+--     PRIMERO borra el disparador y las cuatro funciones nuevas, borra las
+--     tres firmas nuevas y devuelve las nueve funciones a su texto anterior
+--     (074, 118, 086, 085, 051), y RECIÉN DESPUÉS quita las dos columnas,
+--     las dos restricciones y la tabla. Al revés no: con la columna
+--     `monto_cuenta` quitada y el disparador de la 131 todavía puesto,
+--     cargar cualquier movimiento de cualquier cuenta falla («record "new"
+--     has no field "monto_cuenta"»).
+--   · NO alcanza con volver a aplicar 074, 086 y 118: no dan error y dejan
+--     dos funciones con el mismo nombre (la llamada de siempre a
+--     `cuentas_para_elegir` pasa a ser ambigua y falla).
+--   · EL PUNTO DE NO RETORNO: desde la primera cuenta creada en otra moneda
+--     (o el primer movimiento con `monto_cuenta`) la base ya no se vuelve
+--     atrás. Sin la 131 el saldo de esa cuenta sumaría las dos monedas
+--     como si fueran una (10.000 dólares + 1.000 dólares - 116.727
+--     guaraníes = «-105.727») y entraría en el total de siempre. El archivo
+--     de vuelta atrás lo mira primero y se niega, sin tocar nada. Desde
+--     ahí, lo único que se vuelve atrás es el código.
+--
+--   pruebas/billetera-monedas.test.js lo prueba en una base armada como
+--   producción (con los privilegios por defecto de Supabase desde antes de
+--   la 001): la 131 y después la vuelta atrás dejan el catálogo de la 130,
+--   y con una cuenta en otra moneda la vuelta atrás se niega.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -215,11 +247,19 @@ revoke all on function public.saldo_cuenta_dinero(uuid) from public, anon, authe
 -- ------------------------------------------------------------
 -- 5. CADA MOVIMIENTO, EN SU CUENTA (074, 118)
 --
---    COPIA EXACTA de la 118: ni una línea reemplazada. Lo nuevo es una
---    variable y un bloque al final, antes del `return new` de siempre.
+--    COPIA EXACTA de la 118: ni una línea reemplazada. Lo nuevo son dos
+--    variables y un bloque al final, antes del `return new` de siempre.
 --
 --    Con una cuenta propia o sin cuenta, el bloque deja `monto_cuenta` en
 --    null y sale: es lo que pasa hoy con todos los movimientos de todos.
+--
+--    Una sola cosa se rechaza ANTES de eso, y solo a quien manda
+--    `monto_cuenta` (el código publicado no lo manda nunca): un gasto que
+--    llega con su importe en otra moneda para una cuenta que ya no está
+--    (archivada, borrada o de otro negocio). La regla de la 118 lo mandaría
+--    por su forma de pago, a otra cuenta y en la moneda del negocio, con la
+--    pantalla diciendo que salió de la de dólares. Sin `monto_cuenta`, esa
+--    regla sigue igual.
 --
 --    Con una cuenta en otra moneda exige el importe. Así, sin tocar ninguna
 --    otra función, toda puerta que reciba una cuenta en otra moneda y no
@@ -235,7 +275,9 @@ revoke all on function public.saldo_cuenta_dinero(uuid) from public, anon, authe
 create or replace function public.anotar_en_su_cuenta()
 returns trigger language plpgsql security definer set search_path = public as $fn$
 declare v_moneda text;  -- (131) la moneda de la cuenta: null si es la del negocio
+  v_pedida uuid;        -- (131) la cuenta que vino pedida, antes de que la regla de la 118 la descarte
 begin
+  v_pedida := new.cuenta_id;  -- (131)
   if tg_op = 'UPDATE' and new.metodo_pago is distinct from old.metodo_pago then
     -- Si se corrige la forma de pago, el movimiento se muda de cuenta.
     new.cuenta_id := public.cuenta_de_metodo(new.empresa_id, new.metodo_pago);
@@ -257,6 +299,19 @@ begin
       new.cuenta_id := public.cuenta_de_metodo(new.empresa_id, new.metodo_pago);
     end if;
   end if;
+  -- (131) VINO CON SU IMPORTE EN OTRA MONEDA Y ESA CUENTA YA NO ESTÁ: se
+  -- (131) archivó, se borró o no es de este negocio, y la regla de arriba
+  -- (131) (118) la descartó. Seguir sería sacar el gasto de OTRA cuenta, en
+  -- (131) la moneda del negocio, mientras la pantalla que lo mandó (una lista
+  -- (131) vieja, abierta en otro teléfono) dice que salió de la de dólares.
+  -- (131) Se rechaza entero. El código publicado nunca manda `monto_cuenta`:
+  -- (131) para él sigue valiendo la regla de la 118, sin ningún cambio. En
+  -- (131) Gratis nadie elige cuenta: cae por su forma de pago, como abajo.
+  if tg_op = 'INSERT' and new.monto_cuenta is not null                      -- (131)
+     and v_pedida is not null and new.cuenta_id is distinct from v_pedida   -- (131)
+     and not public.es_gratis_personal(new.empresa_id) then                 -- (131)
+    raise exception 'Esa cuenta no existe.' using errcode = 'P0002';        -- (131)
+  end if;                                                                   -- (131)
   -- (131) CUÁNTO SE MOVIÓ LA CUENTA, EN SU MONEDA. Sin cuenta no hay nada que anotar.
   if new.cuenta_id is null then                                             -- (131)
     new.monto_cuenta := null;                                               -- (131)
@@ -427,6 +482,27 @@ end $fn$;
 -- Una función que se borra y se crea es NUEVA: en Supabase nace ejecutable
 -- por public, anon, authenticated y service_role (129). Se nombra, uno por
 -- uno, a quien no la tiene que llamar: la billetera es de la sesión.
+--
+-- QUÉ CAMBIA DE PERMISOS EN PRODUCCIÓN, Y QUÉ NO. Allá los privilegios por
+-- defecto están desde antes de la 001, así que hoy la llave de servicio
+-- (service_role) puede ejecutar las nueve funciones que esta migración
+-- vuelve a definir. Con la 131:
+--   · las tres que se borran y se crean (esta, `transferir_entre_cuentas`
+--     y `cuentas_para_elegir`) la PIERDEN: quedan solo para la sesión.
+--     Nadie las llama con esa llave (se buscó en src/);
+--   · las seis que van con `create or replace` conservan lo que tienen:
+--     la llave de servicio las sigue pudiendo ejecutar, igual que hoy.
+--     `ajustar_saldo_cuenta`, `billetera` y `resumen_personal` preguntan
+--     por dentro quién es; `saldo_cuenta_dinero` no pregunta y no está
+--     abierta a la sesión; las otras dos son de disparador;
+--   · las cuatro nuevas nacen solo para la sesión (o para nadie, la del
+--     disparador). A quien no inició sesión no se le abre ninguna.
+-- Al aplicar, mirar antes y después:
+--   select proname, proacl from pg_proc where pronamespace = 'public'::regnamespace
+--    and proname in ('saldo_cuenta_dinero', 'anotar_en_su_cuenta', 'guardar_cuenta_dinero',
+--      'transferir_entre_cuentas', 'ajustar_saldo_cuenta', 'billetera', 'cuentas_para_elegir',
+--      'resumen_personal', 'moneda_no_se_reetiqueta', 'moneda_ajustes_cuenta',
+--      'guardar_cotizacion_moneda', 'deshacer_transferencia', 'transferencias_de_cuenta');
 revoke all on function public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid, text, text) from public, anon, service_role;
 grant execute on function public.guardar_cuenta_dinero(uuid, text, text, numeric, text[], uuid, text, text) to authenticated;
 
@@ -1016,6 +1092,14 @@ grant execute on function public.guardar_cotizacion_moneda(uuid, text, numeric) 
 --
 --     El borrado no pasa por el candado: antes se «tocan» las dos filas sin
 --     cambiarles nada, y ahí hablan el del vencido y el de Gratis.
+--
+--     CON UNA DE LAS DOS CUENTAS ARCHIVADA NO SE DESHACE. Una archivada no
+--     se ve en la billetera, no se reactiva y no acepta pases. Borrar el
+--     pase le devolvería (o le sacaría) plata a una cuenta que nadie ve, y
+--     lo que está a la vista ganaría o perdería ese importe sin contraparte:
+--     US$ 1.000 que desaparecen del total, o que aparecen después de
+--     haberse cambiado y depositado. Se pregunta después del «toque», para
+--     que el vencido y la Gratis lean primero su candado.
 -- ------------------------------------------------------------
 create or replace function public.deshacer_transferencia(p_empresa uuid, p_par uuid)
 returns jsonb language plpgsql security definer set search_path = public as $fn$
@@ -1038,6 +1122,13 @@ begin
   update public.ajustes_cuenta set nota = nota
   where empresa_id = p_empresa and par = p_par and tipo = 'transferencia';
 
+  if exists (select 1 from public.ajustes_cuenta a
+             join public.cuentas_dinero c on c.id = a.cuenta_id
+             where a.empresa_id = p_empresa and a.par = p_par and a.tipo = 'transferencia'
+               and not c.activa) then
+    raise exception 'Una de las dos cuentas ya no está en tu billetera: ese pase no se puede deshacer.' using errcode = '22023';
+  end if;
+
   delete from public.ajustes_cuenta
   where empresa_id = p_empresa and par = p_par and tipo = 'transferencia';
 
@@ -1053,7 +1144,9 @@ grant execute on function public.deshacer_transferencia(uuid, uuid) to authentic
 --     Para poder mirar y deshacer. Cada pase desde el lado de ESTA cuenta:
 --     `monto` con signo y en su moneda; `otro_monto` con signo y en la
 --     moneda de la otra. Dos importes exactos: nada convertido.
---     `otra_cuenta` es el nombre, aunque esté archivada.
+--     `otra_cuenta` es el nombre, aunque esté archivada; `otra_activa` dice
+--     si sigue en la billetera. Con la otra archivada el pase se ve pero no
+--     se puede deshacer (15): la pantalla no lo ofrece.
 -- ------------------------------------------------------------
 create or replace function public.transferencias_de_cuenta(
   p_empresa uuid,
@@ -1083,7 +1176,8 @@ begin
            'moneda', t.moneda,
            'otra_cuenta', t.otra_cuenta,
            'otra_moneda', t.otra_moneda,
-           'otro_monto', t.otro_monto
+           'otro_monto', t.otro_monto,
+           'otra_activa', t.otra_activa
          ) order by t.created_at desc, t.id), '[]'::jsonb)
   into v_lista
   from (
@@ -1091,7 +1185,8 @@ begin
            coalesce(c.moneda, v_propia) as moneda,
            oc.nombre as otra_cuenta,
            coalesce(oc.moneda, v_propia) as otra_moneda,
-           o.monto as otro_monto
+           o.monto as otro_monto,
+           oc.activa as otra_activa
     from public.ajustes_cuenta a
     join public.cuentas_dinero c on c.id = a.cuenta_id
     join public.ajustes_cuenta o

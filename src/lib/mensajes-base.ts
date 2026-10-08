@@ -531,6 +531,9 @@ export const MENSAJES_PT: Record<string, string> = {
   'Tenés cuentas en otra moneda. Quitalas antes de cambiar tu moneda principal.': 'Você tem contas em outra moeda. Remova-as antes de trocar a sua moeda principal.',
   'Esa es tu moneda: no necesita cotización.': 'Essa é a sua moeda: não precisa de cotação.',
   'Esa transferencia no existe.': 'Essa transferência não existe.',
+  // Deshacer un pase cuando una de sus dos cuentas ya se quitó (quedó
+  // archivada): la plata iría o vendría de una cuenta que nadie ve.
+  'Una de las dos cuentas ya no está en tu billetera: ese pase no se puede deshacer.': 'Uma das duas contas não está mais na sua carteira: essa transferência não pode ser desfeita.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */
