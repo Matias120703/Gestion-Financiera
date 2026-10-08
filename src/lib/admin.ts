@@ -1,7 +1,7 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
 import type {
-  CodigoRechazado, ComisionAdmin, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, RetiroAdmin, SocioAdmin,
+  CodigoRechazado, ComisionAdmin, CorreoSuelto, CuentaAdmin, FinanzasOrden, ReferidoAdmin, ResumenPanel, RetiroAdmin, SocioAdmin,
 } from './tipos';
 
 /**
@@ -94,6 +94,22 @@ export async function traerCodigosRechazados(): Promise<CodigoRechazado[]> {
   const supabase = clienteServidor();
   const { data } = await supabase.rpc('listar_codigos_rechazados');
   return Array.isArray(data) ? (data as CodigoRechazado[]) : [];
+}
+
+/**
+ * Los correos que quedaron sin ninguna cuenta (129): gente que puede entrar a
+ * Orden y no tiene ningún negocio. Ni un monto ni un nombre de negocio.
+ *
+ * Se traga el error, como las de socios: si esto falla, la lista de cuentas
+ * tiene que seguir andando. Pero devuelve null y no una lista vacía: «no hay
+ * ninguno» y «no se pudo leer» no son lo mismo, y confundirlos le diría a
+ * quien administra que un correo no existe cuando sí.
+ */
+export async function traerCorreosSueltos(): Promise<CorreoSuelto[] | null> {
+  const supabase = clienteServidor();
+  const { data, error } = await supabase.rpc('correos_sueltos', { p_limite: 200 });
+  if (error) return null;
+  return Array.isArray(data) ? (data as CorreoSuelto[]) : [];
 }
 
 /** Las empresas propias, para poder elegir cuál representa a Orden. */

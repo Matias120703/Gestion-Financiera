@@ -392,7 +392,9 @@ function aceptado(nombre, resultado) {
       [true, false]);
     ok('el resto del pago con Bancard sigue con sesión',
       ['/api/pagos/bancard/pago', '/api/pagos/bancard/estado', '/api/pagos/bancard/cobrar', '/api/pagos/bancard/tarjeta',
-        '/api/admin/bancard/revertir', '/api/admin/bancard/consultar', '/api/admin/bancard/probar', '/plan/pago/1000001']
+        '/api/admin/bancard/revertir', '/api/admin/bancard/consultar', '/api/admin/bancard/probar', '/plan/pago/1000001',
+        // Borrar una cuenta o un correo desde /admin (129): con sesión, y adentro exigen administrar Orden.
+        '/api/admin/cuentas/borrar', '/api/admin/correos/borrar']
         .filter((r) => esPublica(r)), []);
   }
 

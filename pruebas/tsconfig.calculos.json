@@ -22,7 +22,7 @@
     "../src/lib/planilla.ts", "../src/lib/planilla-xlsx.ts", "../src/lib/enlace-sheets.ts", "../src/lib/rutina-planilla.ts",
     "../src/lib/cuenta-del-cobro.ts", "../src/lib/calendario-agenda.ts", "../src/lib/catalogo-planilla.ts", "../src/lib/codigo-producto.ts",
     "../src/lib/bancard.ts", "../src/lib/cotizacion.ts", "../src/lib/bancard-flujo.ts", "../src/lib/bancard-estilos.ts",
-    "../src/lib/cierre-alumnos.ts", "../src/lib/bancard-formulario.ts"
+    "../src/lib/cierre-alumnos.ts", "../src/lib/bancard-formulario.ts", "../src/lib/borrar-correo.ts", "../src/lib/borrar-correo-servidor.ts"
   ],
   "include": ["../src/lib/reportes/*.ts"]
 }

@@ -387,6 +387,68 @@ export interface CuentaAdmin {
 }
 
 /**
+ * BORRAR LA CUENTA BORRA TAMBIÉN EL CORREO (migración 129, 07/10/2026).
+ *
+ * Por qué NO se le borra el usuario a una persona. La regla vive en la base
+ * (`motivo_para_no_borrar`) y en ningún otro lado: acá solo se la nombra.
+ */
+export type MotivoNoBorrar = 'vos' | 'administracion' | 'otro_negocio' | 'socio';
+
+/** Una persona de una cuenta, como la muestra la ficha ANTES de borrar (`personas_de_cuenta`). */
+export interface PersonaDeCuenta {
+  correo: string;
+  nombre: string;
+  rol: Rol;
+  /** Queda sin ningún negocio: su correo se va con la cuenta. */
+  se_borra: boolean;
+  motivo: MotivoNoBorrar | null;
+}
+
+export interface PersonasDeCuenta {
+  personas: PersonaDeCuenta[];
+  /** Tiene una tarjeta guardada en Bancard: se le pide que la borre. */
+  tarjeta: boolean;
+}
+
+/** Alguien que puede entrar a Orden y no tiene ningún negocio (`correos_sueltos`). */
+export interface CorreoSuelto {
+  usuario: string;
+  correo: string;
+  creado: string | null;
+  ultimo_ingreso: string | null;
+  confirmado: boolean;
+  /** Se registró hace menos de 7 días: puede estar terminando de crear su cuenta. */
+  reciente: boolean;
+  /** Vino por el enlace de un socio; el código viaja en su cuenta. */
+  con_codigo: boolean;
+  se_puede: boolean;
+  motivo: MotivoNoBorrar | null;
+}
+
+/** Qué pasó con el correo de cada persona al borrar su cuenta. */
+export type EstadoCorreoBorrado = 'borrado' | 'ya_no_estaba' | 'se_queda' | 'fallo';
+
+/**
+ * Qué pasó con la tarjeta guardada. `pendiente`: Bancard no contestó (Orden
+ * ya no la cobra). `sin_configurar`: había una y este servidor no tiene Bancard.
+ */
+export type EstadoTarjetaBorrada = 'sin_tarjeta' | 'quitada' | 'pendiente' | 'fallo' | 'sin_configurar';
+
+/** Lo que contesta `POST /api/admin/cuentas/borrar` cuando la cuenta se borró. */
+export interface CuentaBorrada {
+  ok: true;
+  nombre: string;
+  movimientos: number;
+  /** `motivo` es texto y no `MotivoNoBorrar`: lo dice la base, que puede saber uno más nuevo. */
+  correos: { correo: string; estado: EstadoCorreoBorrado; motivo: string | null }[];
+  tarjeta: EstadoTarjetaBorrada;
+  /** Comprobantes y videos que tenía. */
+  archivos: number;
+  /** Los que el depósito no dejó borrar. */
+  archivos_sin_borrar: number;
+}
+
+/**
  * Alguien que trae clientes a Orden y cobra por eso. Ver migración 060.
  *
  * No necesita tener cuenta en Orden: la mayoría no va a usar el sistema, solo
