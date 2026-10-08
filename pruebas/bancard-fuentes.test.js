@@ -498,6 +498,23 @@ console.log('\n── Las tareas y el reloj ────────────
   ok('las rutas de /api/admin/bancard exigen ser la administración', admin.every((s) => s.includes("rpc('es_superadmin')") && s.includes('403')), true);
 }
 
+console.log('\n── La respuesta de un cobro que no se entendió (07/10/2026) ──');
+{
+  const cliente = sinComentarios(leer('src/lib/bancard.ts'));
+  const flujo = sinComentarios(leer('src/lib/bancard-flujo.ts'));
+  ok('el cobro lee el resultado de «operation» o de «confirmation»',
+    /esObjeto\(r\.cuerpo\.operation\) \? r\.cuerpo\.operation : r\.cuerpo\.confirmation/.test(cliente), true);
+  ok('y si no lo entiende, el evento «charge» guarda la forma (nombres de campos), no la respuesta',
+    /tipo: 'charge'[\s\S]{0,400}r\.forma \? \{ forma: r\.forma \} : \{\}/.test(flujo), true);
+  const forma = cliente.slice(cliente.indexOf('function formaDe('), cliente.indexOf('function esObjeto('));
+  ok('la forma se arma solo con Object.keys: nunca lee un valor de texto de la respuesta',
+    [forma.includes('Object.keys('), /String\(|JSON\.stringify|\$\{v\}|\+ v\b/.test(forma)], [true, false]);
+  // La base deja pasar esa clave: es un texto suelto que no está en la lista de lo que nunca se guarda.
+  const sanear = leer('supabase/migrations/125_bancard_pagos.sql');
+  const prohibidas = sanear.slice(sanear.indexOf("lower(e.key) not in ("), sanear.indexOf("lower(e.key) not in (") + 400);
+  ok('«forma» no está entre las claves que la base descarta del detalle', /'forma'/.test(prohibidas), false);
+}
+
 console.log(`\n${corridas - fallos}/${corridas} comprobaciones de las fuentes de Bancard.`);
 if (fallos > 0) {
   console.log(`${fallos} fallaron.`);
