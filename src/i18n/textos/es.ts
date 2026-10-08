@@ -28,6 +28,7 @@ import { planGratisEs } from './plan-gratis';
 import { vendoProductosEs } from './vendo-productos';
 import { bancardEs } from './bancard';
 import { singularEs } from './singular';
+import { monedasEs } from './monedas';
 
 export const es = {
   comun: {
@@ -3053,6 +3054,11 @@ export const es = {
   // selector de personas del Premium, el formulario, el comprobante y lo
   // que contestan las rutas. Ver textos/bancard.ts.
   bancard: bancardEs,
+
+  // La billetera en otras monedas (131): la cuenta en dólares o en reales,
+  // el «≈ todo junto» con su cotización y pagar un gasto con esa cuenta.
+  // Ver textos/monedas.ts.
+  monedas: monedasEs,
 };
 
 /**

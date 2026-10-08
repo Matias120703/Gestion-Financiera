@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { clienteNavegador } from '@/lib/supabase/cliente';
-import { useTextos } from '@/i18n/cliente';
+import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
 import { tonoDeCuenta } from '@/lib/colores-cuenta';
 import type { CuentaParaElegir } from '@/lib/tipos';
 import { cuentasDelMetodo, cuentaDelCobro, esFiado, type SentidoPlata } from '@/lib/cuenta-del-cobro';
+import { cuentasEnOtraMoneda } from '@/lib/cuenta-del-cobro';
+import { decimalesDe, dinero, simboloDe } from '@/lib/formato';
+import { cambioQueResulta, cambioRaro, cotizacionEscrita, textoDelCambio } from '@/lib/monedas';
+import { CampoMonto } from '@/components/CampoMonto';
 
 /** Cómo se cobra algo que ya se hizo. Sin fiado: eso no es cobrar. */
 export const METODOS_DE_COBRO = ['efectivo', 'transferencia', 'tarjeta'] as const;
@@ -39,6 +43,8 @@ export function useCuentasParaElegir(empresaId: string, pedir = true): CuentaPar
 // lib/cuenta-del-cobro.ts, donde se prueban solas. Se reexportan acá para que
 // las pantallas sigan importando de donde siempre.
 export { cuentasDelMetodo, cuentaDelCobro, esFiado, type SentidoPlata } from '@/lib/cuenta-del-cobro';
+// Las de las cuentas en otra moneda (131), que solo usa Gastos.
+export { cuentasEnOtraMoneda, cuentaTocada } from '@/lib/cuenta-del-cobro';
 
 /**
  * CÓMO TE PAGÓ Y A QUÉ CUENTA ENTRÓ (095).
@@ -118,9 +124,20 @@ export function FormaDeCobro({
  *
  * Lo que se manda es siempre `cuentaDelCobro(cuentas, metodo, elegida)`.
  * Quien la usa vuelve `elegida` a null cuando cambia la forma de pago.
+ *
+ * LAS CUENTAS EN OTRA MONEDA (131) VAN APARTE, Y SOLO SI LAS PASAN.
+ *
+ * `cuentas` son siempre las que están en la moneda del negocio. Sin `otras`
+ * (todas las pantallas menos Gastos) esta pieza se porta exactamente como
+ * antes. Con `otras`, después de los chips de siempre van las de otra moneda
+ * que sirven para esa forma de pago, cada una con su símbolo («Tarjeta
+ * dólares · US$»). Ninguna arranca marcada: una cuenta en dólares vale solo
+ * si la tocaron, y al tocarla quien la usa pregunta cuánto salió en esa
+ * moneda (`MontoEnCuenta`). Tocarla de nuevo la suelta.
  */
 export function ElegirCuenta({
   cuentas, metodo, elegida, alElegir, deshabilitado = false, sentido = 'entra',
+  otras, otraElegida = null, alElegirOtra,
 }: {
   cuentas: CuentaParaElegir[];
   metodo: string;
@@ -130,17 +147,56 @@ export function ElegirCuenta({
   deshabilitado?: boolean;
   /** «¿A qué cuenta entró?» (un cobro) o «¿De qué cuenta salió?» (un pago). */
   sentido?: SentidoPlata;
+  /** Las cuentas en OTRA moneda (131). Solo las pasa Gastos. */
+  otras?: CuentaParaElegir[];
+  /** La cuenta en otra moneda que se tocó, o null. */
+  otraElegida?: string | null;
+  /** Null = se soltó la que estaba tocada. */
+  alElegirOtra?: (cuenta: string | null) => void;
 }) {
   const t = useTextos();
+  const sale = sentido === 'sale';
+  // (131) Las de otra moneda que sirven para esta forma de pago. Lo que
+  // entra fiado no va a ninguna cuenta, tampoco a estas.
+  const otrasDelMetodo = otras && otras.length > 0 && !esFiado(metodo, sentido)
+    ? cuentasEnOtraMoneda(otras, metodo)
+    : [];
+  const otraMarcada = otraElegida && otrasDelMetodo.some((c) => c.id === otraElegida) ? otraElegida : null;
+  const chipsDeOtras = otrasDelMetodo.map((c) => {
+    const on = otraMarcada === c.id;
+    return (
+      <button key={c.id} type="button" disabled={deshabilitado} aria-pressed={on}
+        onClick={() => alElegirOtra?.(on ? null : c.id)}
+        className={`${on ? 'chip-encendido' : 'chip-apagado'} max-w-full gap-1.5 disabled:opacity-50`}>
+        <PuntoDeCuenta cuenta={c} />
+        <span className="truncate">{c.nombre}</span>
+        <span className="shrink-0 opacity-75">· {simboloDe(c.moneda ?? '')}</span>
+      </button>
+    );
+  });
+  // (131) Quien tiene SOLO cuentas en otra moneda: se le ofrecen ellas. Acá
+  // no tocar ninguna no es un olvido que avisar: no hay cuenta en su moneda
+  // de la que el gasto pudiera haber salido.
+  if (cuentas.length === 0 && chipsDeOtras.length > 0) {
+    const preguntaSola = sale ? t.cobro.deQueCuenta : t.cobro.enQueCuenta;
+    return (
+      <div role="group" aria-label={preguntaSola}>
+        <span className="etiqueta">{preguntaSola}</span>
+        <div className="mt-1 flex flex-wrap gap-2">{chipsDeOtras}</div>
+      </div>
+    );
+  }
   // A quien no administra (lista vacía) no se le pregunta. Tampoco con lo que
   // entra fiado; un gasto con «crédito» sí: es la tarjeta, y hay que saber cuál.
   if (cuentas.length === 0 || esFiado(metodo, sentido)) return null;
   const posibles = cuentasDelMetodo(cuentas, metodo, sentido);
-  const marcada = cuentaDelCobro(cuentas, metodo, elegida, sentido);
-  const sale = sentido === 'sale';
+  // Con una en otra moneda tocada, ninguna de las de siempre queda marcada.
+  const marcada = otraMarcada ? null : cuentaDelCobro(cuentas, metodo, elegida, sentido);
   const vaA = (nombre: string) => (sale ? t.cobro.vaASalir(nombre) : t.cobro.vaAEntrar(nombre));
 
-  if (posibles.length === 1) {
+  // Con cuentas en otra moneda para ofrecer, siempre van los chips: «va a
+  // salir de…» a secas no dejaría elegir la de dólares.
+  if (posibles.length === 1 && chipsDeOtras.length === 0) {
     const unica = posibles[0];
     return (
       <p className="flex items-center gap-2 text-[12.5px] font-medium leading-snug text-tinta/55">
@@ -173,10 +229,88 @@ export function ElegirCuenta({
             </button>
           );
         })}
+        {chipsDeOtras}
       </div>
-      {marcada
+      {/* Con una en otra moneda tocada, lo que sigue lo dice MontoEnCuenta. */}
+      {otraMarcada ? null : marcada
         ? <p className="mt-1.5 text-[12px] leading-snug text-tinta/45">{t.cobro.enQueCuentaDetalle}</p>
         : <p className="mt-1.5 text-[12px] font-medium leading-snug text-ambar">{aviso}</p>}
+    </div>
+  );
+}
+
+/**
+ * CUÁNTO SALIÓ (O ENTRÓ) EN LA MONEDA DE LA CUENTA (131).
+ *
+ * Pagaste la suscripción con la tarjeta en dólares: el gasto se guarda en
+ * guaraníes, como todos (la ganancia, el cierre y los reportes no se
+ * enteran), pero de la cuenta salieron dólares, y cuántos lo sabe solo quien
+ * pagó. Orden no lo calcula por su cuenta: con una cotización guardada lo
+ * PROPONE, y la persona lo confirma o lo pisa con lo que dice su resumen.
+ * Sin ese importe no se puede guardar (la base tampoco lo deja).
+ *
+ * Debajo, el cambio que resulta de los dos importes («US$ 1 = Gs. 7.300»),
+ * en ámbar si se aleja mucho del que la persona escribió: casi siempre es un
+ * cero de más o de menos. Avisa, no frena.
+ */
+export function MontoEnCuenta({
+  cuenta, propia, montoPropio, valor, alCambiar, sentido = 'sale', deshabilitado = false, conNombre = false,
+}: {
+  /** La cuenta tocada, con su moneda y su cotización. */
+  cuenta: CuentaParaElegir;
+  /** La moneda del negocio. */
+  propia: string;
+  /** Lo que se guarda como gasto o ingreso, en la moneda del negocio. */
+  montoPropio: number;
+  /** El importe en la moneda de la cuenta. */
+  valor: number;
+  alCambiar: (n: number) => void;
+  sentido?: SentidoPlata;
+  deshabilitado?: boolean;
+  /** Arriba, el nombre de la cuenta: para cuando este bloque queda a la vista sin los chips. */
+  conNombre?: boolean;
+}) {
+  const t = useTextos();
+  const c = t.monedas.cobro;
+  const locale = useLocale();
+  const monedaCuenta = cuenta.moneda ?? propia;
+  const nombre = (codigo: string) => t.gastosCampana.moneda.nombres[codigo] ?? codigo;
+  const sale = sentido === 'sale';
+  const resultante = cambioQueResulta(montoPropio, propia, valor, monedaCuenta);
+  const guardada = Number(cuenta.cotizacion) > 0 ? cotizacionEscrita(Number(cuenta.cotizacion), propia, monedaCuenta) : null;
+  const raro = resultante !== null && cambioRaro(resultante, guardada);
+  const partes = resultante !== null ? textoDelCambio(resultante, propia, monedaCuenta, locale) : null;
+
+  return (
+    <div className="rounded-2xl border border-borde/70 bg-arena/40 p-3.5 aparecer">
+      {/* De qué cuenta se habla, cuando los chips de las cuentas están plegados. */}
+      {conNombre && (
+        <p className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-tinta/70">
+          <PuntoDeCuenta cuenta={cuenta} />
+          <span className="min-w-0 truncate">{cuenta.nombre} · {simboloDe(monedaCuenta)}</span>
+        </p>
+      )}
+      <label className="block">
+        <span className="etiqueta">{sale ? c.cuantoSalioEn(nombre(monedaCuenta)) : c.cuantoEntroEn(nombre(monedaCuenta))}</span>
+        <CampoMonto
+          className="campo" disabled={deshabilitado}
+          decimales={decimalesDe(monedaCuenta)} placeholder={dinero(0, monedaCuenta, true, locale)}
+          valor={valor} alCambiar={(n) => alCambiar(Math.max(0, n))}
+        />
+      </label>
+      {partes && (
+        <p className={`mt-2 text-[13px] font-semibold tabular-nums ${raro ? 'text-ambar' : 'text-tinta/70'}`}>
+          {t.monedas.billetera.cambio(partes.uno, partes.vale)}
+        </p>
+      )}
+      {raro && (
+        <p className="mt-2 rounded-lg bg-ambar-claro px-3 py-2 text-[12.5px] font-medium text-ambar">
+          {t.monedas.billetera.cambioRaroAviso}
+        </p>
+      )}
+      <p className="mt-2 text-[12px] leading-snug text-tinta/45">
+        {sale ? c.seGuardaEn(nombre(propia)) : c.seGuardaEnIngreso(nombre(propia))}
+      </p>
     </div>
   );
 }

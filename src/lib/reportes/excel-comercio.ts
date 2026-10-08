@@ -53,6 +53,13 @@ export interface LecturasComercio {
   fiado: ResumenFiado | null;
   fiadoPeriodo: FiadoDelPeriodo | null;
   cuentas: { nombre: string; saldo: number }[] | null;
+  /**
+   * Las cuentas en OTRA moneda (131), cada una con su saldo en SU moneda.
+   * Opcional: quien no tiene ninguna no lo manda y el libro sale idéntico.
+   * No entran en «Total en tus cuentas» (no se suman monedas) ni pasan por la
+   * vista de la 051: US$ 10.000 son US$ 10.000 se mire como se mire.
+   */
+  cuentasOtras?: { nombre: string; moneda: string; saldo: number }[] | null;
   vendedores: VentasDeVendedor[];
 }
 
@@ -94,6 +101,9 @@ export function enLaVistaComercio(l: LecturasComercio, c: Conversor): LecturasCo
       })),
     },
     cuentas: l.cuentas && l.cuentas.map((k) => ({ ...k, saldo: c.x(k.saldo) })),
+    // (131) Las de otra moneda pasan TAL CUAL: su saldo no está en la moneda
+    // del negocio, así que el factor de la vista no les corresponde.
+    ...(l.cuentasOtras ? { cuentasOtras: l.cuentasOtras } : {}),
     vendedores: l.vendedores.map((v) => ({
       ...v, vendido: c.x(v.vendido), ticket_promedio: c.xn(v.ticket_promedio), monto_anulado: c.x(v.monto_anulado),
     })),
@@ -140,6 +150,8 @@ export function libroComercio(datos: DatosBaseLibro & ExtrasComercio): ExcelJS.W
     empresa, desde, hasta, idioma, resumen: r, resumenPrevio: rp, previo, categorias, serie, movimientos,
     ranking, productos, fiado, fiadoPeriodo, cuentas, vendedores, hoy,
   } = datos;
+  // (131) Las cuentas en otra moneda, si hay.
+  const cuentasOtras = datos.cuentasOtras ?? [];
   const tx = textosExcel(idioma);
   const tc = textosComercio(idioma);
   const moneda = empresa.moneda;
@@ -281,6 +293,17 @@ export function libroComercio(datos: DatosBaseLibro & ExtrasComercio): ExcelJS.W
       f += 1;
     };
 
+    /**
+     * Una cuenta en otra moneda (131): «Atlas dólares (US$)» y su saldo con
+     * el formato de SU moneda. No pasó por la vista ni entra en el total: en
+     * un libro no se suman dólares con guaraníes.
+     */
+    const lineaEnOtraMoneda = (k: { nombre: string; moneda: string; saldo: number }) => {
+      linea(`${k.nombre} (${simboloDe(k.moneda)})`, k.saldo, {
+        formato: formatoMoneda(k.moneda), color: k.saldo < 0 ? ROJO : TINTA, nota: tc.enSuMoneda,
+      });
+    };
+
     bloque(tx.entroPlata);
     linea(tx.ventasPrecioLista, r.ventasBrutas, { antes: rp.ventasBrutas, nota: tx.operaciones(r.cantidadVentas) });
     if (r.descuentos > 0 || rp.descuentos > 0) {
@@ -326,6 +349,14 @@ export function libroComercio(datos: DatosBaseLibro & ExtrasComercio): ExcelJS.W
       bloque(tc.cajaTitulo(hoyTexto));
       for (const k of cuentas) linea(k.nombre, k.saldo, { color: k.saldo < 0 ? ROJO : TINTA });
       linea(tc.totalEnCuentas, cuentas.reduce((s, k) => s + k.saldo, 0), { fuerte: true, nota: tc.fotoDeHoy });
+      // (131) Después del total, y fuera de él: una fila por cuenta en otra
+      // moneda, con su símbolo y su número sin convertir.
+      for (const k of cuentasOtras) lineaEnOtraMoneda(k);
+      f += 1;
+    } else if (cuentasOtras.length > 0) {
+      // Solo cuentas en otra moneda: el bloque de la caja, sin total.
+      bloque(tc.cajaTitulo(hoyTexto));
+      for (const k of cuentasOtras) lineaEnOtraMoneda(k);
       f += 1;
     }
     if (hayFiado) {

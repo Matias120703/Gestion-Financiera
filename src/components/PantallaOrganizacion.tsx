@@ -215,6 +215,17 @@ export function PantallaOrganizacion({
             }`}>
               {plata(resumen.disponible)}
             </p>
+            {/* (131) Lo que hay en cuentas de otra moneda NO está en el número
+                de arriba ni en «por día»: va debajo, exacto y sin sumar. Diez
+                mil dólares no son plata para gastar hoy en guaraníes. */}
+            {(resumen.en_otras_monedas ?? []).filter((o) => Number(o.total) !== 0).map((o) => (
+              <p key={o.moneda} className="mt-1.5 text-[13.5px] font-semibold tabular-nums text-tinta/60">
+                {(Number(o.total) < 0 ? t.monedas.billetera.menosEn : t.monedas.billetera.masEn)(
+                  dinero(Math.abs(Number(o.total)), o.moneda, true, locale),
+                  t.gastosCampana.moneda.nombres[o.moneda] ?? o.moneda,
+                )}
+              </p>
+            ))}
             <p className="mt-2 text-[14.5px] leading-relaxed text-tinta/60">
               {t.organizacion.paraDias(resumen.dias_restantes)}
               {', '}

@@ -26,6 +26,8 @@ const es = {
   cajaTitulo: (hoy: string) => `Caja · saldo de cada cuenta hoy, ${hoy}`,
   totalEnCuentas: 'Total en tus cuentas',
   fotoDeHoy: 'de hoy, no del período',
+  // Una cuenta en otra moneda (131): va después del total, sin sumarse.
+  enSuMoneda: 'en su moneda, fuera del total',
   fiadoTitulo: 'Fiado',
   fiadoOtorgado: 'Fiaste en el período',
   fiadoCobrado: 'Te pagaron de lo fiado',
@@ -121,6 +123,7 @@ const pt: TextosComercio = {
   cajaTitulo: (hoy: string) => `Caixa · saldo de cada conta hoje, ${hoy}`,
   totalEnCuentas: 'Total nas suas contas',
   fotoDeHoy: 'de hoje, não do período',
+  enSuMoneda: 'na moeda dela, fora do total',
   fiadoTitulo: 'Fiado',
   fiadoOtorgado: 'Você vendeu fiado no período',
   fiadoCobrado: 'Recebeu do fiado',

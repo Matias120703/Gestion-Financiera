@@ -301,6 +301,15 @@ async function libroDeLaVariante(
       const lecturas: LecturasComercio = {
         fiado, fiadoPeriodo, vendedores,
         cuentas: billetera.cuentas.map((k) => ({ nombre: k.nombre, saldo: Number(k.saldo) })),
+        // (131) Las que están en otra moneda, solo si hay: van aparte, con su
+        // moneda, y `enLaVistaComercio` no las convierte.
+        ...(billetera.cuentasOtras.length > 0
+          ? {
+            cuentasOtras: billetera.cuentasOtras.map((k) => ({
+              nombre: k.nombre, moneda: k.moneda ?? billetera.moneda, saldo: Number(k.saldo),
+            })),
+          }
+          : {}),
       };
       return libroComercio({
         ...base,

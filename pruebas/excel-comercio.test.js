@@ -342,6 +342,65 @@ function textos(hoja) {
   const sinConvertir = { fiado, fiadoPeriodo, cuentas, vendedores };
   ok('sin conversión, lo mismo', enLaVistaComercio(sinConvertir, conversorDe({ moneda: 'PYG', propia: 'PYG', factor: 1 })) === sinConvertir, true);
 
+  // ---- las cuentas en otra moneda (131) ----
+  // Quien no tiene ninguna baja EXACTAMENTE el libro de antes: cada celda de
+  // cada hoja, con su valor, su formato y su negrita.
+  const celdas = (l) => JSON.stringify(l.worksheets.map((h) => {
+    const todas = [];
+    h.eachRow({ includeEmpty: true }, (f, i) => f.eachCell({ includeEmpty: true }, (k, j) => {
+      todas.push([i, j, k.value, k.numFmt ?? null, Boolean(k.font && k.font.bold), f.height ?? null]);
+    }));
+    return [h.name, todas];
+  }));
+  const deSiempre = celdas(libro);
+  ok('131 · el libro de siempre tiene con qué compararse', deSiempre.length > 5000, true);
+  ok('131 · sin cuentas en otra moneda el libro sale idéntico: sin la clave, con la lista vacía y con null',
+    [celdas(await releer(libroComercio(datosDe(movimientos)))) === deSiempre,
+      celdas(await releer(libroComercio(datosDe(movimientos, { cuentasOtras: [] })))) === deSiempre,
+      celdas(await releer(libroComercio(datosDe(movimientos, { cuentasOtras: null })))) === deSiempre],
+    [true, true, true]);
+
+  const enOtraMoneda = [
+    { nombre: 'Atlas dólares', moneda: 'USD', saldo: 10350.5 },
+    { nombre: 'Reales en mano', moneda: 'BRL', saldo: -20 },
+  ];
+  const libroOtras = await releer(libroComercio(datosDe(movimientos, { cuentasOtras: enOtraMoneda })));
+  ok('131 · con cuentas en otra moneda el libro sí cambia (la comparación de arriba muerde)', celdas(libroOtras) === deSiempre, false);
+  const resOtras = libroOtras.getWorksheet('Resumen');
+  const fTotal = fila(resOtras, 'Total en tus cuentas');
+  ok('131 · «Total en tus cuentas» sigue siendo la suma de las cuentas de la moneda del negocio, con su formato',
+    [fTotal === fila(res, 'Total en tus cuentas'), resOtras.getCell(`C${fTotal}`).value, resOtras.getCell(`C${fTotal}`).numFmt],
+    [true, 800000, '"Gs." #,##0;[Red]-"Gs." #,##0']);
+  ok('131 · la cuenta en dólares va DESPUÉS del total: con su símbolo, su número sin convertir y su formato',
+    [fila(resOtras, 'Atlas dólares (US$)') - fTotal, resOtras.getCell(`C${fTotal + 1}`).value,
+      resOtras.getCell(`C${fTotal + 1}`).numFmt, resOtras.getCell(`F${fTotal + 1}`).value],
+    [1, 10350.5, '"US$" #,##0.00;[Red]-"US$" #,##0.00', 'en su moneda, fuera del total']);
+  ok('131 · y la de reales, en la suya',
+    [fila(resOtras, 'Reales en mano (R$)') - fTotal, resOtras.getCell(`C${fTotal + 2}`).value, resOtras.getCell(`C${fTotal + 2}`).numFmt],
+    [2, -20, '"R$" #,##0.00;[Red]-"R$" #,##0.00']);
+  ok('131 · sin columna «Antes» (son fotos de hoy) y sin total propio: ninguna fila suma dólares con guaraníes',
+    [resOtras.getCell(`D${fTotal + 1}`).value, resOtras.getCell(`D${fTotal + 2}`).value,
+      textos(resOtras).filter((x) => /^Total/i.test(x)).length - textos(res).filter((x) => /^Total/i.test(x)).length],
+    [null, null, 0]);
+  ok('131 · lo que sigue en el Resumen (el fiado) solo se corre dos filas', fila(resOtras, 'Te deben hoy') - fila(res, 'Te deben hoy'), 2);
+  ok('131 · las demás hojas no se enteran',
+    libroOtras.worksheets.filter((h) => h.name !== 'Resumen').map((h) => celdas({ worksheets: [h] }) === celdas({ worksheets: [libro.getWorksheet(h.name)] })),
+    Array(8).fill(true));
+
+  const soloOtras = (await releer(libroComercio(datosDe(movimientos, { cuentas: [], cuentasOtras: enOtraMoneda })))).getWorksheet('Resumen');
+  ok('131 · quien tiene SOLO cuentas en otra moneda: el bloque de la caja con ellas y sin total',
+    [fila(soloOtras, 'Atlas dólares (US$)') !== null, fila(soloOtras, 'Reales en mano (R$)') !== null, fila(soloOtras, 'Total en tus cuentas')],
+    [true, true, null]);
+  const resPt = (await releer(libroComercio(datosDe(movimientos, { cuentasOtras: enOtraMoneda }, 'pt')))).getWorksheet('Resumo');
+  ok('131 · en portugués, la nota de la fila',
+    resPt.getCell(`F${fila(resPt, 'Atlas dólares (US$)')}`).value, 'na moeda dela, fora do total');
+
+  // Mirando en dólares (051): las propias se convierten; las de otra moneda,
+  // no. US$ 10.350,50 son US$ 10.350,50 se mire como se mire.
+  const vOtras = enLaVistaComercio({ fiado, fiadoPeriodo, cuentas, vendedores, cuentasOtras: enOtraMoneda }, c);
+  ok('131 · en la vista: las cuentas en otra moneda pasan tal cual', [vOtras.cuentasOtras, vOtras.cuentas.map((k) => k.saldo)], [enOtraMoneda, [112.5, -12.5]]);
+  ok('131 · y sin ellas la vista no inventa la clave', 'cuentasOtras' in v, false);
+
   void path;
   console.log(`\n${corridas} comprobaciones, ${fallos} fallos`);
   process.exit(fallos > 0 ? 1 : 0);

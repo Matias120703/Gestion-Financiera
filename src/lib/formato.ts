@@ -40,6 +40,31 @@ export function simboloDe(moneda: string): string {
 }
 
 /**
+ * DÓNDE VUELVE EL CURSOR DESPUÉS DE REFORMATEAR UN MONTO (CampoMonto).
+ *
+ * Al agrupar de a miles cambia el largo del texto, así que el cursor se
+ * devuelve contando DÍGITOS: después de los mismos que tenía antes.
+ *
+ * Con eso solo, la coma no se podía escribir (08/10/2026, al cargar una
+ * cuenta en dólares): en «15,» hay dos dígitos antes del cursor, y «después
+ * de dos dígitos» es ANTES de la coma. El cursor saltaba para atrás y los
+ * centavos caían en la parte entera: quien tecleaba 15,99 veía 1.599. Si el
+ * cursor estaba después de la coma, tiene que seguir después de ella.
+ *
+ * En una moneda sin decimales (`trasLaComa` nunca es true) da lo de siempre.
+ */
+export function cursorTrasFormatear(nuevo: string, digitosAntes: number, trasLaComa: boolean, coma: string): number {
+  let i = 0;
+  let vistos = 0;
+  while (i < nuevo.length && vistos < digitosAntes) {
+    if (nuevo[i] >= '0' && nuevo[i] <= '9') vistos++;
+    i++;
+  }
+  if (trasLaComa && nuevo[i] === coma) i++;
+  return i;
+}
+
+/**
  * VER LOS NÚMEROS EN OTRA MONEDA (migración 051)
  *
  * Todo importe se guarda en la moneda del negocio y en ninguna otra. Esto es

@@ -7,6 +7,7 @@ import { useLocale, useTextos } from '@/i18n/cliente';
 import { BotonOjo } from '@/components/PantallaBilletera';
 import { TarjetaCuenta } from '@/components/TarjetaCuenta';
 import { FilaDeslizable } from '@/components/FilaDeslizable';
+import { TotalesDePlata } from '@/components/billetera/TotalesDePlata';
 import type { Billetera } from '@/lib/tipos';
 
 /**
@@ -31,9 +32,12 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
   const b = t.billetera;
   const locale = useLocale();
   const [oculto, alternar] = useOcultarMontos();
-  const cuentas = billetera.cuentas;
+  // (131) Las cuentas en otra moneda van después de las de siempre, cada una
+  // con su saldo en SU moneda. Sin ninguna, la lista es la de antes.
+  const hayOtras = billetera.cuentasOtras.length > 0;
+  const cuentas = hayOtras ? [...billetera.cuentas, ...billetera.cuentasOtras] : billetera.cuentas;
 
-  const plata = (n: number) => (oculto ? '••••••' : dinero(n, moneda, true, locale));
+  const plata = (n: number, enMoneda: string = moneda) => (oculto ? '••••••' : dinero(n, enMoneda, true, locale));
 
   if (cuentas.length === 0) {
     return (
@@ -49,12 +53,15 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
   return (
     <section aria-label={b.tuPlata}>
       {/* El total, sin tarjeta propia: la tarjeta ahora es cada cuenta. */}
-      <div className="flex items-end justify-between gap-3 px-0.5">
+      <div className={hayOtras ? 'flex items-start justify-between gap-3 px-0.5' : 'flex items-end justify-between gap-3 px-0.5'}>
         <div className="min-w-0">
           <p className="text-[13px] font-semibold text-tinta/55">{b.tuPlata}</p>
           <p className="mt-1 truncate font-titulo text-[30px] font-extrabold leading-none tabular-nums tracking-tight">
             {plata(billetera.total)}
           </p>
+          {/* (131) Un renglón exacto por cada otra moneda y, si hay cotización,
+              el «≈ todo junto». Nunca sumadas en el número de arriba. */}
+          <TotalesDePlata billetera={billetera} moneda={moneda} oculto={oculto} tamano="chico" />
         </div>
         <BotonOjo oculto={oculto} alCambiar={alternar} clase="shrink-0 bg-arena text-tinta/70 hover:text-tinta" />
       </div>
@@ -89,7 +96,7 @@ export function BilleteraPanel({ billetera, moneda }: { billetera: Billetera; mo
             {/* Una tarjeta de banco de verdad, pintada entera del color de
                 la cuenta (094). Antes era una tarjeta blanca con una franja
                 de color arriba: se distinguía, pero no resaltaba. */}
-            <TarjetaCuenta cuenta={c} tipo={b.tipos[c.tipo]} saldo={plata(Number(c.saldo))} />
+            <TarjetaCuenta cuenta={c} tipo={b.tipos[c.tipo]} saldo={plata(Number(c.saldo), c.moneda ?? moneda)} />
           </Link>
         ))}
       </FilaDeslizable>

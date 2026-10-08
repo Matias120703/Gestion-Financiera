@@ -93,6 +93,8 @@ export async function ReporteComercio({
   const atrasado = fiado?.monto_atrasado ?? 0;
   const estaSemana = (fiado?.monto_hoy ?? 0) + (fiado?.monto_semana ?? 0);
   const cuentas = billetera?.cuentas ?? [];
+  // (131) Las que están en otra moneda van aparte, cada una en la suya.
+  const cuentasOtras = billetera?.cuentasOtras ?? [];
 
   return (
     <>
@@ -334,13 +336,14 @@ export async function ReporteComercio({
         )}
 
         {/* Dónde está la plata: el saldo de hoy de cada cuenta (074). */}
-        {cuentas.length > 0 && billetera && (
+        {(cuentas.length > 0 || cuentasOtras.length > 0) && billetera && (
           <Seccion
             titulo={rc.cuentas.titulo}
             accion={<Link href="/billetera" className="boton-texto inline-flex min-h-[44px] items-center">{rc.cuentas.verBilletera}</Link>}
           >
             <div className="px-4 pb-4 pt-1">
               <p className="text-[12.5px] text-tinta/50">{rc.cuentas.detalle}</p>
+              {cuentas.length > 0 && (
               <ul className="mt-2 divide-y divide-borde">
                 {cuentas.map((k) => (
                   <li key={k.id} className="flex items-baseline justify-between gap-3 py-2">
@@ -353,6 +356,25 @@ export async function ReporteComercio({
                   <span className="text-[14px] font-extrabold tabular-nums">{dinero(billetera.total, m)}</span>
                 </li>
               </ul>
+              )}
+              {/* (131) En otras monedas: cada cuenta con su saldo EN SU MONEDA.
+                  Sin total (no se suman monedas) y sin pasar por «Ver en otra
+                  moneda» (051): US$ 10.000 son US$ 10.000 se mire como se mire. */}
+              {cuentasOtras.length > 0 && (
+                <>
+                  <p className="mt-3 text-[12px] font-semibold text-tinta/50">{t.monedas.billetera.enOtrasMonedas}</p>
+                  <ul className="mt-1 divide-y divide-borde">
+                    {cuentasOtras.map((k) => (
+                      <li key={k.id} className="flex items-baseline justify-between gap-3 py-2">
+                        <span className="min-w-0 truncate text-[14px] font-semibold">{k.nombre}</span>
+                        <span className={`text-[13.5px] font-bold tabular-nums ${Number(k.saldo) < 0 ? 'text-rojo' : ''}`}>
+                          {dinero(Number(k.saldo), k.moneda ?? billetera.moneda, true, locale)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           </Seccion>
         )}

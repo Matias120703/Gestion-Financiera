@@ -3999,6 +3999,413 @@ ok('un rubro desconocido no rompe: cae en comercio',
       tcTx.includes("columnasFiadoHoy: ['#', 'Cliente', 'Deve', 'Fiado desde', 'Dias', 'Próxima parcela', 'Vence'],")], [true, true]);
 }
 
+// --- La billetera en otras monedas (131): la pantalla ---
+//
+// Matías: «Tengo una cuenta bancaria en dólares con 10 mil dólares: ¿cómo la
+// guardo en mi billetera, si solo me aparece la opción de cargar en
+// guaraníes? También en reales». La base se prueba en
+// billetera-monedas.test.js; esto cuida las cuentas que hace la pantalla
+// (lib/monedas.ts), las reglas de qué cuenta se ofrece y, en las fuentes,
+// las tres cosas que no se negocian: nunca se suman monedas, las cuentas en
+// otra moneda solo se ofrecen en Gastos, y quien no las usa no ve nada nuevo.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+  const M = require('../.compilado/monedas.js');
+
+  // ---- la ayuda pura ----
+  ok('131 · al crear una cuenta, la moneda propia va primero',
+    [M.monedasParaElegir('PYG'), M.monedasParaElegir('USD'), M.monedasParaElegir('BRL')],
+    [['PYG', 'USD', 'BRL', 'ARS', 'EUR'], ['USD', 'PYG', 'BRL', 'ARS', 'EUR'], ['BRL', 'PYG', 'USD', 'ARS', 'EUR']]);
+  ok('131 · el cambio se dice igual en las dos direcciones: 1 de la grande, tantas de la chica',
+    [M.parDe('PYG', 'USD'), M.parDe('USD', 'PYG'), M.parDe('BRL', 'USD'), M.parDe('USD', 'EUR'), M.parDe('PYG', 'BRL')],
+    [{ grande: 'USD', chica: 'PYG' }, { grande: 'USD', chica: 'PYG' }, { grande: 'USD', chica: 'BRL' },
+      { grande: 'EUR', chica: 'USD' }, { grande: 'BRL', chica: 'PYG' }]);
+  ok('131 · el dólar en guaraníes se escribe sin decimales; las demás parejas, hasta cuatro',
+    [M.decimalesDelCambio('PYG', 'USD'), M.decimalesDelCambio('USD', 'PYG'), M.decimalesDelCambio('BRL', 'USD'), M.esParDolar('USD', 'PYG'), M.esParDolar('PYG', 'BRL')],
+    [0, 0, 4, true, false]);
+
+  // Negocio en guaraníes con cuenta en dólares: se guarda lo que se escribe.
+  ok('131 · negocio PYG, cuenta USD: «el dólar a 7.400» se guarda 7400 y se vuelve a leer 7.400',
+    [M.cotizacionAGuardar(7400, 'PYG', 'USD'), M.cotizacionEscrita(7400, 'PYG', 'USD')], [7400, 7400]);
+  // Negocio en dólares con caja en guaraníes: la persona dice lo mismo, se guarda al revés.
+  ok('131 · negocio USD, caja PYG: se escribe 7.400, se guarda 1/7400 con diez decimales y se lee 7.400',
+    [M.cotizacionAGuardar(7400, 'USD', 'PYG'), M.cotizacionEscrita(0.0001351351, 'USD', 'PYG')], [0.0001351351, 7400]);
+  ok('131 · negocio BRL: cuenta en dólares (5,45 reales) y caja en guaraníes (1.350 por real), ida y vuelta',
+    [M.cotizacionAGuardar(5.45, 'BRL', 'USD'), M.cotizacionEscrita(5.45, 'BRL', 'USD'),
+      M.cotizacionAGuardar(1350, 'BRL', 'PYG'), M.cotizacionEscrita(M.cotizacionAGuardar(1350, 'BRL', 'PYG'), 'BRL', 'PYG')],
+    [5.45, 5.45, 0.0007407407, 1350]);
+  ok('131 · lo guardado al revés no vuelve con ruido (1.350 no se lee 1.350,0001)',
+    [[7400, 'USD', 'PYG'], [7385, 'USD', 'PYG'], [5.45, 'USD', 'BRL'], [5.4321, 'USD', 'BRL'], [1350.5, 'BRL', 'PYG'], [8500.5, 'EUR', 'PYG'], [1.08, 'EUR', 'USD']]
+      .map(([n, propia, otra]) => M.cotizacionEscrita(M.cotizacionAGuardar(n, propia, otra), propia, otra)),
+    [7400, 7385, 5.45, 5.4321, 1350.5, 8500.5, 1.08]);
+  ok('131 · sin número no hay cotización', [M.cotizacionAGuardar(0, 'PYG', 'USD'), M.cotizacionEscrita(0, 'PYG', 'USD'), M.cotizacionAGuardar(-5, 'USD', 'PYG')], [0, 0, 0]);
+
+  ok('131 · a la moneda propia: sin decimales en guaraníes, con dos en dólares',
+    [M.aPropia(10350, 7400, 'PYG'), M.aPropia(15.99, 7300, 'PYG'), M.aPropia(7400000, 0.0001351351, 'USD'), M.aPropia(2466, 0.0001351351, 'USD')],
+    [76590000, 116727, 1000, 0.33]);
+  ok('131 · a la otra moneda: lo que se propone al pagar con la cuenta en dólares',
+    [M.aOtra(116727, 7300, 'USD'), M.aOtra(7400000, 7400, 'USD'), M.aOtra(300, 0.0001351351, 'PYG'), M.aOtra(100, 0, 'USD')],
+    [15.99, 1000, 2220000, 0]);
+
+  ok('131 · el cambio que resulta de dos importes, de cualquiera de los dos lados',
+    [M.cambioQueResulta(7400000, 'PYG', 1000, 'USD'), M.cambioQueResulta(1000, 'USD', 7400000, 'PYG'),
+      M.cambioQueResulta(116727, 'PYG', 15.99, 'USD'), M.cambioQueResulta(545, 'BRL', 100, 'USD')],
+    [7400, 7400, 7300, 5.45]);
+  ok('131 · sin alguno de los dos importes, o en la misma moneda, no hay cambio que decir',
+    [M.cambioQueResulta(0, 'PYG', 1000, 'USD'), M.cambioQueResulta(7400000, 'PYG', 0, 'USD'), M.cambioQueResulta(100, 'USD', 100, 'USD')],
+    [null, null, null]);
+
+  // EL TOTAL APROXIMADO: el ejemplo del diseño, Gs. 12.800.000 + US$ 10.350 a 7.400.
+  ok('131 · «≈ todo junto» con todas las cotizaciones',
+    M.totalAprox([{ moneda: 'PYG', total: 12800000 }, { moneda: 'USD', total: 10350 }], 'PYG', [{ moneda: 'USD', valor: 7400 }]),
+    { total: 89390000, faltan: [] });
+  ok('131 · con una cotización faltante NO hay número: hay qué preguntar',
+    M.totalAprox([{ moneda: 'PYG', total: 12800000 }, { moneda: 'USD', total: 10350 }, { moneda: 'BRL', total: 500 }],
+      'PYG', [{ moneda: 'USD', valor: 7400 }]),
+    { total: null, faltan: ['BRL'] });
+  ok('131 · una moneda en cero no necesita cotización',
+    M.totalAprox([{ moneda: 'PYG', total: 800000 }, { moneda: 'BRL', total: 0 }], 'PYG', []), { total: 800000, faltan: [] });
+  ok('131 · una cotización en cero es como no tenerla',
+    M.totalAprox([{ moneda: 'PYG', total: 1 }, { moneda: 'USD', total: 5 }], 'PYG', [{ moneda: 'USD', valor: 0 }]),
+    { total: null, faltan: ['USD'] });
+  ok('131 · se convierte el subtotal de cada moneda, no fila por fila (un solo redondeo)',
+    M.totalAprox([{ moneda: 'USD', total: 0 }, { moneda: 'PYG', total: 2466 }, { moneda: 'PYG', total: 2466 }, { moneda: 'PYG', total: 2466 }],
+      'USD', [{ moneda: 'PYG', valor: 0.0001351351 }]),
+    { total: 1, faltan: [] });
+  ok('131 · simétrico: negocio en dólares con caja en guaraníes',
+    M.totalAprox([{ moneda: 'USD', total: 2500.5 }, { moneda: 'PYG', total: 7400000 }], 'USD', [{ moneda: 'PYG', valor: 0.0001351351 }]),
+    { total: 3500.5, faltan: [] });
+
+  ok('131 · el cambio raro avisa pasado el 20 % (un cero de más) y nunca sin cotización guardada',
+    [M.cambioRaro(7400, 7400), M.cambioRaro(8800, 7400), M.cambioRaro(9000, 7400), M.cambioRaro(740, 7400), M.cambioRaro(7400, null), M.cambioRaro(7400, 0)],
+    [false, false, true, true, false, false]);
+
+  const dosCotizaciones = [{ moneda: 'USD', valor: 7400 }, { moneda: 'BRL', valor: 1350 }];
+  ok('131 · pasar plata: lo que se propone sale de lo guardado; sin cotización no se propone nada',
+    [M.convertirEntre(7400000, 'PYG', 'USD', 'PYG', dosCotizaciones), M.convertirEntre(1000, 'USD', 'PYG', 'PYG', dosCotizaciones),
+      M.convertirEntre(100, 'USD', 'BRL', 'PYG', dosCotizaciones), M.convertirEntre(500, 'USD', 'PYG', 'USD', [{ moneda: 'PYG', valor: 0.0001351351 }]),
+      M.convertirEntre(7400000, 'PYG', 'USD', 'PYG', []), M.convertirEntre(100, 'USD', 'BRL', 'PYG', [{ moneda: 'USD', valor: 7400 }])],
+    [1000, 7400000, 548.15, 3700000, null, null]);
+  ok('131 · el cambio guardado de una pareja, dicho como el que resulta (para compararlos)',
+    [M.cambioGuardado('PYG', 'USD', 'PYG', dosCotizaciones), M.cambioGuardado('USD', 'PYG', 'USD', [{ moneda: 'PYG', valor: 0.0001351351 }]),
+      M.cambioGuardado('USD', 'BRL', 'PYG', dosCotizaciones), M.cambioGuardado('PYG', 'USD', 'PYG', []), M.cambioGuardado('USD', 'USD', 'PYG', dosCotizaciones)],
+    [7400, 7400, 5.4815, null, null]);
+
+  ok('131 · «US$ 1 = Gs. 7.400», igual desde los dos lados; con centavos, los de la moneda',
+    [M.textoDelCambio(7400, 'PYG', 'USD', 'es-PY'), M.textoDelCambio(7400, 'USD', 'PYG', 'es-PY'),
+      M.textoDelCambio(5.5, 'USD', 'BRL', 'es-PY'), M.textoDelCambio(1350, 'BRL', 'PYG', 'pt-BR')],
+    [{ uno: 'US$ 1', vale: 'Gs. 7.400' }, { uno: 'US$ 1', vale: 'Gs. 7.400' }, { uno: 'US$ 1', vale: 'R$ 5,50' }, { uno: 'R$ 1', vale: 'Gs. 1.350' }]);
+
+  const ahora = Date.parse('2026-10-08T12:00:00Z');
+  ok('131 · una cotización de más de 30 días se marca; una sin fecha, no',
+    [M.cotizacionVieja('2026-09-07T12:00:00Z', ahora), M.cotizacionVieja('2026-09-10T12:00:00Z', ahora), M.cotizacionVieja(null, ahora), M.cotizacionVieja('', ahora)],
+    [true, false, false, false]);
+  ok('131 · el día de la cotización es el del negocio, no el de Londres',
+    [M.diaDeLaCotizacion('2026-10-08T01:30:00+00:00', 'America/Asuncion'), M.diaDeLaCotizacion('2026-10-08T15:00:00+00:00', 'America/Asuncion'),
+      M.diaDeLaCotizacion('', 'America/Asuncion'), M.diaDeLaCotizacion('no es una fecha', 'America/Asuncion')],
+    ['2026-10-07', '2026-10-08', '', '']);
+  ok('131 · monedas.ts es pura: solo importa el formato (se compila suelta)',
+    (leer('src/lib/monedas.ts').match(/^import .*$/gm) || []), ["import { decimalesDe, localeDe, simboloDe } from './formato';"]);
+
+  // ---- escribir centavos ----
+  // Una cuenta en dólares se carga con centavos (US$ 15,99), y en el campo de
+  // plata no se podían escribir: después de teclear la coma el cursor volvía
+  // ANTES de ella y los decimales caían en la parte entera (15,99 → 1.599).
+  // Pasaba en cualquier moneda con decimales; apareció al sacar las capturas.
+  const { cursorTrasFormatear } = require('../.compilado/formato.js');
+  ok('131 · campo de plata: después de teclear la coma, el cursor queda DESPUÉS de la coma',
+    [cursorTrasFormatear('15,', 2, true, ','), cursorTrasFormatear('15,9', 3, true, ','), cursorTrasFormatear('15,99', 4, true, ','),
+      cursorTrasFormatear('1.500,', 4, true, ','), cursorTrasFormatear('15.', 2, true, '.')],
+    [3, 4, 5, 6, 3]);
+  ok('131 · corrigiendo la parte entera, o en una moneda sin decimales, vuelve donde estaba (lo de siempre)',
+    [cursorTrasFormatear('1.500', 2, false, ','), cursorTrasFormatear('1.500.000', 7, false, ','), cursorTrasFormatear('15,99', 1, false, ','),
+      cursorTrasFormatear('15,99', 2, false, ','), cursorTrasFormatear('', 0, false, ',')],
+    [3, 9, 1, 2, 0]);
+  ok('131 · CampoMonto usa esa cuenta, y solo mira la coma cuando se están escribiendo decimales',
+    leer('src/components/CampoMonto.tsx').includes('const i = cursorTrasFormatear(nuevo, digitosAntes, escribiendoDecimal && crudo.slice(0, cursor).includes(coma), coma);'), true);
+
+  // ---- qué cuenta se ofrece y cuál se manda ----
+  const { cuentasDelMetodo, cuentaDelCobro, cuentasEnOtraMoneda, cuentaTocada } = require('../.compilado/cuenta-del-cobro.js');
+  const caja = { id: 'caja', nombre: 'Caja', tipo: 'efectivo', metodos: ['efectivo'] };
+  const itau = { id: 'itau', nombre: 'Itaú', tipo: 'banco', metodos: ['transferencia', 'tarjeta'] };
+  const dolares = { id: 'dolares', nombre: 'Atlas dólares', tipo: 'banco', metodos: [], moneda: 'USD', otra: true, cotizacion: 7400 };
+  const binance = { id: 'binance', nombre: 'Binance', tipo: 'billetera', metodos: [], moneda: 'USD', otra: true, cotizacion: 7400 };
+  const enMano = { id: 'enmano', nombre: 'Reales en mano', tipo: 'efectivo', metodos: [], moneda: 'BRL', otra: true, cotizacion: null };
+  const mezcla = [caja, itau, dolares, binance, enMano];
+  const ids = (l) => l.map((c) => c.id);
+  const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'];
+  const SENTIDOS = ['entra', 'sale'];
+  const OTRAS = ['dolares', 'binance', 'enmano'];
+  ok('131 · las reglas de siempre nunca ofrecen una cuenta en otra moneda, con ninguna forma de pago',
+    METODOS.flatMap((mt) => SENTIDOS.map((s) => ids(cuentasDelMetodo(mezcla, mt, s)).filter((id) => OTRAS.includes(id)).length)),
+    Array(10).fill(0));
+  ok('131 · ni la mandan: ni sola, ni tocada a mano, ni siendo la única cuenta que hay',
+    METODOS.flatMap((mt) => SENTIDOS.flatMap((s) => [
+      cuentaDelCobro(mezcla, mt, null, s), cuentaDelCobro(mezcla, mt, 'dolares', s), cuentaDelCobro(mezcla, mt, 'enmano', s),
+      cuentaDelCobro([dolares], mt, null, s), cuentaDelCobro([dolares], mt, 'dolares', s), cuentaDelCobro([dolares, binance, enMano], mt, 'binance', s),
+    ])).filter((id) => OTRAS.includes(id)),
+    []);
+  ok('131 · con la lista ampliada, las propias se portan como sin ella',
+    METODOS.flatMap((mt) => SENTIDOS.map((s) => [ids(cuentasDelMetodo(mezcla, mt, s)), cuentaDelCobro(mezcla, mt, null, s), cuentaDelCobro(mezcla, mt, 'itau', s)])),
+    METODOS.flatMap((mt) => SENTIDOS.map((s) => [ids(cuentasDelMetodo([caja, itau], mt, s)), cuentaDelCobro([caja, itau], mt, null, s), cuentaDelCobro([caja, itau], mt, 'itau', s)])));
+  ok('131 · un banco en dólares no es «el único banco»: con un solo banco propio, la transferencia sigue yendo a ese',
+    [cuentaDelCobro([caja, { ...itau, metodos: [] }, dolares], 'transferencia', null, 'sale'), ids(cuentasDelMetodo([caja, dolares], 'transferencia', 'sale'))],
+    ['itau', []]);
+  ok('131 · las de otra moneda se ofrecen por tipo: en mano para efectivo, banco o billetera para el resto',
+    [ids(cuentasEnOtraMoneda(mezcla, 'efectivo')), ids(cuentasEnOtraMoneda(mezcla, 'transferencia')), ids(cuentasEnOtraMoneda(mezcla, 'tarjeta')),
+      ids(cuentasEnOtraMoneda(mezcla, 'credito')), ids(cuentasEnOtraMoneda(mezcla, 'otro')), ids(cuentasEnOtraMoneda([caja, itau], 'otro'))],
+    [['enmano'], ['dolares', 'binance'], ['dolares', 'binance'], ['dolares', 'binance'], ['dolares', 'binance', 'enmano'], []]);
+  ok('131 · una cuenta en otra moneda vale SOLO si la tocaron, y si sirve para esa forma de pago',
+    [cuentaTocada(mezcla, null, 'tarjeta'), cuentaTocada(mezcla, 'dolares', 'tarjeta')?.id, cuentaTocada(mezcla, 'dolares', 'efectivo'),
+      cuentaTocada(mezcla, 'enmano', 'efectivo')?.id, cuentaTocada(mezcla, 'itau', 'tarjeta'), cuentaTocada(mezcla, 'no-existe', 'otro')],
+    [null, 'dolares', null, 'enmano', null, null]);
+
+  // ---- Gastos: el único lugar que las ofrece ----
+  const gas = leer('src/components/PantallaGastos.tsx');
+  const gasCodigo = sinComentarios(gas);
+  ok('131 · Gastos manda la cuenta en otra moneda con su importe, DESPUÉS de la cuenta de siempre',
+    [gasCodigo.includes('...(otraTocada ? { cuenta_id: otraTocada.id, monto_cuenta: importeCuenta } : {}),'),
+      gasCodigo.indexOf("cuenta_id: cuentaDelCobro(cuentas, metodo, cuentaId, tipo === 'gasto' ? 'sale' : 'entra')")
+        < gasCodigo.indexOf('...(otraTocada ? { cuenta_id: otraTocada.id')],
+    [true, true]);
+  ok('131 · sin ese importe no se guarda: el botón queda apagado y el Enter no pasa',
+    [gasCodigo.includes("disabled={guardando || montoFinal <= 0 || avisoDelDolar === 'bloqueo' || faltaImporteCuenta}"),
+      gasCodigo.includes('if (faltaImporteCuenta) return;'),
+      gasCodigo.includes('const faltaImporteCuenta = Boolean(otraTocada) && !(importeCuenta > 0);')],
+    [true, true, true]);
+  ok('131 · el importe lo escribe o lo confirma la persona: se propone con la cotización, no se inventa',
+    [gasCodigo.includes('cotizacionDeLaOtra && montoFinal > 0 ? aOtra(montoFinal, cotizacionDeLaOtra, monedaDeLaOtra) : 0'),
+      gasCodigo.includes('<MontoEnCuenta'), gasCodigo.includes('alCambiar={escribirEnCuenta}')],
+    [true, true, true]);
+  ok('131 · repartido entre campañas, lo de la cuenta se reparte en su moneda y una parte en cero frena todo',
+    [gasCodigo.includes('repartirEn(monedaDeLaOtra, importeCuenta, campanas)'), gasCodigo.includes('...(deLaCuenta ? { monto_cuenta: deLaCuenta[i].monto } : {}),'),
+      gasCodigo.includes('deLaCuenta.some((p) => !(p.monto > 0))') && gasCodigo.includes('setError(t.monedas.cobro.repartoMuyChico);')],
+    [true, true, true]);
+  ok('131 · la cuenta en otra moneda se suelta al guardar y al cambiar la forma de pago (no queda tocada a escondidas)',
+    [(gasCodigo.match(/soltarOtra\(\);/g) || []).length >= 4, gasCodigo.includes('{!conCampanas && !masOpciones && bloqueMontoCuenta(true)}')],
+    [true, true]);
+  ok('131 · una deuda a cosecha no sale de ninguna cuenta, tampoco de una en otra moneda',
+    gasCodigo.includes('const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo);'), true);
+  const pagGastos = leer('src/app/(app)/gastos/page.tsx');
+  ok('131 · la página de Gastos pide la lista ampliada y la parte en dos',
+    [pagGastos.includes('ctx.esAdmin && !ctx.gratisPersonal ? traerCuentasParaElegir(ctx.empresa.id, true) : Promise.resolve([])'),
+      pagGastos.includes('const cuentas = cuentasTodas.filter((c) => !c.otra);'), pagGastos.includes('const cuentasOtras = cuentasTodas.filter((c) => c.otra);'),
+      pagGastos.includes('cuentasOtras={cuentasOtras}')],
+    [true, true, true, true]);
+
+  const fdc = leer('src/components/FormaDeCobro.tsx');
+  ok('131 · ElegirCuenta: las de otra moneda son props opcionales; sin ellas, la pieza de siempre',
+    [fdc.includes('otras?: CuentaParaElegir[];'), fdc.includes('otraElegida?: string | null;'), fdc.includes('alElegirOtra?: (cuenta: string | null) => void;'),
+      fdc.includes('if (posibles.length === 1 && chipsDeOtras.length === 0) {'),
+      fdc.includes('const marcada = otraMarcada ? null : cuentaDelCobro(cuentas, metodo, elegida, sentido);'),
+      fdc.includes("export { cuentasEnOtraMoneda, cuentaTocada } from '@/lib/cuenta-del-cobro';")],
+    [true, true, true, true, true, true]);
+  ok('131 · la lista que se pide desde el navegador (agenda, alumnos, captura) es la de siempre, sin la bandera',
+    sinComentarios(fdc).includes("rpc('cuentas_para_elegir', { p_empresa: empresaId })"), true);
+
+  // ---- los demás lugares donde se elige una cuenta NO las ofrecen ----
+  const todos = [];
+  (function andar(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const r = path.posix.join(dir, e.name);
+      if (e.isDirectory()) andar(r);
+      else if (/\.tsx?$/.test(e.name)) todos.push(r);
+    }
+  })('src');
+  const codigo = Object.fromEntries(todos.map((r) => [r, sinComentarios(leer(r))]));
+  const conTexto = (texto) => todos.filter((r) => codigo[r].includes(texto));
+  ok('131 · la bandera `p_otras_monedas` se manda desde un solo lugar', conTexto('p_otras_monedas'), ['src/lib/billetera.ts']);
+  ok('131 · y solo la página de Gastos la pide',
+    todos.filter((r) => /traerCuentasParaElegir\([^()]*,\s*true\)/.test(codigo[r])), ['src/app/(app)/gastos/page.tsx']);
+  const paginasConLista = todos.filter((r) => r !== 'src/lib/billetera.ts' && codigo[r].includes('traerCuentasParaElegir('));
+  ok('131 · las páginas de Deudas, Fiado, Lotes, Presupuesto y Reparto piden la lista de siempre',
+    paginasConLista.filter((r) => r !== 'src/app/(app)/gastos/page.tsx')
+      .map((r) => [r.replace('src/app/(app)/', ''), (codigo[r].match(/traerCuentasParaElegir\(([^()]*)\)/g) || []).join('|')]),
+    [['deudas/page.tsx', 'traerCuentasParaElegir(ctx.empresa.id)'], ['fiado/page.tsx', 'traerCuentasParaElegir(ctx.empresa.id)'],
+      ['lotes/page.tsx', 'traerCuentasParaElegir(ctx.empresa.id)'], ['organizacion/page.tsx', 'traerCuentasParaElegir(ctx.empresa.id)'],
+      ['reparto/page.tsx', 'traerCuentasParaElegir(ctx.empresa.id)']]);
+  // Lo que solo puede aparecer donde se ofrece una cuenta en otra moneda.
+  const SOLO_GASTOS = ['cuentasOtras', 'otraElegida', 'alElegirOtra', 'MontoEnCuenta', 'monto_cuenta', 'cuentaTocada', 'cuentasEnOtraMoneda'];
+  const NO_LAS_OFRECEN = [
+    'src/components/PantallaVenta.tsx', 'src/components/PantallaFiado.tsx', 'src/components/RevisionFiado.tsx',
+    'src/components/PantallaDeudas.tsx', 'src/components/PantallaReparto.tsx', 'src/components/PantallaAgenda.tsx',
+    'src/components/PaquetesAlumno.tsx', 'src/components/InscribirAlumno.tsx', 'src/components/campanas/FormularioLiquidacion.tsx',
+    'src/components/CapturaInteligente.tsx', 'src/components/PantallaOrganizacion.tsx', 'src/components/PlataSinCuenta.tsx',
+  ];
+  ok('131 · Vender, Fiado, Deudas, Reparto, Agenda, Alumnos, Liquidación, la captura, Presupuesto y «Plata sin cuenta» no las ofrecen',
+    NO_LAS_OFRECEN.flatMap((r) => SOLO_GASTOS.filter((x) => codigo[r].includes(x)).map((x) => `${r}: ${x}`)), []);
+  ok('131 · el importe de la cuenta (`monto_cuenta`) sale de un solo archivo: Gastos', conTexto('monto_cuenta'), ['src/components/PantallaGastos.tsx']);
+  ok('131 · y a ElegirCuenta solo Gastos le pasa cuentas en otra moneda',
+    todos.filter((r) => /<ElegirCuenta[^>]*\botras=/.test(codigo[r].replace(/=>/g, '→'))), ['src/components/PantallaGastos.tsx']);
+  ok('131 · «Plata sin cuenta» sigue ofreciendo solo las cuentas de la moneda del negocio',
+    [codigo['src/components/PlataSinCuenta.tsx'].includes('const cuentas = billetera.cuentas;'),
+      (codigo['src/components/PlataSinCuenta.tsx'].match(/cuentas\.map\(\(c\) => \(/g) || []).length],
+    [true, 2]);
+
+  // ---- nunca se suman monedas ----
+  const tdp = leer('src/components/billetera/TotalesDePlata.tsx');
+  const tdpCodigo = sinComentarios(tdp);
+  ok('131 · lo único que junta monedas es `totalAprox`, y lo usa una sola pieza', conTexto('totalAprox(').sort(),
+    ['src/components/billetera/TotalesDePlata.tsx', 'src/lib/monedas.ts']);
+  ok('131 · ese total se muestra SOLO con «≈», y si falta una cotización hay una pregunta en vez de un número',
+    [(tdpCodigo.match(/junto\.total/g) || []).length, tdpCodigo.includes('{m.aproxTotal(plata(junto.total, moneda))}'),
+      tdpCodigo.includes('junto.total !== null ? ('), (tdpCodigo.match(/m\.ponerCotizacion\(/g) || []).length],
+    [2, true, true, 2]);
+  ok('131 · del navegador no sale un total sumado entre monedas: quien lo calcula no escribe en la base',
+    [/\.rpc\(|\.insert\(|\.from\(/.test(tdpCodigo), /fetch\(/.test(tdpCodigo)], [false, false]);
+  const SUMAS_PROHIBIDAS = /(cuentasOtras|totalesOtras|cuentas_otras|totales_otras|en_otras_monedas)[^;\n]*\.reduce\(/;
+  ok('131 · nadie más suma lo de otras monedas (ni entre sí ni con lo propio)',
+    todos.filter((r) => r !== 'src/lib/monedas.ts' && SUMAS_PROHIBIDAS.test(codigo[r])), []);
+  const bill = leer('src/components/PantallaBilletera.tsx');
+  const billCodigo = sinComentarios(bill);
+  const panelB = sinComentarios(leer('src/components/BilleteraPanel.tsx'));
+  ok('131 · el número grande sigue siendo solo lo que hay en la moneda del negocio (billetera y panel)',
+    [billCodigo.includes('{plata(billetera.total)}'), panelB.includes('{plata(billetera.total)}'),
+      /billetera\.total\s*[+]/.test(billCodigo + panelB), /[+]\s*billetera\.total/.test(billCodigo + panelB)],
+    [true, true, false, false]);
+  ok('131 · cada cuenta en otra moneda se escribe con SU moneda (billetera, panel, reporte)',
+    [billCodigo.includes('{plata(Number(cuenta.saldo), monedaCuenta)}'), panelB.includes('saldo={plata(Number(c.saldo), c.moneda ?? moneda)}'),
+      sinComentarios(leer('src/components/reportes/ReporteComercio.tsx')).includes('{dinero(Number(k.saldo), k.moneda ?? billetera.moneda, true, locale)}')],
+    [true, true, true]);
+  const exc = sinComentarios(leer('src/lib/reportes/excel-comercio.ts'));
+  ok('131 · Excel: el total suma solo `cuentas` y las de otra moneda no pasan por la vista (051)',
+    [exc.includes('linea(tc.totalEnCuentas, cuentas.reduce((s, k) => s + k.saldo, 0), { fuerte: true, nota: tc.fotoDeHoy });'),
+      exc.includes('...(l.cuentasOtras ? { cuentasOtras: l.cuentasOtras } : {}),'), /cuentasOtras[^\n]*c\.x\(/.test(exc)],
+    [true, true, false]);
+  ok('131 · «Disponible» no suma lo de otras monedas: va debajo, con su moneda',
+    [codigo['src/components/PantallaOrganizacion.tsx'].includes('{plata(resumen.disponible)}'),
+      codigo['src/components/PantallaOrganizacion.tsx'].includes('(resumen.en_otras_monedas ?? [])'),
+      /resumen\.disponible\s*[+]/.test(codigo['src/components/PantallaOrganizacion.tsx'])],
+    [true, true, false]);
+
+  // ---- pasar plata, cotización, y lo que se le manda a la base ----
+  ok('131 · los parámetros nuevos se mandan SOLO cuando hacen falta (la llamada de siempre no cambia)',
+    // `p_moneda` aparece dos veces: acá, al crear, y en la cotización (que es otra función).
+    [(billCodigo.match(/p_moneda/g) || []).length, (billCodigo.match(/rpc\('guardar_cuenta_dinero'/g) || []).length,
+      billCodigo.includes('...(d.moneda !== moneda ? { p_moneda: d.moneda } : {}),'),
+      billCodigo.includes("rpc('guardar_cotizacion_moneda', {\n        p_empresa: empresaId, p_moneda: otra, p_valor: valor,"),
+      (billCodigo.match(/p_monto_hacia/g) || []).length, billCodigo.includes('...(montoHacia === undefined ? {} : { p_monto_hacia: montoHacia }),'),
+      billCodigo.includes('alTransferir(haciaId, valor, entreMonedas ? entraFinal : undefined)')],
+    [2, 2, true, true, 1, true, true]);
+  ok('131 · entre dos monedas van dos importes y no se transfiere sin los dos',
+    [billCodigo.includes('{m.salen(simboloDe(monedaCuenta))}'), billCodigo.includes('{m.entran(simboloDe(monedaDestino))}'),
+      billCodigo.includes('disabled={ocupado || valor <= 0 || !haciaId || (entreMonedas && !(entraFinal > 0))}')],
+    [true, true, true]);
+  ok('131 · «Entran» se propone solo si hay cotización y mientras nadie lo toque; la cotización no se guarda sola',
+    [billCodigo.includes('const entraFinal = tocoEntra ? entra : (propuesto ?? 0);'), billCodigo.includes('m.usarComoCotizacion('),
+      billCodigo.includes("rpc('deshacer_transferencia', { p_empresa: empresaId, p_par: par })")],
+    [true, true, true]);
+  ok('131 · editar una cuenta nunca manda la moneda, y una en otra moneda no manda formas de pago',
+    [/p_id: c\.id, p_color: d\.color,\s*\}\)\)\}/.test(billCodigo), billCodigo.includes('metodos: enOtra ? [] : metodos')], [true, true]);
+  const hoja = sinComentarios(leer('src/components/billetera/HojaCotizacion.tsx'));
+  ok('131 · la cotización la escribe la persona y se guarda dada vuelta si hace falta; un campo vacío no borra nada',
+    [hoja.includes("rpc('guardar_cotizacion_moneda'"), hoja.includes('cotizacionAGuardar(escritas[tot.moneda] ?? 0, moneda, tot.moneda)'),
+      hoja.includes('.filter((c) => c.valor > 0 && c.valor !=='), /fetch\(|https?:/.test(hoja)],
+    [true, true, true, false]);
+  const lib = sinComentarios(leer('src/lib/billetera.ts'));
+  ok('131 · contra una base sin la 131 la billetera es la de siempre: lo nuevo se lee con «si falta, vacío»',
+    [lib.includes('cuentasOtras: lista<CuentaDinero>(otras?.cuentas_otras),'), lib.includes('const lista = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);'),
+      lib.indexOf('p_otras_monedas: true') < lib.lastIndexOf("rpc('cuentas_para_elegir', { p_empresa: empresaId })"),
+      lib.includes('if (!error && Array.isArray(data)) return data as CuentaParaElegir[];')],
+    [true, true, true, true]);
+
+  // ---- quien no usa otra moneda ve la billetera de siempre ----
+  ok('131 · sin cuentas en otra moneda, las piezas nuevas no dibujan nada',
+    [tdpCodigo.includes('if (totales.length === 0) return null;'),
+      billCodigo.includes('const todas = hayOtras ? [...cuentas, ...cuentasOtras] : cuentas;'),
+      billCodigo.includes('{billetera.totalesOtras.map((tot) => ('), billCodigo.includes("{enOtra && modo === '' && ("),
+      billCodigo.includes("{conSimbolos ? `${o.nombre} · ${simboloDe(monedaDe(o))}` : o.nombre}"),
+      billCodigo.includes("{modo === '' && paseVisible && ("), billCodigo.includes('if (entreMonedas) {'),
+      panelB.includes('const cuentas = hayOtras ? [...billetera.cuentas, ...billetera.cuentasOtras] : billetera.cuentas;')],
+    Array(8).fill(true));
+  ok('131 · lo único nuevo para todos: la fila «Moneda», y solo al crear',
+    [(billCodigo.match(/<ElegirMoneda/g) || []).length, billCodigo.includes('{!inicial && <ElegirMoneda propia={moneda} valor={monedaCuenta} alElegir={elegirMoneda}'),
+      billCodigo.includes('const [monedaCuenta, setMonedaCuenta] = useState(inicial?.moneda ?? moneda);')],
+    [1, true, true]);
+  ok('131 · el panel no invita a «cargar cuentas» a quien solo tiene cuentas en otra moneda',
+    panelB.indexOf('const cuentas = hayOtras ?') < panelB.indexOf('if (cuentas.length === 0) {'), true);
+
+  // ---- los archivos nuevos: colores del proyecto, sin jerga, es y pt parejos ----
+  const NUEVOS = ['src/components/billetera/ElegirMoneda.tsx', 'src/components/billetera/TotalesDePlata.tsx',
+    'src/components/billetera/HojaCotizacion.tsx', 'src/components/billetera/PasesDeCuenta.tsx',
+    'src/lib/monedas.ts', 'src/i18n/textos/monedas.ts'];
+  ok('131 · lo nuevo y lo tocado: sin bg-white opaco ni dark:',
+    [...NUEVOS, 'src/components/PantallaBilletera.tsx', 'src/components/BilleteraPanel.tsx', 'src/components/FormaDeCobro.tsx',
+      'src/components/PantallaGastos.tsx', 'src/components/reportes/ReporteComercio.tsx', 'src/components/PantallaOrganizacion.tsx']
+      .filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+  ok('131 · las piezas nuevas no inventan colores: ni un hexadecimal', NUEVOS.filter((r) => /#[0-9A-Fa-f]{6}\b/.test(leer(r))), []);
+  ok('131 · las piezas nuevas leen sus textos con useTextos()',
+    NUEVOS.filter((r) => r.endsWith('.tsx')).map((r) => [leer(r).startsWith("'use client';"), leer(r).includes('const t = useTextos();')]),
+    Array(4).fill([true, true]));
+  ok('131 · no se creó ningún loading.tsx', todos.filter((r) => /(^|\/)loading\.tsx$/.test(r)), []);
+
+  const ts = require('typescript');
+  const Module = require('module');
+  const cargarTs = (relativo) => {
+    const archivo = path.join(__dirname, '..', relativo);
+    const salida = ts.transpileModule(fs.readFileSync(archivo, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+    }).outputText;
+    const m = new Module(archivo, module);
+    m.filename = archivo;
+    m.paths = Module._nodeModulePaths(path.dirname(archivo));
+    m._compile(salida, archivo);
+    return m.exports;
+  };
+  const { monedasEs, monedasPt } = cargarTs('src/i18n/textos/monedas.ts');
+  /** Cada hoja del diccionario: su ruta, cuántos datos pide y lo que dice con datos de ejemplo. */
+  const hojas = (o, base = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object'
+    ? hojas(v, `${base}${k}.`)
+    : [[`${base}${k}`, typeof v === 'function' ? v.length : -1, typeof v === 'function' ? v('⟨a⟩', '⟨b⟩') : v]]));
+  const hEs = hojas(monedasEs), hPt = hojas(monedasPt);
+  ok('131 · es y pt tienen las mismas claves, con los mismos datos cada una',
+    hEs.map(([k, n]) => `${k}/${n}`), hPt.map(([k, n]) => `${k}/${n}`));
+  ok('131 · ninguna frase quedó vacía ni con un dato sin poner',
+    [...hEs, ...hPt].filter(([, , texto]) => typeof texto !== 'string' || texto.trim() === '' || /undefined|NaN|\[object/.test(texto)).map(([k]) => k), []);
+  ok('131 · cada frase que recibe datos los usa todos',
+    [...hEs, ...hPt].filter(([, n, texto]) => (n >= 1 && !texto.includes('⟨a⟩')) || (n >= 2 && !texto.includes('⟨b⟩'))).map(([k]) => k), []);
+  ok('131 · el portugués está traducido (no quedó la frase en español)',
+    hEs.filter(([k, n, texto], i) => n === -1 && texto === hPt[i][2] && !/^billetera\.(monedas\.|nombreBilleteraOtra)/.test(k)).map(([k]) => k), []);
+  // Simétrico: ninguna frase nombra una moneda. La nombra quien la llama, con
+  // la del negocio o la de la cuenta, y un negocio en dólares lee lo mismo.
+  ok('131 · ninguna frase dice «guaraníes» ni «dólares»: la moneda llega de afuera',
+    [...hEs, ...hPt].filter(([k, , texto]) => !k.startsWith('billetera.monedas.') && /guaran|d[oó]lar|\breales\b|\breais\b|\bpesos\b|\beuros\b|US\$|Gs\./i.test(texto)).map(([k]) => k), []);
+  ok('131 · textos cortos (se leen en un celular) y sin jerga',
+    [[...hEs, ...hPt].filter(([, , texto]) => texto.length > 80).map(([k]) => k),
+      [...hEs, ...hPt].filter(([, , texto]) => /tipo de cambio|spot|divisa|paridad|conversi[oó]n|convers[aã]o|arbitraje/i.test(texto)).map(([k]) => k)],
+    [[], []]);
+  ok('131 · en voseo: «poné», «elegís», «revisá» (y no «pon», «eliges», «revisa»)',
+    [monedasEs.billetera.ponerCotizacion('dólar').startsWith('Poné '), monedasEs.billetera.noRecibeSola.includes('La elegís vos'),
+      monedasEs.billetera.cambioRaroAviso.includes('Revisá'), monedasEs.billetera.cotizacionDetalle.startsWith('La ponés vos')],
+    [true, true, true, true]);
+  ok('131 · las cinco monedas tienen su nombre para un botón, en los dos idiomas',
+    [Object.keys(monedasEs.billetera.monedas).sort(), Object.keys(monedasPt.billetera.monedas).sort()],
+    [['ARS', 'BRL', 'EUR', 'PYG', 'USD'], ['ARS', 'BRL', 'EUR', 'PYG', 'USD']]);
+  const gc = leer('src/i18n/textos/gastos-campana.ts');
+  ok('131 · y su nombre en singular («el dólar») en es y pt',
+    [gc.includes("PYG: 'guaraní', USD: 'dólar', BRL: 'real', ARS: 'peso', EUR: 'euro',"),
+      gc.includes("PYG: 'guarani', USD: 'dólar', BRL: 'real', ARS: 'peso', EUR: 'euro',"), (gc.match(/\n    uno: \{/g) || []).length],
+    [true, true, 2]);
+  ok('131 · los textos cuelgan de es y pt como `monedas`',
+    [leer('src/i18n/textos/es.ts').includes('monedas: monedasEs,'), leer('src/i18n/textos/pt.ts').includes('monedas: monedasPt,'),
+      leer('src/i18n/textos/monedas.ts').includes('export const monedasPt: typeof monedasEs = {')],
+    [true, true, true]);
+  // Lo que usan las pantallas existe en el diccionario (una clave mal escrita
+  // la frena tsc; esto frena una clave que nadie usa).
+  const usos = todos.filter((r) => r !== 'src/i18n/textos/monedas.ts').map((r) => codigo[r]).join('\n');
+  ok('131 · no quedó ningún texto de monedas sin usar',
+    hEs.map(([k]) => k).filter((k) => !k.startsWith('billetera.monedas.'))
+      .filter((k) => !new RegExp(`\\.${k.split('.').pop()}\\b`).test(usos)), []);
+  ok('131 · lo aproximado lleva «≈» adelante en los dos idiomas',
+    [monedasEs.billetera.aproxTotal('X').startsWith('≈ X'), monedasPt.billetera.aproxTotal('X').startsWith('≈ X'),
+      monedasEs.billetera.aprox('A', 'B'), monedasPt.billetera.aprox('A', 'B')],
+    [true, true, 'A ≈ B', 'A ≈ B']);
+}
+
 // Las comprobaciones que esperan algo (una función async) se anotan en
 // `pendientes` y el resumen las espera. Sin esto se imprimirían después del
 // `process.exit` y una falla ahí no bajaría la bandera: pasaría inadvertida.

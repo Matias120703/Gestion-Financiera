@@ -29,14 +29,58 @@ export type SentidoPlata = 'entra' | 'sale';
  * había cerrado).
  */
 export function cuentasDelMetodo(
-  cuentas: CuentaParaElegir[], metodo: string, sentido: SentidoPlata = 'entra',
+  todas: CuentaParaElegir[], metodo: string, sentido: SentidoPlata = 'entra',
 ): CuentaParaElegir[] {
+  // Una cuenta en otra moneda (131) no es de acá: ver `sinOtraMoneda`.
+  const cuentas = sinOtraMoneda(todas);
   if (metodo === 'credito') {
     return sentido === 'sale' ? cuentas.filter((c) => (c.metodos ?? []).includes('credito')) : [];
   }
   if (metodo === 'otro') return cuentas;
   const tipos = metodo === 'efectivo' ? ['efectivo'] : ['banco', 'billetera'];
   return cuentas.filter((c) => tipos.includes(c.tipo) || (c.metodos ?? []).includes(metodo));
+}
+
+/**
+ * LAS CUENTAS EN OTRA MONEDA NO ENTRAN EN ESTAS REGLAS (131).
+ *
+ * Un cobro de Gs. 500.000 no puede caer «solo» en una cuenta en dólares: el
+ * importe está en la moneda del negocio y la cuenta en otra. Por eso lo
+ * primero que hacen `cuentasDelMetodo` y `cuentaDelCobro` es descartarlas:
+ * aunque una pantalla reciba la lista ampliada, nunca las ofrece, nunca las
+ * marca y nunca las manda, ni siendo la única cuenta posible ni tocada a
+ * mano. La base, además, las rechaza si llegan sin su importe.
+ *
+ * Solo Gastos las muestra, aparte, con `cuentasEnOtraMoneda` y
+ * `cuentaTocada`, y preguntando cuánto salió en la moneda de la cuenta.
+ */
+function sinOtraMoneda(cuentas: CuentaParaElegir[]): CuentaParaElegir[] {
+  return cuentas.some((c) => c.otra) ? cuentas.filter((c) => !c.otra) : cuentas;
+}
+
+/**
+ * Las cuentas en otra moneda que sirven para esa forma de pago (131), por
+ * tipo: la plata en mano, de una de efectivo; cualquier otra forma de pago,
+ * de un banco o una billetera. Con «otro» puede ser cualquiera, igual que
+ * con las propias. No reclaman formas de pago, así que no hay «la de siempre».
+ */
+export function cuentasEnOtraMoneda(cuentas: CuentaParaElegir[], metodo: string): CuentaParaElegir[] {
+  const otras = cuentas.filter((c) => c.otra);
+  if (metodo === 'otro') return otras;
+  const tipos = metodo === 'efectivo' ? ['efectivo'] : ['banco', 'billetera'];
+  return otras.filter((c) => tipos.includes(c.tipo));
+}
+
+/**
+ * La cuenta en otra moneda que la persona TOCÓ, si sirve para esa forma de
+ * pago; si no, null. Una cuenta en otra moneda nunca queda marcada sola:
+ * vale únicamente si la tocaron.
+ */
+export function cuentaTocada(
+  cuentas: CuentaParaElegir[], elegida: string | null, metodo = 'otro',
+): CuentaParaElegir | null {
+  if (!elegida) return null;
+  return cuentasEnOtraMoneda(cuentas, metodo).find((c) => c.id === elegida) ?? null;
 }
 
 /** Lo que entra a crédito es fiado: no va a ninguna cuenta ni se pregunta. */
@@ -58,8 +102,10 @@ export function esFiado(metodo: string, sentido: SentidoPlata = 'entra'): boolea
  * del tipo. Lo fiado no va a ninguna.
  */
 export function cuentaDelCobro(
-  cuentas: CuentaParaElegir[], metodo: string, elegida: string | null, sentido: SentidoPlata = 'entra',
+  todas: CuentaParaElegir[], metodo: string, elegida: string | null, sentido: SentidoPlata = 'entra',
 ): string | null {
+  // Una en otra moneda no vale ni tocada a mano (131): ver `sinOtraMoneda`.
+  const cuentas = sinOtraMoneda(todas);
   if (esFiado(metodo, sentido)) return null;
   const posibles = cuentasDelMetodo(cuentas, metodo, sentido);
   if (elegida && posibles.some((c) => c.id === elegida)) return elegida;

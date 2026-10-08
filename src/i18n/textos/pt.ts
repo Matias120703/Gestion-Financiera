@@ -19,6 +19,7 @@ import { planGratisPt } from './plan-gratis';
 import { vendoProductosPt } from './vendo-productos';
 import { bancardPt } from './bancard';
 import { singularPt } from './singular';
+import { monedasPt } from './monedas';
 
 /**
  * Português do Brasil. El idioma de los brasileños que viven y trabajan en
@@ -2757,4 +2758,6 @@ export const pt: Textos = {
   vendoProductos: vendoProductosPt,
 
   bancard: bancardPt,
+
+  monedas: monedasPt,
 };

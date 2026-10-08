@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useLocale } from '@/i18n/cliente';
+import { cursorTrasFormatear } from '@/lib/formato';
 
 /**
  * UN CAMPO DE PLATA QUE SE LEE MIENTRAS SE ESCRIBE.
@@ -100,12 +101,9 @@ export function CampoMonto({
 
     el.value = nuevo;
 
-    // Devolver el cursor donde estaba, contado en dígitos y no en letras.
-    let i = 0, vistos = 0;
-    while (i < nuevo.length && vistos < digitosAntes) {
-      if (/\d/.test(nuevo[i])) vistos++;
-      i++;
-    }
+    // Devolver el cursor donde estaba, contado en dígitos y no en letras. Y
+    // si estaba después de la coma, después de la coma (ver la función).
+    const i = cursorTrasFormatear(nuevo, digitosAntes, escribiendoDecimal && crudo.slice(0, cursor).includes(coma), coma);
     requestAnimationFrame(() => {
       try { el.setSelectionRange(i, i); } catch { /* el campo ya no está */ }
     });

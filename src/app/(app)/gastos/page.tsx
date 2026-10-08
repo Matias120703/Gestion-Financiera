@@ -50,7 +50,7 @@ export default async function PaginaGastos({
   const loteParam = typeof searchParams.lote === 'string' ? searchParams.lote : null;
   const esPersonal = ctx.empresa.tipo_cuenta === 'personal';
   // Los totales salen agregados; la lista es solo la primera página.
-  const [r, categorias, paginaGastos, paginaIngresos, cuentas, lotes, delRubro, gastoP, ingresoP] = await Promise.all([
+  const [r, categorias, paginaGastos, paginaIngresos, cuentasTodas, lotes, delRubro, gastoP, ingresoP] = await Promise.all([
     traerResumen(ctx.empresa.id, rango.desde, rango.hasta),
     traerGastosPorCategoria(ctx.empresa.id, rango.desde, rango.hasta),
     traerPaginaMovimientos(ctx.empresa.id, rango.desde, rango.hasta, { tipo: 'gasto', tamano: 50 }),
@@ -61,7 +61,11 @@ export default async function PaginaGastos({
     // del Pro. La base igual asigna cada gasto a su cuenta por la forma de
     // pago (074, `anotar_en_su_cuenta`), y el saldo es calculado: al volver
     // al Pro, la billetera está al día.
-    ctx.esAdmin && !ctx.gratisPersonal ? traerCuentasParaElegir(ctx.empresa.id) : Promise.resolve([]),
+    //
+    // Gastos es la ÚNICA pantalla que pide también las cuentas en otra
+    // moneda (131, el `true`): acá se puede decir cuánto salió en dólares.
+    // Las demás piden la lista de siempre y no las pueden ofrecer.
+    ctx.esAdmin && !ctx.gratisPersonal ? traerCuentasParaElegir(ctx.empresa.id, true) : Promise.resolve([]),
     conCampanas ? traerLotes(ctx.empresa.id, false) : Promise.resolve([]),
     // Las del rubro, las mismas con que clasifica la captura (101): al
     // sojero no se le ofrece «Mercadería».
@@ -72,6 +76,11 @@ export default async function PaginaGastos({
     esPersonal ? traerCategoriasPersonales(ctx.empresa.id, 'gasto').catch(() => []) : Promise.resolve([]),
     esPersonal ? traerCategoriasPersonales(ctx.empresa.id, 'ingreso').catch(() => []) : Promise.resolve([]),
   ]);
+  // (131) Dos listas y no una mezclada: `cuentas` son las de siempre, en la
+  // moneda del negocio, y entran en las reglas de siempre; las que están en
+  // otra moneda viajan aparte y solo valen si se las toca.
+  const cuentas = cuentasTodas.filter((c) => !c.otra);
+  const cuentasOtras = cuentasTodas.filter((c) => c.otra);
   // Solo lo que el chip necesita: los números de cada campaña no viajan.
   const campanas = lotes.map((l): CampanaParaElegir => ({
     id: l.id, nombre: l.nombre, cultivo: l.cultivo ?? '', campana: l.campana ?? '',
@@ -124,6 +133,7 @@ export default async function PaginaGastos({
         userId={ctx.userId}
         hoy={hoyISO(ctx.zonaHoraria)}
         cuentas={cuentas}
+        cuentasOtras={cuentasOtras}
         conCampanas={conCampanas}
         campanas={campanas}
         loteInicial={loteParam}

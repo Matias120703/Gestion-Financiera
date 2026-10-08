@@ -15,7 +15,8 @@ import { Vacio, Seccion } from '@/components/Piezas';
 import { puedeAnular } from '@/lib/permisos';
 import { mensajeDeError } from '@/lib/errores';
 import { DialogoAnular } from '@/components/DialogoAnular';
-import { ElegirCuenta, cuentaDelCobro } from '@/components/FormaDeCobro';
+import { ElegirCuenta, MontoEnCuenta, cuentaDelCobro, cuentaTocada } from '@/components/FormaDeCobro';
+import { aOtra, aPropia } from '@/lib/monedas';
 import {
   CULTIVOS, NO_SON_DE_CAMPANA, avisoDolar, convertirDesde, cultivoPorNombre, otraMoneda, repartirPorHectareas,
 } from '@/lib/agricultura';
@@ -65,7 +66,7 @@ function repartirEn(moneda: string, monto: number, campanas: CampanaParaElegir[]
 export function PantallaGastos({
   empresaId, moneda, movimientos, categoriasUsadas, rol, userId, hoy, hayMas = false, cuentas = [],
   conCampanas = false, campanas = [], loteInicial = null, categoriasRubro = [], dolarDeHoy = null,
-  categoriaPorDefecto = null, rapidasPersonal,
+  categoriaPorDefecto = null, rapidasPersonal, cuentasOtras = [],
 }: {
   empresaId: string;
   moneda: string;
@@ -78,6 +79,13 @@ export function PantallaGastos({
   hayMas?: boolean;
   /** Las cuentas de la billetera, para elegir una a mano (075). */
   cuentas?: CuentaParaElegir[];
+  /**
+   * Las cuentas en OTRA moneda (131): la tarjeta en dólares, Binance. Van
+   * aparte de `cuentas` (que siguen siendo las de la moneda del negocio) y
+   * solo esta pantalla las ofrece. Con una de estas se pregunta cuánto salió
+   * en su moneda; el gasto se guarda en la del negocio, como siempre.
+   */
+  cuentasOtras?: CuentaParaElegir[];
   /** Si el negocio tiene lotes (`ficha.secciones['/lotes']`): chip de campaña y moneda (100). */
   conCampanas?: boolean;
   /** Las campañas ABIERTAS, para el chip «¿De qué campaña?». */
@@ -140,6 +148,16 @@ export function PantallaGastos({
    * pago, que es la que `ElegirCuenta` muestra marcada (01/10).
    */
   const [cuentaId, setCuentaId] = useState<string | null>(null);
+  /**
+   * La cuenta en OTRA moneda que se tocó (131), y cuánto salió o entró en su
+   * moneda. Nunca queda marcada sola. El importe puede estar `propuesto`
+   * (sale de la cotización y sigue al monto de arriba), `escrito` por la
+   * persona, o ser el que `manda`: se escribió con el monto de arriba vacío
+   * y es el de arriba el que lo sigue.
+   */
+  const [otraId, setOtraId] = useState<string | null>(null);
+  const [montoCuenta, setMontoCuenta] = useState(0);
+  const [modoCuenta, setModoCuenta] = useState<'propuesto' | 'escrito' | 'manda'>('propuesto');
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
@@ -231,6 +249,7 @@ export function PantallaGastos({
     setMetodo(v);
     // Otra forma de pago, otra cuenta: la tocada antes puede no servir.
     setCuentaId(null);
+    soltarOtra();
     if (v === A_COSECHA) {
       setRepartir(false);
       if (!vence) setVence(venceSugerido(loteId));
@@ -247,6 +266,48 @@ export function PantallaGastos({
   const montoFinal = enOtra ? conversion?.monto ?? 0 : monto;
   const nombreMoneda = (m: string) => t.gastosCampana.moneda.nombres[m] ?? m;
 
+  // --------------------------------------- la cuenta en otra moneda (131)
+  /*
+    Pagó con la tarjeta en dólares, o con Binance. El gasto se guarda en la
+    moneda del negocio, como todos (`montoFinal`); de la cuenta salió OTRO
+    importe, en su moneda, y ese lo dice la persona. Orden no convierte solo:
+    con una cotización guardada lo propone, y sin ese importe no se guarda.
+    Una deuda a cosecha no sale de ninguna cuenta.
+  */
+  const otraTocada = aCosecha ? null : cuentaTocada(cuentasOtras, otraId, metodo);
+  const monedaDeLaOtra = otraTocada?.moneda ?? moneda;
+  const cotizacionDeLaOtra = otraTocada && Number(otraTocada.cotizacion) > 0 ? Number(otraTocada.cotizacion) : null;
+  /** «Pagué en dólares» (100) y la cuenta es en dólares: lo de arriba ES lo que salió de ella. */
+  const pagoEnLaDeLaCuenta = Boolean(otraTocada) && enOtra && otra === monedaDeLaOtra;
+  const importeCuenta = !otraTocada ? 0
+    : pagoEnLaDeLaCuenta ? monto
+      : modoCuenta !== 'propuesto' ? montoCuenta
+        : (cotizacionDeLaOtra && montoFinal > 0 ? aOtra(montoFinal, cotizacionDeLaOtra, monedaDeLaOtra) : 0);
+  const faltaImporteCuenta = Boolean(otraTocada) && !(importeCuenta > 0);
+  /** «Salen US$ 15,99 de Tarjeta dólares»: lo que se mueve en la cuenta, dicho en su moneda. */
+  const fraseDeLaOtra = otraTocada && importeCuenta > 0
+    ? (tipo === 'gasto'
+      ? t.monedas.cobro.salenDe(dinero(importeCuenta, monedaDeLaOtra), otraTocada.nombre)
+      : t.monedas.cobro.entranA(dinero(importeCuenta, monedaDeLaOtra), otraTocada.nombre))
+    : '';
+
+  function soltarOtra() {
+    setOtraId(null);
+    setMontoCuenta(0);
+    setModoCuenta('propuesto');
+  }
+
+  /** Se escribió cuánto salió de la cuenta. Con cotización y el monto de arriba vacío, arriba se llena solo (y se puede corregir). */
+  function escribirEnCuenta(n: number) {
+    setMontoCuenta(n);
+    if (cotizacionDeLaOtra && !enOtra && (monto === 0 || modoCuenta === 'manda')) {
+      setModoCuenta('manda');
+      setMonto(aPropia(n, cotizacionDeLaOtra, moneda));
+    } else {
+      setModoCuenta('escrito');
+    }
+  }
+
   const reparto = useMemo(
     () => (repartiendo && montoFinal > 0 ? repartirEn(moneda, montoFinal, campanas) : []),
     [repartiendo, montoFinal, moneda, campanas],
@@ -258,6 +319,9 @@ export function PantallaGastos({
       try { localStorage.setItem(claveDolar(empresaId), String(dolar)); } catch { /* se vuelve a escribir */ }
     }
     setDescripcion(''); setMonto(0); setNotas(''); setProveedor('');
+    // (131) La cuenta en otra moneda se suelta: el próximo gasto no puede
+    // salir de la de dólares porque quedó tocada del anterior.
+    soltarOtra();
     setMasOpciones(false);
     router.refresh();
   }
@@ -275,6 +339,9 @@ export function PantallaGastos({
     if (enOtra && !(dolar > 0)) { setError(t.gastosCampana.moneda.faltaDolar); return; }
     if (avisoDelDolar === 'bloqueo') { setError(t.gastosCampana.moneda.dolarImposible); return; }
     if (montoFinal <= 0) { setError(t.gastos.montoMayorACero); return; }
+    // (131) Con una cuenta en otra moneda, sin su importe no se guarda (el
+    // botón ya está apagado; esto es por el Enter).
+    if (faltaImporteCuenta) return;
     // La descripción es opcional: si no la escribís, queda la categoría.
     // Escribir texto con el teclado en medio del día es lo que más frena.
     const cat = categoria.trim() || 'General';
@@ -347,6 +414,9 @@ export function PantallaGastos({
         // Un gasto con «Crédito» es la tarjeta: sale, y se pregunta cuál (01/10).
         cuenta_id: cuentaDelCobro(cuentas, metodo, cuentaId, tipo === 'gasto' ? 'sale' : 'entra'),
         origen: 'manual',
+        // (131) Se tocó una cuenta en otra moneda: esa pisa la de arriba y va
+        // con cuánto se movió EN SU MONEDA. `monto` sigue en la del negocio.
+        ...(otraTocada ? { cuenta_id: otraTocada.id, monto_cuenta: importeCuenta } : {}),
       };
 
       /*
@@ -359,6 +429,14 @@ export function PantallaGastos({
       if (repartiendo && reparto.length > 0) {
         const repartoId = crypto.randomUUID();
         const originales = original ? repartirEn(otra, original.monto_original, campanas) : null;
+        // (131) Lo que salió de la cuenta en otra moneda se reparte igual, en
+        // su moneda. Si a alguna campaña le tocara cero, la base rechazaría
+        // esa fila: se avisa antes y no se guarda nada.
+        const deLaCuenta = otraTocada ? repartirEn(monedaDeLaOtra, importeCuenta, campanas) : null;
+        if (deLaCuenta && deLaCuenta.some((p) => !(p.monto > 0))) {
+          setError(t.monedas.cobro.repartoMuyChico);
+          return;
+        }
         const n = reparto.length;
         const filas = reparto.map((p, i) => ({
           ...fila,
@@ -370,10 +448,11 @@ export function PantallaGastos({
           ...(original && originales
             ? { monto_original: originales[i].monto, moneda_original: original.moneda_original, cambio: original.cambio }
             : {}),
+          ...(deLaCuenta ? { monto_cuenta: deLaCuenta[i].monto } : {}),
         }));
         const { error } = await supabase.from('movimientos').insert(filas);
         if (error) throw error;
-        mostrarExito(t.gastosCampana.chip.guardadoRepartido(dinero(montoFinal, moneda), n), '', tipo);
+        mostrarExito(t.gastosCampana.chip.guardadoRepartido(dinero(montoFinal, moneda), n), fraseDeLaOtra, tipo);
         limpiarDespues();
         return;
       }
@@ -392,10 +471,11 @@ export function PantallaGastos({
           : '';
         mostrarExito(
           t.gastosCampana.chip.guardadoEn(categoriaDelRubro(t, cat), dinero(montoFinal, moneda), lote.nombre) + porHa,
-          '', tipo,
+          fraseDeLaOtra, tipo,
         );
       } else {
-        mostrarExito(t.gastos.registrado(tipo === 'gasto', dinero(montoFinal, moneda)), '', tipo);
+        // (131) Con una cuenta en otra moneda, debajo va lo que se movió en ella.
+        mostrarExito(t.gastos.registrado(tipo === 'gasto', dinero(montoFinal, moneda)), fraseDeLaOtra, tipo);
       }
       limpiarDespues();
     } catch (e: any) {
@@ -476,12 +556,35 @@ export function PantallaGastos({
     con dos bancos deja elegir cuál, y si ninguna recibe esa forma de pago lo
     avisa antes de guardar. Una deuda a cosecha no sale de ninguna cuenta.
   */
-  const bloqueCuenta = cuentas.length > 0 && !aCosecha ? (
+  const bloqueCuenta = (cuentas.length > 0 || cuentasOtras.length > 0) && !aCosecha ? (
     <ElegirCuenta
-      cuentas={cuentas} metodo={metodo} elegida={cuentaId} alElegir={setCuentaId}
+      cuentas={cuentas} metodo={metodo} elegida={cuentaId}
+      alElegir={(id) => { setCuentaId(id); soltarOtra(); }}
       sentido={tipo === 'gasto' ? 'sale' : 'entra'}
+      // (131) Después de las de siempre, las que están en otra moneda.
+      otras={cuentasOtras} otraElegida={otraId}
+      alElegirOtra={(id) => { soltarOtra(); setOtraId(id); }}
     />
   ) : null;
+
+  /*
+    CUÁNTO SALIÓ EN LA MONEDA DE LA CUENTA (131). Aparece al tocar una cuenta
+    en otra moneda y no se esconde con «Menos detalles»: mientras esté a la
+    vista, se sabe que este gasto sale de la cuenta en dólares. Si se pagó en
+    esa misma moneda («Pagué en dólares», 100) no hay segundo campo: lo de
+    arriba es lo que salió.
+  */
+  const bloqueMontoCuenta = (conNombre: boolean) => (!otraTocada ? null : pagoEnLaDeLaCuenta ? (
+    <p className="text-[12.5px] font-semibold tabular-nums text-tinta/60">{fraseDeLaOtra}</p>
+  ) : (
+    <MontoEnCuenta
+      cuenta={otraTocada} propia={moneda} montoPropio={montoFinal}
+      valor={importeCuenta} alCambiar={escribirEnCuenta}
+      sentido={tipo === 'gasto' ? 'sale' : 'entra'}
+      // Con los chips de las cuentas plegados, dice de cuál se habla.
+      conNombre={conNombre}
+    />
+  ));
 
   return (
     <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
@@ -534,7 +637,12 @@ export function PantallaGastos({
             <CampoMonto
               className="campo text-[26px] font-titulo font-extrabold" autoFocus
               valor={monto} decimales={enOtra ? decimalesDe(otra) : dec} placeholder="0"
-              alCambiar={(n) => setMonto(Math.max(0, n))}
+              alCambiar={(n) => {
+                setMonto(Math.max(0, n));
+                // (131) Si este monto venía siguiendo al de la cuenta en otra
+                // moneda, al tocarlo deja de seguirlo: los dos quedan escritos.
+                if (modoCuenta === 'manda') setModoCuenta('escrito');
+              }}
             />
             {monto > 0 && !enOtra && <span className="mt-1 block text-[13px] font-semibold text-tinta/50">{dinero(monto, moneda)}</span>}
             {monto > 0 && enOtra && <span className="mt-1 block text-[13px] font-semibold text-tinta/50">{dinero(monto, otra)}</span>}
@@ -686,6 +794,7 @@ export function PantallaGastos({
               cuenta va con ella: es la otra mitad de la misma pregunta. */}
           {conCampanas && bloqueFormaDePago}
           {conCampanas && bloqueCuenta}
+          {conCampanas && bloqueMontoCuenta(false)}
 
           <button
             type="button" onClick={() => setMasOpciones((v) => !v)}
@@ -724,6 +833,7 @@ export function PantallaGastos({
 
               {!conCampanas && bloqueFormaDePago}
               {!conCampanas && bloqueCuenta}
+              {!conCampanas && bloqueMontoCuenta(false)}
 
               <div className="grid gap-3.5 sm:grid-cols-2">
                 {!aCosecha && (
@@ -740,9 +850,13 @@ export function PantallaGastos({
             </div>
           )}
 
+          {/* (131) Con los detalles plegados, lo de la cuenta en otra moneda
+              sigue a la vista: no puede salir plata de la de dólares sin verse. */}
+          {!conCampanas && !masOpciones && bloqueMontoCuenta(true)}
+
           {error && <p className="rounded-xl bg-rojo-claro px-3 py-2.5 text-[13px] font-medium text-rojo">{error}</p>}
 
-          <button className="boton-principal min-h-[52px] w-full text-[16px]" disabled={guardando || montoFinal <= 0 || avisoDelDolar === 'bloqueo'}>
+          <button className="boton-principal min-h-[52px] w-full text-[16px]" disabled={guardando || montoFinal <= 0 || avisoDelDolar === 'bloqueo' || faltaImporteCuenta}>
             {guardando
               ? t.comun.guardando
               : montoFinal > 0

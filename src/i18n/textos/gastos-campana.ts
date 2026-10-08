@@ -56,6 +56,10 @@ export const gastosCampanaEs = {
     nombres: {
       PYG: 'guaraníes', USD: 'dólares', BRL: 'reales', ARS: 'pesos', EUR: 'euros',
     } as Record<string, string>,
+    /** Una sola, para «¿A cuánto está el dólar?» (131). */
+    uno: {
+      PYG: 'guaraní', USD: 'dólar', BRL: 'real', ARS: 'peso', EUR: 'euro',
+    } as Record<string, string>,
   },
 
   /** La forma de pago «A la venta» (solo admin). */
@@ -172,6 +176,9 @@ export const gastosCampanaPt: typeof gastosCampanaEs = {
     original: (monto: string, cambio: string) => `${monto} ao câmbio de ${cambio}`,
     nombres: {
       PYG: 'guaranis', USD: 'dólares', BRL: 'reais', ARS: 'pesos', EUR: 'euros',
+    } as Record<string, string>,
+    uno: {
+      PYG: 'guarani', USD: 'dólar', BRL: 'real', ARS: 'peso', EUR: 'euro',
     } as Record<string, string>,
   },
 

@@ -567,6 +567,48 @@ export interface CuentaDinero {
   saldo: number;
   entro_mes: number;
   salio_mes: number;
+  /**
+   * En qué moneda está la cuenta (131). Solo viene escrita en las cuentas
+   * en OTRA moneda; en las de siempre falta y vale la del negocio. El saldo
+   * y lo del mes están siempre en la moneda de la cuenta.
+   */
+  moneda?: string;
+}
+
+/** El total exacto de las cuentas de UNA moneda que no es la del negocio (131). */
+export interface TotalDeMoneda {
+  moneda: string;
+  total: number;
+  cuentas: number;
+}
+
+/**
+ * La cotización que escribió la persona para una moneda (131): cuánto vale 1
+ * de `moneda` en la moneda del negocio. Sirve solo para el «≈ todo junto».
+ */
+export interface CotizacionDeMoneda {
+  moneda: string;
+  valor: number;
+  /** Cuándo la escribió. Un cambio viejo mostrado como de hoy es otra mentira. */
+  desde: string;
+}
+
+/**
+ * Un pase entre dos cuentas visto desde una de ellas (131,
+ * `transferencias_de_cuenta`). Dos importes exactos, cada uno con su signo y
+ * en su moneda: nada convertido.
+ */
+export interface PaseDeCuenta {
+  par: string;
+  fecha: string;
+  nota: string;
+  /** Con signo, en la moneda de esta cuenta. */
+  monto: number;
+  moneda: string;
+  otra_cuenta: string;
+  otra_moneda: string;
+  /** Con signo, en la moneda de la otra cuenta. */
+  otro_monto: number;
 }
 
 /**
@@ -593,6 +635,18 @@ export interface Billetera {
    * todavía.
    */
   metodosSinCuenta: string[];
+  /**
+   * LO DE LAS OTRAS MONEDAS (131). `cuentas` y `total` de arriba siguen
+   * siendo SOLO las cuentas en la moneda del negocio: lo que está en otra
+   * moneda viaja acá, aparte, y nunca se suma con lo de arriba. Con una base
+   * que todavía no lo manda, las tres listas llegan vacías.
+   */
+  /** La moneda del negocio, escrita. */
+  moneda: string;
+  cuentasOtras: CuentaDinero[];
+  /** Un total exacto por moneda. */
+  totalesOtras: TotalDeMoneda[];
+  cotizaciones: CotizacionDeMoneda[];
 }
 
 /**
@@ -631,6 +685,15 @@ export interface CuentaParaElegir {
   metodos: string[];
   /** El color elegido a mano (086). */
   color?: string | null;
+  /**
+   * Solo en las cuentas en OTRA moneda (131), que la base manda únicamente a
+   * quien las pide (`cuentas_para_elegir(…, true)`: hoy, Gastos). Las reglas
+   * de siempre (`cuentasDelMetodo`, `cuentaDelCobro`) las descartan.
+   */
+  otra?: boolean;
+  moneda?: string;
+  /** Cuánto vale 1 de su moneda en la del negocio, si la persona lo escribió. */
+  cotizacion?: number | null;
 }
 
 export type EstadoRetiro = 'pedido' | 'pagado' | 'rechazado';
@@ -1240,6 +1303,12 @@ export interface ResumenPersonal {
   fijo_mensual: number;
   /** Hay ingresos fijos cargados y todavía no entró ninguno en este ciclo. */
   cobro_pendiente: boolean;
+  /**
+   * Lo que hay en cuentas de otra moneda (131), un total por moneda. NO está
+   * en `disponible` ni en `por_dia`: se muestra debajo, sin sumar. Opcional
+   * porque este tipo es el JSON crudo y una base vieja no lo trae.
+   */
+  en_otras_monedas?: { moneda: string; total: number }[];
 }
 
 /** Cómo se reparte lo que cobra un profesional. */
