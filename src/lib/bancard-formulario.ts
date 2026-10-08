@@ -83,3 +83,17 @@ export function leerLoQueDijoElFormulario(valor: unknown): DichoPorElFormulario 
 export function textoDeLoQueDijo(dicho: DichoPorElFormulario | null | undefined): string {
   return dicho ? dicho.detalle || dicho.mensaje : '';
 }
+
+/**
+ * ¿Bancard contestó que esa tarjeta ya está guardada en el comercio? («La
+ * tarjeta ya ha sido catastrada en este comercio.», 07/10/2026). Bancard no
+ * deja guardar dos veces la misma tarjeta, la tenga la cuenta que la tenga,
+ * y «Bancard respondió: …» a secas no le dice a la persona qué hacer.
+ *
+ * SOLO SIRVE PARA MOSTRAR UNA AYUDA debajo de esa respuesta (probar con otra
+ * tarjeta, o escribirnos para liberarla). Como todo lo de este archivo, no
+ * decide nada: viene del navegador.
+ */
+export function tarjetaYaCatastrada(dicho: DichoPorElFormulario | null | undefined): boolean {
+  return /\bya\b[^.]{0,60}\bcatastrad/i.test(textoDeLoQueDijo(dicho));
+}

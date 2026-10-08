@@ -418,11 +418,32 @@ console.log('\n── El catastro que falla dice por qué (07/10) ────�
     [1, true, false]);
   const cuerpoVerificar = flujo.slice(flujo.indexOf('export async function verificarTarjeta('), flujo.indexOf('export type QuitarTarjeta'));
   const desdeLaLista = cuerpoVerificar.slice(cuerpoVerificar.indexOf('const lista = await listarTarjetas('));
-  ok('verificarTarjeta anota lo que dijo el formulario (catastro_formulario) ANTES de preguntarle a Bancard, y después no lo vuelve a mirar',
+  ok('verificarTarjeta anota lo que dijo el formulario (catastro_formulario) ANTES de preguntarle a Bancard',
     [cuerpoVerificar.includes("tarjeta: p.tarjeta, tipo: 'catastro_formulario',"), cuerpoVerificar.includes('ok: dicho.mensaje === CATASTRO_CON_EXITO,'),
       cuerpoVerificar.includes('const dicho = leerLoQueDijoElFormulario(p.formulario);'),
-      desdeLaLista.length > 500, /dicho|formulario/.test(desdeLaLista)],
-    [true, true, true, true, false]);
+      cuerpoVerificar.indexOf("tipo: 'catastro_formulario',") < cuerpoVerificar.indexOf('const lista = await listarTarjetas('), desdeLaLista.length > 500],
+    [true, true, true, true, true]);
+  // 07/10 (tarjetas olvidadas): esto decía además «y después no lo vuelve a
+  // mirar». Dejó de ser cierto A PROPÓSITO: si el formulario dijo «éxito» y
+  // la lista vino sin la tarjeta, se le pregunta a Bancard una vez más y, si
+  // sigue sin estar, queda pendiente para la conciliación en vez de fallida
+  // para siempre. Lo que se cuida ahora, dicho como es: lo del formulario
+  // decide SOLO esa segunda pregunta (un único lugar, y solo para una
+  // pendiente), y activar sigue colgando de que Bancard la liste.
+  const dondeActiva = desdeLaLista.indexOf("'bancard_activar_tarjeta'");
+  ok('lo que dijo el formulario decide una sola cosa: si se le pregunta a Bancard otra vez (y solo por una pendiente)',
+    [cuerpoVerificar.includes("const segundaMirada = info.estado === 'pendiente' && dicho?.mensaje === CATASTRO_CON_EXITO;"),
+      cuantas(cuerpoVerificar, /segundaMirada/g), cuantas(desdeLaLista, /if \(!t && segundaMirada\) \{/g),
+      /\bdicho\b|formulario/.test(desdeLaLista),
+      /if \(!t && segundaMirada\) \{[\s\S]*?const otra = await listarTarjetas\([\s\S]*?if \(!t\) return \{ guardada: false, motivo: 'sin_confirmar' \};\s+\}/.test(desdeLaLista)],
+    [true, 2, 1, false, true]);
+  ok('y activar cuelga solo de que Bancard la liste: hay un único bancard_activar_tarjeta, después de todas las salidas de «no está»',
+    [cuantas(cuerpoVerificar, /'bancard_activar_tarjeta'/g), dondeActiva > 0,
+      dondeActiva > desdeLaLista.indexOf("return { guardada: false, motivo: 'sin_confirmar' }"),
+      dondeActiva > desdeLaLista.indexOf("return { guardada: false, motivo: 'no_esta' }"),
+      desdeLaLista.indexOf("return { guardada: false, motivo: 'no_esta' }") > 0,
+      /sin_confirmar[\s\S]*bancard_tarjeta_fallida/.test(desdeLaLista), cuantas(desdeLaLista, /'bancard_tarjeta_fallida'/g)],
+    [1, true, true, true, true, true, 1]);
   ok('y lo anota recién cuando la tarjeta es de esa cuenta',
     cuerpoVerificar.indexOf("return { guardada: false, motivo: 'ajena' }") > 0
       && cuerpoVerificar.indexOf("return { guardada: false, motivo: 'ajena' }") < cuerpoVerificar.indexOf('leerLoQueDijoElFormulario(p.formulario)'), true);
@@ -494,8 +515,199 @@ console.log('\n── Las tareas y el reloj ────────────
   ok('y su reloj está en pg_cron (126), no en vercel.json',
     [leer('supabase/migrations/126_bancard_reloj_y_avisos.sql').includes('/api/tareas/conciliar-bancard'),
       leer('vercel.json').includes('conciliar-bancard')], [true, false]);
-  const admin = ['probar', 'consultar', 'revertir'].map((n) => sinComentarios(leer(`src/app/api/admin/bancard/${n}/route.ts`)));
+  const admin = ['probar', 'consultar', 'revertir', 'olvidadas'].map((n) => sinComentarios(leer(`src/app/api/admin/bancard/${n}/route.ts`)));
   ok('las rutas de /api/admin/bancard exigen ser la administración', admin.every((s) => s.includes("rpc('es_superadmin')") && s.includes('403')), true);
+  ok('y son todas las que hay: ninguna carpeta de /api/admin/bancard queda sin mirar',
+    fs.readdirSync(path.join(RAIZ, 'src/app/api/admin/bancard')).sort(), ['consultar', 'olvidadas', 'probar', 'revertir']);
+}
+
+console.log('\n── Tarjetas olvidadas en Bancard (07/10) ───────────────────');
+{
+  // La herramienta de /admin que busca, por número de pagador, las tarjetas
+  // que Bancard tiene guardadas y deja borrar las que Orden no usa. Lo que no
+  // se puede correr sin Next ni sesión, leído acá: quién entra, qué viaja del
+  // navegador, y que nada de la tarjeta (ni su alias) pasa por la ruta ni por
+  // la pantalla.
+  const cuantas = (fuente, re) => (fuente.match(re) || []).length;
+  const ruta = sinComentarios(leer('src/app/api/admin/bancard/olvidadas/route.ts'));
+  const buscar = ruta.slice(ruta.indexOf('export async function POST('), ruta.indexOf('export async function DELETE('));
+  const borrar = ruta.slice(ruta.indexOf('export async function DELETE('));
+  ok('la ruta busca con POST y borra con DELETE, en Node, sin caché y con 60 s',
+    [buscar.length > 300, borrar.length > 300, ruta.includes("runtime = 'nodejs'"), ruta.includes("dynamic = 'force-dynamic'"), ruta.includes('maxDuration = 60')],
+    [true, true, true, true, true]);
+  /** En cada una: sesión → es_superadmin con la sesión de quien llama → y recién después el cliente de servicio. */
+  const orden = (s) => {
+    const sesion = s.indexOf('auth.getUser()');
+    const sinSesion = s.indexOf("if (!user) return NextResponse.json({ ok: false }, { status: 401 });");
+    const esSuper = s.indexOf("supabase.rpc('es_superadmin')");
+    const noEsSuper = s.indexOf("if (esSuper !== true) return NextResponse.json({ ok: false }, { status: 403 });");
+    const servicio = s.indexOf('dependencias()');
+    return [sesion > 0, sesion < sinSesion, sinSesion < esSuper, esSuper < noEsSuper, noEsSuper < servicio, cuantas(s, /dependencias\(\)/g)];
+  };
+  ok('buscar: sin sesión contesta 401 y un usuario común 403, ANTES de armar el cliente de servicio y de hablar con Bancard',
+    [orden(buscar), buscar.indexOf('dependencias()') < buscar.indexOf('buscarOlvidadas(d,')], [[true, true, true, true, true, 1], true]);
+  ok('borrar: lo mismo',
+    [orden(borrar), borrar.indexOf('dependencias()') < borrar.indexOf('borrarOlvidada(d,')], [[true, true, true, true, true, 1], true]);
+  ok('el permiso se pregunta con la sesión de quien llama (el cliente del usuario), nunca con el de servicio',
+    [cuantas(ruta, /const supabase = clienteServidor\(\);/g), /clienteDeServicio|baseDeServicio|SERVICE_ROLE/.test(ruta)], [2, false]);
+  ok('la búsqueda tiene tope de tiempo (40 s de reloj en una ruta de 60) y el rango se valida antes de tocar Bancard',
+    [buscar.includes('buscarOlvidadas(d, { desde, hasta }, { hastaMs: Date.now() + 40_000 })'),
+      buscar.indexOf('desde > hasta') > 0 && buscar.indexOf('desde > hasta') < buscar.indexOf('dependencias()'), buscar.includes("status: 400")],
+    [true, true, true]);
+  const flujoFuente = sinComentarios(leer('src/lib/bancard-flujo.ts'));
+  ok('y tope de rango: 40 pagadores por pedido, y la búsqueda no hace nada en paralelo',
+    [flujoFuente.includes('export const TOPE_DE_BUSQUEDA = 40;'), flujoFuente.includes('Math.min(p.hasta, desde + TOPE_DE_BUSQUEDA - 1)'),
+      /Promise\.all/.test(flujoFuente.slice(flujoFuente.indexOf('export async function buscarOlvidadas('), flujoFuente.indexOf('export type BorradoDeOlvidada')))],
+    [true, true, false]);
+  ok('del pedido de borrar se leen SOLO el pagador y el número de tarjeta: que se pueda borrar no lo dice el navegador',
+    [[...new Set(borrar.match(/cuerpo\.[A-Za-z_]+/g) || [])].sort(), borrar.includes('borrarOlvidada(d, { userId, cardId, actor: user.id })')],
+    [['cuerpo.cardId', 'cuerpo.userId'], true]);
+  ok('y del de buscar, solo el rango', [...new Set(buscar.match(/cuerpo\.[A-Za-z_]+/g) || [])].sort(), ['cuerpo.desde', 'cuerpo.hasta']);
+  ok('si Orden la tiene en uso o a medio guardar contesta 409; si la base no contestó 503; si Bancard no contestó 502',
+    [borrar.includes("status: r.motivo === 'base' ? 503 : 409"), /if \(r\.motivo === 'bancard'\) \{\s+return NextResponse\.json\(\{ ok: false, motivo: r\.motivo, clave: r\.clave \?\? '' \}, \{ status: 502,/.test(borrar)],
+    [true, true]);
+  ok('la ruta no nombra el alias, el número enmascarado ni el vencimiento, ni lee las claves',
+    /alias|enmascarad|masked|vencimiento|expiration|clavePrivada|process\.env/i.test(ruta), false);
+
+  // El flujo: lo que decide, se decide al borrar, y el alias no sale de ahí.
+  const cuerpoBorrar = flujoFuente.slice(flujoFuente.indexOf('export async function borrarOlvidada('), flujoFuente.indexOf('export type PruebaDeConexion'));
+  const pasos = ['d.bancard.tarjetas(userId,', 'lista.tarjetas.find((x) => x.cardId === cardId)', 'estadoEnOrden(await tarjetaInterna(d, cardId), userId, d.entorno)',
+    'if (!sePuedeOlvidar(estado)) return', 'd.bancard.borrarTarjeta(userId, t.alias,'].map((p) => cuerpoBorrar.indexOf(p));
+  ok('borrarOlvidada: lista recién pedida → la tarjeta en ESA lista → la base, ahora → si no se olvida, vuelve → y recién ahí el borrado',
+    [pasos.every((i) => i > 0), pasos.every((i, n) => n === 0 || i > pasos[n - 1]), cuantas(cuerpoBorrar, /borrarTarjeta\(/g)], [true, true, 1]);
+  ok('el alias se usa en un solo lugar (el pedido de borrado) y no se devuelve ni se anota',
+    [cuantas(cuerpoBorrar, /\.alias\b/g), /return \{[^}]*alias/.test(cuerpoBorrar), /detalle: [^\n]*alias/.test(cuerpoBorrar)], [1, false, false]);
+  const cuerpoBuscar = flujoFuente.slice(flujoFuente.indexOf('export async function buscarOlvidadas('), flujoFuente.indexOf('export type BorradoDeOlvidada'));
+  ok('buscarOlvidadas no toca el alias ni el vencimiento, y del enmascarado saca solo los últimos cuatro',
+    [/\.alias\b|vencimiento/.test(cuerpoBuscar), cuantas(cuerpoBuscar, /enmascarado/g), cuerpoBuscar.includes('ultimos4: ultimos4(t.enmascarado),')], [false, 1, true]);
+  ok('la regla es una sola y la usan las dos: nunca una activa ni una pendiente',
+    [flujoFuente.includes("return e === 'sin_cuenta' || e === 'fallida' || e === 'quitada' || e === 'por_quitar';"),
+      cuantas(cuerpoBuscar, /sePuedeOlvidar\(/g), cuantas(cuerpoBorrar, /sePuedeOlvidar\(/g)], [true, 1, 1]);
+  // Revisión del 07/10: la búsqueda no puede quedar trabada en un pagador por
+  // el que Bancard contesta algo raro. Parar por «bloqueo» o por «red» cuelga
+  // de que la pregunta de «Probar conexión» tampoco pase; y un JSON sin la
+  // lista no es una página.
+  const dondePregunta = cuerpoBuscar.indexOf('await probarConexion(d,');
+  ok('buscarOlvidadas: antes de parar por bloqueo o por red hace la pregunta de «Probar conexión», y un JSON sin la lista no para la búsqueda',
+    [cuerpoBuscar.includes("const pagina = lista.clase === 'no_json' && lista.clave !== 'forma_desconocida';"),
+      dondePregunta > 0, cuantas(cuerpoBuscar, /probarConexion\(/g),
+      dondePregunta < cuerpoBuscar.indexOf("cortar('bloqueo'"), dondePregunta < cuerpoBuscar.indexOf("cortar('red'"),
+      cuantas(cuerpoBuscar, /cortar\('bloqueo'/g), cuantas(cuerpoBuscar, /cortar\('red'/g),
+      /if \(prueba\.resultado !== 'bien'\) \{[\s\S]*?cortar\('bloqueo', u\);[\s\S]*?cortar\('red', u - \(CORTES_SEGUIDOS - 1\)\);\s+break;\s+\}/.test(cuerpoBuscar)],
+    [true, true, 1, true, true, 1, 1, true]);
+  // Y la conciliación (arreglo B): la pendiente vieja de una cuenta que guardó
+  // otra NO se borra con `borrarEnBancard` (termina en 'hecho', que a una
+  // activa la quita y le apaga el débito): lista, la base otra vez, y recién
+  // ahí el borrado.
+  const cuerpoDescartar = flujoFuente.slice(flujoFuente.indexOf('async function descartarPendienteVieja('), flujoFuente.indexOf('export async function correrConciliacion('));
+  const pasosDescartar = ['await listarTarjetas(d, p.userId,', "if (estadoEnOrden(await tarjetaInterna(d, p.tarjeta), p.userId, d.entorno) !== 'pendiente') return;",
+    'd.bancard.borrarTarjeta(p.userId, t.alias,', "'bancard_tarjeta_fallida'"].map((p) => cuerpoDescartar.indexOf(p));
+  const cuerpoConciliar = flujoFuente.slice(flujoFuente.indexOf('export async function correrConciliacion('), flujoFuente.indexOf('export type EstadoEnOrden'));
+  const lasPendientes = cuerpoConciliar.slice(cuerpoConciliar.indexOf('r.data.tarjetas_pendientes'), cuerpoConciliar.indexOf('r.data.tarjetas_por_quitar'));
+  ok('la conciliación, con la pendiente vieja: lista → la base OTRA VEZ (solo si sigue pendiente) → el borrado → fallida; sin `borrarEnBancard` ni el paso «hecho»',
+    [pasosDescartar.every((i) => i > 0), pasosDescartar.every((i, n) => n === 0 || i > pasosDescartar[n - 1]), cuantas(cuerpoDescartar, /borrarTarjeta\(/g),
+      /borrarEnBancard\(|'bancard_quitar_tarjeta'/.test(cuerpoDescartar),
+      lasPendientes.length > 300, lasPendientes.includes('await descartarPendienteVieja(d, { tarjeta, userId: Number(p.user_id) });'), /borrarEnBancard\(/.test(lasPendientes)],
+    [true, true, 1, false, true, true, false]);
+  // Sin migración: todo lo que el flujo le pide a la base ya está en las
+  // migraciones de Bancard (124 a 126). Una función nueva acá fallaría en
+  // producción hasta aplicar su migración.
+  const sqlBancard = ['124_bancard_precio_y_tablas.sql', '125_bancard_pagos.sql', '126_bancard_reloj_y_avisos.sql']
+    .map((n) => leer(`supabase/migrations/${n}`)).join('\n');
+  const pedidas = [...new Set(flujoFuente.match(/'bancard_[a-z_]+'/g) || [])].map((s) => s.slice(1, -1));
+  ok('la herramienta no necesita ninguna función nueva en la base: todas las que llama el flujo existen desde la 124-126',
+    [pedidas.length > 15, pedidas.includes('bancard_tarjeta_interna'), pedidas.filter((n) => !sqlBancard.includes(`function public.${n}(`)),
+      [...new Set((cuerpoBuscar + cuerpoBorrar).match(/'bancard_[a-z_]+'/g) || [])]],
+    [true, true, [], ["'bancard_quitar_tarjeta'"]]);
+
+  // La pantalla.
+  const panel = sinComentarios(leer('src/components/bancard/PanelBancardAdmin.tsx'));
+  const tramo = panel.slice(panel.indexOf('type EstadoEnOrden ='), panel.indexOf('export function PagosBancardDeCuenta('));
+  ok('el panel la monta solo con Bancard configurado, y está en el archivo de la administración',
+    [panel.includes('{config.configurado && <TarjetasOlvidadas />}'), tramo.length > 3000, tramo.includes('Tarjetas olvidadas en Bancard')], [true, true, true]);
+  ok('busca y borra por la ruta de la administración, mandando solo el rango o los dos números',
+    [cuantas(tramo, /fetch\('\/api\/admin\/bancard\/olvidadas'/g), tramo.includes('body: JSON.stringify({ desde: a, hasta: b })'),
+      tramo.includes('body: JSON.stringify({ userId: t.userId, cardId: t.cardId })'), /rpc\(|clienteNavegador/.test(tramo)],
+    [2, true, true, false]);
+  ok('el botón de borrar aparece solo si el servidor dijo que se puede, y antes pregunta',
+    [/\{t\.sePuedeBorrar && \(\s+<button/.test(tramo), /<Confirmar\s/.test(tramo), /<ConfirmarBorrado\s/.test(tramo),
+      /onClick=\{borrar\}/.test(tramo), cuantas(tramo, /onSi=\{borrar\}/g)],
+    [true, true, true, false, 1]);
+  // Revisión del 07/10: tocar «Borrar en Bancard» mientras corría «Seguir
+  // desde el N» borraba la tarjeta y, al terminar la búsqueda, el renglón
+  // volvía a aparecer como olvidada (y los dos pedidos salían a la vez).
+  ok('buscar y borrar van de a uno: mientras busca, el botón de borrar del renglón queda apagado; y mientras borra, los dos de buscar',
+    [/\{t\.sePuedeBorrar && \(\s+<button\s+type="button" className="[^"]*" disabled=\{borrando \|\| buscando\}/.test(tramo),
+      cuantas(tramo, /disabled=\{buscando \|\| borrando\}/g), cuantas(tramo, /disabled=\{(buscando|borrando)\}/g)],
+    [true, 2, 0]);
+  ok('en producción la confirmación es más fuerte: hay que escribir BORRAR; y si no se sabe el ambiente, se trata como producción',
+    [tramo.includes("const PALABRA_PARA_BORRAR = 'BORRAR';"), tramo.includes('disabled={ocupado || !escrita}'),
+      tramo.includes('const escrita = palabra.trim().toUpperCase() === PALABRA_PARA_BORRAR;'), tramo.includes("enProduccion={busqueda?.entorno !== 'staging'}"),
+      /if \(!enProduccion\) \{\s+return \(\s+<Confirmar/.test(tramo)],
+    [true, true, true, true, true]);
+  ok('la pantalla no nombra el alias, el número enmascarado ni el vencimiento: muestra pagador, tarjeta, marca y últimos cuatro',
+    [/alias|enmascarad|masked|vencimiento|expiration/i.test(tramo), tramo.includes('pagador {t.userId} · tarjeta N.º {t.cardId}'), tramo.includes('•••• ${t.ultimos4}')],
+    [false, true, true]);
+  const estados = ['sin_cuenta', 'fallida', 'quitada', 'por_quitar', 'pendiente', 'activa', 'otro_entorno', 'no_coincide', 'sin_dato'];
+  ok('cada estado que puede contestar el servidor tiene su texto, y los que no se tocan lo dicen',
+    [estados.filter((e) => !new RegExp(`\\n\\s+${e}: \\{ texto: '[^']+', clase: `).test(tramo)),
+      ['pendiente', 'activa', 'otro_entorno', 'no_coincide', 'sin_dato'].filter((e) => !new RegExp(`\\n\\s+${e}: \\{ texto: '[^']*[Nn]o se toca'`).test(tramo))],
+    [[], []]);
+
+  // «Guardar mi tarjeta»: qué hacer cuando Bancard dice que ya está catastrada, y el «sin confirmar».
+  const textosBancard = leer('src/i18n/textos/bancard.ts');
+  const es = textosBancard.slice(0, textosBancard.indexOf('export const bancardPt'));
+  const pt = textosBancard.slice(textosBancard.indexOf('export const bancardPt'));
+  const valor = (bloque, clave) => (new RegExp(`\\n\\s+${clave}: '([^']*)'`).exec(bloque) || [])[1] ?? '';
+  const claves = ['yaCatastrada', 'yaCatastradaPruebas', 'sinConfirmar'];
+  ok('los tres textos nuevos existen en es y pt', claves.map((k) => cuantas(textosBancard, new RegExp(`\\n\\s+${k}:`, 'g'))), [2, 2, 2]);
+  ok('«ya catastrada» le dice a la persona qué puede hacer: esperar, probar con otra tarjeta o escribirnos',
+    [/esperá/.test(valor(es, 'yaCatastrada')), /otra tarjeta/.test(valor(es, 'yaCatastrada')), /escribinos/.test(valor(es, 'yaCatastrada')),
+      /espere/.test(valor(pt, 'yaCatastrada')), /outro cartão/.test(valor(pt, 'yaCatastrada')), /fale com a gente/.test(valor(pt, 'yaCatastrada'))],
+    [true, true, true, true, true, true]);
+  ok('«sin confirmar» dice que no la cargue de nuevo, en los dos idiomas',
+    [/no la cargues de nuevo/.test(valor(es, 'sinConfirmar')), /não cadastre outra vez/.test(valor(pt, 'sinConfirmar'))], [true, true]);
+  ok('ninguno lleva nada de la tarjeta ni de las claves, y con voseo en español',
+    [[es, pt].flatMap((b) => claves.map((k) => valor(b, k))).filter((s) => !s || s.length > 220 || /alias|token|enmascarad|mascarad|clave|chave|senha|\*{2,}|•|[0-9]{6,}/i.test(s)),
+      /\b(espera|prueba|escríbenos|puedes|tienes)\b/.test(claves.map((k) => valor(es, k)).join(' '))],
+    [[], false]);
+  const lector = sinComentarios(leer('src/lib/bancard-formulario.ts'));
+  ok('reconocer «ya catastrada» vive en el lector puro, que sigue sin imports', [lector.includes('export function tarjetaYaCatastrada('), /^\s*import /m.test(lector)], [true, false]);
+  for (const nombre of ['HojaGuardarTarjeta', 'VueltaDeTarjeta']) {
+    const s = sinComentarios(leer(`src/components/bancard/${nombre}.tsx`));
+    const ayuda = s.slice(s.indexOf('{yaCatastrada && ('), s.indexOf('{yaCatastrada && (') + 500);
+    ok(`${nombre}: la ayuda sale solo si Bancard dijo «ya catastrada», debajo de su respuesta, con el contacto; lo de pruebas, solo en pruebas`,
+      [s.includes('setYaCatastrada(tarjetaYaCatastrada(dicho));'), cuantas(s, /\{yaCatastrada && \(/g),
+        s.indexOf('{yaCatastrada && (') > s.indexOf('k.bancardRespondio(respuestaDeBancard)'),
+        ayuda.includes('<p>{k.yaCatastrada}</p>'), ayuda.includes('<ContactoDePago />'),
+        /\{entorno === 'staging' && <p [^>]*>\{k\.yaCatastradaPruebas\}<\/p>\}/.test(ayuda), cuantas(s, /k\.yaCatastradaPruebas/g)],
+      [true, 1, true, true, true, true, 1]);
+    ok(`${nombre}: «sin confirmar» sale solo si lo contestó el servidor, y no se muestra como un fallo`,
+      [/if \(r\.ok && d\?\.motivo === 'sin_confirmar'\) \{/.test(s), cuantas(s, /k\.sinConfirmar/g),
+        /role="status"[^>]*>\{k\.sinConfirmar\}<\/p>/.test(s)],
+      [true, 1, true]);
+  }
+  const hoja = sinComentarios(leer('src/components/bancard/HojaGuardarTarjeta.tsx'));
+  const pieSinConfirmar = hoja.slice(hoja.indexOf(") : paso === 'sin_confirmar' ? ("), hoja.indexOf(") : paso === 'sin_confirmar' ? (") + 260);
+  ok('en la hoja, «sin confirmar» solo deja cerrar: no ofrece «Probar de nuevo» (cargarla otra vez es lo que Bancard rechaza)',
+    [pieSinConfirmar.includes('onClick={onCerrar}'), pieSinConfirmar.includes('k.probarDeNuevo'), cuantas(hoja, /k\.probarDeNuevo/g)], [true, false, 1]);
+}
+
+console.log('\n── La respuesta de un cobro que no se entendió (07/10/2026) ──');
+{
+  const cliente = sinComentarios(leer('src/lib/bancard.ts'));
+  const flujo = sinComentarios(leer('src/lib/bancard-flujo.ts'));
+  ok('el cobro lee el resultado de «operation» o de «confirmation»',
+    /esObjeto\(r\.cuerpo\.operation\) \? r\.cuerpo\.operation : r\.cuerpo\.confirmation/.test(cliente), true);
+  ok('y si no lo entiende, el evento «charge» guarda la forma (nombres de campos), no la respuesta',
+    /tipo: 'charge'[\s\S]{0,400}r\.forma \? \{ forma: r\.forma \} : \{\}/.test(flujo), true);
+  const forma = cliente.slice(cliente.indexOf('function formaDe('), cliente.indexOf('function esObjeto('));
+  ok('la forma se arma solo con Object.keys: nunca lee un valor de texto de la respuesta',
+    [forma.includes('Object.keys('), /String\(|JSON\.stringify|\$\{v\}|\+ v\b/.test(forma)], [true, false]);
+  // La base deja pasar esa clave: es un texto suelto que no está en la lista de lo que nunca se guarda.
+  const sanear = leer('supabase/migrations/125_bancard_pagos.sql');
+  const prohibidas = sanear.slice(sanear.indexOf("lower(e.key) not in ("), sanear.indexOf("lower(e.key) not in (") + 400);
+  ok('«forma» no está entre las claves que la base descarta del detalle', /'forma'/.test(prohibidas), false);
 }
 
 console.log(`\n${corridas - fallos}/${corridas} comprobaciones de las fuentes de Bancard.`);

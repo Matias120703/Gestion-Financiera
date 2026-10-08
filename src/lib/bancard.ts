@@ -126,7 +126,11 @@ export type ClaseDeError = 'bancard' | 'red' | 'timeout' | 'no_json';
 
 export type Resultado<T> =
   | ({ ok: true } & T)
-  | { ok: false; clave: string; http: number; clase: ClaseDeError };
+  /**
+   * `forma` viene solo con la clave 'forma_desconocida': los NOMBRES de los
+   * campos que mandó Bancard (nunca un valor), para poder anotar qué llegó.
+   */
+  | { ok: false; clave: string; http: number; clase: ClaseDeError; forma?: string };
 
 export type RespuestaCobro =
   /** Aprobada o rechazada: lo decide `bancard_confirmar` con este objeto. */
@@ -352,6 +356,24 @@ type Leido =
   | { ok: true; http: number; cuerpo: Record<string, unknown> }
   | { ok: false; clave: string; http: number; clase: ClaseDeError };
 
+/**
+ * QUÉ FORMA TENÍA una respuesta que no se entendió: solo los NOMBRES de sus
+ * campos, y los de los objetos que traiga adentro (un nivel). Ni un valor:
+ * ahí pueden venir un token, un alias o un número de tarjeta. Los nombres se
+ * limpian y se recortan, porque vienen de afuera. Ejemplo:
+ * «status,confirmation{token,shop_process_id,response}».
+ */
+function formaDe(cuerpo: unknown): string {
+  if (!esObjeto(cuerpo)) return '';
+  const nombre = (k: string) => k.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
+  const partes = Object.keys(cuerpo).slice(0, 12).map((k) => {
+    const v = cuerpo[k];
+    if (esObjeto(v)) return `${nombre(k)}{${Object.keys(v).slice(0, 25).map(nombre).join(',')}}`;
+    return Array.isArray(v) ? `${nombre(k)}[]` : nombre(k);
+  });
+  return partes.join(',').slice(0, 280);
+}
+
 function esObjeto(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -442,8 +464,12 @@ export function crearBancard(config: ConfigBancard, transporte: Transporte = tra
     return { ok: true, http, cuerpo };
   }
 
-  const desconocida = (http: number) =>
-    ({ ok: false as const, clave: 'forma_desconocida', http, clase: 'no_json' as const });
+  const desconocida = (http: number, cuerpo?: unknown) => {
+    const forma = formaDe(cuerpo);
+    return forma
+      ? { ok: false as const, clave: 'forma_desconocida', http, clase: 'no_json' as const, forma }
+      : { ok: false as const, clave: 'forma_desconocida', http, clase: 'no_json' as const };
+  };
 
   return {
     entorno: config.entorno,
@@ -622,8 +648,16 @@ export function crearBancard(config: ConfigBancard, transporte: Transporte = tra
       const r = await pedir('POST', '/charge', operacion, opciones.esperaMs ?? ESPERA_DE_COBRO_MS);
       if (r.ok === false) return r;
 
-      const respuesta = r.cuerpo.operation;
-      if (!esObjeto(respuesta)) return desconocida(r.http);
+      // EL RESULTADO VIENE EN `operation` O EN `confirmation` (07/10/2026). El
+      // ejemplo del manual lo trae en `operation`; el primer cobro de verdad
+      // en el ambiente de prueba llegó con otra forma y quedó como
+      // «forma_desconocida» (se resolvió solo, consultándole a Bancard, pero
+      // cuatro segundos después y sin saber qué había llegado). El propio
+      // pedido nombra `confirmation.process_id`, y la consulta de un pago
+      // contesta en `confirmation`: se aceptan los dos nombres. Lo que decide
+      // si se pagó sigue siendo la base, con este objeto.
+      const respuesta = esObjeto(r.cuerpo.operation) ? r.cuerpo.operation : r.cuerpo.confirmation;
+      if (!esObjeto(respuesta)) return desconocida(r.http, r.cuerpo);
 
       const contesto = typeof respuesta.response === 'string' && respuesta.response.trim() !== '';
       if (contesto) return { ok: true, tipo: 'resuelto', respuesta };
@@ -631,8 +665,9 @@ export function crearBancard(config: ConfigBancard, transporte: Transporte = tra
       const processId = respuesta.process_id;
       if (typeof processId === 'string' && processId) return { ok: true, tipo: '3ds', processId };
 
-      // Ni resultado ni 3D Secure: no se sabe qué pasó. No se reintenta.
-      return desconocida(r.http);
+      // Ni resultado ni 3D Secure: no se sabe qué pasó. No se reintenta. Con
+      // los nombres de los campos que llegaron, para poder leerlo después.
+      return desconocida(r.http, r.cuerpo);
     },
 
     /**

@@ -5,7 +5,8 @@ import { Hoja, MensajeError, PieHoja } from '@/components/Hoja';
 import { useTextos } from '@/i18n/cliente';
 import { mensajeDeError } from '@/lib/errores';
 import { telefonoInternacional } from '@/lib/telefono';
-import { leerLoQueDijoElFormulario, textoDeLoQueDijo, type DichoPorElFormulario } from '@/lib/bancard-formulario';
+import { leerLoQueDijoElFormulario, tarjetaYaCatastrada, textoDeLoQueDijo, type DichoPorElFormulario } from '@/lib/bancard-formulario';
+import { ContactoDePago } from './ContactoDePago';
 import { FormularioBancard } from './FormularioBancard';
 
 export interface TarjetaGuardadaVista {
@@ -14,7 +15,7 @@ export interface TarjetaGuardadaVista {
   ultimos4: string | null;
 }
 
-type Paso = 'consentir' | 'abriendo' | 'formulario' | 'verificando' | 'guardada' | 'fallo';
+type Paso = 'consentir' | 'abriendo' | 'formulario' | 'verificando' | 'guardada' | 'fallo' | 'sin_confirmar';
 
 /**
  * «GUARDAR MI TARJETA»: el catastro de Bancard, adentro de Orden.
@@ -33,6 +34,14 @@ type Paso = 'consentir' | 'abriendo' | 'formulario' | 'verificando' | 'guardada'
  *      («Bancard respondió: …»), porque «No se pudo guardar la tarjeta.» a
  *      secas no le decía a nadie qué corregir (07/10/2026). En el ambiente
  *      de prueba se suma la ayuda de la cédula que Bancard acepta ahí.
+ *   4. DOS RESPUESTAS QUE NO SON «PROBÁ DE NUEVO» (07/10/2026):
+ *      · Bancard contestó que esa tarjeta ya está guardada en el comercio (no
+ *        deja guardarla dos veces): debajo va qué puede hacer la persona
+ *        (esperar, usar otra o escribirnos) y el contacto.
+ *      · El servidor contestó `sin_confirmar` (el formulario dijo que la
+ *        guardó y Bancard todavía no la lista): se le dice que se vuelve a
+ *        mirar sola y que NO la cargue otra vez. Sin botón de reintento:
+ *        cargarla de nuevo es justo lo que Bancard rechaza.
  *
  * QUÉ PASA CON LA TARJETA lo dice quien abre la hoja (`antes` de aceptar y
  * `despues` de guardarla), porque depende de la cuenta: con un plan pago
@@ -67,6 +76,8 @@ export function HojaGuardarTarjeta({
   const [motivoFallo, setMotivoFallo] = useState('');
   /** Lo que contestó Bancard en el formulario, para mostrarlo si la tarjeta no quedó. */
   const [respuestaDeBancard, setRespuestaDeBancard] = useState('');
+  /** Bancard dijo que esa tarjeta ya está guardada en el comercio: se suma qué hacer. */
+  const [yaCatastrada, setYaCatastrada] = useState(false);
 
   const telefonoVale = !pideTelefono || telefonoInternacional(telefono, zona) !== '';
 
@@ -118,12 +129,19 @@ export function HojaGuardarTarjeta({
         setPaso('guardada');
         return;
       }
+      // El formulario dijo que la guardó y Bancard todavía no la lista: no
+      // es un fallo, y no se ofrece cargarla de nuevo.
+      if (r.ok && d?.motivo === 'sin_confirmar') {
+        setPaso('sin_confirmar');
+        return;
+      }
       setMotivoFallo(typeof d?.error === 'string' ? mensajeDeError(d.error, '') : '');
       dicho = leerLoQueDijoElFormulario(d?.formulario) ?? dicho;
     } catch {
       setMotivoFallo('');
     }
     setRespuestaDeBancard(textoDeLoQueDijo(dicho));
+    setYaCatastrada(tarjetaYaCatastrada(dicho));
     setPaso('fallo');
   }
 
@@ -153,6 +171,10 @@ export function HojaGuardarTarjeta({
       <button type="button" className="boton-principal min-h-[48px]" onClick={() => { setAbierto(null); setPaso('consentir'); }}>
         {k.probarDeNuevo}
       </button>
+    </PieHoja>
+  ) : paso === 'sin_confirmar' ? (
+    <PieHoja>
+      <button type="button" className="boton-principal min-h-[48px]" onClick={onCerrar}>{t.comun.cerrar}</button>
     </PieHoja>
   ) : null;
 
@@ -203,10 +225,19 @@ export function HojaGuardarTarjeta({
             <p className="font-medium">{motivoFallo ? k.noSeGuardoDetalle(motivoFallo) : k.noSeGuardo}</p>
             {respuestaDeBancard && <p className="break-words">{k.bancardRespondio(respuestaDeBancard)}</p>}
           </div>
+          {yaCatastrada && (
+            <div className="space-y-2 rounded-xl border border-borde px-3 py-2.5 text-[13px] leading-relaxed text-tinta/75">
+              <p>{k.yaCatastrada}</p>
+              {entorno === 'staging' && <p className="text-tinta/55">{k.yaCatastradaPruebas}</p>}
+              <ContactoDePago />
+            </div>
+          )}
           {entorno === 'staging' && (
             <p className="rounded-xl bg-arena px-3 py-2.5 text-[12.5px] leading-relaxed text-tinta/65">{k.ayudaDePruebas}</p>
           )}
         </div>
+      ) : paso === 'sin_confirmar' ? (
+        <p role="status" className="rounded-xl bg-arena px-3 py-2.5 text-[13.5px] leading-relaxed text-tinta/75">{k.sinConfirmar}</p>
       ) : (
         <div className="space-y-4">
           <p className="text-[13.5px] leading-relaxed text-tinta/70">{k.formularioSeguro}</p>

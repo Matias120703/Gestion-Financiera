@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTextos } from '@/i18n/cliente';
-import { leerLoQueDijoElFormulario, textoDeLoQueDijo } from '@/lib/bancard-formulario';
+import { leerLoQueDijoElFormulario, tarjetaYaCatastrada, textoDeLoQueDijo } from '@/lib/bancard-formulario';
+import { ContactoDePago } from './ContactoDePago';
 
 /**
  * LA VUELTA DEL CATASTRO (el `return_url` de cards/new: /plan/tarjeta/[tarjeta]).
@@ -20,6 +21,12 @@ import { leerLoQueDijoElFormulario, textoDeLoQueDijo } from '@/lib/bancard-formu
  * ambiente de prueba. En ese caso la pantalla NO se va sola a /plan: ahí no
  * queda rastro del intento, y un segundo y medio no alcanza para leer por
  * qué falló (07/10/2026). Se vuelve con el enlace de abajo.
+ *
+ * Como la hoja, distingue dos respuestas: si Bancard contestó que la tarjeta
+ * ya está guardada en el comercio, debajo va qué puede hacer la persona; y si
+ * el servidor contestó `sin_confirmar` (el formulario dijo que la guardó y
+ * Bancard todavía no la lista), se le dice que se vuelve a mirar sola y que
+ * no la cargue otra vez, en vez de «No se pudo guardar».
  */
 export function VueltaDeTarjeta({
   tarjeta, empresaId, entorno,
@@ -35,6 +42,8 @@ export function VueltaDeTarjeta({
   const [texto, setTexto] = useState(k.vueltaComprobando);
   const [fallo, setFallo] = useState(false);
   const [respuestaDeBancard, setRespuestaDeBancard] = useState('');
+  const [yaCatastrada, setYaCatastrada] = useState(false);
+  const [sinConfirmar, setSinConfirmar] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -59,15 +68,26 @@ export function VueltaDeTarjeta({
           window.setTimeout(() => { if (vivo) router.replace('/plan'); }, 1500);
           return;
         }
+        if (r.ok && d?.motivo === 'sin_confirmar') {
+          setSinConfirmar(true);
+          return;
+        }
         dicho = leerLoQueDijoElFormulario(d?.formulario) ?? dicho;
       } catch {
         if (!vivo) return;
       }
       setRespuestaDeBancard(textoDeLoQueDijo(dicho));
+      setYaCatastrada(tarjetaYaCatastrada(dicho));
       setFallo(true);
     })();
     return () => { vivo = false; };
   }, [tarjeta]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (sinConfirmar) {
+    return (
+      <p role="status" className="rounded-xl bg-arena px-3 py-2.5 text-[13.5px] leading-relaxed text-tinta/75">{k.sinConfirmar}</p>
+    );
+  }
 
   if (fallo) {
     return (
@@ -76,6 +96,13 @@ export function VueltaDeTarjeta({
           <p className="font-medium">{k.noSeGuardo}</p>
           {respuestaDeBancard && <p className="break-words">{k.bancardRespondio(respuestaDeBancard)}</p>}
         </div>
+        {yaCatastrada && (
+          <div className="space-y-2 rounded-xl border border-borde px-3 py-2.5 text-[13px] leading-relaxed text-tinta/75">
+            <p>{k.yaCatastrada}</p>
+            {entorno === 'staging' && <p className="text-tinta/55">{k.yaCatastradaPruebas}</p>}
+            <ContactoDePago />
+          </div>
+        )}
         {entorno === 'staging' && (
           <p className="rounded-xl bg-arena px-3 py-2.5 text-[12.5px] leading-relaxed text-tinta/65">{k.ayudaDePruebas}</p>
         )}
