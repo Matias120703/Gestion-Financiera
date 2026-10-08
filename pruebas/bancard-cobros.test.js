@@ -562,10 +562,15 @@ async function principal() {
     ok('avisa a las mismas cuentas de siempre (0, 1 y 3 días), en el orden de siempre',
       filas.map((f) => [f.dias, f.nombre]),
       [[0, 'Aviso habilitada'], [1, 'Aviso sin Bancard'], [3, 'Aviso con débito'], [3, 'Aviso con débito pausado'], [3, 'Aviso en prueba']]);
-    ok('cada fila trae lo de antes más tres claves nuevas',
+    // 130: la lista crece en dos claves, `plan_renovacion` y `precio_renovacion`
+    // (el plan que se va a cobrar si hay una baja de plan programada). Es lo
+    // único que cambió en esta prueba: las quince de antes siguen estando, con
+    // el mismo nombre y el mismo valor (lo comprueba la línea de abajo y, cuenta
+    // por cuenta, pruebas/cambiar-plan.test.js).
+    ok('cada fila trae lo de antes más tres claves nuevas (126) y las dos de la renovación (130)',
       Object.keys(de(D1)).sort(),
       ['bancard', 'debito', 'destinatarios', 'dias', 'empresa_id', 'fecha_fin', 'fin', 'importe', 'moneda', 'nombre',
-        'periodo', 'plan', 'precio', 'tipo', 'tipo_cuenta']);
+        'periodo', 'plan', 'plan_renovacion', 'precio', 'precio_renovacion', 'tipo', 'tipo_cuenta']);
     ok('lo de antes, igual: tipo, plan, período, moneda, y el precio DE LISTA',
       [de(D1).tipo, de(D1).plan, de(D1).periodo, de(D1).moneda, Number(de(D1).precio), de(D1).tipo_cuenta, de(D1).destinatarios.length],
       ['periodo', 'negocio', 'mensual', 'PYG', 250000, 'emprendedor', 1]);

@@ -512,6 +512,11 @@ export const MENSAJES_PT: Record<string, string> = {
   'Después de ese pago hubo otros cambios en la cuenta. Deshacé primero esos.': 'Depois desse pagamento houve outras mudanças na conta. Desfaça essas primeiro.',
   'Ese cambio tiene un pago con Bancard: se revierte desde los pagos de Bancard de la cuenta.': 'Essa mudança tem um pagamento com Bancard: o estorno é feito pelos pagamentos de Bancard da conta.',
   'No podés bajar a menos personas de las que hoy tiene tu equipo.': 'Você não pode reduzir pra menos pessoas do que sua equipe tem hoje.',
+  // 130 · cambiar de plan con días pagos
+  // Los tres datos: cuántas personas tiene el equipo, el nombre del plan
+  // (Básico, Pro, Premium: se escriben igual en los dos idiomas) y cuántas admite.
+  'Tu equipo tiene % personas y el plan % admite hasta %. Achicá el equipo o elegí un plan donde entren todos.': 'Sua equipe tem % pessoas e o plano % admite até %. Reduza a equipe ou escolha um plano em que caibam todos.',
+  'Hay un pago en curso. Esperá a que se confirme y probá de nuevo.': 'Há um pagamento em andamento. Espere a confirmação e tente de novo.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */
