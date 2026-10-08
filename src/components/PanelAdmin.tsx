@@ -7,11 +7,13 @@ import { clienteNavegador } from '@/lib/supabase/cliente';
 import { dinero } from '@/lib/formato';
 import { mensajeDeError } from '@/lib/errores';
 import { avisarActivacion } from '@/lib/avisos-cliente';
+import { BORRADO_SIN_RESPUESTA, hayOjo, mensajeDeCuentaBorrada, textoDeMotivo } from '@/lib/borrar-correo';
 import type {
-  AccionAdmin, CodigoRechazado, ComisionAdmin, CuentaAdmin, DescuentoRacha, FinanzasOrden, PlanEfectivo, ReferidoAdmin,
-  ResumenPanel, RetiroAdmin, SocioAdmin, TipoCuenta,
+  AccionAdmin, CodigoRechazado, ComisionAdmin, CorreoSuelto, CuentaAdmin, CuentaBorrada, DescuentoRacha, FinanzasOrden,
+  PersonasDeCuenta, PlanEfectivo, ReferidoAdmin, ResumenPanel, RetiroAdmin, SocioAdmin, TipoCuenta,
 } from '@/lib/tipos';
 import { PanelSocios } from './PanelSocios';
+import { CorreosSueltos } from './CorreosSueltos';
 import { CampoMonto } from '@/components/CampoMonto';
 import { Hoja } from '@/components/Hoja';
 import { PagosBancardDeCuenta, TarjetaBancardAdmin, type ConfigBancardAdmin } from '@/components/bancard/PanelBancardAdmin';
@@ -129,7 +131,8 @@ function planesQueVan(tipo: TipoCuenta): { valor: PlanEfectivo; texto: string }[
 }
 
 export function PanelAdmin({
-  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], retiros = [], whatsapp, bancard = null,
+  cuentas, resumen, finanzas, misEmpresas, socios, comisiones, referidos, rechazados = [], retiros = [], sueltos = [],
+  whatsapp, bancard = null,
 }: {
   cuentas: CuentaAdmin[];
   resumen: ResumenPanel;
@@ -142,6 +145,8 @@ export function PanelAdmin({
   rechazados?: CodigoRechazado[];
   /** Los retiros de los socios contra su saldo (070). */
   retiros?: RetiroAdmin[];
+  /** Gente que puede entrar y no tiene ningún negocio (129). Null: no se pudo leer. */
+  sueltos?: CorreoSuelto[] | null;
   whatsapp: string | null;
   /** Cómo está Bancard en este servidor (sin ninguna clave): la tarjeta «Bancard». */
   bancard?: ConfigBancardAdmin | null;
@@ -162,6 +167,12 @@ export function PanelAdmin({
   const [abierta, setAbierta] = useState<CuentaAdmin | null>(null);
   /** Lo que acaba de pasar, para decirlo arriba y con la lista ya al día. */
   const [hecho, setHecho] = useState('');
+  /**
+   * Lo que pasó quedó a medias (129): se borró la cuenta pero no un correo,
+   * o Bancard no contestó. El cartel va en ámbar: en verde se lee «listo» y
+   * nadie mira qué faltó.
+   */
+  const [ojo, setOjo] = useState(false);
 
   const visibles = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -196,12 +207,12 @@ export function PanelAdmin({
         había que cerrarla a mano para ver la lista al día.
       */}
       {hecho && (
-        <div className="flex items-start gap-3 rounded-2xl bg-verde-claro px-4 py-3">
-          <p className="min-w-0 flex-1 text-[13.5px] font-medium leading-relaxed text-verde-fuerte">{hecho}</p>
+        <div className={`flex items-start gap-3 rounded-2xl px-4 py-3 ${ojo ? 'bg-ambar-claro' : 'bg-verde-claro'}`}>
+          <p className={`min-w-0 flex-1 text-[13.5px] font-medium leading-relaxed ${ojo ? 'text-ambar' : 'text-verde-fuerte'}`}>{hecho}</p>
           <button
             type="button" onClick={() => setHecho('')}
             aria-label="Cerrar el aviso"
-            className="shrink-0 text-[13px] font-bold text-verde-fuerte"
+            className={`shrink-0 text-[13px] font-bold ${ojo ? 'text-ambar' : 'text-verde-fuerte'}`}
           >
             ✕
           </button>
@@ -343,6 +354,21 @@ export function PanelAdmin({
         )}
       </section>
 
+      {/* ---------------- Correos sin cuenta (129, 07/10/2026) ----------------
+          La lista de arriba es de negocios: una persona sin negocio no
+          aparecía en ningún lado, y su correo «ya tenía una cuenta». */}
+      <CorreosSueltos
+        sueltos={sueltos}
+        onHecho={(mensaje, conOjo) => {
+          setHecho(mensaje);
+          setOjo(conOjo === true);
+          router.refresh();
+          // Esta lista queda abajo de la de cuentas y el cartel sale arriba
+          // de todo: se sube para que se lea.
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+
       {/* ---------------- Bancard (02/10/2026) ---------------- */}
       {bancard && <TarjetaBancardAdmin config={bancard} />}
 
@@ -365,7 +391,18 @@ export function PanelAdmin({
           rechazado={rechazoPorEmpresa.get(abierta.empresa_id) ?? null}
           whatsapp={whatsapp}
           onCerrar={() => setAbierta(null)}
-          onHecho={(mensaje) => { setAbierta(null); setHecho(mensaje ?? ''); router.refresh(); }}
+          onHecho={(mensaje, conOjo) => {
+            setAbierta(null);
+            setHecho(mensaje ?? '');
+            setOjo(conOjo === true);
+            router.refresh();
+            // El cartel sale arriba de todo y la lista de cuentas queda más
+            // abajo: en el teléfono hay que bajar para tocar una, y lo que
+            // quedó a medias al borrar (un correo, la tarjeta, archivos) se
+            // dice SOLO en ese cartel. Se sube para que se lea. Sin mensaje
+            // («Entendido, cerrar») la página no se mueve.
+            if (mensaje) window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
       )}
     </div>
@@ -520,8 +557,8 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
   rechazado: CodigoRechazado | null;
   whatsapp: string | null;
   onCerrar: () => void;
-  /** Cierra la ficha y recarga la lista; el mensaje se lee arriba. */
-  onHecho: (mensaje?: string) => void;
+  /** Cierra la ficha y recarga la lista; el mensaje se lee arriba (en ámbar con `ojo`). */
+  onHecho: (mensaje?: string, ojo?: boolean) => void;
 }) {
   const [codigoSocio, setCodigoSocio] = useState('');
   /**
@@ -536,6 +573,25 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
     Promise.resolve(clienteNavegador().rpc('descuento_por_racha', { p_empresa: cuenta.empresa_id }))
       .then(({ data }) => { if (vivo && data) setDescuento(data as DescuentoRacha); })
       .catch(() => {});
+    return () => { vivo = false; };
+  }, [cuenta.empresa_id]);
+
+  /**
+   * Quiénes están en esta cuenta y a quién se le borra el correo si se la
+   * borra (129). Se pide al abrir, como el descuento. `undefined` mientras
+   * carga; `null` si no se pudo leer.
+   *
+   * Es para MOSTRAR antes de confirmar. No decide nada: a quién se borra lo
+   * resuelve el servidor en el momento, y este pedido no le manda personas.
+   */
+  const [personas, setPersonas] = useState<PersonasDeCuenta | null | undefined>(undefined);
+  useEffect(() => {
+    let vivo = true;
+    Promise.resolve(clienteNavegador().rpc('personas_de_cuenta', { p_empresa: cuenta.empresa_id }))
+      .then(({ data, error: e }) => {
+        if (vivo) setPersonas(!e && data && Array.isArray(data.personas) ? (data as PersonasDeCuenta) : null);
+      })
+      .catch(() => { if (vivo) setPersonas(null); });
     return () => { vivo = false; };
   }, [cuenta.empresa_id]);
 
@@ -685,10 +741,48 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
   const desanotarSocio = () => correr('desanotando', async () =>
     clienteNavegador().rpc('quitar_referido', { p_empresa: cuenta.empresa_id }));
 
-  const borrar = () => correr('borrando', async () => clienteNavegador().rpc('borrar_cuenta', {
-    p_empresa: cuenta.empresa_id,
-    p_confirmacion: confirmaBorrado,
-  }));
+  /**
+   * BORRAR LA CUENTA, ENTERA (129, 07/10/2026).
+   *
+   * No pasa por `correr` ni llama directo a la base: va por el servidor,
+   * que además del negocio borra el correo de quien queda sin ninguno, los
+   * archivos y la tarjeta guardada. Al navegador le alcanza con mandar la
+   * cuenta y el nombre escrito.
+   *
+   * Tres finales:
+   *   · contestó que sí: se cierra la ficha y arriba se lee qué se borró y
+   *     qué no (en ámbar si quedó algo pendiente);
+   *   · contestó que no: no se tocó nada; el motivo queda en la ficha;
+   *   · no contestó (se cortó, tardó de más): no se sabe hasta dónde llegó.
+   *     Se dice eso y se recarga: la verdad es lo que muestran las listas.
+   */
+  async function borrar() {
+    setTrabajando('borrando');
+    setError('');
+    let datos: any = null;
+    try {
+      const respuesta = await fetch('/api/admin/cuentas/borrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa: cuenta.empresa_id, confirmacion: confirmaBorrado }),
+      });
+      datos = await respuesta.json().catch(() => null);
+    } catch {
+      datos = null;
+    }
+
+    if (datos?.ok === true && Array.isArray(datos.correos)) {
+      const hecha = datos as CuentaBorrada;
+      onHecho(mensajeDeCuentaBorrada(hecha), hayOjo(hecha));
+      return;
+    }
+    if (datos?.ok === false) {
+      setError(mensajeDeError(datos.error, 'No se pudo borrar la cuenta.'));
+      setTrabajando('');
+      return;
+    }
+    onHecho(BORRADO_SIN_RESPUESTA, true);
+  }
 
   async function verHistorial() {
     try {
@@ -1056,10 +1150,13 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
                 botón rojo se toca por curiosidad, escribir el nombre letra
                 por letra no se hace sin querer. */}
             <p className="titulo-seccion mb-1 text-rojo">Borrar la cuenta</p>
-            <p className="mb-3 text-[12.5px] leading-relaxed text-tinta/60">
-              Se va todo: movimientos, productos, deudas y comprobantes. No hay papelera.
-              Para confirmar, escribí <strong className="text-tinta">{cuenta.nombre}</strong>.
-            </p>
+            <div className="mb-3 space-y-1.5 text-[12.5px] leading-relaxed text-tinta/60">
+              <p>Se va todo: movimientos, productos, deudas, comprobantes y videos. No hay papelera.</p>
+              {/* A quién se le borra también el correo (129). Con nombre, antes
+                  de confirmar: el personal no pidió nada y se va con el negocio. */}
+              <QuienSeBorra personas={personas} />
+              <p>Para confirmar, escribí <strong className="text-tinta">{cuenta.nombre}</strong>.</p>
+            </div>
             <input
               className="campo" placeholder={cuenta.nombre}
               value={confirmaBorrado} onChange={(e) => setConfirmaBorrado(e.target.value)}
@@ -1074,6 +1171,53 @@ function FichaCuenta({ cuenta, referido, rechazado, whatsapp, onCerrar, onHecho 
           </div>
         </div>
     </Hoja>
+  );
+}
+
+/**
+ * Qué pasa con el correo de cada persona si se borra esta cuenta (129).
+ *
+ * Lo dice la base (`personas_de_cuenta`), con la misma regla que después
+ * usa para borrar: se va el correo de quien queda sin ningún negocio. Acá
+ * solo se lo pone en palabras. Si no se pudo leer, se dice la regla.
+ */
+function QuienSeBorra({ personas }: { personas: PersonasDeCuenta | null | undefined }) {
+  if (personas === undefined) return <p>Mirando quién está en esta cuenta…</p>;
+  if (personas === null) {
+    return <p>También se borran los correos de las personas que queden sin ningún negocio.</p>;
+  }
+
+  const seVan = personas.personas.filter((p) => p.se_borra);
+  const seQuedan = personas.personas.filter((p) => !p.se_borra);
+
+  return (
+    <>
+      {personas.personas.length === 0 && <p>No hay nadie adentro: no se borra ningún correo.</p>}
+      {seVan.length === 1 && (
+        <p>
+          También se borra el correo de <strong className="break-all text-tinta">{seVan[0].correo}</strong>.
+          {' '}Pierde la sesión. Para volver a entrar se registra de nuevo.
+        </p>
+      )}
+      {seVan.length > 1 && (
+        <p>
+          También se borran estos correos:{' '}
+          {seVan.map((p, i) => (
+            <span key={`${p.correo}-${i}`}>
+              {i === 0 ? '' : i === seVan.length - 1 ? ' y ' : ', '}
+              <strong className="break-all text-tinta">{p.correo}</strong>
+            </span>
+          ))}
+          . Pierden la sesión. Para volver a entrar se registran de nuevo.
+        </p>
+      )}
+      {seQuedan.map((p, i) => (
+        <p key={`${p.correo}-${i}`}>
+          <strong className="break-all text-tinta">{p.correo}</strong> no se borra: {textoDeMotivo(p.motivo)}.
+        </p>
+      ))}
+      {personas.tarjeta && <p>Tiene una tarjeta guardada: se le pide a Bancard que la borre.</p>}
+    </>
   );
 }
 

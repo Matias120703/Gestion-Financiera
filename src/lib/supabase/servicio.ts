@@ -31,6 +31,14 @@ import { createClient } from '@supabase/supabase-js';
  * pública y las tareas entran por la regla de arriba: firma y secreto.)
  * Entra acá también `/api/pagos/bancard/personas` (07/10/2026): misma
  * sesión y mismo `accesoBancard` antes, y una sola función con `p_usuario`.
+ *
+ * LA TERCERA EXCEPCIÓN ESCRITA (129, 07/10/2026): `/api/admin/cuentas/borrar`
+ * y `/api/admin/correos/borrar`. Antes de tocar este cliente comprueban la
+ * sesión y `es_superadmin` con el cliente DEL USUARIO; después llaman
+ * funciones que reciben `p_actor` y vuelven a exigir en la base que
+ * administre Orden, borran archivos por las rutas que devolvió la base y
+ * borran de Auth solo a quien `correo_borrable` acaba de aprobar
+ * (src/lib/borrar-correo-servidor.ts). Nunca leen ni escriben una tabla.
  */
 export function clienteDeServicio() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
