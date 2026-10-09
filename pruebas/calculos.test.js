@@ -4768,6 +4768,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const conFondo = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 3200000]), ahorroApartado: 2000000, bienesPorMoneda: de(['PYG', 9000000]) }));
   ok('132 · lo guardado en un fondo no suma: Gs. 3.200.000 + Gs. 9.000.000 = Gs. 12.200.000, con «de eso, guardado: Gs. 2.000.000»',
     [conFondo.total, conFondo.guardado], [12200000, 2000000]);
+  // Guardó en un fondo más de lo que tiene en sus cuentas: «de eso» sería falso.
+  const guardoDeMas = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 1000000]), ahorroApartado: 2740000, bienesPorMoneda: de(['PYG', 9000000]) }));
+  const soloEnDolares = P.tengoEnTotal(pat('PYG', { plata: de(['USD', 1000]), ahorroApartado: 2740000, bienesPorMoneda: de(['PYG', 9000000]), cotizaciones: cot(['USD', 7400]) }));
+  const justo = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 1000000]), ahorroApartado: 1000000, bienesPorMoneda: de(['PYG', 9000000]) }));
+  ok('132 · «de eso, guardado» solo si cabe en la plata propia: con Gs. 1.000.000 en cuentas y Gs. 2.740.000 guardados no se dice (el total no cambia); justo lo mismo, sí',
+    [guardoDeMas.guardado, guardoDeMas.total, soloEnDolares.guardado, soloEnDolares.total, justo.guardado], [0, 10000000, 0, 16400000, 1000000]);
   ok('132 · un guardado negativo (la diferencia de cambio de un fondo) no se muestra',
     P.tengoEnTotal(pat('PYG', { ahorroApartado: -50000 })).guardado, 0);
   const enLibras = P.tengoEnTotal(pat('PYG', { plataDeAhorros: true, plata: de(['PYG', 0], ['GBP', 500]), bienesPorMoneda: de(['PYG', 40000000], ['USD', 100]) }));
@@ -5026,6 +5032,20 @@ ok('un rubro desconocido no rompe: cae en comercio',
       tarjeta.includes('{cuenta.debes > 0 && renglon(p.debes,'), tarjeta.includes('cuenta.guardado > 0 ? p.deEsoGuardado(plata(cuenta.guardado, moneda)) : undefined,'),
       tarjeta.includes('const cuenta = tengoEnTotal(patrimonio, conMercaderia);')],
     Array(7).fill(true));
+
+  // ---- lo que encontró la revisión de la pantalla (08/10/2026) ----
+  ok('132 · «Actualizar valor» entra con el número seleccionado: lo tecleado lo reemplaza, no se pega atrás (US$ 30.000 no queda en 3.000.035.000)',
+    [hoja.includes("onFocus={que.modo === 'valor' ? seleccionarTodo : undefined}"), /const seleccionarTodo = [\s\S]*?el\.select\(\);/.test(hoja)],
+    [true, true]);
+  ok('132 · después de «Lo vendí», el aviso de la plata se trae a la vista (con muchas cosas anotadas quedaba fuera de la pantalla)',
+    [bloque.includes('<div ref={aviso} role="status"'), /if \(!vendido\) return;[\s\S]*?aviso\.current\?\.scrollIntoView\(/.test(bloque)],
+    [true, true]);
+  ok('132 · sin tocar los tipos, lo anotado queda como «Otro» (un terreno no nace siendo un auto)',
+    hoja.includes("useState<TipoBien>(bien ? tipoDeBien(bien.tipo) : 'otro')"), true);
+  ok('132 · «Eso ya no está en tu lista.» (P0002) pone la lista al día, en la hoja y al quitar',
+    [hoja, bloque].map((f) => f.includes("?.code === 'P0002') router.refresh();")), [true, true]);
+  ok('132 · la vuelta atrás de la 131 se niega si la 132 está puesta (el patrimonio usa sus cotizaciones)',
+    leer('supabase/vuelta-atras/131_vuelta_atras.sql').includes("if to_regclass('public.bienes') is not null then"), true);
 
   // ---- los archivos nuevos: colores del proyecto, sin gráficos, sin loading ----
   const NUEVOS = [BLOQUE, HOJA, TARJETA, 'src/lib/patrimonio.ts'];

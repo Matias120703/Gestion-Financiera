@@ -54,7 +54,8 @@ export function HojaBien({
   const router = useRouter();
   const bien = que.modo === 'nuevo' ? null : que.bien;
 
-  const [tipo, setTipo] = useState<TipoBien>(bien ? tipoDeBien(bien.tipo) : 'vehiculo');
+  // Sin tocar los tipos, lo anotado queda como «Otro»: un terreno no nace siendo un auto.
+  const [tipo, setTipo] = useState<TipoBien>(bien ? tipoDeBien(bien.tipo) : 'otro');
   const [nombre, setNombre] = useState(bien?.nombre ?? '');
   const [nota, setNota] = useState(bien?.nota ?? '');
   const [valor, setValor] = useState(bien?.valor ?? 0);
@@ -74,6 +75,13 @@ export function HojaBien({
     // Lo ya escrito se queda, sin los centavos que la moneda nueva no tiene.
     const f = 10 ** decimalesDe(codigo);
     setValor((v) => Math.round(v * f) / f);
+  };
+
+  const seleccionarTodo = (e: React.FocusEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    el.select();
+    // En el teléfono, el toque que da el foco pone el cursor después: se vuelve a seleccionar.
+    requestAnimationFrame(() => { try { el.select(); } catch { /* el campo ya no está */ } });
   };
 
   async function guardar(e: React.FormEvent) {
@@ -103,6 +111,8 @@ export function HojaBien({
       onCerrar();
     } catch (fallo) {
       setError(mensajeDeError(fallo, t.errores.generico));
+      // «Eso ya no está en tu lista.» (se sacó desde otro teléfono): la lista de atrás se pone al día.
+      if ((fallo as { code?: string } | null)?.code === 'P0002') router.refresh();
     } finally {
       enCurso.current = false;
       setGuardando(false);
@@ -166,6 +176,10 @@ export function HojaBien({
                 key={monedaBien} className="campo text-[18px] font-semibold" autoFocus={que.modo === 'valor'}
                 decimales={decimalesDe(monedaBien)} placeholder={dinero(0, monedaBien, true, locale)}
                 valor={valor} alCambiar={(n) => setValor(Math.max(0, n))} disabled={guardando}
+                // «Actualizar valor» abre con el número de hoy: se entra con todo
+                // seleccionado, así lo que se teclea lo REEMPLAZA. Sin esto se
+                // pegaba atrás y US$ 30.000 quedaba en US$ 3.000.035.000.
+                onFocus={que.modo === 'valor' ? seleccionarTodo : undefined}
               />
             </label>
             {que.modo === 'nuevo' && (

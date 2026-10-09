@@ -153,7 +153,12 @@ export function tengoEnTotal(p: Patrimonio, conMercaderia = false): TengoEnTotal
     ...p.plata.filter((x) => x.moneda !== propia && x.total !== 0),
   ];
   const bienes = p.bienesPorMoneda.filter((x) => x.total !== 0);
-  const guardado = positivo(p.ahorroApartado);
+  // «De eso, guardado» es verdad solo si lo guardado CABE en la plata propia.
+  // Se puede guardar en un fondo más de lo que hay en las cuentas: ahí la
+  // frase sería falsa (diría que una parte de Gs. 1.000.000 son Gs. 2.740.000),
+  // así que no se muestra.
+  const apartado = positivo(p.ahorroApartado);
+  const guardado = apartado <= plata[0].total ? apartado : 0;
   const teDeben = positivo(p.teDeben);
   const mercaderia = conMercaderia ? positivo(p.mercaderia) : 0;
   const debes = positivo(p.debes);

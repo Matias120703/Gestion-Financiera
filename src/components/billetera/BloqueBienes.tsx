@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { clienteNavegador } from '@/lib/supabase/cliente';
 import { mensajeDeError } from '@/lib/errores';
@@ -104,6 +104,15 @@ export function BloqueBienes({
   /** Se acaba de marcar algo como vendido: se recuerda dónde va la plata. */
   const [vendido, setVendido] = useState(false);
   const enCurso = useRef(false);
+  const aviso = useRef<HTMLDivElement>(null);
+
+  // El aviso de «Lo vendí» va arriba de la lista: con varias cosas anotadas
+  // quedaba fuera de la pantalla y no se veía. Se lo trae a la vista.
+  useEffect(() => {
+    if (!vendido) return;
+    const quieto = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    aviso.current?.scrollIntoView({ block: 'center', behavior: quieto ? 'auto' : 'smooth' });
+  }, [vendido]);
 
   const plata = (n: number, enMoneda: string) => (oculto ? '••••••' : dinero(n, enMoneda, true, locale));
 
@@ -123,6 +132,8 @@ export function BloqueBienes({
       setVendido(motivo === 'vendido');
     } catch (fallo) {
       setError(mensajeDeError(fallo, t.errores.generico));
+      // «Eso ya no está en tu lista.» (se sacó desde otro teléfono): la lista de atrás se pone al día.
+      if ((fallo as { code?: string } | null)?.code === 'P0002') router.refresh();
     } finally {
       enCurso.current = false;
       setQuitando(false);
@@ -141,7 +152,7 @@ export function BloqueBienes({
     <>
       {/* Después de «Lo vendí»: Orden no anota esa plata sola. */}
       {vendido && (
-        <div className="rounded-2xl border border-borde/70 bg-superficie px-4 pb-1.5 pt-3">
+        <div ref={aviso} role="status" className="rounded-2xl border border-borde/70 bg-superficie px-4 pb-1.5 pt-3">
           <p className="text-[13px] leading-snug text-tinta/75">{p.siEntroPlata}</p>
           <button type="button" onClick={irAMisCuentas} className="boton-texto min-h-[40px] text-[13px]">
             {p.irAMisCuentas}

@@ -68,6 +68,10 @@ declare
   v_cuentas     integer := 0;
   v_movimientos integer := 0;
 begin
+  -- Desde la 132, «Tengo en total» usa las cotizaciones de la 131: primero se saca la 132.
+  if to_regclass('public.bienes') is not null then
+    raise exception 'Primero hay que volver atrás la 132 (supabase/vuelta-atras/132_vuelta_atras.sql): el patrimonio usa las cotizaciones de la 131.';
+  end if;
   if exists (select 1 from information_schema.columns
              where table_schema = 'public' and table_name = 'cuentas_dinero' and column_name = 'moneda') then
     execute 'select count(*) from public.cuentas_dinero where moneda is not null' into v_cuentas;
