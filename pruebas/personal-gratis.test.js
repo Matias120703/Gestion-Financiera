@@ -105,6 +105,10 @@ const LO_PAGO = [
   // movimientos: la frenaba el candado, y la 110 le deja pasar ese UPDATE a
   // un gasto de Gratis. Por eso se lo pregunta ella (bloque 13).
   ['ponerle cuenta a la plata suelta', false, (c) => ['select public.asignar_cuenta_a_sueltos($1,$2)', [c.empresaId, c.cuenta]]],
+  // (132) Lo que tiene y no es plata (su auto, su terreno) vive en la
+  // Billetera, que es del Pro. Su tabla nace con cuenta_activa_bienes, así
+  // que al negocio vencido también se le cierra (grupo 5).
+  ['anotar algo que tiene (un auto, un terreno)', true, (c, n) => ["select public.guardar_bien($1,$2,'vehiculo',80000000)", [c.empresaId, `Auto ${n}`]]],
   ['un gasto fijo', true, (c, n) => ['select public.guardar_gasto_fijo($1,$2,$3)', [c.empresaId, `Netflix ${n}`, 60000]]],
   ['un ingreso fijo', true, (c, n) => ['select public.guardar_ingreso_fijo($1,$2,$3)', [c.empresaId, `Aguinaldo ${n}`, 500000]]],
   ['el presupuesto', true, (c) => ['select public.guardar_presupuesto($1,$2,$3)', [c.empresaId, 'Ropa', 80000]]],
@@ -455,6 +459,30 @@ const LO_PAGO_CON_CANDADO = LO_PAGO.filter(([, candado]) => candado);
     'select tgname, count(*)::int n from pg_trigger where tgname = any($1) group by tgname', [disparadores])).rows;
   ok('cada plan_personal_* existe una sola vez',
     disparadores.map((t) => trg.find((x) => x.tgname === t)?.n ?? 0), disparadores.map(() => 1));
+  // (132) `bienes` no tiene plan_personal_*: a la personal en Gratis se la
+  // cierra su candado de siempre (exigir_cuenta_activa, 110), que también
+  // tiene que seguir una sola vez. Editar, revaluar y quitar son UPDATE de
+  // esa tabla: se prueban con una cuenta nueva, que anota en la prueba y
+  // después queda en Gratis.
+  ok('cuenta_activa_bienes (132) existe una sola vez, antes de insertar o editar',
+    (await db.query(`select count(*)::int n, min(pg_get_triggerdef(oid)) def from pg_trigger where tgname = 'cuenta_activa_bienes'`)).rows[0],
+    { n: 1, def: 'CREATE TRIGGER cuenta_activa_bienes BEFORE INSERT OR UPDATE ON public.bienes FOR EACH ROW EXECUTE FUNCTION exigir_cuenta_activa()' });
+  {
+    rechazado('y después de repetir la 110, la gratis sigue sin anotar lo que tiene',
+      await como(U.uid, "select public.guardar_bien($1,'Auto','vehiculo',80000000)", [U.empresaId]), ES_DE_PAGO);
+    ok('  no quedó nada anotado', await contar('select count(*)::int n from public.bienes where empresa_id = $1', [U.empresaId]), 0);
+    const W = await H.montarEmpresa(db, { email: 'walter@casa.com', nombre: 'Lo de Walter', tipoCuenta: 'personal' });
+    const autoW = (await fila(W.uid, "select public.guardar_bien($1,'Auto','vehiculo',80000000) id", [W.empresaId]))?.id;
+    const filaW = async () => (await db.query('select nombre, valor::int as valor, activo, baja from public.bienes where id = $1', [autoW])).rows[0];
+    ok('(una personal anota su auto en la prueba)', await filaW(), { nombre: 'Auto', valor: 80000000, activo: true, baja: null });
+    await vencer(db, W.empresaId);
+    ok('(y queda en Gratis)', (await db.query('select public.es_gratis_personal($1) g', [W.empresaId])).rows[0].g, true);
+    rechazado('en Gratis no le cambia el nombre', await como(W.uid, "select public.guardar_bien($1,'Otro nombre','vehiculo',null,null,'',$2)", [W.empresaId, autoW]), ES_DE_PAGO);
+    rechazado('ni el valor', await como(W.uid, 'select public.actualizar_valor_bien($1,$2,1)', [W.empresaId, autoW]), ES_DE_PAGO);
+    rechazado('ni lo quita de la lista', await como(W.uid, "select public.quitar_bien($1,$2,'vendido')", [W.empresaId, autoW]), ES_DE_PAGO);
+    ok('  lo que anotó queda como lo dejó: vuelve con el Pro', await filaW(), { nombre: 'Auto', valor: 80000000, activo: true, baja: null });
+    aceptado('y leerlo sigue andando (la pantalla lo tapa; la base no lo borra)', await como(W.uid, 'select public.patrimonio($1)', [W.empresaId]));
+  }
 
   // ═══════════════════════════════════════════════════════════
   grupo('13 · El tipo de cuenta lo cambia la administración');

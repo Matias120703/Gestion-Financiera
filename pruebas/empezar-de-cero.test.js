@@ -126,7 +126,10 @@ const QUEDAN = ['ahorros', 'ajustes_cuenta', 'ajustes_orden', 'cargas_historial'
   'bancard_cuentas', 'bancard_operaciones', 'bancard_pagadores', 'bancard_tarjetas',
   // La billetera en otras monedas (131): a cuánto está el dólar lo escribió
   // la persona, igual que sus cuentas. Vaciar no lo toca.
-  'cotizaciones_moneda'];
+  'cotizaciones_moneda',
+  // Lo que tiene y no es plata (132): su auto, su terreno. Es una anotación
+  // de la persona, sin ningún movimiento detrás: queda, como sus cuentas.
+  'bienes'];
 
 // El insert de PantallaGastos.tsx (candado-vencido.test.js), con la campaña.
 const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcion, categoria,
@@ -218,6 +221,10 @@ const MOV = `insert into public.movimientos (empresa_id, tipo, fecha, descripcio
     await val(U, "select public.ajustar_saldo_cuenta($1,$2,$3,'')", [E, C.caja, 480000]);
     // (131) La cotización del dólar que escribió para el «≈» de su billetera: queda al vaciar.
     await val(U, "select public.guardar_cotizacion_moneda($1,'USD',7400)", [E]);
+    // (132) Lo que tiene y no es plata: un auto en la lista y una moto que ya vendió. Quedan al vaciar.
+    await val(U, "select public.guardar_bien($1,'Toyota Hilux','vehiculo',80000000)", [E]);
+    const moto = (await val(U, "select public.guardar_bien($1,'Moto','vehiculo',9000000) id", [E])).id;
+    await val(U, "select public.quitar_bien($1,$2,'vendido')", [E, moto]);
     await val(U, MOV, [E, 'gasto', 'Luz', 'Servicios', 150000, null]);
     C.producto = await H.crearProducto(db, E, U, { nombre: 'Shampoo', costo: 20000, precio: 35000, stock: 10 });
     C.venta = (await val(U, 'select public.registrar_venta($1,$2) id',

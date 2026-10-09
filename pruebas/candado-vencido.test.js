@@ -118,6 +118,15 @@ const LO_QUE_SE_CIERRA = [
     [c.empresaId, c.persona, JSON.stringify([{ vence_el: c.fechaCuota, monto: 400 }, { vence_el: c.fechaCuota, monto: 600 }])]]],
   ['cobrar una cuota', true, (c) => ['select public.cobrar_fiado(p_empresa => $1, p_cliente => $2, p_monto => 100, p_cuota => $3)',
     [c.empresaId, c.persona, c.cuota]]],
+  // (132) Lo que tiene y no es plata (su auto, su terreno) vive en la
+  // Billetera y nace con su candado (cuenta_activa_bienes). `billetera` en
+  // true: también es del Pro para la personal en Gratis (grupo 6). «Ya no
+  // lo tengo» va al final de los cuatro: es un UPDATE que lo apaga, no un
+  // borrado, así que también se cierra; en prueba y pagando lo saca de la lista.
+  ['anotar algo que tiene (un auto)', true, (c, n) => ["select public.guardar_bien($1,$2,'vehiculo',80000000)", [c.empresaId, `Auto ${n}`]]],
+  ['cambiarle el nombre a algo que tiene', true, (c, n) => ["select public.guardar_bien($1,$2,'vehiculo',null,null,'',$3)", [c.empresaId, `Camioneta ${n}`, c.bien]]],
+  ['actualizar cuánto vale', true, (c, n) => ['select public.actualizar_valor_bien($1,$2,$3)', [c.empresaId, c.bien, 45000000 + n.length]]],
+  ['decir que ya no lo tiene', true, (c) => ["select public.quitar_bien($1,$2,'vendido')", [c.empresaId, c.bien]]],
   // Al final a propósito: en prueba y pagando la archiva de verdad, y
   // después ya no se le podría transferir.
   ['archivar una cuenta con movimientos', true, (c) => ['select public.quitar_cuenta_dinero($1,$2)', [c.empresaId, c.cuenta2]]],
@@ -198,6 +207,8 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
     await db.query(
       `update public.fiado set cobro_id = $2
        where id = (select id from public.fiado where empresa_id = $1 and tipo = 'cobro' limit 1)`, [E, mov]);
+    // (132) Algo que tiene y no es plata, anotado con la cuenta viva.
+    c.bien = (await val(U, "select public.guardar_bien($1,'Camioneta','vehiculo',50000000) id", [E])).id;
     if (!negocio) return c;
 
     // La agenda (sillas.test.js, reparto.test.js): un turno cobrado y pagado
@@ -285,6 +296,10 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
   ok('ni un ajuste, un paquete o una clase nuevos',
     [await filasDe('ajustes_cuenta', NV.empresaId), await filasDe('paquetes', NV.empresaId),
       await filasDe('clases_dadas', NV.empresaId)], otrasAntes);
+  // (132) Lo que tenía anotado sigue igual: ni uno nuevo, ni otro nombre, ni otro valor, ni fuera de la lista.
+  ok('ni un bien nuevo, renombrado, revaluado o quitado (132)',
+    (await db.query('select nombre, valor::int as valor, activo, baja from public.bienes where empresa_id=$1 order by created_at', [NV.empresaId])).rows,
+    [{ nombre: 'Camioneta', valor: 50000000, activo: true, baja: null }]);
   // Desde el navegador estas tablas ni se tocan (sin grants): el candado es
   // para las funciones. Se prueba igual, con su sesión y sin RLS.
   rechazado('desde el navegador, fiado ni se toca',
@@ -303,6 +318,9 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
     ['un UPDATE de paquetes', 'update public.paquetes set clases = 100 where id = $1 returning id', (c) => [c.paquete]],
     ['un INSERT de clases_dadas', "insert into public.clases_dadas (empresa_id, paquete_id, fecha, cantidad) values ($1,$2,current_date,1) returning id", (c) => [c.empresaId, c.paquete]],
     ['un UPDATE de clases_dadas', "update public.clases_dadas set cantidad = 0.5 where id = $1 returning id", (c) => [c.clase]],
+    // (132) Lo que tiene y no es plata.
+    ['un INSERT de bienes', "insert into public.bienes (empresa_id, nombre, valor, moneda, valor_al) values ($1,'Por atrás',1,'PYG',current_date) returning id", (c) => [c.empresaId]],
+    ['un UPDATE de bienes', 'update public.bienes set valor = 1 where id = $1 returning id', (c) => [c.bien]],
   ];
   for (const [nombre, sql, args] of DIRECTO) {
     rechazado(`ni desde una función: ${nombre}`, await comoFuncion(NV.uid, sql, args(NV)), CANDADO);
@@ -564,8 +582,10 @@ const LO_DE_LA_BILLETERA = LO_QUE_SE_CIERRA.filter(([, billetera]) => billetera)
   grupo('11 · La 111 se puede aplicar dos veces');
   // ═══════════════════════════════════════════════════════════
   // crearBase ya la aplicó una vez y el grupo 10, dos más.
+  // cuenta_activa_bienes (132): no lo crea la 111, pero tiene que seguir una
+  // sola vez después de repetirla.
   const disparadores = ['cuenta_activa_fiado', 'cuenta_activa_cuentas_dinero', 'cuenta_activa_ajustes_cuenta',
-    'cuenta_activa_paquetes', 'cuenta_activa_clases_dadas', 'plan_personal_fiado'];
+    'cuenta_activa_paquetes', 'cuenta_activa_clases_dadas', 'plan_personal_fiado', 'cuenta_activa_bienes'];
   const trg = (await db.query(
     'select tgname, count(*)::int n from pg_trigger where tgname = any($1) group by tgname', [disparadores])).rows;
   ok('cada disparador existe una sola vez',

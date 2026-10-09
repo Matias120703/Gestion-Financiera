@@ -534,6 +534,16 @@ export const MENSAJES_PT: Record<string, string> = {
   // Deshacer un pase cuando una de sus dos cuentas ya se quitó (quedó
   // archivada): la plata iría o vendría de una cuenta que nadie ve.
   'Una de las dos cuentas ya no está en tu billetera: ese pase no se puede deshacer.': 'Uma das duas contas não está mais na sua carteira: essa transferência não pode ser desfeita.',
+  // 132 · lo que tenés y no es plata (un auto, un terreno)
+  'Ponele un nombre, para saber qué es.': 'Dê um nome, pra saber o que é.',
+  'Ese tipo de bien no existe.': 'Esse tipo de bem não existe.',
+  'Poné cuánto vale hoy, aunque sea un aproximado.': 'Informe quanto vale hoje, mesmo que seja aproximado.',
+  // Editar, cambiarle el valor o quitar algo que ya se quitó (o que nunca
+  // estuvo en la lista de esta cuenta).
+  'Eso ya no está en tu lista.': 'Isso não está mais na sua lista.',
+  'Ya tenés 100 cosas anotadas. Quitá alguna antes de sumar otra.': 'Você já tem 100 itens anotados. Remova algum antes de adicionar outro.',
+  // «Ya no lo tengo» se pide con uno de dos motivos: vendido o quitado.
+  'Ese motivo no existe.': 'Esse motivo não existe.',
 };
 
 /** Los que llevan `%`, armados una sola vez como expresiones. */
