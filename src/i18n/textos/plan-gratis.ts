@@ -32,7 +32,7 @@ export const planGratisEs = {
     detalle: {
       deudas: 'Lo que debés, cada cuota y cuándo vence.',
       fiado: 'Quién te debe plata, cuánto, y el mensaje para cobrarle.',
-      billetera: 'Cuánto tenés en cada banco y en efectivo.',
+      billetera: 'Cuánto tenés en cada cuenta, en otras monedas, y lo que tenés: tu auto, tu terreno.',
       organizacion: 'Cuánto podés gastar por día hasta tu próximo cobro, tus gastos fijos y tus ahorros.',
       reportes: 'Tus números del mes explicados, y el Excel para bajar.',
     },
@@ -145,7 +145,7 @@ export const planGratisPt: typeof planGratisEs = {
     detalle: {
       deudas: 'O que você deve, cada parcela e quando vence.',
       fiado: 'Quem te deve dinheiro, quanto, e a mensagem pra cobrar.',
-      billetera: 'Quanto você tem em cada banco e em dinheiro.',
+      billetera: 'Quanto você tem em cada conta, em outras moedas, e o que você tem: seu carro, seu terreno.',
       organizacion: 'Quanto você pode gastar por dia até o próximo pagamento, seus gastos fixos e suas reservas.',
       reportes: 'Seus números do mês explicados, e o Excel pra baixar.',
     },

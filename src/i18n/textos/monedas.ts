@@ -20,6 +20,12 @@
  *
  * Lo aproximado se dice con «≈» y nada más: sin «tipo de cambio», sin
  * «conversión». «Cotización» sí, que es como se dice en la calle.
+ *
+ * EL PATRIMONIO (132) es el tercer bloque, `patrimonio`. Matías: «También
+ * tiene que ver lo que sería patrimonios; por ejemplo, un auto, un terreno,
+ * lo que sea». Son los textos de «Lo que tenés» y de «Tengo en total», en la
+ * misma Billetera. Tampoco nombran ninguna moneda: «Depende del dólar que
+ * pusiste» recibe «dólar» de afuera, y un negocio en reales lee «del real».
  */
 export const monedasEs = {
   billetera: {
@@ -87,6 +93,55 @@ export const monedasEs = {
     entranA: (monto: string, cuenta: string) => `Entran ${monto} a ${cuenta}`,
     repartoMuyChico: 'Ese importe es muy chico para repartirlo entre todos los lotes.',
   },
+
+  patrimonio: {
+    // ---- lo que tenés: la lista y sus hojas ----
+    loQueTenes: 'Lo que tenés',
+    agregar: 'Agregar',
+    agregarUnBien: '+ Anotar algo que tenés',
+    vacioDetalle: 'Un auto, un terreno, una casa: lo que tenés y no es plata.',
+    algoQueTenes: 'Algo que tenés',
+    /** Por el tipo que guarda la base (132). */
+    tipos: {
+      vehiculo: 'Auto o moto', terreno: 'Terreno', casa: 'Casa o local',
+      maquina: 'Máquina', animales: 'Animales', otro: 'Otro',
+    } as Record<string, string>,
+    queEs: '¿Qué es?',
+    /** Lo que se ve en el campo vacío, según el tipo marcado. */
+    ejemplo: {
+      vehiculo: 'Toyota Hilux 2018', terreno: 'Terreno en Luque', casa: 'Casa de Lambaré',
+      maquina: 'Tractor', animales: '120 vacas', otro: 'Lo que sea',
+    } as Record<string, string>,
+    cuantoValeHoy: '¿Cuánto vale hoy?',
+    valorDetalle: 'Lo que vos calculás. Lo cambiás cuando quieras.',
+    nota: 'Nota',
+    noMueveCuentas: 'Anotarlo no mueve ninguna cuenta.',
+    /** Sin punto final: la fecha corta ya puede traer el suyo («8 oct.»). */
+    valorDel: (fecha: string) => `valor del ${fecha}`,
+    actualizarValor: 'Actualizar valor',
+    yaNoLoTengo: 'Ya no lo tengo',
+    loVendi: 'Lo vendí',
+    sacarDeLaLista: 'Sacarlo de la lista',
+    siEntroPlata: 'Si entró plata, ajustá el saldo de esa cuenta.',
+    irAMisCuentas: 'Ir a mis cuentas',
+
+    // ---- tengo en total ----
+    tengoEnTotal: 'Tengo en total',
+    plata: 'Plata',
+    deEsoGuardado: (monto: string) => `de eso, guardado: ${monto}`,
+    teDeben: 'Te deben',
+    debes: 'Debés',
+    mercaderia: 'Mercadería · a precio de costo',
+    /** Recibe el símbolo: «ver en US$». */
+    verEn: (simbolo: string) => `ver en ${simbolo}`,
+    /** Recibe la moneda que se cotizó, en singular: «del dólar», «del real». */
+    esAproximado: (moneda: string) => `Depende del ${moneda} que pusiste y de lo que calculás que valen tus cosas.`,
+    /** Con más de una moneda cotizada. */
+    esAproximadoVarios: 'Depende de los cambios que pusiste y de lo que calculás que valen tus cosas.',
+    esAproximadoSinCambio: 'Depende de lo que calculás que valen tus cosas.',
+    /** Una moneda que Orden no sabe cotizar (un fondo en libras): no hay «≈» ni dónde ponerlo. */
+    sinTotal: (moneda: string) => `Sin total: no hay cotización para ${moneda}.`,
+  },
 };
 
 export const monedasPt: typeof monedasEs = {
@@ -142,5 +197,45 @@ export const monedasPt: typeof monedasEs = {
     salenDe: (monto: string, cuenta: string) => `Saem ${monto} de ${cuenta}`,
     entranA: (monto: string, cuenta: string) => `Entram ${monto} em ${cuenta}`,
     repartoMuyChico: 'Esse valor é pequeno demais para dividir entre todos os lotes.',
+  },
+
+  patrimonio: {
+    loQueTenes: 'O que você tem',
+    agregar: 'Adicionar',
+    agregarUnBien: '+ Anotar algo que você tem',
+    vacioDetalle: 'Um carro, um terreno, uma casa: o que você tem e não é dinheiro.',
+    algoQueTenes: 'Algo que você tem',
+    tipos: {
+      vehiculo: 'Carro ou moto', terreno: 'Terreno', casa: 'Casa ou loja',
+      maquina: 'Máquina', animales: 'Animais', otro: 'Outro',
+    } as Record<string, string>,
+    queEs: 'O que é?',
+    ejemplo: {
+      vehiculo: 'Toyota Hilux 2018', terreno: 'Terreno em Luque', casa: 'Casa em Lambaré',
+      maquina: 'Trator', animales: '120 vacas', otro: 'O que for',
+    } as Record<string, string>,
+    cuantoValeHoy: 'Quanto vale hoje?',
+    valorDetalle: 'O que você calcula. Você muda quando quiser.',
+    nota: 'Observação',
+    noMueveCuentas: 'Anotar não mexe em nenhuma conta.',
+    valorDel: (fecha: string) => `valor de ${fecha}`,
+    actualizarValor: 'Atualizar valor',
+    yaNoLoTengo: 'Não tenho mais',
+    loVendi: 'Vendi',
+    sacarDeLaLista: 'Tirar da lista',
+    siEntroPlata: 'Se entrou dinheiro, ajuste o saldo dessa conta.',
+    irAMisCuentas: 'Ir para as minhas contas',
+
+    tengoEnTotal: 'Tenho no total',
+    plata: 'Dinheiro',
+    deEsoGuardado: (monto: string) => `disso, guardado: ${monto}`,
+    teDeben: 'Devem a você',
+    debes: 'Você deve',
+    mercaderia: 'Mercadoria · a preço de custo',
+    verEn: (simbolo: string) => `ver em ${simbolo}`,
+    esAproximado: (moneda: string) => `Depende do ${moneda} que você informou e de quanto você calcula que valem suas coisas.`,
+    esAproximadoVarios: 'Depende dos câmbios informados e de quanto você calcula que valem suas coisas.',
+    esAproximadoSinCambio: 'Depende de quanto você calcula que valem suas coisas.',
+    sinTotal: (moneda: string) => `Sem total: não há cotação para ${moneda}.`,
   },
 };

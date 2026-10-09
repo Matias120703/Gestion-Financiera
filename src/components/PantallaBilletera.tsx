@@ -9,7 +9,7 @@ import { decimalesDe, dinero, simboloDe } from '@/lib/formato';
 import { useOcultarMontos } from '@/lib/ocultar-montos';
 import { useLocale, useTextos } from '@/i18n/cliente';
 import { metodoVisible } from '@/i18n/nombres';
-import type { Billetera, CotizacionDeMoneda, CuentaDinero, TipoCuentaDinero } from '@/lib/tipos';
+import type { Billetera, CotizacionDeMoneda, CuentaDinero, Patrimonio, TipoCuentaDinero } from '@/lib/tipos';
 import { PlataSinCuenta } from '@/components/PlataSinCuenta';
 import { CampoMonto } from '@/components/CampoMonto';
 import { Confirmar } from '@/components/Hoja';
@@ -21,6 +21,7 @@ import { ElegirMoneda } from '@/components/billetera/ElegirMoneda';
 import { HojaCotizacion } from '@/components/billetera/HojaCotizacion';
 import { PasesDeCuenta } from '@/components/billetera/PasesDeCuenta';
 import { TotalesDePlata } from '@/components/billetera/TotalesDePlata';
+import { BloqueBienes } from '@/components/billetera/BloqueBienes';
 
 const METODOS = ['efectivo', 'transferencia', 'tarjeta', 'credito', 'otro'] as const;
 const TIPOS: TipoCuentaDinero[] = ['banco', 'efectivo', 'billetera'];
@@ -85,13 +86,25 @@ export function BotonOjo({ oculto, alCambiar, clase = '' }: { oculto: boolean; a
  * «≈ todo junto» es aparte, chico, con su cotización a la vista
  * (TotalesDePlata). Quien no tiene ninguna cuenta en otra moneda ve la
  * billetera de siempre: lo único nuevo es la fila «Moneda» al crear una.
+ *
+ * LO QUE TENÉS Y NO ES PLATA (132)
+ *
+ * Matías: «También tiene que ver lo que sería patrimonios; por ejemplo, un
+ * auto, un terreno, lo que sea». Debajo de las cuentas va `BloqueBienes`: la
+ * lista de lo anotado y la tarjeta «Tengo en total». Un bien no mueve ninguna
+ * cuenta ni nada de esta pantalla. Sin `patrimonio` (una base que todavía no
+ * lo tiene) no se dibuja nada de eso.
  */
 export function PantallaBilletera({
-  empresaId, moneda, billetera,
+  empresaId, moneda, billetera, patrimonio = null, conMercaderia = false,
 }: {
   empresaId: string;
   moneda: string;
   billetera: Billetera;
+  /** (132) Null: no se pudo leer o la base todavía no lo tiene. */
+  patrimonio?: Patrimonio | null;
+  /** (132) Esta cuenta tiene Productos: su mercadería cuenta en «Tengo en total». */
+  conMercaderia?: boolean;
 }) {
   const t = useTextos();
   const b = t.billetera;
@@ -271,6 +284,9 @@ export function PantallaBilletera({
           + {b.agregarCuenta}
         </button>
       )}
+
+      {/* (132) Lo que tenés y no es plata, y «Tengo en total». Sin nada anotado: un botón suave. */}
+      {patrimonio && <BloqueBienes empresaId={empresaId} moneda={moneda} billetera={billetera} patrimonio={patrimonio} conMercaderia={conMercaderia} oculto={oculto} />}
 
       <div className="rounded-3xl border border-borde/70 p-5 text-[12.5px] leading-relaxed text-tinta/60">
         <p className="font-semibold text-tinta/75">{b.comoSeMueve}</p>

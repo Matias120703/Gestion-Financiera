@@ -4249,8 +4249,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // ---- nunca se suman monedas ----
   const tdp = leer('src/components/billetera/TotalesDePlata.tsx');
   const tdpCodigo = sinComentarios(tdp);
-  ok('131 · lo único que junta monedas es `totalAprox`, y lo usa una sola pieza', conTexto('totalAprox(').sort(),
-    ['src/components/billetera/TotalesDePlata.tsx', 'src/lib/monedas.ts']);
+  // (132) Desde el patrimonio lo usa una pieza más: `tengoEnTotal`
+  // (lib/patrimonio.ts), que junta plata, bienes y deudas con la MISMA
+  // cotización. No es otra manera de sumar monedas: es la misma función. Lo
+  // que hace con el resultado se cuida en el bloque de la 132, más abajo.
+  ok('131 · lo único que junta monedas es `totalAprox`, y lo usan dos piezas: «Tu plata» y «Tengo en total» (132)', conTexto('totalAprox(').sort(),
+    ['src/components/billetera/TotalesDePlata.tsx', 'src/lib/monedas.ts', 'src/lib/patrimonio.ts']);
   ok('131 · ese total se muestra SOLO con «≈», y si falta una cotización hay una pregunta en vez de un número',
     [(tdpCodigo.match(/junto\.total/g) || []).length, tdpCodigo.includes('{m.aproxTotal(plata(junto.total, moneda))}'),
       tdpCodigo.includes('junto.total !== null ? ('), (tdpCodigo.match(/m\.ponerCotizacion\(/g) || []).length],
@@ -4368,8 +4372,12 @@ ok('un rubro desconocido no rompe: cae en comercio',
     [...hEs, ...hPt].filter(([, , texto]) => typeof texto !== 'string' || texto.trim() === '' || /undefined|NaN|\[object/.test(texto)).map(([k]) => k), []);
   ok('131 · cada frase que recibe datos los usa todos',
     [...hEs, ...hPt].filter(([, n, texto]) => (n >= 1 && !texto.includes('⟨a⟩')) || (n >= 2 && !texto.includes('⟨b⟩'))).map(([k]) => k), []);
+  // (132) Cuatro del patrimonio se escriben igual en los dos idiomas y están
+  // bien así: «Terreno», «Máquina», una marca («Toyota Hilux 2018») y «120
+  // vacas». Van nombradas una por una: cualquier otra que quede igual, falla.
+  const IGUALES_EN_PT = /^billetera\.(monedas\.|nombreBilleteraOtra)|^patrimonio\.(tipos\.(terreno|maquina)|ejemplo\.(vehiculo|animales))$/;
   ok('131 · el portugués está traducido (no quedó la frase en español)',
-    hEs.filter(([k, n, texto], i) => n === -1 && texto === hPt[i][2] && !/^billetera\.(monedas\.|nombreBilleteraOtra)/.test(k)).map(([k]) => k), []);
+    hEs.filter(([k, n, texto], i) => n === -1 && texto === hPt[i][2] && !IGUALES_EN_PT.test(k)).map(([k]) => k), []);
   // Simétrico: ninguna frase nombra una moneda. La nombra quien la llama, con
   // la del negocio o la de la cuenta, y un negocio en dólares lee lo mismo.
   ok('131 · ninguna frase dice «guaraníes» ni «dólares»: la moneda llega de afuera',
@@ -4397,8 +4405,11 @@ ok('un rubro desconocido no rompe: cae en comercio',
   // Lo que usan las pantallas existe en el diccionario (una clave mal escrita
   // la frena tsc; esto frena una clave que nadie usa).
   const usos = todos.filter((r) => r !== 'src/i18n/textos/monedas.ts').map((r) => codigo[r]).join('\n');
+  // (132) Los nombres y los ejemplos de cada tipo de bien se leen por el tipo
+  // (`p.tipos[tipo]`, `p.ejemplo[tipo]`), como los nombres de las monedas:
+  // que estén los seis y que se usen así lo mira el bloque de la 132.
   ok('131 · no quedó ningún texto de monedas sin usar',
-    hEs.map(([k]) => k).filter((k) => !k.startsWith('billetera.monedas.'))
+    hEs.map(([k]) => k).filter((k) => !k.startsWith('billetera.monedas.') && !/^patrimonio\.(tipos|ejemplo)\./.test(k))
       .filter((k) => !new RegExp(`\\.${k.split('.').pop()}\\b`).test(usos)), []);
   ok('131 · lo aproximado lleva «≈» adelante en los dos idiomas',
     [monedasEs.billetera.aproxTotal('X').startsWith('≈ X'), monedasPt.billetera.aproxTotal('X').startsWith('≈ X'),
@@ -4641,9 +4652,475 @@ ok('un rubro desconocido no rompe: cae en comercio',
   const sinCompilar = (archivos) => { const c = queCompila(archivos); return [...pedidos].filter((k) => !c.has(k)).sort(); };
   ok('131 · revisión · todo lo que las pruebas piden de .compilado/ está en la lista de tsconfig.calculos.json (o lo importa algo de la lista)',
     [pedidos.size > 40, tsconfig.include, sinCompilar(tsconfig.files)], [true, ['../src/lib/reportes/*.ts'], []]);
+  // (132) `patrimonio.ts` importa `monedas.ts`: desde entonces, perder solo
+  // `monedas.ts` de la lista ya no deja nada sin compilar (lo arrastra el
+  // otro). La punta que se puede perder ahora son las dos juntas; y
+  // `patrimonio.ts`, que va en su propio renglón, sola.
   ok('131 · revisión · y si al fusionar se pierde una punta de esa línea, esto lo dice aunque .compilado/ haya quedado de antes',
-    [sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/monedas.ts'))), sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/plan-pantalla.ts')))],
-    [['monedas'], ['plan-pantalla']]);
+    [sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/monedas.ts') && !f.endsWith('/patrimonio.ts'))),
+      sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/plan-pantalla.ts'))),
+      sinCompilar(tsconfig.files.filter((f) => !f.endsWith('/patrimonio.ts')))],
+    [['monedas', 'patrimonio'], ['plan-pantalla'], ['patrimonio']]);
+}
+
+// --- El patrimonio (132): la pantalla ---
+//
+// Matías: «También tiene que ver lo que sería patrimonios; por ejemplo, un
+// auto, un terreno, lo que sea». La base se prueba en bienes.test.js; esto
+// cuida la cuenta que hace la pantalla (lib/patrimonio.ts: «Tengo en total»)
+// y, en las fuentes, lo que no se negocia: un bien es una anotación (no lo
+// lee ningún reporte, Excel, panel, aviso ni resumen), nunca se suman
+// monedas sin cotización, y quien no anotó nada ve la Billetera de siempre.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const leer = (r) => fs.readFileSync(r, 'utf8').replace(/\r\n/g, '\n');
+  const sinComentarios = (s) => s
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+  const P = require('../.compilado/patrimonio.js');
+
+  /** Un patrimonio armado a mano, como lo deja `leerPatrimonio`. */
+  const pat = (moneda, d = {}) => ({
+    moneda, bienes: [], bienesPorMoneda: [], plata: [{ moneda, total: 0 }], plataDeAhorros: false,
+    ahorroApartado: 0, teDeben: 0, mercaderia: 0, debes: 0, cotizaciones: [], ...d,
+  });
+  const de = (...pares) => pares.map(([moneda, total]) => ({ moneda, total }));
+  const cot = (...pares) => pares.map(([moneda, valor]) => ({ moneda, valor, desde: '2026-10-08T12:00:00Z' }));
+  /** Lo que importa de la cuenta: el número, qué falta y cómo se ve en las otras monedas. */
+  const numeros = (t) => [t.total, t.faltan, t.enOtras.map((x) => [x.moneda, x.total])];
+
+  // ---- lo que contesta la base ----
+  // La salida real de `patrimonio()` con el ejemplo de 7.4 (bienes.test.js, grupo 7).
+  const CRUDO = {
+    debes: 12000000, plata: [{ total: 5000000, moneda: 'PYG' }, { total: 10000, moneda: 'USD' }],
+    bienes: [
+      { id: 'ed112662-a140-4f85-8c06-74b05998c44b', nota: '', tipo: 'vehiculo', valor: 80000000, moneda: 'PYG', nombre: 'Toyota Hilux', valor_al: '2026-10-08' },
+      { id: 'a1c9fdf9-48cf-4731-aed6-82419dfb7fe1', nota: '', tipo: 'terreno', valor: 30000, moneda: 'USD', nombre: 'Terreno en Luque', valor_al: '2026-10-08' },
+    ],
+    moneda: 'PYG', te_deben: 0, mercaderia: 0, cotizaciones: [{ desde: '2026-10-08T21:09:02.455-03:00', valor: 7400, moneda: 'USD' }],
+    ahorro_apartado: 0, plata_de_ahorros: false, bienes_por_moneda: [{ total: 80000000, moneda: 'PYG' }, { total: 30000, moneda: 'USD' }],
+  };
+  const ejemplo = P.leerPatrimonio(CRUDO);
+  ok('132 · lo que contesta `patrimonio()` se lee clave por clave, cada parte en su moneda',
+    [ejemplo.moneda, ejemplo.bienes.map((b) => [b.nombre, b.tipo, b.valor, b.moneda, b.valor_al]), ejemplo.bienesPorMoneda, ejemplo.plata,
+      ejemplo.plataDeAhorros, ejemplo.ahorroApartado, ejemplo.teDeben, ejemplo.mercaderia, ejemplo.debes, ejemplo.cotizaciones.map((k) => [k.moneda, k.valor])],
+    ['PYG', [['Toyota Hilux', 'vehiculo', 80000000, 'PYG', '2026-10-08'], ['Terreno en Luque', 'terreno', 30000, 'USD', '2026-10-08']],
+      de(['PYG', 80000000], ['USD', 30000]), de(['PYG', 5000000], ['USD', 10000]), false, 0, 0, 0, 12000000, [['USD', 7400]]]);
+  ok('132 · si eso no es un patrimonio (la función no existe todavía, o contestó otra cosa) es «no hay»: null',
+    [null, undefined, 'error', 7, [], {}, { moneda: 'PYG' }, { bienes: [] }, { moneda: '', bienes: [] }, { moneda: 'PYG', bienes: 'x' }].map((x) => P.leerPatrimonio(x)),
+    Array(10).fill(null));
+  ok('132 · lo que falte adentro vale cero o vacío, y un número que llega como texto es un número',
+    P.leerPatrimonio({ moneda: 'USD', bienes: [{ id: 'a', nombre: 'Tractor', valor: '45000.50' }, { nombre: 'sin id' }, null], te_deben: '2500', plata: [{ moneda: 'USD', total: '20000' }, { total: 5 }] }),
+    { moneda: 'USD', bienes: [{ id: 'a', nombre: 'Tractor', tipo: 'otro', valor: 45000.5, moneda: 'USD', valor_al: '', nota: '' }],
+      bienesPorMoneda: [], plata: de(['USD', 20000]), plataDeAhorros: false, ahorroApartado: 0, teDeben: 2500, mercaderia: 0, debes: 0, cotizaciones: [] });
+
+  // ---- TENGO EN TOTAL ≈ plata + te deben + mercadería + bienes − debés ----
+  // El ejemplo del diseño: Gs. 5.000.000 en el banco, US$ 10.000 en otra
+  // cuenta, un auto de Gs. 80.000.000, un terreno de US$ 30.000, una deuda de
+  // Gs. 12.000.000; dólar a 7.400. En guaraníes: 5.000.000 + 80.000.000 −
+  // 12.000.000 = 73.000.000. En dólares: 40.000 × 7.400 = 296.000.000.
+  const t1 = P.tengoEnTotal(ejemplo);
+  ok('132 · el ejemplo del diseño: ≈ Gs. 369.000.000', t1.total, 369000000);
+  ok('132 · «ver en US$»: la misma cuenta al revés, ≈ US$ 49.864,86', t1.enOtras, de(['USD', 49864.86]));
+  ok('132 · sus renglones van cada uno en su moneda, sin convertir',
+    [t1.plata, t1.bienes, t1.debes, t1.teDeben, t1.mercaderia, t1.guardado],
+    [de(['PYG', 5000000], ['USD', 10000]), de(['PYG', 80000000], ['USD', 30000]), 12000000, 0, 0, 0]);
+  ok('132 · y dice qué moneda se convirtió para llegar (es el cambio que se muestra al lado)', [t1.conCambio, t1.faltan, t1.imposibles], [['USD'], [], []]);
+
+  // Al revés: banco US$ 20.000, caja Gs. 7.400.000, tractor US$ 45.000, campo
+  // US$ 30.000, deuda US$ 15.000. En dólares 80.000; la caja son US$ 1.000.
+  const productor = pat('USD', {
+    plata: de(['USD', 20000], ['PYG', 7400000]), bienesPorMoneda: de(['USD', 75000]), debes: 15000, cotizaciones: cot(['PYG', 0.0001351351]),
+  });
+  ok('132 · simétrico: el productor en dólares con una caja en guaraníes, ≈ US$ 81.000,00 (y ≈ Gs. 599.400.000)',
+    numeros(P.tengoEnTotal(productor)), [81000, [], [['PYG', 599400000]]]);
+
+  // Falta una cotización: no hay número. Nunca un total al que le falta una parte.
+  ok('132 · falta la cotización de una moneda con algo adentro: NO hay número, ni «ver en», ni cambio que mostrar',
+    [numeros(P.tengoEnTotal({ ...ejemplo, cotizaciones: [] })), P.tengoEnTotal({ ...ejemplo, cotizaciones: [] }).conCambio], [[null, ['USD'], []], []]);
+  ok('132 · una cotización en cero es como no tenerla', numeros(P.tengoEnTotal({ ...ejemplo, cotizaciones: cot(['USD', 0]) })), [null, ['USD'], []]);
+  ok('132 · con dos monedas y una sola cotizada, tampoco hay número (falta la otra)',
+    numeros(P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 1000000], ['USD', 100]), bienesPorMoneda: de(['BRL', 500]), cotizaciones: cot(['USD', 7400]) }))),
+    [null, ['BRL'], []]);
+  const cuentaVacia = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 1000000], ['USD', 0]), bienesPorMoneda: de(['PYG', 9000000]) }));
+  ok('132 · una moneda sin nada adentro (una cuenta en dólares vacía) no pide cotización, y su renglón no se muestra',
+    [numeros(cuentaVacia), cuentaVacia.plata], [[10000000, [], []], de(['PYG', 1000000])]);
+
+  // Todo en una sola moneda: 300.000 + 5.500.000 + 250.000 − 1.000.000.
+  const unaSola = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 300000]), bienesPorMoneda: de(['PYG', 5500000]), teDeben: 250000, debes: 1000000 }));
+  ok('132 · todo en una sola moneda: el total sale sin ninguna cotización, sin «ver en» y sin cambio que mostrar',
+    [numeros(unaSola), unaSola.conCambio], [[5050000, [], []], []]);
+
+  // Debe más de lo que tiene: el total es negativo (y la pantalla lo pinta en rojo).
+  ok('132 · neto negativo: Gs. 300.000 + Gs. 5.500.000 − Gs. 20.000.000 = − Gs. 14.200.000',
+    numeros(P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 300000]), bienesPorMoneda: de(['PYG', 5500000]), debes: 20000000 }))), [-14200000, [], []]);
+  // US$ 1.000 a 7.400 son 7.400.000; menos 10.000.000 quedan −2.600.000, que en dólares son −351,35.
+  ok('132 · negativo también visto en la otra moneda',
+    numeros(P.tengoEnTotal(pat('PYG', { bienesPorMoneda: de(['USD', 1000]), debes: 10000000, cotizaciones: cot(['USD', 7400]) }))), [-2600000, [], [['USD', -351.35]]]);
+
+  // Sin bienes la tarjeta no se dibuja, pero la cuenta no se rompe.
+  const sinBienes = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 2850000]) }));
+  const sinNada = P.tengoEnTotal(pat('PYG'));
+  ok('132 · sin bienes: es la plata (más lo que te deben, menos lo que debés), y «Lo que tenés» no tiene renglones',
+    [numeros(sinBienes), sinBienes.bienes, numeros(sinNada), sinNada.plata], [[2850000, [], []], [], [0, [], []], de(['PYG', 0])]);
+
+  // Los ahorros NO se suman: ya están adentro de la plata.
+  const conFondo = P.tengoEnTotal(pat('PYG', { plata: de(['PYG', 3200000]), ahorroApartado: 2000000, bienesPorMoneda: de(['PYG', 9000000]) }));
+  ok('132 · lo guardado en un fondo no suma: Gs. 3.200.000 + Gs. 9.000.000 = Gs. 12.200.000, con «de eso, guardado: Gs. 2.000.000»',
+    [conFondo.total, conFondo.guardado], [12200000, 2000000]);
+  ok('132 · un guardado negativo (la diferencia de cambio de un fondo) no se muestra',
+    P.tengoEnTotal(pat('PYG', { ahorroApartado: -50000 })).guardado, 0);
+  const enLibras = P.tengoEnTotal(pat('PYG', { plataDeAhorros: true, plata: de(['PYG', 0], ['GBP', 500]), bienesPorMoneda: de(['PYG', 40000000], ['USD', 100]) }));
+  ok('132 · un fondo en una moneda que Orden no sabe cotizar (libras): no hay número, y se sabe que para esa no hay enlace que sirva',
+    [enLibras.total, enLibras.faltan, enLibras.imposibles, enLibras.enOtras], [null, ['GBP', 'USD'], ['GBP'], []]);
+
+  // La mercadería cuenta solo para quien tiene Productos, y solo si es positiva.
+  const conStock = pat('PYG', { plata: de(['PYG', 1000000]), bienesPorMoneda: de(['PYG', 2000000]), mercaderia: 3500000 });
+  ok('132 · la mercadería suma solo con la pantalla de Productos; sin ella el renglón no existe y no suma',
+    [P.tengoEnTotal(conStock).total, P.tengoEnTotal(conStock).mercaderia, P.tengoEnTotal(conStock, true).total, P.tengoEnTotal(conStock, true).mercaderia],
+    [3000000, 0, 6500000, 3500000]);
+  ok('132 · una mercadería negativa (solo stock negativo) no se muestra ni resta',
+    [P.tengoEnTotal({ ...conStock, mercaderia: -40000 }, true).total, P.tengoEnTotal({ ...conStock, mercaderia: -40000 }, true).mercaderia], [3000000, 0]);
+  // 1,5 kg × 33.333,33 = 49.999,995: la base no lo redondea.
+  ok('132 · una mercadería con decimales de más se redondea a su moneda, y el total es la suma de lo que se ve',
+    [P.tengoEnTotal(pat('PYG', { mercaderia: 49999.995 }), true).mercaderia, P.tengoEnTotal(pat('PYG', { mercaderia: 49999.995 }), true).total,
+      P.tengoEnTotal(pat('USD', { mercaderia: 1234.5678 }), true).mercaderia],
+    [50000, 50000, 1234.57]);
+  ok('132 · un «te deben» o un «debés» en cero (o negativo) no tiene renglón',
+    [P.tengoEnTotal(pat('PYG', { teDeben: 0, debes: 0 })), P.tengoEnTotal(pat('PYG', { teDeben: -5, debes: -5 }))].map((t) => [t.teDeben, t.debes, t.total]),
+    [[0, 0, 0], [0, 0, 0]]);
+
+  // Tres monedas: un comercio en guaraníes con reales en mano, un local en
+  // dólares y una heladera en reales. Guaraníes: 7.500.000 + 250.000 +
+  // 3.500.000 + 60.000.000 − 3.000.000 = 68.250.000. Reales: 7.300 × 1.350 =
+  // 9.855.000. Dólares: 45.000 × 7.400 = 333.000.000.
+  const comercio = pat('PYG', {
+    plata: de(['PYG', 7500000], ['BRL', 800]), teDeben: 250000, mercaderia: 3500000,
+    bienesPorMoneda: de(['PYG', 60000000], ['BRL', 6500], ['USD', 45000]), debes: 3000000, cotizaciones: cot(['USD', 7400], ['BRL', 1350]),
+  });
+  const t3 = P.tengoEnTotal(comercio, true);
+  // En reales: 68.250.000 / 1.350 = 50.555,56; 7.300; 333.000.000 / 1.350 = 246.666,67.
+  // En dólares: 68.250.000 / 7.400 = 9.222,97; 9.855.000 / 7.400 = 1.331,76; 45.000.
+  ok('132 · tres monedas: ≈ Gs. 411.105.000, y el mismo total visto en reales y en dólares',
+    [numeros(t3), t3.conCambio], [[411105000, [], [['BRL', 304522.23], ['USD', 55554.73]]], ['BRL', 'USD']]);
+  ok('132 · el mismo comercio sin la pantalla de Productos: Gs. 3.500.000 menos', P.tengoEnTotal(comercio).total, 407605000);
+
+  // EL TOTAL ES LA SUMA DE LOS RENGLONES QUE SE VEN. La cuenta de abajo no
+  // usa nada de patrimonio.ts ni de monedas.ts: multiplica a mano.
+  const aMano = (t, propia, cotizaciones) => {
+    const porMoneda = new Map();
+    const sumar = (moneda, n) => porMoneda.set(moneda, (porMoneda.get(moneda) ?? 0) + n);
+    for (const x of [...t.plata, ...t.bienes]) sumar(x.moneda, x.total);
+    sumar(propia, t.teDeben + t.mercaderia - t.debes);
+    let total = 0;
+    for (const [moneda, n] of porMoneda) total += moneda === propia ? n : n * cotizaciones.find((k) => k.moneda === moneda).valor;
+    return Math.round(total);
+  };
+  ok('132 · el número de abajo es la suma de los renglones de arriba, ni un renglón más ni uno menos',
+    [[ejemplo, false], [comercio, true], [comercio, false], [{ ...conStock, cotizaciones: [] }, true], [{ ...conStock, mercaderia: -40000 }, true]]
+      .map(([p, conMercaderia]) => { const t = P.tengoEnTotal(p, conMercaderia); return t.total - aMano(t, p.moneda, p.cotizaciones); }),
+    [0, 0, 0, 0, 0]);
+
+  // «ver en»: lo que ya está en esa moneda no se toca. Un negocio en dólares
+  // con Gs. 7.412.345 en la caja y US$ 100 en un bien: en dólares, 100 +
+  // 1.001,67; en guaraníes, 740.000 + 7.412.345 justos (y no 1.101,67 × 7.400).
+  ok('132 · «ver en» convierte cada moneda directo a la que se quiere ver: los guaraníes de la caja siguen siendo los que son',
+    numeros(P.tengoEnTotal(pat('USD', { plata: de(['USD', 0], ['PYG', 7412345]), bienesPorMoneda: de(['USD', 100]), cotizaciones: cot(['PYG', 0.0001351351]) }))),
+    [1101.67, [], [['PYG', 8152345]]]);
+
+  // NUNCA UN NÚMERO SIN COTIZACIÓN: todas las combinaciones de dos monedas
+  // ajenas con plata (nada, a favor, en rojo), con o sin bienes, y con la
+  // cotización puesta, en cero o sin poner. Hay número si y solo si cada
+  // moneda con algo adentro tiene su cotización.
+  {
+    const OTRAS = [['USD', 7400], ['BRL', 1350]];
+    const opciones = [];
+    for (const plata of [0, 100, -100]) for (const bien of [0, 50]) for (const c of ['falta', 'cero', 'puesta']) opciones.push({ plata, bien, c });
+    let miradas = 0;
+    const mal = [];
+    for (const a of opciones) {
+      for (const b of opciones) {
+        const elegidas = [a, b];
+        const p = pat('PYG', {
+          plata: [{ moneda: 'PYG', total: 1000000 }, ...OTRAS.map(([moneda], i) => ({ moneda, total: elegidas[i].plata }))],
+          bienesPorMoneda: OTRAS.flatMap(([moneda], i) => (elegidas[i].bien ? [{ moneda, total: elegidas[i].bien }] : [])),
+          cotizaciones: OTRAS.flatMap(([moneda, valor], i) => (elegidas[i].c === 'falta' ? [] : cot([moneda, elegidas[i].c === 'cero' ? 0 : valor]))),
+        });
+        const t = P.tengoEnTotal(p);
+        const faltan = OTRAS.filter(([, ], i) => elegidas[i].plata + elegidas[i].bien !== 0 && elegidas[i].c !== 'puesta').map(([moneda]) => moneda);
+        const esperado = faltan.length > 0
+          ? null
+          : 1000000 + OTRAS.reduce((s, [, valor], i) => s + (elegidas[i].plata + elegidas[i].bien) * valor, 0);
+        miradas++;
+        if (t.total !== esperado || JSON.stringify([...t.faltan].sort()) !== JSON.stringify([...faltan].sort())
+          || (t.total === null && (t.enOtras.length > 0 || t.conCambio.length > 0))) mal.push(JSON.stringify({ a, b, total: t.total, faltan: t.faltan }));
+      }
+    }
+    ok('132 · 324 combinaciones de dos monedas ajenas: hay número si y solo si cada moneda con algo adentro tiene su cotización', [miradas, mal], [324, []]);
+  }
+
+  // La hoja de la cotización, abierta desde «Tengo en total», pregunta por
+  // las monedas de TODO lo que se junta: también la de un terreno en dólares
+  // de quien no tiene ninguna cuenta en dólares.
+  ok('132 · qué monedas hay que cotizar, cada una con lo que hay en ella (plata más bienes de ESA moneda)',
+    [P.monedasACotizar(ejemplo), P.monedasACotizar(pat('PYG', { bienesPorMoneda: de(['PYG', 9000000], ['USD', 30000]) })), P.monedasACotizar(productor),
+      P.monedasACotizar(pat('PYG', { plata: de(['PYG', 5], ['USD', 0]), bienesPorMoneda: de(['PYG', 5]) })),
+      P.monedasACotizar(pat('PYG', { plataDeAhorros: true, plata: de(['PYG', 0], ['GBP', 500]), bienesPorMoneda: de(['USD', 10]) }))],
+    [de(['USD', 40000]), de(['USD', 30000]), de(['PYG', 7400000]), [], de(['USD', 10])]);
+
+  ok('132 · una estimación de MÁS de un año se marca; justo un año, o sin fecha, no',
+    [P.valorViejo('2025-10-07', '2026-10-08'), P.valorViejo('2025-10-08', '2026-10-08'), P.valorViejo('2025-10-09', '2026-10-08'),
+      P.valorViejo('2024-03-10', '2026-10-08'), P.valorViejo('2026-10-08', '2026-10-08'), P.valorViejo('', '2026-10-08'),
+      P.valorViejo(null, '2026-10-08'), P.valorViejo('ayer', '2026-10-08'), P.valorViejo('2027-02-28', '2028-02-29'), P.valorViejo('2027-03-01', '2028-02-29')],
+    [true, false, false, true, false, false, false, false, true, false]);
+  const m132 = leer('supabase/migrations/132_bienes.sql');
+  ok('132 · los tipos de bien son los seis de la base, en el orden en que se ofrecen; uno desconocido se muestra como «otro»',
+    [P.TIPOS_DE_BIEN, m132.includes(`check (tipo in (${P.TIPOS_DE_BIEN.map((x) => `'${x}'`).join(', ')}))`),
+      ['vehiculo', 'animales', 'otro', 'barco', '', null, undefined].map((x) => P.tipoDeBien(x))],
+    [['vehiculo', 'terreno', 'casa', 'maquina', 'animales', 'otro'], true, ['vehiculo', 'animales', 'otro', 'otro', 'otro', 'otro', 'otro']]);
+  ok('132 · patrimonio.ts es pura: solo importa monedas.ts y los tipos (se compila suelta)',
+    (leer('src/lib/patrimonio.ts').match(/^import .*$/gm) || []),
+    ["import { convertirEntre, esMoneda, totalAprox } from './monedas';", "import type { Bien, CotizacionDeMoneda, ParteDeMoneda, Patrimonio, TipoBien } from './tipos';"]);
+
+  // ---- las fuentes ----
+  const todos = [];
+  (function andar(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const r = path.posix.join(dir, e.name);
+      if (e.isDirectory()) andar(r);
+      else if (/\.tsx?$/.test(e.name)) todos.push(r);
+    }
+  })('src');
+  const codigo = Object.fromEntries(todos.map((r) => [r, sinComentarios(leer(r))]));
+  const conTexto = (texto) => todos.filter((r) => codigo[r].includes(texto)).sort();
+  const BLOQUE = 'src/components/billetera/BloqueBienes.tsx';
+  const HOJA = 'src/components/billetera/HojaBien.tsx';
+  const TARJETA = 'src/components/billetera/TarjetaTengoEnTotal.tsx';
+  const bloque = codigo[BLOQUE], hoja = codigo[HOJA], tarjeta = codigo[TARJETA];
+  const bill = codigo['src/components/PantallaBilletera.tsx'];
+  const pagina = codigo['src/app/(app)/billetera/page.tsx'];
+  const lib = codigo['src/lib/billetera.ts'];
+
+  // UN BIEN ES UNA ANOTACIÓN: fuera de la Billetera nadie lo nombra. Si mañana
+  // un reporte, un Excel, el panel, un aviso o el resumen semanal leyera los
+  // bienes o `patrimonio()`, su archivo aparecería en esta lista.
+  ok('132 · los bienes y el patrimonio viven SOLO en la Billetera: ningún reporte, Excel, panel, aviso ni resumen los nombra',
+    todos.filter((r) => /patrimoni|\bbienes\b|_bien\b|BloqueBienes|HojaBien|TengoEnTotal/i.test(leer(r))).sort(),
+    ['src/app/(app)/billetera/page.tsx', BLOQUE, HOJA, TARJETA, 'src/components/PantallaBilletera.tsx',
+      'src/i18n/textos/monedas.ts', 'src/lib/billetera.ts', 'src/lib/patrimonio.ts', 'src/lib/tipos.ts'].sort());
+  ok('132 · y ninguno de esos lugares está en la lista (por si un día se muda algo)',
+    todos.filter((r) => /^src\/(app\/\(app\)\/(panel|reportes|cierre|movimientos)\/|app\/api\/|components\/(reportes\/|Panel|BilleteraPanel)|lib\/(reportes\/|avisos|resumen|agregados))/.test(r))
+      .filter((r) => /patrimoni|\bbienes\b|_bien\b/i.test(leer(r))),
+    []);
+  ok('132 · `patrimonio()` se pide desde un solo lugar, y solo la página de la Billetera lo usa',
+    [conTexto("rpc('patrimonio'"), conTexto('traerPatrimonio(')], [['src/lib/billetera.ts'], ['src/app/(app)/billetera/page.tsx', 'src/lib/billetera.ts']]);
+  ok('132 · las tres funciones que escriben se llaman cada una desde una sola pieza',
+    [conTexto("rpc('guardar_bien'"), conTexto("rpc('actualizar_valor_bien'"), conTexto("rpc('quitar_bien'")], [[HOJA], [HOJA], [BLOQUE]]);
+  ok('132 · no quedó ningún banco de capturas adentro de la aplicación', todos.filter((r) => /banco-/.test(r)), []);
+
+  // NUNCA SE SUMAN MONEDAS SIN COTIZACIÓN, Y EL TOTAL NO SALE DEL NAVEGADOR.
+  ok('132 · «Tengo en total» se calcula en un solo lugar y lo muestra una sola pieza',
+    [conTexto('tengoEnTotal('), conTexto('monedasACotizar(')], [['src/lib/patrimonio.ts', TARJETA].sort(), ['src/lib/patrimonio.ts', TARJETA].sort()]);
+  ok('132 · quien lo calcula no escribe en la base ni sale a internet: el número es para mirarlo',
+    [/\.rpc\(|\.insert\(|\.from\(|fetch\(|https?:/.test(tarjeta), /\.rpc\(|\.insert\(|\.from\(|fetch\(|https?:/.test(codigo['src/lib/patrimonio.ts'])], [false, false]);
+  ok('132 · el número se muestra SOLO si existe, y siempre con «≈» adelante',
+    [(tarjeta.match(/visto\.total/g) || []).length, tarjeta.includes('≈ {plata(visto.total, visto.moneda)}'), (tarjeta.match(/≈/g) || []).length,
+      tarjeta.includes('const enPropia: ParteDeMoneda | null = cuenta.total === null ? null : { moneda, total: cuenta.total };'),
+      tarjeta.includes('const visto = cuenta.enOtras.find((x) => x.moneda === verEn) ?? enPropia;'), tarjeta.includes('{visto ? (')],
+    // Tres veces, las tres adentro de `visto ? (`: el tamaño de la letra, el rojo y el número.
+    [3, true, 1, true, true, true]);
+  ok('132 · sin número hay un enlace para poner la cotización (o, si esa moneda no se cotiza, se dice), nunca un total a medias',
+    [(tarjeta.match(/m\.ponerCotizacion\(/g) || []).length, tarjeta.includes('m.ponerCotizacion(nombreUno(parDe(moneda, cuenta.faltan[0] ?? moneda).grande))'),
+      tarjeta.includes(') : cuenta.imposibles.length > 0 ? ('), tarjeta.includes("{p.sinTotal(cuenta.imposibles.join(', '))}"),
+      (tarjeta.match(/setCotizando\(true\)/g) || []).length],
+    [1, true, true, true, 2]);
+  ok('132 · ese enlace abre la hoja de la cotización que ya existe, preguntando por las monedas de todo lo que se junta',
+    [tarjeta.includes('<HojaCotizacion'), tarjeta.includes('totalesOtras: monedasACotizar(patrimonio).map((x) => ({ ...x, cuentas: 0 })),'),
+      tarjeta.includes('cotizaciones: patrimonio.cotizaciones,'), conTexto('<HojaCotizacion')],
+    [true, true, true, ['src/components/PantallaBilletera.tsx', TARJETA].sort()]);
+  ok('132 · ninguna pieza nueva suma por su cuenta: ni un `.reduce(` ni un `+=`, y la lista y la hoja no convierten nada',
+    [[BLOQUE, HOJA, TARJETA].filter((r) => /\.reduce\(|\+=/.test(codigo[r])),
+      [BLOQUE, HOJA].filter((r) => /\btengoEnTotal\(|totalAprox|convertirEntre|aPropia\(|aOtra\(|[Cc]otizaci|lib\/monedas/.test(codigo[r]))],
+    [[], []]);
+  ok('132 · cada valor se escribe con SU moneda (la lista, la hoja de quitar, los renglones)',
+    [bloque.includes('{plata(b.valor, b.moneda)}'), bloque.includes('subtitulo={`${aQuitar.nombre} · ${plata(aQuitar.valor, aQuitar.moneda)}`}'),
+      tarjeta.includes('{plata(x.total, x.moneda)}')],
+    [true, true, true]);
+  ok('132 · lo que se manda a la base es lo que escribió la persona: nunca un total',
+    [(hoja.match(/\.rpc\('([a-z_]+)'/g) || []), (bloque.match(/\.rpc\('([a-z_]+)'/g) || []), /total/i.test(hoja),
+      hoja.includes('p_empresa: empresaId, p_id: que.bien.id, p_valor: valor,'),
+      hoja.includes('p_valor: valor, p_moneda: monedaBien, p_nota: nota.trim(),'),
+      bloque.includes('p_empresa: empresaId, p_id: aQuitar.id, p_motivo: motivo,')],
+    [[".rpc('actualizar_valor_bien'", ".rpc('guardar_bien'", ".rpc('guardar_bien'"], [".rpc('quitar_bien'"], false, true, true, true]);
+
+  // ---- la página y el montaje ----
+  ok('132 · la página lee las dos cosas juntas, y a la personal en Gratis la corta ANTES de leer',
+    [pagina.includes('traerBilletera(ctx.empresa.id),\n    traerPatrimonio(ctx.empresa.id),'),
+      pagina.indexOf('if (ctx.gratisPersonal) return null;') > 0 && pagina.indexOf('if (ctx.gratisPersonal) return null;') < pagina.indexOf('traerPatrimonio('),
+      pagina.indexOf("redirect('/panel');") < pagina.indexOf('traerPatrimonio('),
+      pagina.includes("const conMercaderia = fichaDeLaCuenta(ctx.empresa).secciones['/productos'];"),
+      pagina.includes('patrimonio={patrimonio} conMercaderia={conMercaderia}')],
+    [true, true, true, true, true]);
+  const leerPat = lib.slice(lib.indexOf('export async function traerPatrimonio'));
+  ok('132 · código nuevo contra base vieja: si `patrimonio()` no se puede leer es «no hay» (null), nunca un error que tire la Billetera',
+    [leerPat.includes('Promise<Patrimonio | null>'), (leerPat.match(/return null;/g) || []).length, leerPat.includes('return leerPatrimonio(data);'),
+      /\bexigir\(|\bthrow\b/.test(leerPat), leerPat.includes('} catch (e) {')],
+    [true, 2, true, false, true]);
+  ok('132 · en la Billetera es UNA línea, debajo de las cuentas y solo si hay patrimonio',
+    [(bill.match(/<BloqueBienes/g) || []).length,
+      bill.includes('{patrimonio && <BloqueBienes empresaId={empresaId} moneda={moneda} billetera={billetera} patrimonio={patrimonio} conMercaderia={conMercaderia} oculto={oculto} />}'),
+      bill.indexOf('+ {b.agregarCuenta}') < bill.indexOf('<BloqueBienes') && bill.indexOf('<BloqueBienes') < bill.indexOf('{b.comoSeMueve}'),
+      bill.includes('empresaId, moneda, billetera, patrimonio = null, conMercaderia = false,'), conTexto('<BloqueBienes'), conTexto('<TarjetaTengoEnTotal'), conTexto('<HojaBien')],
+    [1, true, true, true, ['src/components/PantallaBilletera.tsx'], [BLOQUE], [BLOQUE]]);
+  ok('132 · quien no anotó nada ve un botón suave y nada más; la lista y «Tengo en total» aparecen con el primer bien',
+    [bloque.includes('{bienes.length === 0 ? ('), bloque.includes('className="boton-suave w-full py-3 text-[14px]">\n            {p.agregarUnBien}'),
+      bloque.includes('{p.vacioDetalle}'), /\{bienes\.length > 0 && \(\s*<TarjetaTengoEnTotal/.test(bloque),
+      bloque.indexOf('{p.agregarUnBien}') < bloque.indexOf('<Seccion') && bloque.indexOf('<Seccion') < bloque.indexOf('<TarjetaTengoEnTotal')],
+    [true, true, true, true, true]);
+
+  // ---- las hojas ----
+  ok('132 · la hoja reusa las piezas de siempre: Hoja, PieHoja, CampoMonto con los decimales de la moneda elegida, y ElegirMoneda con la propia marcada',
+    [hoja.includes("import { Hoja, MensajeError, PieHoja } from '@/components/Hoja';"), hoja.includes('decimales={decimalesDe(monedaBien)}'),
+      hoja.includes('key={monedaBien}'), hoja.includes('<ElegirMoneda propia={moneda} valor={monedaBien} alElegir={elegirMoneda} deshabilitado={guardando} />'),
+      hoja.includes('const [monedaBien, setMonedaBien] = useState(bien?.moneda ?? moneda);'), bloque.includes("import { Seccion } from '@/components/Piezas';")],
+    [true, true, true, true, true, true]);
+  ok('132 · guardando no hay doble toque: el botón se apaga, la hoja no se cierra y un segundo envío no pasa',
+    [hoja.includes('if (enCurso.current || !listo) return;'), hoja.includes('disabled={guardando || !listo}'), hoja.includes('bloqueada={guardando}'),
+      hoja.indexOf('enCurso.current = true;') < hoja.indexOf('await supabase.rpc('),
+      bloque.includes('if (!aQuitar || enCurso.current) return;'), bloque.includes('bloqueada={quitando}'), (bloque.match(/disabled=\{quitando\}/g) || []).length],
+    [true, true, true, true, true, true, 2]);
+  ok('132 · el error de la base se muestra con su mensaje, en la hoja, y la hoja queda abierta',
+    [hoja.includes('setError(mensajeDeError(fallo, t.errores.generico));'), hoja.includes('<MensajeError texto={error} />'),
+      hoja.indexOf('if (fallo) throw fallo;') < hoja.indexOf('onCerrar();'),
+      bloque.includes('setError(mensajeDeError(fallo, t.errores.generico));'), bloque.includes('<MensajeError texto={error} />')],
+    [true, true, true, true, true]);
+  ok('132 · editar manda SIEMPRE nombre, tipo y nota (lo que no se manda, la base lo deja en su valor por defecto) y nunca el valor',
+    [hoja.includes('p_empresa: empresaId, p_nombre: nombre.trim(), p_tipo: tipo, p_nota: nota.trim(), p_id: que.bien.id,'),
+      (hoja.match(/p_valor/g) || []).length, (hoja.match(/p_moneda/g) || []).length, (hoja.match(/p_id/g) || []).length],
+    [true, 2, 1, 2]);
+  ok('132 · «Actualizar valor» se puede guardar con el mismo número (queda con la fecha de hoy): solo pide un valor mayor que cero',
+    [hoja.includes("const listo = (!conNombre || nombre.trim() !== '') && (!conValor || valor > 0);"),
+      hoja.includes("const conNombre = que.modo !== 'valor';"), hoja.includes("const conValor = que.modo !== 'editar';")],
+    [true, true, true]);
+  // «Ya no lo tengo» tiene dos salidas y ninguna es cancelar: por eso no usa
+  // `Confirmar`, donde cerrar es lo mismo que el segundo botón.
+  ok('132 · «Ya no lo tengo»: dos botones, y cerrar la hoja NO saca nada de la lista',
+    [bloque.includes("onClick={() => quitar('quitado')}"), bloque.includes("onClick={() => quitar('vendido')}"), (bloque.match(/quitar\('/g) || []).length,
+      bloque.includes("onCerrar={() => { setAQuitar(null); setError(''); }}"), /<Confirmar\b/.test(bloque), bloque.includes('<PieHoja columnas={2}>')],
+    [true, true, 2, true, false, true]);
+  ok('132 · después de «Lo vendí» se recuerda dónde va la plata, con el botón que sube a las cuentas; Orden no la anota sola',
+    [bloque.includes("setVendido(motivo === 'vendido');"), bloque.includes('{p.siEntroPlata}'), bloque.includes('{p.irAMisCuentas}'),
+      bloque.includes("window.scrollTo({ top: 0, behavior: quieto ? 'auto' : 'smooth' });"), /movimientos|ajustar_saldo|transferir/.test(bloque + hoja)],
+    [true, true, true, true, false]);
+  ok('132 · un valor de más de un año lleva la fecha en ámbar, y un total negativo va en rojo',
+    [bloque.includes("<span className={valorViejo(b.valor_al, hoy) ? 'font-semibold text-ambar' : ''}>"), bloque.includes('const hoy = hoyISO(zona);'),
+      tarjeta.includes("${visto.total < 0 ? 'text-rojo' : ''}"), tarjeta.includes("<span className={c.vieja ? 'font-semibold text-ambar' : ''}>{c.fecha}</span>")],
+    [true, true, true, true]);
+  ok('132 · el ojo de la Billetera tapa también los valores y el total',
+    [bloque.includes("const plata = (n: number, enMoneda: string) => (oculto ? '••••••' : dinero(n, enMoneda, true, locale));"),
+      tarjeta.includes("if (oculto) return '••••••';"), /dinero\(/.test(tarjeta.replace(/const plata = [\s\S]*?\n  \};/, ''))],
+    [true, true, false]);
+  ok('132 · los renglones en cero no se muestran, salvo «Plata»; la mercadería y lo guardado, solo si hay',
+    [tarjeta.includes('p.plata, porMoneda(cuenta.plata),'), tarjeta.includes('{cuenta.teDeben > 0 && renglon(p.teDeben,'),
+      tarjeta.includes('{cuenta.mercaderia > 0 && renglon(p.mercaderia,'), tarjeta.includes('{cuenta.bienes.length > 0 && renglon(p.loQueTenes,'),
+      tarjeta.includes('{cuenta.debes > 0 && renglon(p.debes,'), tarjeta.includes('cuenta.guardado > 0 ? p.deEsoGuardado(plata(cuenta.guardado, moneda)) : undefined,'),
+      tarjeta.includes('const cuenta = tengoEnTotal(patrimonio, conMercaderia);')],
+    Array(7).fill(true));
+
+  // ---- los archivos nuevos: colores del proyecto, sin gráficos, sin loading ----
+  const NUEVOS = [BLOQUE, HOJA, TARJETA, 'src/lib/patrimonio.ts'];
+  ok('132 · lo nuevo y lo tocado: sin bg-white opaco ni dark:',
+    [...NUEVOS, 'src/components/PantallaBilletera.tsx', 'src/app/(app)/billetera/page.tsx', 'src/i18n/textos/monedas.ts', 'src/i18n/textos/plan-gratis.ts']
+      .filter((r) => /\bbg-white(?!\/)|\bdark:/.test(leer(r))), []);
+  ok('132 · las piezas nuevas no inventan colores: ni un hexadecimal, ni un color de Tailwind fuera de las variables del proyecto',
+    [NUEVOS.filter((r) => /#[0-9A-Fa-f]{6}\b|#[0-9A-Fa-f]{3}\b/.test(leer(r))),
+      NUEVOS.filter((r) => /\b(?:bg|text|border|ring|fill|stroke)-(?:red|green|blue|yellow|amber|orange|gray|slate|zinc|neutral|stone|emerald|lime|teal|sky|indigo|purple|pink|rose|black)-?\d*\b/.test(codigo[r])),
+      [...new Set(NUEVOS.flatMap((r) => codigo[r].match(/\b(?:bg|text|border)-(?:tinta|arena|superficie|borde|verde|rojo|ambar)[a-z-]*/g) || []))].sort()],
+    [[], [], ['bg-arena', 'bg-superficie', 'bg-verde-claro', 'border-borde', 'text-ambar', 'text-rojo', 'text-tinta', 'text-verde-fuerte']]);
+  ok('132 · no se inventó ningún gráfico: los únicos dibujos son iconos de 24 × 24',
+    [NUEVOS.filter((r) => r.endsWith('.tsx')).flatMap((r) => (codigo[r].match(/<svg[^>]*>/g) || []).filter((s) => !s.includes('viewBox="0 0 24 24"'))),
+      NUEVOS.filter((r) => /GraficoDiario|<Barra\b|<canvas|recharts|chart/i.test(codigo[r]))],
+    [[], []]);
+  ok('132 · las piezas nuevas leen sus textos con useTextos()',
+    NUEVOS.filter((r) => r.endsWith('.tsx')).map((r) => [leer(r).startsWith("'use client';"), leer(r).includes('const t = useTextos();')]),
+    Array(3).fill([true, true]));
+  ok('132 · no se creó ningún loading.tsx', todos.filter((r) => /(^|\/)loading\.tsx$/.test(r)), []);
+
+  // ---- los textos: los de la tabla del diseño, es y pt parejos ----
+  // Que es y pt tengan las mismas claves con los mismos datos, que ninguna
+  // frase nombre una moneda, que sean cortas y que no quede ninguna sin usar
+  // ya lo mira el bloque de la 131 sobre TODO monedas.ts (y este bloque vive
+  // ahí). Acá va lo propio del patrimonio.
+  const ts = require('typescript');
+  const Module = require('module');
+  const cargarTs = (relativo) => {
+    const archivo = path.join(__dirname, '..', relativo);
+    const salida = ts.transpileModule(fs.readFileSync(archivo, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+    }).outputText;
+    const m = new Module(archivo, module);
+    m.filename = archivo;
+    m.paths = Module._nodeModulePaths(path.dirname(archivo));
+    m._compile(salida, archivo);
+    return m.exports;
+  };
+  const { monedasEs, monedasPt } = cargarTs('src/i18n/textos/monedas.ts');
+  const pe = monedasEs.patrimonio, pp = monedasPt.patrimonio;
+  ok('132 · es y pt tienen las mismas claves del patrimonio, en el mismo orden', Object.keys(pp), Object.keys(pe));
+  ok('132 · los seis tipos tienen su nombre y su ejemplo en los dos idiomas',
+    [Object.keys(pe.tipos), Object.keys(pp.tipos), Object.keys(pe.ejemplo), Object.keys(pp.ejemplo)], Array(4).fill(P.TIPOS_DE_BIEN));
+  ok('132 · y se leen por el tipo, con «otro» si no se conoce',
+    [bloque.includes('const tipo = tipoDeBien(b.tipo);'), bloque.includes('{p.tipos[tipo] ?? tipo}'), hoja.includes('{p.tipos[x] ?? x}'),
+      hoja.includes("placeholder={p.ejemplo[tipo] ?? ''}"), hoja.includes('{TIPOS_DE_BIEN.map((x) => (')],
+    [true, true, true, true, true]);
+  ok('132 · los textos de la tabla del diseño, en español',
+    [pe.loQueTenes, pe.agregar, pe.agregarUnBien, pe.vacioDetalle, pe.algoQueTenes, Object.values(pe.tipos).join(' / '), pe.queEs, Object.values(pe.ejemplo).join(' / '),
+      pe.cuantoValeHoy, pe.valorDetalle, pe.nota, pe.noMueveCuentas, pe.valorDel('7 oct'), pe.actualizarValor, pe.yaNoLoTengo, pe.loVendi, pe.sacarDeLaLista,
+      pe.siEntroPlata, pe.irAMisCuentas, pe.tengoEnTotal, pe.plata, pe.deEsoGuardado('Gs. 2.000.000'), pe.teDeben, pe.debes, pe.mercaderia, pe.verEn('US$'),
+      pe.esAproximado('dólar'), pe.esAproximadoSinCambio],
+    ['Lo que tenés', 'Agregar', '+ Anotar algo que tenés', 'Un auto, un terreno, una casa: lo que tenés y no es plata.', 'Algo que tenés',
+      'Auto o moto / Terreno / Casa o local / Máquina / Animales / Otro', '¿Qué es?', 'Toyota Hilux 2018 / Terreno en Luque / Casa de Lambaré / Tractor / 120 vacas / Lo que sea',
+      '¿Cuánto vale hoy?', 'Lo que vos calculás. Lo cambiás cuando quieras.', 'Nota', 'Anotarlo no mueve ninguna cuenta.', 'valor del 7 oct', 'Actualizar valor',
+      'Ya no lo tengo', 'Lo vendí', 'Sacarlo de la lista', 'Si entró plata, ajustá el saldo de esa cuenta.', 'Ir a mis cuentas', 'Tengo en total', 'Plata',
+      'de eso, guardado: Gs. 2.000.000', 'Te deben', 'Debés', 'Mercadería · a precio de costo', 'ver en US$',
+      'Depende del dólar que pusiste y de lo que calculás que valen tus cosas.', 'Depende de lo que calculás que valen tus cosas.']);
+  ok('132 · y en portugués',
+    [pp.loQueTenes, pp.agregar, pp.agregarUnBien, pp.vacioDetalle, pp.algoQueTenes, Object.values(pp.tipos).join(' / '), pp.queEs, Object.values(pp.ejemplo).join(' / '),
+      pp.cuantoValeHoy, pp.valorDetalle, pp.nota, pp.noMueveCuentas, pp.valorDel('7 out'), pp.actualizarValor, pp.yaNoLoTengo, pp.loVendi, pp.sacarDeLaLista,
+      pp.siEntroPlata, pp.irAMisCuentas, pp.tengoEnTotal, pp.plata, pp.deEsoGuardado('Gs. 2.000.000'), pp.teDeben, pp.debes, pp.mercaderia, pp.verEn('US$')],
+    ['O que você tem', 'Adicionar', '+ Anotar algo que você tem', 'Um carro, um terreno, uma casa: o que você tem e não é dinheiro.', 'Algo que você tem',
+      'Carro ou moto / Terreno / Casa ou loja / Máquina / Animais / Outro', 'O que é?', 'Toyota Hilux 2018 / Terreno em Luque / Casa em Lambaré / Trator / 120 vacas / O que for',
+      'Quanto vale hoje?', 'O que você calcula. Você muda quando quiser.', 'Observação', 'Anotar não mexe em nenhuma conta.', 'valor de 7 out', 'Atualizar valor',
+      'Não tenho mais', 'Vendi', 'Tirar da lista', 'Se entrou dinheiro, ajuste o saldo dessa conta.', 'Ir para as minhas contas', 'Tenho no total', 'Dinheiro',
+      'disso, guardado: Gs. 2.000.000', 'Devem a você', 'Você deve', 'Mercadoria · a preço de custo', 'ver em US$']);
+  // SIMÉTRICO: el diseño decía «Depende del dólar que pusiste», fijo. Un
+  // negocio en reales con una caja en guaraníes no puso ningún dólar: la
+  // moneda llega de afuera (la grande de la pareja, como en la hoja).
+  ok('132 · «Depende del dólar que pusiste» recibe la moneda: un negocio en reales lee «del real», y con más de una, «los cambios»',
+    [pe.esAproximado('real'), pp.esAproximado('dólar'), pe.esAproximadoVarios, pp.esAproximadoVarios, pp.esAproximadoSinCambio,
+      tarjeta.includes('grandes.length === 1 ? p.esAproximado(nombreUno(grandes[0])) : p.esAproximadoVarios;'),
+      tarjeta.includes('const grandes = [...new Set(cuenta.conCambio.map((otra) => parDe(moneda, otra).grande))];')],
+    ['Depende del real que pusiste y de lo que calculás que valen tus cosas.',
+      'Depende do dólar que você informou e de quanto você calcula que valem suas coisas.',
+      'Depende de los cambios que pusiste y de lo que calculás que valen tus cosas.',
+      'Depende dos câmbios informados e de quanto você calcula que valem suas coisas.',
+      'Depende de quanto você calcula que valem suas coisas.', true, true]);
+  ok('132 · una moneda que no se cotiza se dice, en los dos idiomas', [pe.sinTotal('GBP'), pp.sinTotal('GBP')],
+    ['Sin total: no hay cotización para GBP.', 'Sem total: não há cotação para GBP.']);
+  ok('132 · en voseo: «tenés», «calculás», «cambiás», «ajustá», «Debés»',
+    [pe.loQueTenes.endsWith('tenés'), pe.valorDetalle.includes('calculás') && pe.valorDetalle.includes('cambiás'), pe.siEntroPlata.includes('ajustá'), pe.debes === 'Debés',
+      Object.values(pe).filter((x) => typeof x === 'string' && /\b(tienes|calculas|ajusta|debes|puedes)\b/.test(x))],
+    [true, true, true, true, []]);
+  ok('132 · el «≈» lo pone la pantalla, no una frase: ningún texto del patrimonio lo trae suelto',
+    [...Object.values(pe), ...Object.values(pp)].filter((x) => typeof x === 'string' && x.includes('≈')), []);
+
+  // ---- el candado de la personal en Gratis (7.6) ----
+  const gratis = leer('src/i18n/textos/plan-gratis.ts');
+  ok('132 · la tarjeta del candado de la Billetera nombra lo nuevo, en es y pt',
+    [gratis.includes("billetera: 'Cuánto tenés en cada cuenta, en otras monedas, y lo que tenés: tu auto, tu terreno.',"),
+      gratis.includes("billetera: 'Quanto você tem em cada conta, em outras moedas, e o que você tem: seu carro, seu terreno.',"),
+      (gratis.match(/\n      billetera: '/g) || []).length],
+    [true, true, 2]);
 }
 
 // Las comprobaciones que esperan algo (una función async) se anotan en

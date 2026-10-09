@@ -1,6 +1,7 @@
 import { clienteServidor } from './supabase/servidor';
 import { exigir } from './lectura';
-import type { Billetera, CotizacionDeMoneda, CuentaDinero, CuentaParaElegir, TotalDeMoneda } from './tipos';
+import { leerPatrimonio } from './patrimonio';
+import type { Billetera, CotizacionDeMoneda, CuentaDinero, CuentaParaElegir, Patrimonio, TotalDeMoneda } from './tipos';
 
 /** Lo que la base devuelve además de lo de siempre desde la 131. Todo opcional: una base vieja no lo trae. */
 interface OtrasMonedasCrudas {
@@ -71,5 +72,35 @@ export async function traerCuentasParaElegir(empresaId: string, otrasMonedas = f
     return Array.isArray(data) ? (data as CuentaParaElegir[]) : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * LO QUE LA PERSONA TIENE Y NO ES PLATA, Y TODO LO DEMÁS PARA «TENGO EN
+ * TOTAL» (132). Cada parte viene en su moneda: acá no se convierte nada.
+ *
+ * SI NO SE PUEDE LEER, ES «NO HAY»: null, y la Billetera abre igual, sin el
+ * bloque. Este código puede llegar antes que la migración (o la migración
+ * volverse atrás), y entonces la función no existe: la pantalla de las
+ * cuentas, que es lo que la gente vino a ver, no puede caerse por eso. Con
+ * null no se dibuja NADA de lo nuevo, tampoco el botón de anotar: mostrar una
+ * lista vacía sería decir «no anotaste nada» sin saberlo.
+ *
+ * Una falla que no es «la función no existe» queda en el registro del
+ * servidor, para enterarse.
+ */
+export async function traerPatrimonio(empresaId: string): Promise<Patrimonio | null> {
+  try {
+    const supabase = clienteServidor();
+    const { data, error } = await supabase.rpc('patrimonio', { p_empresa: empresaId });
+    if (error) {
+      const noExiste = error.code === 'PGRST202' || error.code === '42883';
+      if (!noExiste) console.error('[patrimonio] no se pudo leer:', error.code ?? '', error.message ?? '');
+      return null;
+    }
+    return leerPatrimonio(data);
+  } catch (e) {
+    console.error('[patrimonio] no se pudo leer:', e instanceof Error ? e.message : e);
+    return null;
   }
 }

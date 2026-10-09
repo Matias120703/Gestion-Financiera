@@ -655,6 +655,63 @@ export interface Billetera {
   cotizaciones: CotizacionDeMoneda[];
 }
 
+/** Qué clase de cosa es un bien (132). Lo que la base no conozca se muestra como «otro». */
+export type TipoBien = 'vehiculo' | 'terreno' | 'casa' | 'maquina' | 'animales' | 'otro';
+
+/**
+ * ALGO QUE LA PERSONA TIENE Y NO ES PLATA (132): un auto, un terreno.
+ *
+ * Es una anotación con un valor, y nada más: no crea un movimiento, no mueve
+ * ninguna cuenta y no entra en la ganancia ni en ningún reporte.
+ */
+export interface Bien {
+  id: string;
+  nombre: string;
+  tipo: string;
+  /** Lo que la persona calcula que vale hoy, en `moneda`. */
+  valor: number;
+  /** Siempre escrita: un terreno en dólares sigue en dólares aunque el negocio esté en guaraníes. */
+  moneda: string;
+  /** De qué día es esa estimación ('YYYY-MM-DD'). */
+  valor_al: string;
+  nota: string;
+}
+
+/** Un importe exacto en UNA moneda. Dos de monedas distintas nunca se suman sin cotización. */
+export interface ParteDeMoneda {
+  moneda: string;
+  total: number;
+}
+
+/**
+ * LO QUE DEVUELVE `patrimonio()` (132): cada parte EN SU MONEDA, sin convertir.
+ *
+ * La base no suma nada entre monedas. El único número convertido es «Tengo
+ * en total ≈», que lo calcula la pantalla (`tengoEnTotal`, lib/patrimonio.ts)
+ * con la cotización que escribió la persona.
+ */
+export interface Patrimonio {
+  /** La moneda del negocio. */
+  moneda: string;
+  /** Lo que sigue en la lista, en el orden en que se anotó. */
+  bienes: Bien[];
+  /** La propia primero; solo monedas con algún bien. */
+  bienesPorMoneda: ParteDeMoneda[];
+  /** La plata de las cuentas, por moneda: la propia siempre y primera, aunque sea cero. */
+  plata: ParteDeMoneda[];
+  /** Sin ninguna cuenta y con fondos de ahorro: la plata SON los fondos, cada uno en su moneda. */
+  plataDeAhorros: boolean;
+  /** Lo guardado en fondos, en la moneda propia. Ya está adentro de la plata: se muestra, no se suma. */
+  ahorroApartado: number;
+  /** Moneda propia. */
+  teDeben: number;
+  /** A precio de costo, moneda propia. Puede venir negativa o con decimales de más. */
+  mercaderia: number;
+  /** Moneda propia. */
+  debes: number;
+  cotizaciones: CotizacionDeMoneda[];
+}
+
 /**
  * Un movimiento que quedó fuera de la billetera y hay que ubicar (083).
  *
