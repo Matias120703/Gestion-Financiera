@@ -70,6 +70,10 @@ const PUBLICAS = [
   // clave privada), que la operación exista con el mismo importe, y la
   // consulta a Bancard cuando el token no coincide (ver su route.ts).
   '/api/pagos/bancard/confirmacion',
+  // El chat de la app nueva del celular (17/11/2026). La app no tiene sesión
+  // de Supabase: guarda todo en el teléfono. La protege `ORDEN_APP_CLAVE` y,
+  // antes de publicarla en las tiendas, la suscripción Premium (ver su route.ts).
+  '/api/orden-chat',
 ];
 
 export async function middleware(request: NextRequest) {
