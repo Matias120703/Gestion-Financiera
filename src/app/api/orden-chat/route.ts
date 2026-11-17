@@ -22,6 +22,11 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 
 const MODELO = process.env.MODELO_CHAT || 'gpt-5-mini';
+// Cuánto «piensa» el modelo antes de contestar. Con lo que viene por defecto
+// tardaba 12 a 19 segundos; con 'minimal' contesta en pocos y las pruebas
+// (pregunta + deuda, «el 30», en qué se va la plata) salen igual de bien.
+// El tipo del SDK todavía no conoce 'minimal', por eso va aparte.
+const PENSAR = { reasoning_effort: process.env.MODELO_ESFUERZO || 'minimal' } as unknown as { reasoning_effort: OpenAI.ReasoningEffort };
 const MAX_MENSAJES = 80;
 const MAX_BYTES = 250_000;
 
@@ -225,6 +230,7 @@ export async function POST(request: NextRequest) {
       // Incluye lo que el modelo piensa antes de responder; con menos, a veces
       // se queda sin lugar y contesta vacío.
       max_completion_tokens: 4000,
+      ...PENSAR,
       tools: HERRAMIENTAS,
       messages: historia,
     });
@@ -244,6 +250,7 @@ export async function POST(request: NextRequest) {
         const r2 = await cliente.chat.completions.create({
           model: MODELO,
           max_completion_tokens: 4000,
+          ...PENSAR,
           messages: [
             ...historia,
             { role: 'assistant', content: null, tool_calls: llamadas },
